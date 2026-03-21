@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vite:*)",
+      "Bash(while read:*)",
+      "Bash(do wc:*)",
+      "Bash(done)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(where npm:*)",
+      "Bash(where node:*)",
+      "Read(//c/Users/msdnu/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/7198be5b-dfcf-4eec-a9ae-4d2413f68ca6/a5ebcbad-3b79-4262-bb9b-7b61146ce8d0/skills/xlsx/**)",
+      "Bash(python -c \":*)",
+      "Bash(pip install:*)",
+      "Bash(npx -y acorn --ecma2020 --module --jsx src/components/Activities.jsx)",
+      "Bash(node -e \"try{require\\(''fs''\\).readFileSync\\(''src/components/Activities.jsx'',''utf8''\\)}catch\\(e\\){console.log\\(e\\)}\")",
+      "Bash(npx -y acorn --ecma2020 --module --jsx src/components/Leads.jsx)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(wc -l /c/Users/msdnu/Desktop/smartcrm-hans/src/components/*.jsx)",
+      "Bash(grep -n \"import.*from.*helpers\" /c/Users/msdnu/Desktop/smartcrm-hans/src/components/*.jsx /c/Users/msdnu/Desktop/smartcrm-hans/src/SmartCRM.jsx)",
+      "Bash(grep \"import.*from.*shared\" /c/Users/msdnu/Desktop/smartcrm-hans/src/components/*.jsx)",
+      "Bash(grep -E \"\\\\.html|\\\\.json|\\\\.js$|index\")",
+      "Bash(node -c /c/Users/msdnu/Desktop/smartcrm-hans/src/SmartCRM.jsx)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
