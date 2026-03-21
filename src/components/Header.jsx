@@ -1,18 +1,22 @@
 import { useState, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Search, Bell, BarChart3 } from "lucide-react";
 import { TEAM_MAP } from '../data/constants';
 
 export const PAGE_LABELS={
   dashboard:"Dashboard",leads:"Leads",accounts:"Accounts",contacts:"Contacts",
-  pipeline:"Pipeline",activities:"Activities",callreports:"Call Reports",
+  pipeline:"Pipeline",activities:"Activities","call-reports":"Call Reports",
   tickets:"Support Tickets",contracts:"Contracts",collections:"Collections",
   targets:"Target vs Achievement",reports:"Reports",masters:"Masters",
   org:"Organisation",team:"Team & Users",
   quotations:"Quotations",calendar:"Calendar",communications:"Communications",
-  bulkupload:"Bulk Upload"
+  "bulk-upload":"Bulk Upload"
 };
 
-function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,currentUser}) {
+function Header({accounts,contacts,opps,tickets,activities,leads,currentUser}) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const currentPage = pathname.replace(/^\//, "") || "dashboard";
   const [searchQ,setSearchQ]=useState("");
   const [results,setResults]=useState([]);
   const openTix=tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
@@ -43,7 +47,7 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
   return (
     <div className="header">
       <div className="hdr-bread">
-        <div className="hdr-page">{PAGE_LABELS[page]||page}</div>
+        <div className="hdr-page">{PAGE_LABELS[currentPage]||currentPage}</div>
       </div>
       <div className="hdr-search">
         <Search size={14} style={{color:"var(--text3)",flexShrink:0}}/>
@@ -51,7 +55,7 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
         {results.length>0&&(
           <div className="search-dropdown">
             {results.map((r,i)=>(
-              <div key={i} className="search-item" onClick={()=>{setPage(r.go);setSearchQ("");setResults([]);}}>
+              <div key={i} className="search-item" onClick={()=>{navigate("/"+r.go);setSearchQ("");setResults([]);}}>
                 <span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"var(--brand-bg)",color:"var(--brand)"}}>{r.type}</span>
                 <div><div style={{fontSize:13,fontWeight:500}}>{r.label}</div><div style={{fontSize:11,color:"var(--text3)"}}>{r.sub}</div></div>
               </div>
@@ -60,10 +64,10 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
         )}
       </div>
       <div className="hdr-actions">
-        <button className="icon-btn" onClick={()=>setPage("tickets")} title="Open tickets">
+        <button className="icon-btn" onClick={()=>navigate("/tickets")} title="Open tickets">
           <Bell size={18}/>{openTix>0&&<span className="notif-dot"/>}
         </button>
-        <button className="icon-btn" onClick={()=>setPage("reports")} title="Reports"><BarChart3 size={18}/></button>
+        <button className="icon-btn" onClick={()=>navigate("/reports")} title="Reports"><BarChart3 size={18}/></button>
         <div className="avatar" title={user?.name}>{user?.initials||"?"}</div>
       </div>
     </div>

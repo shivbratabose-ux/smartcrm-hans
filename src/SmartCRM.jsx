@@ -1,16 +1,32 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useCallback } from "react";
+import { useNavigate, Routes, Route, Navigate } from "react-router-dom";
 
 // Data & Utils
-import { INIT_USERS, PROD_MAP, STAGE_PROB, INIT_USER_PASSWORDS } from "./data/constants";
-import {
-  INIT_ACCOUNTS, INIT_CONTACTS, INIT_OPPS, INIT_ACTIVITIES,
-  INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
-  INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
-  INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
-  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS
-} from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today } from "./utils/helpers";
+import { PROD_MAP, STAGE_PROB } from "./data/constants";
+import { today, ErrorBoundary } from "./utils/helpers";
 import { CSS } from "./styles";
+
+// Stores
+import {
+  useAuthStore,
+  useAccountsStore,
+  useContactsStore,
+  useOppsStore,
+  useActivitiesStore,
+  useTicketsStore,
+  useNotesStore,
+  useFilesStore,
+  useMastersStore,
+  useOrgStore,
+  useLeadsStore,
+  useCallReportsStore,
+  useContractsStore,
+  useCollectionsStore,
+  useTargetsStore,
+  useQuotesStore,
+  useCommLogsStore,
+  useEventsStore,
+} from "./stores";
 
 // Components
 import Login from "./components/Login";
@@ -37,74 +53,64 @@ import CommLog from "./components/CommLog";
 import BulkUpload from "./components/BulkUpload";
 
 export default function SmartCRM() {
-  const saved = useMemo(() => loadState(), []);
-  const [currentUser,setCurrentUser] = useState(null);
-  const [page,setPage]               = useState("dashboard");
-  const [collapsed,setCollapsed]     = useState(false);
-  const [accounts,setAccounts]       = useState(saved?.accounts || INIT_ACCOUNTS);
-  const [contacts,setContacts]       = useState(saved?.contacts || INIT_CONTACTS);
-  const [opps,setOpps]               = useState(saved?.opps || INIT_OPPS);
-  const [activities,setActivities]   = useState(saved?.activities || INIT_ACTIVITIES);
-  const [tickets,setTickets]         = useState(saved?.tickets || INIT_TICKETS);
-  const [notes,setNotes]             = useState(saved?.notes || INIT_NOTES);
-  const [files,setFiles]             = useState(saved?.files || INIT_FILES);
-  const [masters,setMasters]         = useState(saved?.masters || INIT_MASTERS);
-  const [catalog,setCatalog]         = useState(saved?.catalog || INIT_PRODUCT_CATALOG);
-  const [org,setOrg]                 = useState(saved?.org || INIT_ORG);
-  const [teams,setTeams]             = useState(saved?.teams || INIT_TEAMS);
-  const [orgUsers,setOrgUsers]       = useState(saved?.orgUsers || INIT_USERS);
-  const [userPasswords,setUserPasswords] = useState(saved?.userPasswords || INIT_USER_PASSWORDS);
-  // New CRM modules
-  const [leads,setLeads]             = useState(saved?.leads || INIT_LEADS);
-  const [callReports,setCallReports] = useState(saved?.callReports || INIT_CALL_REPORTS);
-  const [contracts,setContracts]     = useState(saved?.contracts || INIT_CONTRACTS);
-  const [collections,setCollections] = useState(saved?.collections || INIT_COLLECTIONS);
-  const [targets,setTargets]         = useState(saved?.targets || INIT_TARGETS);
-  const [quotes,setQuotes]           = useState(saved?.quotes || INIT_QUOTES);
-  const [commLogs,setCommLogs]       = useState(saved?.commLogs || INIT_COMM_LOGS);
-  const [events,setEvents]           = useState(saved?.events || INIT_EVENTS);
+  const navigate = useNavigate();
 
-  // Persist all data to localStorage on change
-  useEffect(() => {
-    saveState({ accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
-      leads, callReports, contracts, collections, targets, quotes, commLogs, events });
-  }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
-    leads, callReports, contracts, collections, targets, quotes, commLogs, events]);
+  // Auth store
+  const { currentUser, collapsed, setCurrentUser, logout: storeLogout, setCollapsed } = useAuthStore();
 
-  const addNote = note => setNotes(p=>[...p,note]);
-  const addFile = file => setFiles(p=>[...p,file]);
-  const logout  = () => { setCurrentUser(null); setPage("dashboard"); };
+  // Data stores
+  const { accounts, setAccounts } = useAccountsStore();
+  const { contacts, setContacts } = useContactsStore();
+  const { opps, setOpps } = useOppsStore();
+  const { activities, setActivities } = useActivitiesStore();
+  const { tickets, setTickets } = useTicketsStore();
+  const { notes, setNotes } = useNotesStore();
+  const { files, setFiles } = useFilesStore();
+  const { masters, setMasters, catalog, setCatalog } = useMastersStore();
+  const { org, setOrg, teams, setTeams, orgUsers, setOrgUsers, userPasswords, setUserPasswords } = useOrgStore();
+  const { leads, setLeads } = useLeadsStore();
+  const { callReports, setCallReports } = useCallReportsStore();
+  const { contracts, setContracts } = useContractsStore();
+  const { collections, setCollections } = useCollectionsStore();
+  const { targets, setTargets } = useTargetsStore();
+  const { quotes, setQuotes } = useQuotesStore();
+  const { commLogs, setCommLogs } = useCommLogsStore();
+  const { events, setEvents } = useEventsStore();
+
+  const addNote = note => setNotes(p => [...p, note]);
+  const addFile = file => setFiles(p => [...p, file]);
+  const logout = () => { storeLogout(); navigate("/dashboard"); };
 
   // Cascade delete: remove all linked records when an account is deleted
   const cascadeDeleteAccount = useCallback((accId) => {
-    setAccounts(p => p.filter(a => a.id !== accId));
-    setContacts(p => p.filter(c => c.accountId !== accId));
-    setOpps(p => p.filter(o => o.accountId !== accId));
-    setActivities(p => p.filter(a => a.accountId !== accId));
-    setTickets(p => p.filter(t => t.accountId !== accId));
-    setNotes(p => p.filter(n => !(n.recordType === "account" && n.recordId === accId)));
-    setFiles(p => p.map(f => ({...f, linkedTo: f.linkedTo.filter(l => !(l.type === "account" && l.id === accId))})));
-    setContracts(p => p.filter(c => c.accountId !== accId));
-    setCollections(p => p.filter(c => c.accountId !== accId));
-    setCallReports(p => p.filter(r => r.accountId !== accId));
+    useAccountsStore.getState().setAccounts(p => p.filter(a => a.id !== accId));
+    useContactsStore.getState().setContacts(p => p.filter(c => c.accountId !== accId));
+    useOppsStore.getState().setOpps(p => p.filter(o => o.accountId !== accId));
+    useActivitiesStore.getState().setActivities(p => p.filter(a => a.accountId !== accId));
+    useTicketsStore.getState().setTickets(p => p.filter(t => t.accountId !== accId));
+    useNotesStore.getState().setNotes(p => p.filter(n => !(n.recordType === "account" && n.recordId === accId)));
+    useFilesStore.getState().setFiles(p => p.map(f => ({ ...f, linkedTo: f.linkedTo.filter(l => !(l.type === "account" && l.id === accId)) })));
+    useContractsStore.getState().setContracts(p => p.filter(c => c.accountId !== accId));
+    useCollectionsStore.getState().setCollections(p => p.filter(c => c.accountId !== accId));
+    useCallReportsStore.getState().setCallReports(p => p.filter(r => r.accountId !== accId));
   }, []);
 
   // Cascade delete: remove linked activities/notes/files when an opportunity is deleted
   const cascadeDeleteOpp = useCallback((oppId) => {
-    setOpps(p => p.filter(o => o.id !== oppId));
-    setActivities(p => p.map(a => a.oppId === oppId ? {...a, oppId: ""} : a));
-    setNotes(p => p.filter(n => !(n.recordType === "opp" && n.recordId === oppId)));
-    setFiles(p => p.map(f => ({...f, linkedTo: f.linkedTo.filter(l => !(l.type === "opp" && l.id === oppId))})));
-    setContracts(p => p.map(c => c.oppId === oppId ? {...c, oppId: ""} : c));
+    useOppsStore.getState().setOpps(p => p.filter(o => o.id !== oppId));
+    useActivitiesStore.getState().setActivities(p => p.map(a => a.oppId === oppId ? { ...a, oppId: "" } : a));
+    useNotesStore.getState().setNotes(p => p.filter(n => !(n.recordType === "opp" && n.recordId === oppId)));
+    useFilesStore.getState().setFiles(p => p.map(f => ({ ...f, linkedTo: f.linkedTo.filter(l => !(l.type === "opp" && l.id === oppId)) })));
+    useContractsStore.getState().setContracts(p => p.map(c => c.oppId === oppId ? { ...c, oppId: "" } : c));
   }, []);
 
   // Cascade delete: unlink activities when a contact is deleted
   const cascadeDeleteContact = useCallback((conId) => {
-    setContacts(p => p.filter(c => c.id !== conId));
-    setActivities(p => p.map(a => a.contactId === conId ? {...a, contactId: ""} : a));
+    useContactsStore.getState().setContacts(p => p.filter(c => c.id !== conId));
+    useActivitiesStore.getState().setActivities(p => p.map(a => a.contactId === conId ? { ...a, contactId: "" } : a));
   }, []);
 
-  // Convert lead to opportunity — accepts conversion data from modal
+  // Convert lead to opportunity
   const convertLeadToOpp = useCallback((lead, conversionData) => {
     const data = conversionData || {};
     const newOpp = {
@@ -127,11 +133,9 @@ export default function SmartCRM() {
       forecastCategory: data.forecastCategory || "Likely-Case",
       dealSize: data.dealSize || "Medium",
     };
-    setOpps(p => [...p, newOpp]);
-    // Mark lead as Converted (keep for history) instead of deleting
-    setLeads(p => p.map(l => l.id === lead.id ? { ...l, stage: "Converted", convertedDate: today, convertedOppId: newOpp.id } : l));
-    // Create initial activity for the new opportunity
-    const initialAct = {
+    useOppsStore.getState().setOpps(p => [...p, newOpp]);
+    useLeadsStore.getState().setLeads(p => p.map(l => l.id === lead.id ? { ...l, stage: "Converted", convertedDate: today, convertedOppId: newOpp.id } : l));
+    useActivitiesStore.getState().setActivities(p => [...p, {
       id: `act_${Date.now()}`,
       type: "Call",
       status: "Completed",
@@ -145,55 +149,62 @@ export default function SmartCRM() {
       title: `Lead Conversion – ${lead.company}`,
       notes: `Lead ${lead.leadId} converted to opportunity. Qualification: ${data.notes || lead.notes || "Initial qualification complete."}`,
       outcome: "Positive",
-    };
-    setActivities(p => [...p, initialAct]);
-    setPage("pipeline");
-  }, []);
+    }]);
+    navigate("/pipeline");
+  }, [navigate]);
 
   // Bulk upload handler
   const handleBulkUpload = useCallback((type, records) => {
-    switch(type) {
-      case "Leads": setLeads(p => [...p, ...records]); break;
-      case "Customers": setAccounts(p => [...p, ...records]); break;
-      case "Contacts": setContacts(p => [...p, ...records]); break;
-      case "Collections": setCollections(p => [...p, ...records]); break;
-      case "Support Tickets": setTickets(p => [...p, ...records]); break;
-      case "Contracts": setContracts(p => [...p, ...records]); break;
+    switch (type) {
+      case "Leads": useLeadsStore.getState().setLeads(p => [...p, ...records]); break;
+      case "Customers": useAccountsStore.getState().setAccounts(p => [...p, ...records]); break;
+      case "Contacts": useContactsStore.getState().setContacts(p => [...p, ...records]); break;
+      case "Collections": useCollectionsStore.getState().setCollections(p => [...p, ...records]); break;
+      case "Support Tickets": useTicketsStore.getState().setTickets(p => [...p, ...records]); break;
+      case "Contracts": useContractsStore.getState().setContracts(p => [...p, ...records]); break;
     }
   }, []);
 
-  if(!currentUser) return (
-    <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={setCurrentUser} orgUsers={orgUsers} userPasswords={userPasswords}/></>
+  if (!currentUser) return (
+    <Routes>
+      <Route path="*" element={
+        <><style dangerouslySetInnerHTML={{ __html: CSS }} /><Login onLogin={setCurrentUser} orgUsers={orgUsers} /></>
+      } />
+    </Routes>
   );
 
   return (
     <ErrorBoundary>
-      <style dangerouslySetInnerHTML={{__html:CSS}}/>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={tickets} leads={leads} collections={collections} currentUser={currentUser} onLogout={logout}/>
+        <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} tickets={tickets} leads={leads} collections={collections} currentUser={currentUser} onLogout={logout} />
         <div className="main">
-          <Header page={page} accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} setPage={setPage} currentUser={currentUser}/>
+          <Header accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} currentUser={currentUser} />
           <div className="content" id="main-content" role="main">
-            {page==="dashboard"  && <Dashboard accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} setPage={setPage}/>}
-            {page==="leads"      && <Leads leads={leads} setLeads={setLeads} accounts={accounts} contacts={contacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp}/>}
-            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={opps} activities={activities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} leads={leads}/>}
-            {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={opps} activities={activities}/>}
-            {page==="pipeline"   && <Pipeline opps={opps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={setActivities} callReports={callReports}/>}
-            {page==="activities" && <Activities activities={activities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} files={files} onAddFile={addFile}/>}
-            {page==="callreports"&& <CallReports callReports={callReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
-            {page==="tickets"    && <Tickets tickets={tickets} setTickets={setTickets} accounts={accounts}/>}
-            {page==="contracts"  && <Contracts contracts={contracts} setContracts={setContracts} accounts={accounts} opps={opps} currentUser={currentUser}/>}
-            {page==="collections"&& <Collections collections={collections} setCollections={setCollections} accounts={accounts} contracts={contracts} currentUser={currentUser}/>}
-            {page==="quotations" && <Quotations quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
-            {page==="calendar"   && <CalendarView events={events} setEvents={setEvents} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
-            {page==="communications"&& <CommLog commLogs={commLogs} setCommLogs={setCommLogs} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
-            {page==="targets"    && <Targets targets={targets} setTargets={setTargets} currentUser={currentUser}/>}
-            {page==="reports"    && <Reports accounts={accounts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets}/>}
-            {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
-            {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
-            {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers}/>}
-            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/>}
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} setPage={p => navigate("/" + p)} />} />
+              <Route path="/leads" element={<Leads leads={leads} setLeads={setLeads} accounts={accounts} contacts={contacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} />} />
+              <Route path="/accounts" element={<Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={opps} activities={activities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} leads={leads} />} />
+              <Route path="/contacts" element={<Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={opps} activities={activities} />} />
+              <Route path="/pipeline" element={<Pipeline opps={opps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={setActivities} callReports={callReports} />} />
+              <Route path="/activities" element={<Activities activities={activities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} files={files} onAddFile={addFile} />} />
+              <Route path="/call-reports" element={<CallReports callReports={callReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} />} />
+              <Route path="/tickets" element={<Tickets tickets={tickets} setTickets={setTickets} accounts={accounts} />} />
+              <Route path="/contracts" element={<Contracts contracts={contracts} setContracts={setContracts} accounts={accounts} opps={opps} currentUser={currentUser} />} />
+              <Route path="/collections" element={<Collections collections={collections} setCollections={setCollections} accounts={accounts} contracts={contracts} currentUser={currentUser} />} />
+              <Route path="/quotations" element={<Quotations quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} />} />
+              <Route path="/calendar" element={<CalendarView events={events} setEvents={setEvents} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} />} />
+              <Route path="/communications" element={<CommLog commLogs={commLogs} setCommLogs={setCommLogs} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} />} />
+              <Route path="/targets" element={<Targets targets={targets} setTargets={setTargets} currentUser={currentUser} />} />
+              <Route path="/reports" element={<Reports accounts={accounts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} />} />
+              <Route path="/bulk-upload" element={<BulkUpload onUpload={handleBulkUpload} />} />
+              <Route path="/masters" element={<Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog} />} />
+              <Route path="/org" element={<OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} />} />
+              <Route path="/team" element={<TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords} />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
           </div>
         </div>
       </div>
