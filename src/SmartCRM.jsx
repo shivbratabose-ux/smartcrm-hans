@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 
 // Data & Utils
-import { INIT_USERS, PROD_MAP, STAGE_PROB } from "./data/constants";
+import { INIT_USERS, PROD_MAP, STAGE_PROB, INIT_USER_PASSWORDS } from "./data/constants";
 import {
   INIT_ACCOUNTS, INIT_CONTACTS, INIT_OPPS, INIT_ACTIVITIES,
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
@@ -53,6 +53,7 @@ export default function SmartCRM() {
   const [org,setOrg]                 = useState(saved?.org || INIT_ORG);
   const [teams,setTeams]             = useState(saved?.teams || INIT_TEAMS);
   const [orgUsers,setOrgUsers]       = useState(saved?.orgUsers || INIT_USERS);
+  const [userPasswords,setUserPasswords] = useState(saved?.userPasswords || INIT_USER_PASSWORDS);
   // New CRM modules
   const [leads,setLeads]             = useState(saved?.leads || INIT_LEADS);
   const [callReports,setCallReports] = useState(saved?.callReports || INIT_CALL_REPORTS);
@@ -65,9 +66,9 @@ export default function SmartCRM() {
 
   // Persist all data to localStorage on change
   useEffect(() => {
-    saveState({ accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
+    saveState({ accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
       leads, callReports, contracts, collections, targets, quotes, commLogs, events });
-  }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
+  }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
     leads, callReports, contracts, collections, targets, quotes, commLogs, events]);
 
   const addNote = note => setNotes(p=>[...p,note]);
@@ -162,7 +163,7 @@ export default function SmartCRM() {
   }, []);
 
   if(!currentUser) return (
-    <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={setCurrentUser}/></>
+    <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={setCurrentUser} orgUsers={orgUsers} userPasswords={userPasswords}/></>
   );
 
   return (
@@ -192,7 +193,7 @@ export default function SmartCRM() {
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers}/>}
-            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser}/>}
+            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/>}
           </div>
         </div>
       </div>

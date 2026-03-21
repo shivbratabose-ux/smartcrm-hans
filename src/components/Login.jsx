@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Mail, Lock, Eye, EyeOff, Shield, ChevronRight } from "lucide-react";
 import { CREDS, hashPassword, DEMO_PW_HASH } from "../data/constants";
 
-function Login({onLogin}) {
+function Login({onLogin, orgUsers, userPasswords}) {
   const [email,setEmail] = useState("");
   const [pass,setPass]   = useState("");
   const [showPw,setShowPw] = useState(false);
@@ -11,9 +11,29 @@ function Login({onLogin}) {
 
   const handle = () => {
     if(attempts >= 5) { setErr("Too many failed attempts. Please wait and try again."); return; }
-    const uid = CREDS[email.toLowerCase()];
-    if(!uid)         { setErr("Email not found. Check your login email."); setAttempts(a=>a+1); return; }
-    if(hashPassword(pass) !== DEMO_PW_HASH){ setErr("Incorrect password."); setAttempts(a=>a+1); return; }
+    const emailLower = email.toLowerCase().trim();
+    // Check original CREDS (seed users) first
+    let uid = CREDS[emailLower];
+    // Also check dynamically added users from orgUsers
+    if(!uid && orgUsers) {
+      const dynUser = orgUsers.find(u => u.email?.toLowerCase() === emailLower && u.active !== false);
+      if(dynUser) uid = dynUser.id;
+    }
+    if(!uid) { setErr("Email not found. Check your login email."); setAttempts(a=>a+1); return; }
+    // Check inactive
+    if(orgUsers) {
+      const userRec = orgUsers.find(u => u.id === uid);
+      if(userRec && userRec.active === false) { setErr("Account deactivated. Contact your administrator."); return; }
+    }
+    // Check per-user password first, fall back to demo password
+    const inputHash = hashPassword(pass);
+    const userPwHash = userPasswords?.[uid];
+    if(userPwHash) {
+      if(inputHash !== userPwHash) { setErr("Incorrect password."); setAttempts(a=>a+1); return; }
+    } else {
+      // Fallback for users without individual password — use demo password
+      if(inputHash !== DEMO_PW_HASH) { setErr("Incorrect password."); setAttempts(a=>a+1); return; }
+    }
     setErr(""); setAttempts(0);
     onLogin(uid);
   };

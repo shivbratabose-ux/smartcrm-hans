@@ -35,16 +35,17 @@ export const TEAM = [
   {id:"u8",name:"Suresh Kumar",    role:"Support Engr", lob:"All",          country:"India",        initials:"SK", email:"suresh@hansinfomatic.com"},
 ];
 export const TEAM_MAP = Object.fromEntries(TEAM.map(u=>[u.id,u]));
-// Password hash (SHA-256 of "hans@2026") — avoids plaintext password in source
-export const PASSWORD_HASH = "a3f5b2c1d4e6"; // demo mode — in production use bcrypt server-side
+// Password hashing — demo-grade (production should use bcrypt server-side)
 export const hashPassword = (pw) => {
-  // Simple hash for demo — NOT production-grade
   let h = 0;
   for (let i = 0; i < pw.length; i++) { h = ((h << 5) - h + pw.charCodeAt(i)) | 0; }
   return h.toString(36);
 };
 export const DEMO_PW_HASH = hashPassword("hans@2026");
-export const CREDS     = Object.fromEntries(TEAM.map(u=>[u.email, u.id]));
+// Per-user password store: { [userId]: hashedPassword }
+// Seeded with default password for all initial users
+export const INIT_USER_PASSWORDS = Object.fromEntries(TEAM.map(u=>[u.id, DEMO_PW_HASH]));
+export const CREDS = Object.fromEntries(TEAM.map(u=>[u.email, u.id]));
 
 // ── Role Hierarchy ──
 export const ROLES_HIERARCHY = [
