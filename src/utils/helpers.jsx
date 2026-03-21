@@ -13,19 +13,22 @@ export const fmt = {
 };
 export const uid  = () => Math.random().toString(36).slice(2,9);
 export const cmp  = (a,b,key) => (a[key]||"").toString().localeCompare((b[key]||"").toString());
-export const today = "2026-03-20";
+export const today = new Date().toISOString().slice(0, 10);
 export const isOverdue = d => d && d < today;
 export const isFuture  = d => d && d > today;
 export const isToday   = d => d === today;
 
 // ── localStorage persistence ──
+// @deprecated Use Zustand persist middleware instead. Kept for backward-compat.
 const STORAGE_KEY = "smartcrm_data";
+/** @deprecated Use Zustand persist middleware instead. */
 export const loadState = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 };
+/** @deprecated Use Zustand persist middleware instead. */
 export const saveState = (data) => {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
 };

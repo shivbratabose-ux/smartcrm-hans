@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Building2, Users, TrendingUp, Activity,
   BarChart3, Ticket, Layers, SlidersHorizontal, ChevronLeft, LogOut,
@@ -14,7 +15,16 @@ const canAccess = (userId, module) => {
   return perm[module] && perm[module]!==false;
 };
 
-function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,currentUser,onLogout}) {
+// Map nav item id to route path
+const idToPath = (id) => {
+  if (id === "callreports") return "/call-reports";
+  if (id === "bulkupload") return "/bulk-upload";
+  return "/" + id;
+};
+
+function Sidebar({collapsed,setCollapsed,tickets,leads,collections,currentUser,onLogout}) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const openTix=tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const activeLeads=leads?.filter(l=>l.stage!=="NA").length||0;
   const overdueCollections=collections?.filter(c=>c.pendingAmount>0&&c.status==="Overdue").length||0;
@@ -63,13 +73,13 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
         const idx = parseInt(e.key) - 1;
         if (idx < allNavIds.length) {
           e.preventDefault();
-          setPage(allNavIds[idx]);
+          navigate(idToPath(allNavIds[idx]));
         }
       }
     };
     document.addEventListener("keydown", handleGlobalKey);
     return () => document.removeEventListener("keydown", handleGlobalKey);
-  }, [allNavIds, setPage]);
+  }, [allNavIds, navigate]);
 
   const handleNavKeyDown = (e, itemId) => {
     const idx = allNavIds.indexOf(itemId);
@@ -80,7 +90,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
       el?.focus();
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      setPage(itemId);
+      navigate(idToPath(itemId));
     }
   };
 
@@ -105,16 +115,20 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
         {NAV.map(sec=>(
           <div key={sec.section} className="nav-sec" role="group" aria-label={sec.section}>
             <div className="nav-sec-label" aria-hidden="true">{sec.section}</div>
-            {sec.items.map(it=>(
-              <div key={it.id} data-nav={it.id} role="button" tabIndex={0} aria-current={page===it.id?"page":undefined}
-                className={`nav-item${page===it.id?" active":""}`}
-                onClick={()=>setPage(it.id)}
-                onKeyDown={e=>handleNavKeyDown(e,it.id)}>
-                <span className="nav-icon" aria-hidden="true">{it.icon}</span>
-                <span className="nav-label">{it.label}</span>
-                {it.badge>0&&<span className="nav-badge" aria-label={`${it.badge} open`}>{it.badge}</span>}
-              </div>
-            ))}
+            {sec.items.map(it=>{
+              const itemPath = idToPath(it.id);
+              const isActive = pathname === itemPath;
+              return (
+                <div key={it.id} data-nav={it.id} role="button" tabIndex={0} aria-current={isActive?"page":undefined}
+                  className={`nav-item${isActive?" active":""}`}
+                  onClick={()=>navigate(itemPath)}
+                  onKeyDown={e=>handleNavKeyDown(e,it.id)}>
+                  <span className="nav-icon" aria-hidden="true">{it.icon}</span>
+                  <span className="nav-label">{it.label}</span>
+                  {it.badge>0&&<span className="nav-badge" aria-label={`${it.badge} open`}>{it.badge}</span>}
+                </div>
+              );
+            })}
           </div>
         ))}
       </nav>
