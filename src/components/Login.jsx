@@ -37,7 +37,7 @@ function Login({onLogin, orgUsers, userPasswords}) {
     },
     card: {
       background:"#fff", borderRadius:20, padding:"44px 40px 36px",
-      width:"100%, maxWidth:420, boxShadow:"0 24px 80px rgba(0,0,0,0.28)",
+      width:"100%", maxWidth:420, boxShadow:"0 24px 80px rgba(0,0,0,0.28)",
     },
     logoRow: { display:"flex",alignItems:"center",gap:12,marginBottom:32 },
     logoIcon: {
