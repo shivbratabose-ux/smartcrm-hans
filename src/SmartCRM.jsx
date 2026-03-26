@@ -12,6 +12,10 @@ import {
 import { loadState, saveState, ErrorBoundary, today } from "./utils/helpers";
 import { CSS } from "./styles";
 
+// Supabase integration
+import { isSupabaseConfigured } from "./lib/supabase";
+import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase } from "./lib/db";
+
 // Components
 import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
@@ -64,8 +68,69 @@ export default function SmartCRM() {
   const [commLogs,setCommLogs]       = useState(saved?.commLogs || INIT_COMM_LOGS);
   const [events,setEvents]           = useState(saved?.events || INIT_EVENTS);
 
-  // Persist all data to localStorage on change
+  // ── Supabase: Load data from cloud on mount ──
+  const [dbReady, setDbReady] = useState(!isSupabaseConfigured);
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    loadAllData().then(data => {
+      if (data) {
+        if (data.accounts?.length)    setAccounts(data.accounts);
+        if (data.contacts?.length)    setContacts(data.contacts);
+        if (data.opps?.length)        setOpps(data.opps);
+        if (data.activities?.length)  setActivities(data.activities);
+        if (data.tickets?.length)     setTickets(data.tickets);
+        if (data.leads?.length)       setLeads(data.leads);
+        if (data.callReports?.length) setCallReports(data.callReports);
+        if (data.contracts?.length)   setContracts(data.contracts);
+        if (data.collections?.length) setCollections(data.collections);
+        if (data.targets?.length)     setTargets(data.targets);
+        if (data.quotes?.length)      setQuotes(data.quotes);
+        if (data.commLogs?.length)    setCommLogs(data.commLogs);
+        if (data.events?.length)      setEvents(data.events);
+        if (data.notes?.length)       setNotes(data.notes);
+        if (data.files?.length)       setFiles(data.files);
+      }
+      setDbReady(true);
+    });
+  }, []);
+
+  // ── Supabase: Realtime subscriptions ──
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const makeHandler = (setter) => ({ type, record, oldRecord }) => {
+      if (type === "INSERT") setter(p => [...p, record]);
+      else if (type === "UPDATE") setter(p => p.map(r => r.id === record.id ? record : r));
+      else if (type === "DELETE") setter(p => p.filter(r => r.id !== oldRecord?.id));
+    };
+    const unsub = subscribeToAll({
+      accounts: makeHandler(setAccounts),
+      contacts: makeHandler(setContacts),
+      opps: makeHandler(setOpps),
+      activities: makeHandler(setActivities),
+      tickets: makeHandler(setTickets),
+      leads: makeHandler(setLeads),
+      callReports: makeHandler(setCallReports),
+      collections: makeHandler(setCollections),
+    });
+    return unsub;
+  }, []);
+
+  // ── Expose seed function for admin migration ──
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      window.__seedSupabase = () => seedSupabase({
+        accounts: INIT_ACCOUNTS, contacts: INIT_CONTACTS, opps: INIT_OPPS,
+        activities: INIT_ACTIVITIES, tickets: INIT_TICKETS, leads: INIT_LEADS,
+        callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
+        collections: INIT_COLLECTIONS, targets: INIT_TARGETS, quotes: INIT_QUOTES,
+        commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, notes: INIT_NOTES, files: INIT_FILES,
+      });
+    }
+  }, []);
+
+  // Persist all data to localStorage on change (fallback mode)
+  useEffect(() => {
+    if (isSupabaseConfigured) return; // skip localStorage when using Supabase
     saveState({ accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
       leads, callReports, contracts, collections, targets, quotes, commLogs, events });
   }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
@@ -73,7 +138,7 @@ export default function SmartCRM() {
 
   const addNote = note => setNotes(p=>[...p,note]);
   const addFile = file => setFiles(p=>[...p,file]);
-  const logout  = () => { setCurrentUser(null); setPage("dashboard"); };
+  const logout  = () => { if(isSupabaseConfigured) supabaseSignOut(); setCurrentUser(null); setPage("dashboard"); };
 
   // Cascade delete: remove all linked records when an account is deleted
   const cascadeDeleteAccount = useCallback((accId) => {
