@@ -13,7 +13,7 @@ export const fmt = {
 };
 export const uid  = () => Math.random().toString(36).slice(2,9);
 export const cmp  = (a,b,key) => (a[key]||"").toString().localeCompare((b[key]||"").toString());
-export const today = "2026-03-20";
+export const today = new Date().toISOString().slice(0,10);
 export const isOverdue = d => d && d < today;
 export const isFuture  = d => d && d > today;
 export const isToday   = d => d === today;
