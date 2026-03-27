@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shield, AlertTriangle } from "lucide-react";
+import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shield, AlertTriangle, Lock, Unlock } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS, hashPassword, DEMO_PW_HASH } from '../data/constants';
 import { uid, fmt, today } from '../utils/helpers';
 import { Modal, Confirm } from './shared';
@@ -20,13 +20,15 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
   // Editable permissions state
   const [editingPerms,setEditingPerms]=useState(false);
   const [permEdits,setPermEdits]=useState(()=>{
-    // Merge default PERMISSIONS with any custom overrides
     const merged={};
     ROLES_HIERARCHY.forEach(r=>{
       merged[r.id]={...(PERMISSIONS[r.id]||{}),...((customPermissions||{})[r.id]||{})};
     });
     return merged;
   });
+  // User-level permission overrides modal
+  const [userPermModal,setUserPermModal]=useState(null); // {userId, userName, role}
+  const [userPermEdits,setUserPermEdits]=useState({});
 
   // Generate random password
   const generatePassword=()=>{
@@ -126,6 +128,53 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
   const PERM_MODULES=["accounts","contacts","pipeline","activities","tickets","reports","masters","org","team"];
   const PERM_LABEL={accounts:"Accounts",contacts:"Contacts",pipeline:"Pipeline",activities:"Activities",tickets:"Tickets",reports:"Reports",masters:"Masters",org:"Org",team:"Team"};
 
+  // Get effective permissions for a role (role-level + custom role overrides)
+  const getRolePerms=(role)=>({...(PERMISSIONS[role]||{}),...((customPermissions||{})[role]||{})});
+
+  // Get effective permissions for a user (role + user-level overrides)
+  const getUserPerms=(userId,role)=>{
+    const base=getRolePerms(role);
+    const userOverrides=(customPermissions||{})?.__users?.[userId]||{};
+    return {...base,...userOverrides};
+  };
+
+  // Save user-level permission overrides
+  const saveUserPerms=()=>{
+    if(!setCustomPermissions||!userPermModal) return;
+    const rolePerms=getRolePerms(userPermModal.role);
+    // Only store differences from role defaults
+    const diff={};
+    PERM_MODULES.forEach(m=>{
+      if(userPermEdits[m]!==rolePerms[m]) diff[m]=userPermEdits[m];
+    });
+    setCustomPermissions(prev=>{
+      const updated={...prev};
+      if(!updated.__users) updated.__users={};
+      if(Object.keys(diff).length>0){
+        updated.__users[userPermModal.userId]=diff;
+      } else {
+        delete updated.__users[userPermModal.userId];
+        if(Object.keys(updated.__users).length===0) delete updated.__users;
+      }
+      return updated;
+    });
+    setUserPermModal(null);
+  };
+
+  // Reset user permissions to role defaults
+  const resetUserPerms=()=>{
+    if(!setCustomPermissions||!userPermModal) return;
+    setCustomPermissions(prev=>{
+      const updated={...prev};
+      if(updated.__users) {
+        delete updated.__users[userPermModal.userId];
+        if(Object.keys(updated.__users).length===0) delete updated.__users;
+      }
+      return updated;
+    });
+    setUserPermEdits({...getRolePerms(userPermModal.role)});
+  };
+
   // Password strength for add user form
   const addFormPw=modal?.mode==="adduser"?modal.form?.password||"":"";
   const addStrength=getStrength(addFormPw);
@@ -213,7 +262,12 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
                       </div>
                     </div>
                   </td>
-                  <td>{roleInfo&&<span className="user-role-badge" style={{background:roleInfo.color+"18",color:roleInfo.color}}>{roleInfo.name}</span>}</td>
+                  <td>
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      {roleInfo&&<span className="user-role-badge" style={{background:roleInfo.color+"18",color:roleInfo.color}}>{roleInfo.name}</span>}
+                      {(customPermissions||{})?.__users?.[u.id]&&<span style={{fontSize:9,background:"#FFF7ED",color:"#D97706",padding:"1px 5px",borderRadius:8,fontWeight:700,border:"1px solid #FDE68A"}}>Custom</span>}
+                    </div>
+                  </td>
                   <td style={{fontSize:12,color:"var(--text2)"}}>{u.lob}</td>
                   <td style={{fontSize:12,color:"var(--text3)"}}>{branch?.name||"\u2014"}</td>
                   <td style={{fontSize:12,color:"var(--text3)"}}>{dept?.name||"\u2014"}</td>
@@ -222,6 +276,7 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
                   {canManage&&<td>
                     <div style={{display:"flex",gap:4}}>
                       <button className="icon-btn" onClick={()=>openEditUser(u)} title="Edit user"><Edit2 size={13}/></button>
+                      <button className="icon-btn" title="User permissions" onClick={()=>{const userOverrides=(customPermissions||{})?.__users?.[u.id]||{};setUserPermEdits({...getRolePerms(u.role),...userOverrides});setUserPermModal({userId:u.id,userName:u.name,role:u.role});}} style={{color:((customPermissions||{})?.__users?.[u.id])?"#D97706":"#0D9488"}}>{((customPermissions||{})?.__users?.[u.id])?<Unlock size={13}/>:<Lock size={13}/>}</button>
                       <button className="icon-btn" title={u.id===currentUser?"Change password":"Reset password"} onClick={()=>{setPwModal({mode:u.id===currentUser?"change":"reset",userId:u.id,userName:u.name});setPwForm({password:"",confirm:"",current:""});setPwErr("");setPwSuccess("");setGeneratedPw("");setShowPw({pw:false,confirm:false,current:false});}} style={{color:"#7C3AED"}}><Key size={13}/></button>
                       <button className="icon-btn" title={u.active?"Deactivate":"Activate"} onClick={()=>deactivate(u.id)} style={{color:u.active?"var(--amber)":"var(--green)"}}>{u.active?<X size={13}/>:<Check size={13}/>}</button>
                     </div>
@@ -537,6 +592,79 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
 
             {pwErr&&<div style={{marginTop:12,padding:"10px 14px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,fontSize:12,color:"#DC2626"}}>{pwErr}</div>}
             {pwSuccess&&<div style={{marginTop:12,padding:"10px 14px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,fontSize:12,color:"#16A34A",fontWeight:600}}>{pwSuccess}</div>}
+          </div>
+        </Modal>
+      )}
+
+      {/* User Permissions Modal */}
+      {userPermModal&&(
+        <Modal title={`Permissions — ${userPermModal.userName}`} onClose={()=>setUserPermModal(null)}
+          footer={<>
+            <button className="btn btn-sec" onClick={()=>setUserPermModal(null)}>Cancel</button>
+            <button className="btn btn-sec" onClick={resetUserPerms} style={{color:"#F97316",borderColor:"#F97316"}}><RefreshCw size={13}/>Reset to Role Default</button>
+            <button className="btn btn-primary" onClick={saveUserPerms}><Check size={14}/>Save</button>
+          </>} lg>
+          <div style={{marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <div className="u-av" style={{width:36,height:36,borderRadius:10,fontSize:12}}>{orgUsers.find(u=>u.id===userPermModal.userId)?.initials||"?"}</div>
+              <div>
+                <div style={{fontWeight:700,fontSize:14}}>{userPermModal.userName}</div>
+                <div style={{fontSize:12,color:"var(--text3)"}}>Base role: <span style={{color:ROLE_MAP[userPermModal.role]?.color,fontWeight:600}}>{ROLE_MAP[userPermModal.role]?.name||userPermModal.role}</span></div>
+              </div>
+            </div>
+            <div style={{padding:"10px 14px",background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,fontSize:12,color:"#1D4ED8",marginBottom:16}}>
+              Click cells to override permissions for this user. <strong>Orange</strong> cells indicate overrides from the role default. Use "Reset to Role Default" to clear all overrides.
+            </div>
+            <table className="perm-table" style={{width:"100%"}}>
+              <thead>
+                <tr>
+                  <th style={{textAlign:"left",width:120}}>Module</th>
+                  <th style={{width:80}}>Role Default</th>
+                  <th style={{width:100}}>User Override</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PERM_MODULES.map(m=>{
+                  const roleVal=getRolePerms(userPermModal.role)[m];
+                  const userVal=userPermEdits[m];
+                  const isOverridden=userVal!==roleVal;
+                  const cycle=()=>{
+                    let next;
+                    if(m==="reports") next=userVal===true?false:true;
+                    else if(userVal==="rw") next="r";
+                    else if(userVal==="r") next=false;
+                    else next="rw";
+                    setUserPermEdits(prev=>({...prev,[m]:next}));
+                  };
+                  const fmtVal=(v)=>{
+                    if(v==="rw") return <span className="perm-rw">RW</span>;
+                    if(v==="r") return <span className="perm-r">R</span>;
+                    if(v===true) return <span className="perm-rw">&check;</span>;
+                    return <span className="perm-no">—</span>;
+                  };
+                  return (
+                    <tr key={m} style={{background:isOverridden?"#FFF7ED":"transparent"}}>
+                      <td style={{textAlign:"left",fontWeight:600,fontSize:13}}>{PERM_LABEL[m]}</td>
+                      <td style={{textAlign:"center",opacity:0.6}}>{fmtVal(roleVal)}</td>
+                      <td style={{textAlign:"center",cursor:"pointer",borderRadius:4}}
+                        onClick={cycle}
+                        onMouseEnter={e=>e.currentTarget.style.background="#E0E7FF"}
+                        onMouseLeave={e=>e.currentTarget.style.background=isOverridden?"#FFF7ED":"transparent"}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                          {fmtVal(userVal)}
+                          {isOverridden&&<span style={{fontSize:9,color:"#D97706",fontWeight:700}}>●</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {(customPermissions||{})?.__users?.[userPermModal.userId]&&(
+              <div style={{marginTop:12,fontSize:11,color:"#D97706",display:"flex",alignItems:"center",gap:4}}>
+                <Unlock size={12}/>This user has {Object.keys((customPermissions||{}).__users[userPermModal.userId]).length} custom permission override(s)
+              </div>
+            )}
           </div>
         </Modal>
       )}
