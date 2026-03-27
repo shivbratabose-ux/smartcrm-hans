@@ -22,6 +22,7 @@ const TABLE_MAP = {
   events:      "events",
   notes:       "notes",
   files:       "files",
+  users:       "users",
 };
 
 // ── Field mapping: JS camelCase ↔ DB snake_case ──

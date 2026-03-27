@@ -3,6 +3,8 @@ import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shiel
 import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS, hashPassword, DEMO_PW_HASH } from '../data/constants';
 import { uid, fmt, today } from '../utils/helpers';
 import { Modal, Confirm } from './shared';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { insertRecord, updateRecord } from '../lib/db';
 
 function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPasswords,setUserPasswords,customPermissions,setCustomPermissions}) {
   const [tab,setTab]=useState("teams");
@@ -96,8 +98,10 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
     if(modal.mode==="adduser"){
       const f=modal.form;
       const newId=`u${uid()}`;
+      const newUser={...f,id:newId,password:undefined,confirmPassword:undefined};
       // Create user
-      setOrgUsers(p=>[...p,{...f,id:newId,password:undefined,confirmPassword:undefined}]);
+      setOrgUsers(p=>[...p,newUser]);
+      if(isSupabaseConfigured) insertRecord("users",newUser);
       // Set password — use provided password or default
       if(f.password && f.password.length>=8){
         setUserPasswords(prev=>({...prev,[newId]:hashPassword(f.password)}));
@@ -106,10 +110,17 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
       }
     } else {
       setOrgUsers(p=>p.map(u=>u.id===form.id?{...form}:u));
+      if(isSupabaseConfigured) updateRecord("users",form.id,form);
     }
     setModal(null);
   };
-  const deactivate=id=>setOrgUsers(p=>p.map(u=>u.id===id?{...u,active:!u.active}:u));
+  const deactivate=id=>{
+    setOrgUsers(p=>p.map(u=>u.id===id?{...u,active:!u.active}:u));
+    if(isSupabaseConfigured){
+      const u=orgUsers.find(x=>x.id===id);
+      if(u) updateRecord("users",id,{active:!u.active});
+    }
+  };
 
   const openAddTeam=()=>{setForm({name:"",productId:"",lead:"u1",members:[],desc:""});setModal({mode:"addteam"});};
   const saveTeam=()=>{
