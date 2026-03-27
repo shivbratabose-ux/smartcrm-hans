@@ -4,7 +4,7 @@ import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, I
 import { uid, fmt, today } from '../utils/helpers';
 import { Modal, Confirm } from './shared';
 
-function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPasswords,setUserPasswords}) {
+function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPasswords,setUserPasswords,customPermissions,setCustomPermissions}) {
   const [tab,setTab]=useState("teams");
   const [modal,setModal]=useState(null);
   const [form,setForm]=useState({});
@@ -17,6 +17,16 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
   const [pwSuccess,setPwSuccess]=useState("");
   const [generatedPw,setGeneratedPw]=useState("");
   const [copied,setCopied]=useState(false);
+  // Editable permissions state
+  const [editingPerms,setEditingPerms]=useState(false);
+  const [permEdits,setPermEdits]=useState(()=>{
+    // Merge default PERMISSIONS with any custom overrides
+    const merged={};
+    ROLES_HIERARCHY.forEach(r=>{
+      merged[r.id]={...(PERMISSIONS[r.id]||{}),...((customPermissions||{})[r.id]||{})};
+    });
+    return merged;
+  });
 
   // Generate random password
   const generatePassword=()=>{
@@ -225,41 +235,76 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
 
       {tab==="permissions"&&(
         <div>
-          <div className="card" style={{marginBottom:16,padding:"12px 16px",background:"var(--amber-bg)",border:"1px solid var(--amber)",fontSize:13,color:"var(--amber-t)"}}>
-            Permissions are role-based. Assign a role to a user to control their access. RW = Read & Write &middot; R = Read only &middot; -- = No access.
+          <div className="card" style={{marginBottom:16,padding:"12px 16px",background:editingPerms?"#EFF6FF":"var(--amber-bg)",border:`1px solid ${editingPerms?"#3B82F6":"var(--amber)"}`,fontSize:13,color:editingPerms?"#1D4ED8":"var(--amber-t)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>{editingPerms?"Click cells to cycle: RW → R → — (no access). Click Save when done.":"Permissions are role-based. Assign a role to a user to control their access. RW = Read & Write · R = Read only · — = No access."}</span>
+            {canManage&&(
+              <div style={{display:"flex",gap:6}}>
+                {editingPerms ? (
+                  <>
+                    <button className="btn btn-sm btn-sec" onClick={()=>{setEditingPerms(false);const merged={};ROLES_HIERARCHY.forEach(r=>{merged[r.id]={...(PERMISSIONS[r.id]||{}),...((customPermissions||{})[r.id]||{})};});setPermEdits(merged);}}>Cancel</button>
+                    <button className="btn btn-sm btn-primary" onClick={()=>{if(setCustomPermissions){const overrides={};ROLES_HIERARCHY.forEach(r=>{const defaults=PERMISSIONS[r.id]||{};const edits=permEdits[r.id]||{};const diff={};PERM_MODULES.forEach(m=>{if(edits[m]!==defaults[m]) diff[m]=edits[m];});if(Object.keys(diff).length>0) overrides[r.id]=diff;});setCustomPermissions(overrides);}setEditingPerms(false);}}><Check size={13}/>Save Permissions</button>
+                  </>
+                ) : (
+                  <button className="btn btn-sm" style={{background:"#1B6B5A",color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",fontSize:12,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}} onClick={()=>setEditingPerms(true)}><Edit2 size={12}/>Edit Permissions</button>
+                )}
+              </div>
+            )}
           </div>
           <div className="rpt-card" style={{padding:0,overflow:"hidden"}}>
             <table className="perm-table">
               <thead>
                 <tr>
-                  <th style={{textAlign:"left",width:160}}>Role</th>
+                  <th style={{textAlign:"left",width:180}}>Role</th>
                   {PERM_MODULES.map(m=><th key={m}>{PERM_LABEL[m]}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {ROLES_HIERARCHY.map(r=>{
-                  const p=PERMISSIONS[r.id];
-                  if(!p) return null;
+                  const p=editingPerms ? (permEdits[r.id]||{}) : {...(PERMISSIONS[r.id]||{}),...((customPermissions||{})[r.id]||{})};
+                  if(!p&&!editingPerms) return null;
                   return (
-                    <tr key={r.id}>
+                    <tr key={r.id} style={{background:editingPerms?"#FAFBFF":"transparent"}}>
                       <td style={{textAlign:"left"}}>
                         <span className="user-role-badge" style={{background:r.color+"18",color:r.color}}>{r.name}</span>
                         <div style={{fontSize:10.5,color:"var(--text3)",marginTop:2}}>{r.desc}</div>
                       </td>
-                      {PERM_MODULES.map(m=>(
-                        <td key={m}>
-                          {p[m]==="rw"&&<span className="perm-rw">RW</span>}
-                          {p[m]==="r"&&<span className="perm-r">R</span>}
-                          {p[m]===true&&<span className="perm-rw">&check;</span>}
-                          {(!p[m]||p[m]===false)&&<span className="perm-no">-</span>}
-                        </td>
-                      ))}
+                      {PERM_MODULES.map(m=>{
+                        const val=p[m];
+                        const cycle=()=>{
+                          if(!editingPerms) return;
+                          // Cycle: rw → r → false → rw (for reports: true → false → true)
+                          let next;
+                          if(m==="reports") next = val===true ? false : true;
+                          else if(val==="rw") next="r";
+                          else if(val==="r") next=false;
+                          else next="rw";
+                          setPermEdits(prev=>({...prev,[r.id]:{...(prev[r.id]||{}),[m]:next}}));
+                        };
+                        const cellStyle=editingPerms?{cursor:"pointer",transition:"all 0.15s",borderRadius:4,userSelect:"none"}:{};
+                        const hoverBg=editingPerms?"#E0E7FF":"transparent";
+                        return (
+                          <td key={m} onClick={cycle}
+                            style={cellStyle}
+                            onMouseEnter={e=>{if(editingPerms)e.currentTarget.style.background=hoverBg;}}
+                            onMouseLeave={e=>{if(editingPerms)e.currentTarget.style.background="transparent";}}>
+                            {val==="rw"&&<span className="perm-rw" style={editingPerms?{cursor:"pointer"}:{}}>RW</span>}
+                            {val==="r"&&<span className="perm-r" style={editingPerms?{cursor:"pointer"}:{}}>R</span>}
+                            {val===true&&<span className="perm-rw" style={editingPerms?{cursor:"pointer"}:{}}>&check;</span>}
+                            {(!val||val===false)&&<span className="perm-no" style={editingPerms?{cursor:"pointer",color:"#DC2626"}:{}}>—</span>}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          {editingPerms&&(
+            <div style={{marginTop:12,padding:"10px 14px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,fontSize:12,color:"#166534"}}>
+              <strong>Tip:</strong> Click any cell to change permission level. Changes apply to all users with that role. Admin role always retains full access.
+            </div>
+          )}
         </div>
       )}
 

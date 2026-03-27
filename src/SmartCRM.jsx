@@ -67,6 +67,7 @@ export default function SmartCRM() {
   const [quotes,setQuotes]           = useState(saved?.quotes || INIT_QUOTES);
   const [commLogs,setCommLogs]       = useState(saved?.commLogs || INIT_COMM_LOGS);
   const [events,setEvents]           = useState(saved?.events || INIT_EVENTS);
+  const [customPermissions,setCustomPermissions] = useState(saved?.customPermissions || {});
 
   // ── Supabase: Load data from cloud on mount ──
   const [dbReady, setDbReady] = useState(!isSupabaseConfigured);
@@ -144,9 +145,9 @@ export default function SmartCRM() {
   useEffect(() => {
     if (isSupabaseConfigured) return; // skip localStorage when using Supabase
     saveState({ accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
-      leads, callReports, contracts, collections, targets, quotes, commLogs, events });
+      leads, callReports, contracts, collections, targets, quotes, commLogs, events, customPermissions });
   }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
-    leads, callReports, contracts, collections, targets, quotes, commLogs, events]);
+    leads, callReports, contracts, collections, targets, quotes, commLogs, events, customPermissions]);
 
   const addNote = note => setNotes(p=>[...p,note]);
   const addFile = file => setFiles(p=>[...p,file]);
@@ -270,7 +271,7 @@ export default function SmartCRM() {
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers}/>}
-            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/>}
+            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
           </div>
         </div>
       </div>
