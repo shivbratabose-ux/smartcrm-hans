@@ -46,7 +46,8 @@ const ageingColor = (a) => ({
   "Current":"#22C55E","0-30":"#F59E0B","30-60":"#F97316","60-90":"#EF4444","90-120":"#DC2626","120-180":"#991B1B","180+":"#450A0A"
 }[a] || "#94A3B8");
 
-function Collections({ collections, setCollections, accounts, contracts, currentUser }) {
+function Collections({ collections, setCollections, accounts, contracts, currentUser, orgUsers }) {
+  const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search, setSearch] = useState("");
   const [statusF, setStatusF] = useState("All");
   const [modal, setModal] = useState(null);
@@ -233,7 +234,7 @@ function Collections({ collections, setCollections, accounts, contracts, current
             </div>
             <div className="form-group"><label>Owner</label>
               <select value={form.owner} onChange={e => setForm(f => ({...f, owner: e.target.value}))}>
-                {TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </div>
           </div>

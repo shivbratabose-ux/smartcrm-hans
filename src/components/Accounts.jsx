@@ -21,7 +21,9 @@ const infoRow = (label, value) => (
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNT PROFILE — Full Customer Profile Sheet
 // ═══════════════════════════════════════════════════════════════════
-function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets, contracts, collections, notes, files, onAddNote, onAddFile, currentUser, allAccounts, leads=[]}) {
+function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets, contracts, collections, notes, files, onAddNote, onAddFile, currentUser, allAccounts, leads=[], orgUsers}) {
+  const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+  const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [tab, setTab] = useState("overview");
   const accOpps = opps.filter(o => o.accountId === a.id);
   const accActs = [...activities].filter(act => act.accountId === a.id).sort((x, y) => (y.date||"").localeCompare(x.date||""));
@@ -105,7 +107,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                   {a.accountNo && <span style={{fontSize:11,fontFamily:"'Courier New',monospace",color:"var(--text3)",background:"var(--s2)",padding:"2px 8px",borderRadius:4}}>{a.accountNo}</span>}
                 </div>
                 <div style={{fontSize:12,color:"var(--text3)",marginTop:2}}>
-                  {a.city ? `${a.city}, ` : ""}{a.country} · {a.segment} · Owner: {TEAM_MAP[a.owner]?.name || a.owner}
+                  {a.city ? `${a.city}, ` : ""}{a.country} · {a.segment} · Owner: {_teamMap[a.owner]?.name || a.owner}
                   {a.website && <> · <span style={{color:"var(--brand)"}}>{a.website}</span></>}
                 </div>
               </div>
@@ -443,7 +445,9 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNTS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[]}) {
+function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers}) {
+  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+  const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
   const [typeF, setTypeF] = useState("All");
   const [countryF, setCountryF] = useState("All");
   const [statusF, setStatusF] = useState("All");
@@ -552,7 +556,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, not
     {label:"City",accessor:a=>a.city},{label:"Status",accessor:a=>a.status},{label:"Segment",accessor:a=>a.segment},
     {label:"ARR (Cr)",accessor:a=>a.arrRevenue},{label:"Potential (Cr)",accessor:a=>a.potential},
     {label:"Products",accessor:a=>(a.products||[]).map(p=>PROD_MAP[p]?.name||p).join(", ")},
-    {label:"Owner",accessor:a=>TEAM_MAP[a.owner]?.name||a.owner},
+    {label:"Owner",accessor:a=>teamMap[a.owner]?.name||a.owner},
   ];
 
   return (
@@ -606,7 +610,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, not
             <select className="filter-select" value={typeF} onChange={e => setTypeF(e.target.value)}><option>All</option>{CUST_TYPES.map(t => <option key={t}>{t}</option>)}</select>
             <select className="filter-select" value={countryF} onChange={e => setCountryF(e.target.value)}><option>All</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select>
             <select className="filter-select" value={statusF} onChange={e => setStatusF(e.target.value)}><option>All</option><option>Active</option><option>Prospect</option></select>
-            <select className="filter-select" value={ownerF} onChange={e => setOwnerF(e.target.value)}><option value="All">All Owners</option>{TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
+            <select className="filter-select" value={ownerF} onChange={e => setOwnerF(e.target.value)}><option value="All">All Owners</option>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
           </div>
 
           <BulkActions count={bulk.count} onClear={bulk.clear}
@@ -731,7 +735,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, not
       </div>
 
       {/* Account Profile */}
-      {detail && <AccountProfile a={detail} onClose={() => setDetail(null)} onEdit={() => { openEdit(detail); setDetail(null); }} opps={opps} activities={activities} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} notes={notes} files={files} onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser} allAccounts={accounts} leads={leads}/>}
+      {detail && <AccountProfile a={detail} onClose={() => setDetail(null)} onEdit={() => { openEdit(detail); setDetail(null); }} opps={opps} activities={activities} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} notes={notes} files={files} onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser} allAccounts={accounts} leads={leads} orgUsers={orgUsers}/>}
 
       {/* Add / Edit Modal */}
       {modal && (
@@ -769,7 +773,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, not
           </div>
           <div className="form-row"><div className="form-group"><label>Status</label><select value={form.status} onChange={e => setForm(f => ({...f,status:e.target.value}))}><option>Active</option><option>Prospect</option><option>Inactive</option></select></div><div className="form-group"><label>Segment</label><select value={form.segment} onChange={e => setForm(f => ({...f,segment:e.target.value}))}>{["Enterprise","Mid-Market","SMB","Government","Association"].map(s => <option key={s}>{s}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>ARR (₹Cr)</label><input type="number" min="0" value={form.arrRevenue} onChange={e => setForm(f => ({...f,arrRevenue:+e.target.value}))}/><FormError error={formErrors.arrRevenue}/></div><div className="form-group"><label>Potential (₹Cr)</label><input type="number" min="0" value={form.potential} onChange={e => setForm(f => ({...f,potential:+e.target.value}))}/><FormError error={formErrors.potential}/></div></div>
-          <div className="form-row"><div className="form-group"><label>Website</label><input value={form.website} onChange={e => setForm(f => ({...f,website:e.target.value}))} placeholder="website.com"/></div><div className="form-group"><label>Owner</label><select value={form.owner} onChange={e => setForm(f => ({...f,owner:e.target.value}))}>{TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
+          <div className="form-row"><div className="form-group"><label>Website</label><input value={form.website} onChange={e => setForm(f => ({...f,website:e.target.value}))} placeholder="website.com"/></div><div className="form-group"><label>Owner</label><select value={form.owner} onChange={e => setForm(f => ({...f,owner:e.target.value}))}>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
           <div className="form-group"><label>Products</label><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>{PRODUCTS.map(p => <button key={p.id} className="btn btn-xs" style={{background:form.products.includes(p.id)?p.color:"var(--s3)",color:form.products.includes(p.id)?"white":"var(--text2)",border:"none",cursor:"pointer"}} onClick={() => toggleProd(p.id)}>{p.name}</button>)}</div></div>
         </Modal>
       )}

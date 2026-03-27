@@ -134,7 +134,8 @@ const activityItem = (icon, title, desc, time) => (
 );
 
 /* ── Lead Conversion Modal ── */
-function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert }) {
+function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUsers }) {
+  const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const [form, setForm] = useState({
     title: `${PROD_MAP[lead.product]?.name || lead.product} – ${lead.company}`,
     accountId: lead.accountId || "",
@@ -244,7 +245,7 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert }) {
           <div className="form-row">
             <div className="form-group"><label>Owner (Primary)</label>
               <select value={form.owner} onChange={e => setForm(f => ({...f, owner: e.target.value}))}>
-                {TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {_team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </div>
             <div className="form-group"><label>Forecast Category</label>
@@ -273,12 +274,14 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert }) {
   );
 }
 
-function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit }) {
+function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit, orgUsers }) {
+  const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+  const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [showConvertModal, setShowConvertModal] = useState(false);
   const linkedAccount = lead.accountId ? accounts.find(a => a.id === lead.accountId) : null;
   const stageInfo = LEAD_STAGE_MAP[lead.stage];
   const productInfo = PROD_MAP[lead.product];
-  const assignee = TEAM_MAP[lead.assignedTo];
+  const assignee = _teamMap[lead.assignedTo];
   const winProb = Math.min(Math.round(lead.score * 0.85 + 5), 99);
   const dealValue = (lead.score * 0.5).toFixed(2);
   const pipelineValue = (dealValue * winProb / 100).toFixed(2);
@@ -290,7 +293,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit 
     ...realContacts.map(c => ({ name: c.name, designation: c.designation || c.role, department: c.department || "—", email: c.email, phone: c.phone })),
   ];
   if (linkedAccount && !realContacts.length) {
-    displayContacts.push({ name: linkedAccount.owner ? (TEAM_MAP[linkedAccount.owner]?.name || "Account Manager") : "Account Manager", designation: "Account Manager", department: "Management", email: "", phone: "" });
+    displayContacts.push({ name: linkedAccount.owner ? (_teamMap[linkedAccount.owner]?.name || "Account Manager") : "Account Manager", designation: "Account Manager", department: "Management", email: "", phone: "" });
   }
 
   // Mock activity timeline
@@ -514,7 +517,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit 
                   <User size={15} style={{color:"var(--brand)"}}/> Sales Team
                 </div>
                 {[lead.assignedTo, ...(linkedAccount?.owner && linkedAccount.owner !== lead.assignedTo ? [linkedAccount.owner] : [])].map((uid, i) => {
-                  const member = TEAM_MAP[uid];
+                  const member = _teamMap[uid];
                   if (!member) return null;
                   return (
                     <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom: i === 0 ? "1px solid var(--border)" : "none"}}>
@@ -581,6 +584,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit 
             contacts={contacts || []}
             onConvert={(ld, data) => { onConvertToOpp(ld, data); onClose(); }}
             onClose={() => setShowConvertModal(false)}
+            orgUsers={orgUsers}
           />
         )}
       </div>
@@ -591,7 +595,9 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit 
 // ═══════════════════════════════════════════════════════════════════
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts }) {
+function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, orgUsers }) {
+  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+  const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
   const [search, setSearch] = useState("");
   const [productF, setProductF] = useState("All");
   const [stageF, setStageF] = useState("All");
@@ -830,7 +836,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             </select>
             <select className="filter-select" value={ownerF} onChange={e => setOwnerF(e.target.value)}>
               <option value="All">All Owners</option>
-              {TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </div>
 
@@ -1151,7 +1157,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             <div className="form-group"><label>Lead Stage</label><select value={form.stage} onChange={e => setForm(f => ({...f, stage:e.target.value}))}>{LEAD_STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
           </div>
           <div className="form-row">
-            <div className="form-group"><label>Assigned To</label><select value={form.assignedTo} onChange={e => setForm(f => ({...f, assignedTo:e.target.value}))}>{TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+            <div className="form-group"><label>Assigned To</label><select value={form.assignedTo} onChange={e => setForm(f => ({...f, assignedTo:e.target.value}))}>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
           </div>
           <div className="form-row">
             <div className="form-group">
@@ -1198,6 +1204,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           contacts={allContacts || []}
           onConvertToOpp={handleConvert}
           onEdit={(l) => { setDetail(null); openEdit(l); }}
+          orgUsers={orgUsers}
         />
       )}
     </div>

@@ -10,7 +10,8 @@ const TYPE_ICON={"Call":<Phone size={12}/>,"Meeting":<Users size={12}/>,"Demo":<
 
 const STATUS_COL={"Scheduled":"#3B82F6","Completed":"#22C55E","Cancelled":"#94A3B8","Rescheduled":"#F59E0B","No Show":"#EF4444"};
 
-function CalendarView({events,setEvents,accounts,contacts,opps,currentUser}) {
+function CalendarView({events,setEvents,accounts,contacts,opps,currentUser,orgUsers}) {
+  const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [viewDate,setViewDate]=useState(new Date(today));
   const [view,setView]=useState("week");
   const [modal,setModal]=useState(null);
@@ -203,7 +204,7 @@ function CalendarView({events,setEvents,accounts,contacts,opps,currentUser}) {
           <div className="form-row three">
             <div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{EVENT_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
             <div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{EVENT_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
-            <div className="form-group"><label>Owner</label><select value={form.owner} onChange={e=>setForm(f=>({...f,owner:e.target.value}))}>{TEAM.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+            <div className="form-group"><label>Owner</label><select value={form.owner} onChange={e=>setForm(f=>({...f,owner:e.target.value}))}>{team.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
           </div>
           <div className="form-row three">
             <div className="form-group"><label>Date *</label><input type="date" value={form.date} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setFormErrors(e=>({...e,date:undefined}));}} style={formErrors.date?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.date}/></div>

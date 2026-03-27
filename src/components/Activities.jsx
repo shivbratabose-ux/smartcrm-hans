@@ -15,7 +15,9 @@ const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:
 const TYPE_COL={Call:"var(--brand)",Email:"var(--blue)",Meeting:"var(--purple)",Demo:"var(--orange)",WhatsApp:"var(--green)",LinkedIn:"#0077B5","Site Visit":"var(--amber)",Presentation:"var(--teal)",Conference:"var(--red-t)"};
 const TYPE_ICON={Call:<PhoneCall size={15}/>,Email:<Mail size={15}/>,Meeting:<CalendarDays size={15}/>,Demo:<Zap size={15}/>,WhatsApp:<MessageSquare size={15}/>,LinkedIn:<Globe size={15}/>,"Site Visit":<MapPin size={15}/>,Presentation:<BookOpen size={15}/>,Conference:<Users size={15}/>};
 
-function Activities({activities,setActivities,accounts,contacts,opps,currentUser,files,onAddFile}) {
+function Activities({activities,setActivities,accounts,contacts,opps,currentUser,files,onAddFile,orgUsers}) {
+  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+  const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
   const [tabS,setTabS]=useState("All");
   const [typeF,setTypeF]=useState("All");
   const [ownerF,setOwnerF]=useState("All");
@@ -186,7 +188,7 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
         </div>
         <div className="filter-search" style={{maxWidth:220}}><Search size={14} style={{color:"var(--text3)",flexShrink:0}}/><input placeholder="Search activities…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
         <select className="filter-select" value={typeF} onChange={e=>setTypeF(e.target.value)}><option>All</option>{ACT_TYPES.map(t=><option key={t}>{t}</option>)}</select>
-        <select className="filter-select" value={ownerF} onChange={e=>setOwnerF(e.target.value)}><option value="All">All Owners</option>{TEAM.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>
+        <select className="filter-select" value={ownerF} onChange={e=>setOwnerF(e.target.value)}><option value="All">All Owners</option>{team.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>
         <div style={{display:"flex",marginLeft:"auto",background:"var(--s2)",borderRadius:8,padding:2}}>
           <button onClick={()=>setViewMode("card")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:viewMode==="card"?"white":"transparent",color:viewMode==="card"?"var(--brand)":"var(--text3)",boxShadow:viewMode==="card"?"0 1px 3px rgba(0,0,0,0.1)":"none"}}><LayoutGrid size={13}/>Card View</button>
           <button onClick={()=>setViewMode("table")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:viewMode==="table"?"white":"transparent",color:viewMode==="table"?"var(--brand)":"var(--text3)",boxShadow:viewMode==="table"?"0 1px 3px rgba(0,0,0,0.1)":"none"}}><List size={13}/>Table View</button>
@@ -250,7 +252,7 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
               {pg.paged.map(a=>{
                 const acc=accounts.find(x=>x.id===a.accountId);
                 const con=contacts.find(x=>x.id===a.contactId);
-                const owner=TEAM_MAP[a.owner];
+                const owner=teamMap[a.owner];
                 const oc=outcomeStyle(a.outcome);
                 const tc=typeBadgeColor(a.type);
                 return (
@@ -344,7 +346,7 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
               <div className="form-row three">
                 <div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{ACT_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
                 <div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{ACT_STATUS.map(s=><option key={s}>{s}</option>)}</select></div>
-                <div className="form-group"><label>Owner</label><select value={form.owner} onChange={e=>setForm(f=>({...f,owner:e.target.value}))}>{TEAM.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+                <div className="form-group"><label>Owner</label><select value={form.owner} onChange={e=>setForm(f=>({...f,owner:e.target.value}))}>{team.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
               </div>
               <div className="form-row three">
                 <div className="form-group"><label>Date *</label><input type="date" value={form.date} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setFormErrors(e=>({...e,date:undefined}));}} style={formErrors.date?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.date}/></div>

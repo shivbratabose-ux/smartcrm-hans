@@ -46,7 +46,8 @@ const timelineData = [
   { month: "Dec", contracts: 15 },
 ];
 
-function Contracts({ contracts, setContracts, accounts, opps, currentUser }) {
+function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers }) {
+  const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search, setSearch] = useState("");
   const [statusF, setStatusF] = useState("All");
   const [modal, setModal] = useState(null);
@@ -467,7 +468,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser }) {
             </div>
             <div className="form-group"><label>Owner</label>
               <select value={form.owner} onChange={e => setForm(f => ({...f, owner: e.target.value}))}>
-                {TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </div>
           </div>

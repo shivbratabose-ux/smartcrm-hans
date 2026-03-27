@@ -347,23 +347,23 @@ export default function SmartCRM() {
           <Header page={page} accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers}/>
           <div className="content" id="main-content" role="main">
             {page==="dashboard"  && <Dashboard accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} setPage={setPage}/>}
-            {page==="leads"      && <Leads leads={leads} setLeads={setLeads} accounts={accounts} contacts={contacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp}/>}
-            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={opps} activities={activities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} leads={leads}/>}
+            {page==="leads"      && <Leads leads={leads} setLeads={setLeads} accounts={accounts} contacts={contacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers}/>}
+            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={opps} activities={activities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} leads={leads} orgUsers={orgUsers}/>}
             {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={opps} activities={activities}/>}
-            {page==="pipeline"   && <Pipeline opps={opps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={setActivities} callReports={callReports}/>}
-            {page==="activities" && <Activities activities={activities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} files={files} onAddFile={addFile}/>}
-            {page==="callreports"&& <CallReports callReports={callReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
-            {page==="tickets"    && <Tickets tickets={tickets} setTickets={setTickets} accounts={accounts}/>}
-            {page==="contracts"  && <Contracts contracts={contracts} setContracts={setContracts} accounts={accounts} opps={opps} currentUser={currentUser}/>}
-            {page==="collections"&& <Collections collections={collections} setCollections={setCollections} accounts={accounts} contracts={contracts} currentUser={currentUser}/>}
-            {page==="quotations" && <Quotations quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
-            {page==="calendar"   && <CalendarView events={events} setEvents={setEvents} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
+            {page==="pipeline"   && <Pipeline opps={opps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={setActivities} callReports={callReports} orgUsers={orgUsers}/>}
+            {page==="activities" && <Activities activities={activities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers}/>}
+            {page==="callreports"&& <CallReports callReports={callReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} orgUsers={orgUsers}/>}
+            {page==="tickets"    && <Tickets tickets={tickets} setTickets={setTickets} accounts={accounts} orgUsers={orgUsers}/>}
+            {page==="contracts"  && <Contracts contracts={contracts} setContracts={setContracts} accounts={accounts} opps={opps} currentUser={currentUser} orgUsers={orgUsers}/>}
+            {page==="collections"&& <Collections collections={collections} setCollections={setCollections} accounts={accounts} contracts={contracts} currentUser={currentUser} orgUsers={orgUsers}/>}
+            {page==="quotations" && <Quotations quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} orgUsers={orgUsers}/>}
+            {page==="calendar"   && <CalendarView events={events} setEvents={setEvents} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="communications"&& <CommLog commLogs={commLogs} setCommLogs={setCommLogs} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
             {page==="targets"    && <Targets targets={targets} setTargets={setTargets} currentUser={currentUser}/>}
             {page==="reports"    && <Reports accounts={accounts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} contacts={contacts} contracts={contracts} quotes={quotes} currentUser={currentUser}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
-            {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers}/>}
+            {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
             {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
             {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/>}
           </div>

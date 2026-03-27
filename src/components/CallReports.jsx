@@ -41,7 +41,8 @@ const CSV_COLS = [
   { label: "Duration (min)", accessor: r => r.duration },
 ];
 
-function CallReports({ callReports, setCallReports, accounts, contacts, opps, currentUser }) {
+function CallReports({ callReports, setCallReports, accounts, contacts, opps, currentUser, orgUsers }) {
+  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const [search, setSearch] = useState("");
   const [typeF, setTypeF] = useState("All");
   const [tabS, setTabS] = useState("All");
@@ -220,7 +221,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
           <div className="form-row">
             <div className="form-group"><label>Salesperson</label>
               <select value={form.marketingPerson} onChange={e => setForm(f => ({...f, marketingPerson: e.target.value}))}>
-                {TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </div>
             <div className="form-group"><label>Lead Stage</label>

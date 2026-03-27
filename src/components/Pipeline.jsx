@@ -428,7 +428,8 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
 /* ═══════════════════════════════════════════════════════
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
-function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports }) {
+function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, orgUsers }) {
+  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const [view, setView] = useState("kanban");
   const [prodF, setProdF] = useState("All");
   const [ownerF, setOwnerF] = useState("All");
@@ -698,7 +699,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
         </select>
         <select className="filter-select" value={ownerF} onChange={e => setOwnerF(e.target.value)}>
           <option value="All">All Owners</option>
-          {TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
         <select className="filter-select" value={regionF} onChange={e => setRegionF(e.target.value)}>
           <option value="All">All Regions</option>
@@ -1093,7 +1094,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
             <div className="form-group">
               <label>Owner</label>
               <select value={form.owner} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))}>
-                {TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </div>
             <div className="form-group">
