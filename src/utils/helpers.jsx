@@ -105,15 +105,15 @@ export class ErrorBoundary extends Component {
   }
 }
 
-export const canAccess = (userId, module) => {
-  const u = INIT_USERS.find(x=>x.id===userId);
+export const canAccess = (userId, module, orgUsers) => {
+  const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
   if(!u) return false;
   const perm = PERMISSIONS[u.role];
   if(!perm) return false;
   return perm[module] && perm[module]!==false;
 };
-export const canWrite = (userId, module) => {
-  const u = INIT_USERS.find(x=>x.id===userId);
+export const canWrite = (userId, module, orgUsers) => {
+  const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
   if(!u) return false;
   return PERMISSIONS[u.role]?.[module]==="rw";
 };

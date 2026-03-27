@@ -13,7 +13,7 @@ import { loadState, saveState, ErrorBoundary, today } from "./utils/helpers";
 import { CSS } from "./styles";
 
 // Supabase integration
-import { isSupabaseConfigured } from "./lib/supabase";
+import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase } from "./lib/db";
 
 // Components
@@ -91,6 +91,18 @@ export default function SmartCRM() {
         if (data.files?.length)       setFiles(data.files);
       }
       setDbReady(true);
+    });
+    // Also load users from Supabase to get latest roles/profiles
+    supabase.from("users").select("*").then(({data: dbUsers}) => {
+      if (dbUsers?.length) {
+        const mapped = dbUsers.map(u => ({
+          id: u.id, name: u.name, email: u.email, initials: u.initials,
+          role: u.role, lob: u.lob, country: u.country, active: u.active,
+          branchId: u.branch_id, deptId: u.dept_id, joinDate: u.join_date,
+          authUserId: u.auth_user_id,
+        }));
+        setOrgUsers(mapped);
+      }
     });
   }, []);
 
@@ -236,7 +248,7 @@ export default function SmartCRM() {
       <style dangerouslySetInnerHTML={{__html:CSS}}/>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={tickets} leads={leads} collections={collections} currentUser={currentUser} onLogout={logout}/>
+        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={tickets} leads={leads} collections={collections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers}/>
         <div className="main">
           <Header page={page} accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} setPage={setPage} currentUser={currentUser}/>
           <div className="content" id="main-content" role="main">

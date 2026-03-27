@@ -6,20 +6,21 @@ import {
 } from "lucide-react";
 import { TEAM_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 
-const canAccess = (userId, module) => {
-  const u = INIT_USERS.find(x=>x.id===userId);
+const canAccess = (userId, module, orgUsers) => {
+  const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
   if(!u) return false;
   const perm = PERMISSIONS[u.role];
   if(!perm) return false;
   return perm[module] && perm[module]!==false;
 };
 
-function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,currentUser,onLogout}) {
+function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,currentUser,onLogout,orgUsers}) {
   const openTix=tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const activeLeads=leads?.filter(l=>l.stage!=="NA").length||0;
   const overdueCollections=collections?.filter(c=>c.pendingAmount>0&&c.status==="Overdue").length||0;
-  const user=TEAM_MAP[currentUser];
-  const userRole=INIT_USERS.find(u=>u.id===currentUser)?.role||"viewer";
+  const dbUser = (orgUsers||[]).find(u=>u.id===currentUser);
+  const user = dbUser || TEAM_MAP[currentUser];
+  const userRole = dbUser?.role || INIT_USERS.find(u=>u.id===currentUser)?.role || "viewer";
 
   const NAV=[
     {section:"Overview",items:[{id:"dashboard",label:"Dashboard",icon:<LayoutDashboard size={17}/>}]},
@@ -44,8 +45,8 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
       {id:"reports",label:"Reports",icon:<BarChart3 size={17}/>},
     ]},
     {section:"Admin",items:[
-      ...(canAccess(currentUser,"org")?[{id:"org",label:"Organisation",icon:<Layers size={17}/>}]:[]),
-      ...(canAccess(currentUser,"team")?[{id:"team",label:"Team & Users",icon:<Users size={17}/>}]:[]),
+      ...(canAccess(currentUser,"org",orgUsers)?[{id:"org",label:"Organisation",icon:<Layers size={17}/>}]:[]),
+      ...(canAccess(currentUser,"team",orgUsers)?[{id:"team",label:"Team & Users",icon:<Users size={17}/>}]:[]),
       {id:"bulkupload",label:"Bulk Upload",icon:<Upload size={17}/>},
       {id:"masters",label:"Masters",icon:<SlidersHorizontal size={17}/>},
     ]},

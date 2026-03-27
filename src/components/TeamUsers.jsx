@@ -110,7 +110,7 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
     setForm(f=>({...f,members:mm.includes(id)?mm.filter(x=>x!==id):[...mm,id]}));
   };
 
-  const currentUserRole=INIT_USERS.find(u=>u.id===currentUser)?.role||orgUsers.find(u=>u.id===currentUser)?.role||"viewer";
+  const currentUserRole=orgUsers.find(u=>u.id===currentUser)?.role||INIT_USERS.find(u=>u.id===currentUser)?.role||"viewer";
   const canManage=["admin","md","director","line_mgr"].includes(currentUserRole);
 
   const PERM_MODULES=["accounts","contacts","pipeline","activities","tickets","reports","masters","org","team"];
