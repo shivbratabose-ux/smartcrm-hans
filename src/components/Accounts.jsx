@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
-import { Plus, Search, Edit2, Trash2, Check, TrendingUp, Activity, Download, ArrowUpDown, ArrowUp, ArrowDown, Users, Phone, Mail, FileText, Calendar, AlertTriangle, Shield, Globe, Building2, Target, DollarSign, Package, Clock, Star, BarChart3, Layers, ExternalLink } from "lucide-react";
+import { useState, useMemo, useCallback } from "react";
+import { Plus, Search, Edit2, Trash2, Check, TrendingUp, Activity, Download, ArrowUpDown, ArrowUp, ArrowDown, Users, Phone, Mail, FileText, Calendar, AlertTriangle, Shield, Globe, Building2, Target, DollarSign, Package, Clock, Star, BarChart3, Layers, ExternalLink, X } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LEVELS } from '../data/constants';
+import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LEVELS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_ACC } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, NotesThread, FilesList, Empty } from './shared';
@@ -21,7 +21,7 @@ const infoRow = (label, value) => (
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNT PROFILE — Full Customer Profile Sheet
 // ═══════════════════════════════════════════════════════════════════
-function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets, contracts, collections, notes, files, onAddNote, onAddFile, currentUser, allAccounts, leads=[], orgUsers}) {
+function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets, contracts, collections, notes, files, onAddNote, onAddFile, currentUser, allAccounts, leads=[], orgUsers, onLogCall}) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [tab, setTab] = useState("overview");
@@ -365,7 +365,13 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 
           {/* ── ACTIVITIES TAB ── */}
           {tab === "activities" && (
-            accActs.length === 0 ? <Empty icon={<Activity size={22}/>} title="No activities" sub="No activities logged for this account."/> :
+            <div>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                <button className="btn btn-xs btn-sec" onClick={() => onLogCall && onLogCall({ accountId: a.id })}>
+                  <Phone size={12} /> Log Call
+                </button>
+              </div>
+            {accActs.length === 0 ? <Empty icon={<Activity size={22}/>} title="No activities" sub="No activities logged for this account."/> :
             <div className="timeline">
               {accActs.map(act => {
                 const col = TYPE_COL[act.type] || "var(--text3)";
@@ -384,6 +390,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                   </div>
                 );
               })}
+            </div>}
             </div>
           )}
 
@@ -443,9 +450,198 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// LOG CALL MODAL — inline call logging for Accounts
+// ═══════════════════════════════════════════════════════════════════
+const nowTimeAcct = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+};
+
+function AcctLogCallModal({ onClose, onSave, accounts, contacts, opps, orgUsers, masters, prefill = {} }) {
+  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== "Inactive") : TEAM;
+  const callTypes = masters?.callTypes?.length ? masters.callTypes : CALL_TYPES;
+  const callSubjects = masters?.callSubjects?.length ? masters.callSubjects : CALL_OBJECTIVES;
+  const [form, setForm] = useState({
+    callType: "Telephone Call", objective: "General Followup", callDate: today, callTime: nowTimeAcct(),
+    duration: 15, accountId: "", leadId: "", oppId: "", contactIds: [], participantIds: [],
+    notes: "", outcome: "Completed", nextCallDate: "", nextStepDesc: "", createFollowup: false,
+    followupTitle: "", followupAssign: "", followupDue: "",
+    ...prefill,
+  });
+  const [errors, setErrors] = useState({});
+
+  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: undefined })); };
+
+  const filteredContacts = useMemo(() =>
+    form.accountId ? contacts.filter(c => c.accountId === form.accountId) : contacts,
+  [contacts, form.accountId]);
+  const filteredOpps = useMemo(() =>
+    form.accountId ? opps.filter(o => o.accountId === form.accountId) : opps,
+  [opps, form.accountId]);
+
+  const acctName = accounts.find(a => a.id === form.accountId)?.name || "";
+
+  const validate = () => {
+    const errs = {};
+    if (!form.callDate) errs.callDate = "Call date is required";
+    if (!form.notes?.trim()) errs.notes = "Discussion notes are required";
+    else if (form.notes.trim().length < 10) errs.notes = "Notes must be at least 10 characters";
+    return errs;
+  };
+
+  const submit = () => {
+    const errs = validate();
+    if (hasErrors(errs)) { setErrors(errs); return; }
+    onSave(form);
+    onClose();
+  };
+
+  return (
+    <Modal title="Log Call" onClose={onClose} lg footer={
+      <>
+        <button className="btn btn-sec" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={submit}><Check size={14} /> Save Call</button>
+      </>
+    }>
+      <div className="form-row">
+        <div className="form-group"><label>Call Type</label>
+          <select value={form.callType} onChange={e => set("callType", e.target.value)}>
+            {callTypes.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="form-group"><label>Call Subject</label>
+          <select value={form.objective} onChange={e => set("objective", e.target.value)}>
+            {callSubjects.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="form-row three">
+        <div className="form-group"><label>Date *</label>
+          <input type="date" value={form.callDate} onChange={e => set("callDate", e.target.value)}
+            style={errors.callDate ? { borderColor: "#DC2626" } : {}} />
+          <FormError error={errors.callDate} />
+        </div>
+        <div className="form-group"><label>Time</label>
+          <input type="time" value={form.callTime} onChange={e => set("callTime", e.target.value)} />
+        </div>
+        <div className="form-group"><label>Duration (min)</label>
+          <input type="number" min={0} step={5} value={form.duration}
+            onChange={e => set("duration", +e.target.value)} />
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group"><label>Company / Account</label>
+          <select value={form.accountId} onChange={e => set("accountId", e.target.value)}>
+            <option value="">-- Select --</option>
+            {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+        <div className="form-group"><label>Opportunity</label>
+          <select value={form.oppId} onChange={e => set("oppId", e.target.value)}>
+            <option value="">-- None --</option>
+            {filteredOpps.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group"><label>Outcome</label>
+          <select value={form.outcome} onChange={e => set("outcome", e.target.value)}>
+            {CALL_OUTCOMES.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Multi-select contacts */}
+      <div className="form-group" style={{ marginBottom: 12 }}>
+        <label>Contacts</label>
+        <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 4, background: "white" }}>
+          {filteredContacts.length === 0 && <div style={{ fontSize: 11, color: "var(--text3)", padding: 8, textAlign: "center" }}>No contacts</div>}
+          {filteredContacts.map(c => (
+            <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>
+              <input type="checkbox" checked={form.contactIds.includes(c.id)}
+                onChange={() => set("contactIds", form.contactIds.includes(c.id) ? form.contactIds.filter(x => x !== c.id) : [...form.contactIds, c.id])}
+                style={{ accentColor: "var(--brand)" }} />
+              {c.name}{c.designation ? ` (${c.designation})` : ""}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Multi-select our participants */}
+      <div className="form-group" style={{ marginBottom: 12 }}>
+        <label>Our Participants</label>
+        <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 4, background: "white" }}>
+          {team.map(u => (
+            <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>
+              <input type="checkbox" checked={form.participantIds.includes(u.id)}
+                onChange={() => set("participantIds", form.participantIds.includes(u.id) ? form.participantIds.filter(x => x !== u.id) : [...form.participantIds, u.id])}
+                style={{ accentColor: "var(--brand)" }} />
+              {u.name}{u.role ? ` (${u.role})` : ""}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label>Discussion Notes * <span style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>(min 10 chars)</span></label>
+        <textarea rows={3} value={form.notes}
+          onChange={e => set("notes", e.target.value)}
+          placeholder="Discussion summary, objections, decisions, and next steps..."
+          style={{ ...(errors.notes ? { borderColor: "#DC2626" } : {}), width: "100%", resize: "vertical" }} />
+        <FormError error={errors.notes} />
+      </div>
+
+      <div className="form-row">
+        <div className="form-group"><label>Next Step / Follow-up Date</label>
+          <input type="date" value={form.nextCallDate} onChange={e => set("nextCallDate", e.target.value)} />
+        </div>
+        <div className="form-group"><label>Next Step Description</label>
+          <input value={form.nextStepDesc} onChange={e => set("nextStepDesc", e.target.value)}
+            placeholder="e.g. Send proposal, Schedule demo..." />
+        </div>
+      </div>
+
+      {/* Create follow-up task */}
+      <div style={{
+        marginTop: 10, padding: 12, borderRadius: 8, border: "1px solid var(--border)",
+        background: "var(--s2)"
+      }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+          <input type="checkbox" checked={form.createFollowup}
+            onChange={e => set("createFollowup", e.target.checked)}
+            style={{ accentColor: "var(--brand)" }} />
+          Create Follow-up Task
+        </label>
+        {form.createFollowup && (
+          <div style={{ marginTop: 10 }}>
+            <div className="form-row">
+              <div className="form-group"><label>Task Title</label>
+                <input value={form.followupTitle || `Follow-up: ${acctName}`}
+                  onChange={e => set("followupTitle", e.target.value)}
+                  placeholder="Follow-up task title" />
+              </div>
+              <div className="form-group"><label>Assign To</label>
+                <select value={form.followupAssign} onChange={e => set("followupAssign", e.target.value)}>
+                  <option value="">-- Select --</option>
+                  {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="form-group"><label>Due Date</label>
+              <input type="date" value={form.followupDue || form.nextCallDate}
+                onChange={e => set("followupDue", e.target.value)} />
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // ACCOUNTS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers}) {
+function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, setActivities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers, callReports, setCallReports, masters}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
   const [typeF, setTypeF] = useState("All");
@@ -458,8 +654,52 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, not
   const [detail, setDetail] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [formErrors, setFormErrors] = useState({});
+  const [logCallPrefill, setLogCallPrefill] = useState(null);
   const [sortCol, setSortCol] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
+
+  /* ── Save call report handler ── */
+  const handleSaveCall = useCallback((callForm) => {
+    const clean = sanitizeObj(callForm);
+    const callReport = {
+      id: `cr${uid()}`,
+      company: accounts.find(a => a.id === clean.accountId)?.name || "",
+      marketingPerson: currentUser,
+      callType: clean.callType,
+      callDate: clean.callDate,
+      notes: clean.notes,
+      nextCallDate: clean.nextCallDate,
+      objective: clean.objective,
+      outcome: clean.outcome,
+      duration: clean.duration,
+      accountId: clean.accountId,
+      contactId: clean.contactIds?.[0] || "",
+      oppId: clean.oppId,
+      contactIds: clean.contactIds,
+      participantIds: clean.participantIds,
+      callTime: clean.callTime,
+      leadId: clean.leadId || "",
+      nextStepDesc: clean.nextStepDesc,
+    };
+    setCallReports(p => [...p, callReport]);
+
+    if (clean.createFollowup) {
+      const acctName = accounts.find(a => a.id === clean.accountId)?.name || "";
+      const followup = {
+        id: `act${uid()}`,
+        title: clean.followupTitle || `Follow-up: ${acctName}`,
+        type: "Call",
+        status: "Planned",
+        date: clean.followupDue || clean.nextCallDate || today,
+        accountId: clean.accountId,
+        contactId: clean.contactIds?.[0] || "",
+        oppId: clean.oppId,
+        owner: clean.followupAssign || currentUser,
+        notes: `Follow-up from call on ${clean.callDate}`,
+      };
+      setActivities(p => [...p, followup]);
+    }
+  }, [accounts, currentUser, setCallReports, setActivities]);
 
   const toggleSort = (col) => {
     if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -735,7 +975,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, not
       </div>
 
       {/* Account Profile */}
-      {detail && <AccountProfile a={detail} onClose={() => setDetail(null)} onEdit={() => { openEdit(detail); setDetail(null); }} opps={opps} activities={activities} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} notes={notes} files={files} onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser} allAccounts={accounts} leads={leads} orgUsers={orgUsers}/>}
+      {detail && <AccountProfile a={detail} onClose={() => setDetail(null)} onEdit={() => { openEdit(detail); setDetail(null); }} opps={opps} activities={activities} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} notes={notes} files={files} onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser} allAccounts={accounts} leads={leads} orgUsers={orgUsers} onLogCall={(prefill) => { setDetail(null); setLogCallPrefill(prefill); }}/>}
 
       {/* Add / Edit Modal */}
       {modal && (
@@ -778,6 +1018,16 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, not
         </Modal>
       )}
       {confirm && <Confirm title="Delete Account" msg="This will permanently remove the account and all linked contacts, deals, activities, tickets, and notes." onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>}
+
+      {/* ═════════ LOG CALL MODAL ═════════ */}
+      {logCallPrefill && (
+        <AcctLogCallModal
+          onClose={() => setLogCallPrefill(null)}
+          onSave={handleSaveCall}
+          accounts={accounts} contacts={contacts} opps={opps} orgUsers={orgUsers} masters={masters}
+          prefill={logCallPrefill}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS } from '../data/constants';
+import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
@@ -720,14 +720,15 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 // ═══════════════════════════════════════════════════════════════════
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, orgUsers, activities, setActivities, callReports, setCallReports }) {
+function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
 
-  // Auto-generate leadId for bulk-uploaded leads that are missing one
+  // Auto-generate leadId for bulk-uploaded leads that are missing one, and coerce score to number
   useEffect(() => {
-    const missing = leads.filter(l => !l.leadId);
-    if (missing.length === 0) return;
+    const needsLeadId = leads.some(l => !l.leadId);
+    const needsScoreFix = leads.some(l => typeof l.score === "string" || l.score === undefined || l.score === null);
+    if (!needsLeadId && !needsScoreFix) return;
 
     let maxSeq = 0;
     const year = new Date().getFullYear();
@@ -737,9 +738,17 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     });
 
     const updated = leads.map(l => {
-      if (l.leadId) return l;
-      maxSeq++;
-      return { ...l, leadId: `#FL-${year}-${String(maxSeq).padStart(3, "0")}` };
+      let patched = l;
+      if (!l.leadId) {
+        maxSeq++;
+        patched = { ...patched, leadId: `#FL-${year}-${String(maxSeq).padStart(3, "0")}` };
+      }
+      // Ensure score is always a clamped number (0-100)
+      const numScore = Math.max(0, Math.min(100, Number(patched.score) || 0));
+      if (patched.score !== numScore) {
+        patched = patched === l ? { ...l, score: numScore } : { ...patched, score: numScore };
+      }
+      return patched;
     });
 
     setLeads(updated);
@@ -760,6 +769,8 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [customTo, setCustomTo] = useState(today);
   const [sortCol, setSortCol] = useState("createdDate");
   const [sortDir, setSortDir] = useState("desc");
+  const [callLogModal, setCallLogModal] = useState(null); // lead object when open
+  const [callLogForm, setCallLogForm] = useState(null);
 
   const range = useMemo(() => rangeKey === "custom" && customFrom ? { from: customFrom, to: customTo || today } : getDateRange(rangeKey), [rangeKey, customFrom, customTo]);
   const rangeLabel = RANGE_PRESETS.find(p => p.key === rangeKey)?.label || "Custom";
@@ -849,6 +860,80 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const handleConvert = (lead, conversionData) => {
     if (lead.stage !== "SAL") return;
     onConvertToOpp(lead, conversionData);
+  };
+
+  // ─── Open Call Log Modal for a lead ───
+  const openCallLog = (lead) => {
+    const _callTypes = masters?.callTypes?.map(t => t.name) || CALL_TYPES;
+    const _callObjectives = masters?.callSubjects?.map(t => t.name) || CALL_OBJECTIVES;
+    setCallLogForm({
+      callType: _callTypes[0] || "Telephone Call",
+      objective: _callObjectives[0] || "General Followup",
+      date: today,
+      time: "",
+      duration: 15,
+      contactIds: [],
+      ourParticipants: currentUser ? [currentUser] : [],
+      notes: "",
+      outcome: CALL_OUTCOMES[0] || "Completed",
+      nextCallDate: "",
+      nextStep: "",
+      createFollowUp: false,
+    });
+    setCallLogModal(lead);
+  };
+
+  const saveCallLog = () => {
+    if (!callLogForm || !callLogModal) return;
+    const lead = callLogModal;
+    const newCall = {
+      id: `cr-${uid()}`,
+      accountId: lead.accountId || "",
+      leadId: lead.id,
+      leadName: lead.company,
+      company: lead.company,
+      contactId: callLogForm.contactIds.join(","),
+      marketingPerson: callLogForm.ourParticipants[0] || currentUser || "",
+      callType: callLogForm.callType,
+      objective: callLogForm.objective,
+      callDate: callLogForm.date,
+      date: callLogForm.date,
+      time: callLogForm.time,
+      duration: callLogForm.duration,
+      notes: callLogForm.notes,
+      outcome: callLogForm.outcome,
+      nextCallDate: callLogForm.nextCallDate,
+      nextStep: callLogForm.nextStep,
+      leadStage: lead.stage,
+      product: lead.product,
+      createdBy: currentUser || "",
+    };
+    setCallReports(p => [...p, newCall]);
+
+    // Optionally create follow-up activity
+    if (callLogForm.createFollowUp && callLogForm.nextCallDate) {
+      const followUp = {
+        id: `act-${uid()}`,
+        accountId: lead.accountId || "",
+        contactId: lead.contact || "",
+        leadId: lead.id,
+        title: `Follow-up: ${lead.company} – ${callLogForm.objective}`,
+        type: "Follow-up",
+        date: callLogForm.nextCallDate,
+        notes: callLogForm.nextStep || `Follow-up call for ${lead.company}`,
+        createdDate: today,
+        createdBy: currentUser || "",
+      };
+      setActivities(p => [...p, followUp]);
+    }
+
+    // Update lead's nextCall if a next call date was set
+    if (callLogForm.nextCallDate) {
+      setLeads(p => p.map(l => l.id === lead.id ? { ...l, nextCall: callLogForm.nextCallDate } : l));
+    }
+
+    setCallLogModal(null);
+    setCallLogForm(null);
   };
 
   const stageCount = (stageId) => leads.filter(l => l.stage === stageId).length;
@@ -1056,6 +1141,11 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: 4 }}>
+                          <button className="icon-btn" aria-label="Log Call" title="Log Call"
+                            style={{ color: "#3B82F6" }}
+                            onClick={() => openCallLog(l)}>
+                            <Phone size={14}/>
+                          </button>
                           <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(l)}>
                             <Edit2 size={14}/>
                           </button>
@@ -1358,6 +1448,118 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           setCallReports={setCallReports}
         />
       )}
+
+      {/* ──── LOG CALL MODAL ──── */}
+      {callLogModal && callLogForm && (() => {
+        const lead = callLogModal;
+        const _callTypes = masters?.callTypes?.map(t => t.name) || CALL_TYPES;
+        const _callObjectives = masters?.callSubjects?.map(t => t.name) || CALL_OBJECTIVES;
+        const accContacts = lead.accountId ? (allContacts || []).filter(c => c.accountId === lead.accountId) : [];
+        return (
+          <div className="overlay" onClick={e => e.target === e.currentTarget && (setCallLogModal(null), setCallLogForm(null))} style={{zIndex:1100}}>
+            <div style={{background:"white",borderRadius:16,width:"90vw",maxWidth:680,maxHeight:"88vh",overflow:"auto",boxShadow:"0 25px 60px rgba(0,0,0,0.3)"}}>
+              <div style={{padding:"20px 28px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div>
+                  <div style={{fontSize:17,fontWeight:700,color:"var(--text1)",display:"flex",alignItems:"center",gap:8}}>
+                    <PhoneCall size={18} style={{color:"#3B82F6"}}/> Log Call
+                  </div>
+                  <div style={{fontSize:12,color:"var(--text3)",marginTop:2}}>
+                    {lead.leadId} &middot; {lead.company} &middot; {lead.contact}
+                  </div>
+                </div>
+                <button className="icon-btn" onClick={() => { setCallLogModal(null); setCallLogForm(null); }} style={{width:32,height:32,fontSize:18}}>✕</button>
+              </div>
+              <div style={{padding:"20px 28px"}}>
+                {/* Pre-filled context */}
+                <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+                  {lead.accountId && (() => { const acc = accounts.find(a => a.id === lead.accountId); return acc ? <span style={{fontSize:11,padding:"3px 10px",borderRadius:6,background:"var(--s2)",color:"var(--text2)",fontWeight:600}}>Account: {acc.name}</span> : null; })()}
+                  <span style={{fontSize:11,padding:"3px 10px",borderRadius:6,background:"var(--s2)",color:"var(--text2)",fontWeight:600}}>Lead: {lead.leadId}</span>
+                  <span style={{fontSize:11,padding:"3px 10px",borderRadius:6,background:"var(--s2)",color:"var(--text2)",fontWeight:600}}>Contact: {lead.contact}</span>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group"><label>Call Type</label>
+                    <select value={callLogForm.callType} onChange={e => setCallLogForm(f => ({...f, callType: e.target.value}))}>
+                      {_callTypes.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group"><label>Objective</label>
+                    <select value={callLogForm.objective} onChange={e => setCallLogForm(f => ({...f, objective: e.target.value}))}>
+                      {_callObjectives.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group"><label>Date</label>
+                    <input type="date" value={callLogForm.date} onChange={e => setCallLogForm(f => ({...f, date: e.target.value}))}/>
+                  </div>
+                  <div className="form-group"><label>Time</label>
+                    <input type="time" value={callLogForm.time} onChange={e => setCallLogForm(f => ({...f, time: e.target.value}))}/>
+                  </div>
+                  <div className="form-group"><label>Duration (min)</label>
+                    <input type="number" min="1" max="480" value={callLogForm.duration} onChange={e => setCallLogForm(f => ({...f, duration: +e.target.value}))}/>
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group"><label>Contacts (from account)</label>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4,minHeight:32,padding:"4px 8px",border:"1px solid var(--border)",borderRadius:8,background:"white"}}>
+                      {accContacts.length > 0 ? accContacts.map(c => {
+                        const sel = callLogForm.contactIds.includes(c.id);
+                        return <button key={c.id} type="button" onClick={() => setCallLogForm(f => ({...f, contactIds: sel ? f.contactIds.filter(x => x !== c.id) : [...f.contactIds, c.id]}))}
+                          style={{fontSize:10,padding:"3px 8px",borderRadius:4,border: sel ? "1px solid var(--brand)" : "1px solid var(--border)",background: sel ? "var(--brand)" : "white",color: sel ? "white" : "var(--text2)",cursor:"pointer",fontWeight: sel ? 700 : 400}}>{c.name}</button>;
+                      }) : <span style={{fontSize:11,color:"var(--text3)",padding:"4px 0"}}>No contacts linked — lead contact: {lead.contact}</span>}
+                    </div>
+                  </div>
+                  <div className="form-group"><label>Our Participants</label>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4,minHeight:32,padding:"4px 8px",border:"1px solid var(--border)",borderRadius:8,background:"white"}}>
+                      {team.map(u => {
+                        const sel = callLogForm.ourParticipants.includes(u.id);
+                        return <button key={u.id} type="button" onClick={() => setCallLogForm(f => ({...f, ourParticipants: sel ? f.ourParticipants.filter(x => x !== u.id) : [...f.ourParticipants, u.id]}))}
+                          style={{fontSize:10,padding:"3px 8px",borderRadius:4,border: sel ? "1px solid var(--brand)" : "1px solid var(--border)",background: sel ? "var(--brand)" : "white",color: sel ? "white" : "var(--text2)",cursor:"pointer",fontWeight: sel ? 700 : 400}}>{u.name}</button>;
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group" style={{marginBottom:14}}><label>Discussion Notes</label>
+                  <textarea value={callLogForm.notes} onChange={e => setCallLogForm(f => ({...f, notes: e.target.value}))}
+                    placeholder="Key discussion points, action items..." rows={3} style={{width:"100%",resize:"vertical"}}/>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group"><label>Outcome</label>
+                    <select value={callLogForm.outcome} onChange={e => setCallLogForm(f => ({...f, outcome: e.target.value}))}>
+                      {CALL_OUTCOMES.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group"><label>Next Call Date</label>
+                    <input type="date" value={callLogForm.nextCallDate} onChange={e => setCallLogForm(f => ({...f, nextCallDate: e.target.value}))}/>
+                  </div>
+                </div>
+
+                <div className="form-group" style={{marginBottom:14}}><label>Next Step</label>
+                  <input value={callLogForm.nextStep} onChange={e => setCallLogForm(f => ({...f, nextStep: e.target.value}))} placeholder="e.g. Send proposal, Schedule demo..."/>
+                </div>
+
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"10px 14px",background:"var(--s2)",borderRadius:8}}>
+                  <input type="checkbox" id="createFollowUp" checked={callLogForm.createFollowUp} onChange={e => setCallLogForm(f => ({...f, createFollowUp: e.target.checked}))}/>
+                  <label htmlFor="createFollowUp" style={{fontSize:12,fontWeight:600,color:"var(--text1)",cursor:"pointer"}}>Create follow-up activity</label>
+                  <span style={{fontSize:11,color:"var(--text3)"}}>(auto-creates an activity record for the next call date)</span>
+                </div>
+
+                <div style={{display:"flex",justifyContent:"flex-end",gap:8,paddingTop:12,borderTop:"1px solid var(--border)"}}>
+                  <button className="btn btn-sec" onClick={() => { setCallLogModal(null); setCallLogForm(null); }}>Cancel</button>
+                  <button className="btn btn-primary" onClick={saveCallLog} disabled={!callLogForm.notes?.trim()}>
+                    <PhoneCall size={14}/>Save Call Log
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

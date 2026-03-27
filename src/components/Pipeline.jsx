@@ -13,7 +13,8 @@ import {
 import {
   PRODUCTS, PROD_MAP, STAGES, STAGE_PROB, STAGE_COL, TEAM, TEAM_MAP,
   COUNTRIES, OPP_SOURCES, HIERARCHY_LEVELS, FORECAST_CATS, OPP_SIZES,
-  WIN_REASONS, LOSS_REASONS, SUSPEND_REASONS, ACT_TYPES, INIT_USERS
+  WIN_REASONS, LOSS_REASONS, SUSPEND_REASONS, ACT_TYPES, INIT_USERS,
+  CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue } from "../utils/helpers";
@@ -255,7 +256,7 @@ function QuickUpdatePopover({ opp, onSave, onClose }) {
 /* ═══════════════════════════════════════════════════════
    DEAL DETAIL (Enhanced)
    ═══════════════════════════════════════════════════════ */
-function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps }) {
+function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, onLogCall }) {
   const [tab, setTab] = useState("overview");
   const oppNotes = notes.filter(n => n.recordType === "opp" && n.recordId === detail.id);
   const oppFiles = files.filter(f => f.linkedTo.some(l => l.type === "opp" && l.id === detail.id));
@@ -313,7 +314,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <button className="btn btn-xs btn-sec" onClick={() => logQuickActivity("Call")}><Phone size={12} /> Log Call</button>
+              <button className="btn btn-xs btn-sec" onClick={() => onLogCall({ accountId: detail.accountId, oppId: detail.id, contactIds: detail.primaryContactId ? [detail.primaryContactId] : [] })}><Phone size={12} /> Log Call</button>
               <button className="btn btn-xs btn-sec" onClick={() => logQuickActivity("Meeting")}><Users size={12} /> Log Meeting</button>
               <button className="btn btn-xs btn-primary" onClick={onEdit}><Edit2 size={12} /> Edit</button>
               <button className="icon-btn" onClick={onClose}><X size={18} /></button>
@@ -399,6 +400,11 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
           )}
           {tab === "activities" && (
             <div>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                <button className="btn btn-xs btn-sec" onClick={() => onLogCall({ accountId: detail.accountId, oppId: detail.id, contactIds: detail.primaryContactId ? [detail.primaryContactId] : [] })}>
+                  <Phone size={12} /> Log Call
+                </button>
+              </div>
               {oppActs.length === 0 && <div style={{ color: "var(--text3)", fontSize: 13, padding: "20px 0" }}>No activities logged for this deal.</div>}
               {oppActs.map(a => (
                 <div key={a.id} style={{
@@ -426,9 +432,198 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
 }
 
 /* ═══════════════════════════════════════════════════════
+   LOG CALL MODAL — inline call logging
+   ═══════════════════════════════════════════════════════ */
+const nowTime = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+};
+
+function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUsers, masters, prefill = {} }) {
+  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== "Inactive") : TEAM;
+  const callTypes = masters?.callTypes?.length ? masters.callTypes : CALL_TYPES;
+  const callSubjects = masters?.callSubjects?.length ? masters.callSubjects : CALL_OBJECTIVES;
+  const [form, setForm] = useState({
+    callType: "Telephone Call", objective: "General Followup", callDate: today, callTime: nowTime(),
+    duration: 15, accountId: "", leadId: "", oppId: "", contactIds: [], participantIds: [],
+    notes: "", outcome: "Completed", nextCallDate: "", nextStepDesc: "", createFollowup: false,
+    followupTitle: "", followupAssign: "", followupDue: "",
+    ...prefill,
+  });
+  const [errors, setErrors] = useState({});
+
+  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: undefined })); };
+
+  const filteredContacts = useMemo(() =>
+    form.accountId ? contacts.filter(c => c.accountId === form.accountId) : contacts,
+  [contacts, form.accountId]);
+  const filteredOpps = useMemo(() =>
+    form.accountId ? opps.filter(o => o.accountId === form.accountId) : opps,
+  [opps, form.accountId]);
+
+  const acctName = accounts.find(a => a.id === form.accountId)?.name || "";
+
+  const validate = () => {
+    const errs = {};
+    if (!form.callDate) errs.callDate = "Call date is required";
+    if (!form.notes?.trim()) errs.notes = "Discussion notes are required";
+    else if (form.notes.trim().length < 10) errs.notes = "Notes must be at least 10 characters";
+    return errs;
+  };
+
+  const submit = () => {
+    const errs = validate();
+    if (hasErrors(errs)) { setErrors(errs); return; }
+    onSave(form);
+    onClose();
+  };
+
+  return (
+    <Modal title="Log Call" onClose={onClose} lg footer={
+      <>
+        <button className="btn btn-sec" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={submit}><Check size={14} /> Save Call</button>
+      </>
+    }>
+      <div className="form-row">
+        <div className="form-group"><label>Call Type</label>
+          <select value={form.callType} onChange={e => set("callType", e.target.value)}>
+            {callTypes.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="form-group"><label>Call Subject</label>
+          <select value={form.objective} onChange={e => set("objective", e.target.value)}>
+            {callSubjects.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="form-row three">
+        <div className="form-group"><label>Date *</label>
+          <input type="date" value={form.callDate} onChange={e => set("callDate", e.target.value)}
+            style={errors.callDate ? { borderColor: "#DC2626" } : {}} />
+          <FormError error={errors.callDate} />
+        </div>
+        <div className="form-group"><label>Time</label>
+          <input type="time" value={form.callTime} onChange={e => set("callTime", e.target.value)} />
+        </div>
+        <div className="form-group"><label>Duration (min)</label>
+          <input type="number" min={0} step={5} value={form.duration}
+            onChange={e => set("duration", +e.target.value)} />
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group"><label>Company / Account</label>
+          <select value={form.accountId} onChange={e => set("accountId", e.target.value)}>
+            <option value="">-- Select --</option>
+            {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+        <div className="form-group"><label>Opportunity</label>
+          <select value={form.oppId} onChange={e => set("oppId", e.target.value)}>
+            <option value="">-- None --</option>
+            {filteredOpps.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group"><label>Outcome</label>
+          <select value={form.outcome} onChange={e => set("outcome", e.target.value)}>
+            {CALL_OUTCOMES.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Multi-select contacts */}
+      <div className="form-group" style={{ marginBottom: 12 }}>
+        <label>Contacts</label>
+        <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 4, background: "white" }}>
+          {filteredContacts.length === 0 && <div style={{ fontSize: 11, color: "var(--text3)", padding: 8, textAlign: "center" }}>No contacts</div>}
+          {filteredContacts.map(c => (
+            <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>
+              <input type="checkbox" checked={form.contactIds.includes(c.id)}
+                onChange={() => set("contactIds", form.contactIds.includes(c.id) ? form.contactIds.filter(x => x !== c.id) : [...form.contactIds, c.id])}
+                style={{ accentColor: "var(--brand)" }} />
+              {c.name}{c.designation ? ` (${c.designation})` : ""}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Multi-select our participants */}
+      <div className="form-group" style={{ marginBottom: 12 }}>
+        <label>Our Participants</label>
+        <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 4, background: "white" }}>
+          {team.map(u => (
+            <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>
+              <input type="checkbox" checked={form.participantIds.includes(u.id)}
+                onChange={() => set("participantIds", form.participantIds.includes(u.id) ? form.participantIds.filter(x => x !== u.id) : [...form.participantIds, u.id])}
+                style={{ accentColor: "var(--brand)" }} />
+              {u.name}{u.role ? ` (${u.role})` : ""}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label>Discussion Notes * <span style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>(min 10 chars)</span></label>
+        <textarea rows={3} value={form.notes}
+          onChange={e => set("notes", e.target.value)}
+          placeholder="Discussion summary, objections, decisions, and next steps..."
+          style={{ ...(errors.notes ? { borderColor: "#DC2626" } : {}), width: "100%", resize: "vertical" }} />
+        <FormError error={errors.notes} />
+      </div>
+
+      <div className="form-row">
+        <div className="form-group"><label>Next Step / Follow-up Date</label>
+          <input type="date" value={form.nextCallDate} onChange={e => set("nextCallDate", e.target.value)} />
+        </div>
+        <div className="form-group"><label>Next Step Description</label>
+          <input value={form.nextStepDesc} onChange={e => set("nextStepDesc", e.target.value)}
+            placeholder="e.g. Send proposal, Schedule demo..." />
+        </div>
+      </div>
+
+      {/* Create follow-up task */}
+      <div style={{
+        marginTop: 10, padding: 12, borderRadius: 8, border: "1px solid var(--border)",
+        background: "var(--s2)"
+      }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+          <input type="checkbox" checked={form.createFollowup}
+            onChange={e => set("createFollowup", e.target.checked)}
+            style={{ accentColor: "var(--brand)" }} />
+          Create Follow-up Task
+        </label>
+        {form.createFollowup && (
+          <div style={{ marginTop: 10 }}>
+            <div className="form-row">
+              <div className="form-group"><label>Task Title</label>
+                <input value={form.followupTitle || `Follow-up: ${acctName}`}
+                  onChange={e => set("followupTitle", e.target.value)}
+                  placeholder="Follow-up task title" />
+              </div>
+              <div className="form-group"><label>Assign To</label>
+                <select value={form.followupAssign} onChange={e => set("followupAssign", e.target.value)}>
+                  <option value="">-- Select --</option>
+                  {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="form-group"><label>Due Date</label>
+              <input type="date" value={form.followupDue || form.nextCallDate}
+                onChange={e => set("followupDue", e.target.value)} />
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
-function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, orgUsers }) {
+function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const [view, setView] = useState("kanban");
   const [prodF, setProdF] = useState("All");
@@ -450,8 +645,52 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   const [sortKey, setSortKey] = useState("title");
   const [sortDir, setSortDir] = useState("asc");
   const [searchQ, setSearchQ] = useState("");
+  const [logCallPrefill, setLogCallPrefill] = useState(null); // null = closed, object = open with prefill
 
   const curUser = INIT_USERS.find(u => u.id === currentUser);
+
+  /* ── Save call report handler ── */
+  const handleSaveCall = useCallback((callForm) => {
+    const clean = sanitizeObj(callForm);
+    const callReport = {
+      id: `cr${uid()}`,
+      company: accounts.find(a => a.id === clean.accountId)?.name || "",
+      marketingPerson: currentUser,
+      callType: clean.callType,
+      callDate: clean.callDate,
+      notes: clean.notes,
+      nextCallDate: clean.nextCallDate,
+      objective: clean.objective,
+      outcome: clean.outcome,
+      duration: clean.duration,
+      accountId: clean.accountId,
+      contactId: clean.contactIds?.[0] || "",
+      oppId: clean.oppId,
+      contactIds: clean.contactIds,
+      participantIds: clean.participantIds,
+      callTime: clean.callTime,
+      leadId: clean.leadId || "",
+      nextStepDesc: clean.nextStepDesc,
+    };
+    setCallReports(p => [...p, callReport]);
+
+    if (clean.createFollowup) {
+      const acctName = accounts.find(a => a.id === clean.accountId)?.name || "";
+      const followup = {
+        id: `act${uid()}`,
+        title: clean.followupTitle || `Follow-up: ${acctName}`,
+        type: "Call",
+        status: "Planned",
+        date: clean.followupDue || clean.nextCallDate || today,
+        accountId: clean.accountId,
+        contactId: clean.contactIds?.[0] || "",
+        oppId: clean.oppId,
+        owner: clean.followupAssign || currentUser,
+        notes: `Follow-up from call on ${clean.callDate}`,
+      };
+      setActivities(p => [...p, followup]);
+    }
+  }, [accounts, currentUser, setCallReports, setActivities]);
   const isManager = curUser && MGR_ROLES.includes(curUser.role);
 
   /* filtered opps */
@@ -832,6 +1071,11 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                             fontSize: 10, fontWeight: 600, padding: "4px 0", borderRadius: 6, border: "1px solid var(--border)",
                             background: "var(--s1)", color: "var(--text3)", cursor: "pointer",
                           }}><ChevronLeft size={10} />Back</button>
+                          <button onClick={() => setLogCallPrefill({ accountId: o.accountId, oppId: o.id, contactIds: o.primaryContactId ? [o.primaryContactId] : [] })} style={{
+                            flex: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 10, fontWeight: 600, padding: "4px 6px", borderRadius: 6, border: "1px solid var(--border)",
+                            background: "var(--s1)", color: "#1B6B5A", cursor: "pointer",
+                          }} title="Log Call"><Phone size={10} /></button>
                           <button onClick={() => { setQuickUpdate(quickUpdate === o.id ? null : o.id); }} style={{
                             flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 2,
                             fontSize: 10, fontWeight: 600, padding: "4px 0", borderRadius: 6, border: "1px solid var(--border)",
@@ -1013,6 +1257,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           accounts={accounts} contacts={contacts} notes={notes} files={files}
           onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser}
           activities={activities} setActivities={setActivities} opps={opps} setOpps={setOpps}
+          onLogCall={(prefill) => { setDetail(null); setLogCallPrefill(prefill); }}
         />
       )}
 
@@ -1177,6 +1422,16 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
 
       {/* ═════════ CONFIRM DELETE ═════════ */}
       {confirm && <Confirm title="Delete Deal" msg="Remove this deal permanently?" onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)} />}
+
+      {/* ═════════ LOG CALL MODAL ═════════ */}
+      {logCallPrefill && (
+        <LogCallModal
+          onClose={() => setLogCallPrefill(null)}
+          onSave={handleSaveCall}
+          accounts={accounts} contacts={contacts} opps={opps} orgUsers={orgUsers} masters={masters}
+          prefill={logCallPrefill}
+        />
+      )}
     </div>
   );
 }
