@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shield, AlertTriangle, Lock, Unlock } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shield, AlertTriangle, Lock, Unlock, ChevronDown, ChevronRight, Users } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS, hashPassword, DEMO_PW_HASH } from '../data/constants';
 import { uid, fmt, today } from '../utils/helpers';
 import { Modal, Confirm } from './shared';
@@ -127,6 +127,97 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
   const PERM_MODULES=["accounts","contacts","pipeline","activities","tickets","reports","masters","org","team"];
   const PERM_LABEL={accounts:"Accounts",contacts:"Contacts",pipeline:"Pipeline",activities:"Activities",tickets:"Tickets",reports:"Reports",masters:"Masters",org:"Org",team:"Team"};
 
+  // ── Team Hierarchy: derive reporting tree from org structure ──
+  const [hierarchyExpanded,setHierarchyExpanded]=useState(()=>{
+    const ids={};
+    orgUsers.forEach(u=>ids[u.id]=true);
+    return ids;
+  });
+  const [editingManager,setEditingManager]=useState(null); // userId being edited
+
+  // Build reportsTo from org hierarchy: dept heads → division heads → company/market heads
+  const reportsToMap=useMemo(()=>{
+    const rmap={};
+    // For each user, find their dept, then branch→division→head
+    orgUsers.forEach(u=>{
+      const dept=org.departments.find(d=>d.id===u.deptId);
+      const branch=dept?org.branches.find(b=>b.id===dept.branchId):null;
+      const division=branch?org.divisions.find(d=>d.id===branch.divisionId):null;
+      // If user IS the dept head, they report to division head
+      if(dept&&dept.head===u.id&&division&&division.head&&division.head!==u.id){
+        rmap[u.id]=division.head;
+      }
+      // If user is NOT the dept head, they report to dept head
+      else if(dept&&dept.head&&dept.head!==u.id){
+        rmap[u.id]=dept.head;
+      }
+      // If user is division head, they report to market head (through company)
+      else if(division&&division.head===u.id){
+        const company=org.companies.find(c=>c.id===division.companyId);
+        const market=company?org.markets.find(m=>m.id===company.marketId):null;
+        if(market&&market.head&&market.head!==u.id) rmap[u.id]=market.head;
+      }
+      // Apply user-set overrides from orgUsers
+      if(u.reportsTo) rmap[u.id]=u.reportsTo;
+    });
+    return rmap;
+  },[orgUsers,org]);
+
+  // Build tree: find roots (no manager or manager is themselves)
+  const getDirectReports=(managerId)=>orgUsers.filter(u=>u.active!==false&&reportsToMap[u.id]===managerId&&u.id!==managerId);
+  const roots=orgUsers.filter(u=>u.active!==false&&(!reportsToMap[u.id]||reportsToMap[u.id]===u.id));
+
+  const setManager=(userId,managerId)=>{
+    setOrgUsers(p=>p.map(u=>u.id===userId?{...u,reportsTo:managerId||undefined}:u));
+    setEditingManager(null);
+  };
+
+  const toggleHierarchy=(id)=>setHierarchyExpanded(p=>({...p,[id]:!p[id]}));
+
+  const HierarchyNode=({user,depth=0})=>{
+    const reports=getDirectReports(user.id);
+    const isOpen=hierarchyExpanded[user.id];
+    const roleInfo=ROLE_MAP[user.role];
+    return (
+      <div className="th-node">
+        <div className="th-row th-clickable" onClick={()=>reports.length>0&&toggleHierarchy(user.id)}>
+          {reports.length>0?(isOpen?<ChevronDown size={13} style={{color:"var(--text3)",flexShrink:0}}/>:<ChevronRight size={13} style={{color:"var(--text3)",flexShrink:0}}/>):<span style={{width:13}}/>}
+          <div className="th-av" style={{background:roleInfo?roleInfo.color+"18":"var(--brand-bg)",color:roleInfo?.color||"var(--brand)"}}>{user.initials}</div>
+          <div className="th-info">
+            <div className="th-name">{user.name}</div>
+            <div className="th-sub">{user.email}</div>
+          </div>
+          {roleInfo&&<span className="th-role" style={{background:roleInfo.color+"18",color:roleInfo.color}}>{roleInfo.name}</span>}
+          {reports.length>0&&<span className="th-direct">{reports.length} report{reports.length>1?"s":""}</span>}
+          {canManage&&(
+            <div className="th-actions">
+              {editingManager===user.id?(
+                <select
+                  value={user.reportsTo||reportsToMap[user.id]||""}
+                  onChange={e=>{e.stopPropagation();setManager(user.id,e.target.value);}}
+                  onClick={e=>e.stopPropagation()}
+                  style={{fontSize:11,padding:"3px 6px",borderRadius:6,border:"1px solid var(--border)",cursor:"pointer"}}
+                  autoFocus
+                  onBlur={()=>setEditingManager(null)}
+                >
+                  <option value="">No manager (root)</option>
+                  {orgUsers.filter(u=>u.id!==user.id&&u.active!==false).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              ):(
+                <button className="ht-btn" onClick={e=>{e.stopPropagation();setEditingManager(user.id);}} title="Change manager"><Edit2 size={11}/></button>
+              )}
+            </div>
+          )}
+        </div>
+        {isOpen&&reports.length>0&&(
+          <div className="th-children">
+            {reports.map(r=><HierarchyNode key={r.id} user={r} depth={depth+1}/>)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Get effective permissions for a role (role-level + custom role overrides)
   const getRolePerms=(role)=>({...(PERMISSIONS[role]||{}),...((customPermissions||{})[role]||{})});
 
@@ -188,7 +279,7 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
         </div>
       </div>
       <div style={{display:"flex",gap:8,marginBottom:20}}>
-        {["teams","users","permissions"].map(t=><button key={t} className={`btn btn-sm ${tab===t?"btn-primary":"btn-sec"}`} onClick={()=>setTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+        {["teams","hierarchy","users","permissions"].map(t=><button key={t} className={`btn btn-sm ${tab===t?"btn-primary":"btn-sec"}`} onClick={()=>setTab(t)}>{t==="hierarchy"?"Hierarchy":t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
       </div>
 
       {tab==="teams"&&(
@@ -234,6 +325,20 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {tab==="hierarchy"&&(
+        <div>
+          <div className="card" style={{marginBottom:16,padding:"12px 16px",background:"var(--brand-bg)",border:"1px solid var(--brand)",fontSize:12,color:"var(--brand-d)",display:"flex",alignItems:"center",gap:8}}>
+            <Users size={14}/>
+            <span>Reporting hierarchy is derived from the organisation structure. Click the edit icon on any user to reassign their manager.</span>
+          </div>
+          <div className="card th-tree">
+            {roots.length>0?roots.map(u=><HierarchyNode key={u.id} user={u}/>):(
+              <div style={{padding:20,textAlign:"center",color:"var(--text3)",fontSize:13}}>No active users found.</div>
+            )}
           </div>
         </div>
       )}

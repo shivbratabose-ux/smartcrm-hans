@@ -429,6 +429,56 @@ export const CSS = `
   .org-breadcrumb .crumb { cursor:pointer; color:var(--brand); font-weight:500; }
   .org-breadcrumb .sep { color:var(--border2); }
 
+  /* ── HIERARCHY TREE ── */
+  .ht-stats { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .ht-stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:10px 16px; min-width:100px; text-align:center; }
+  .ht-stat-val { font-family:'Outfit',sans-serif; font-size:20px; font-weight:800; }
+  .ht-stat-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--text3); margin-top:2px; }
+  .ht-tree { padding:16px 12px; }
+  .ht-node { position:relative; }
+  .ht-root { margin-bottom:4px; }
+  .ht-children { margin-left:24px; padding-left:16px; border-left:2px solid var(--border); }
+  .ht-row { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:8px; font-size:13px; min-height:36px; transition:background 0.1s; position:relative; }
+  .ht-row:hover { background:var(--s2); }
+  .ht-row:hover .ht-actions { opacity:1; }
+  .ht-clickable { cursor:pointer; }
+  .ht-chevron { color:var(--text3); flex-shrink:0; transition:transform 0.15s; }
+  .ht-icon { width:24px; height:24px; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .ht-icon-mkt { background:#DCFCE7; color:#15803D; }
+  .ht-icon-co { background:#EFF6FF; color:#1D4ED8; }
+  .ht-icon-div { background:#F5F3FF; color:#6D28D9; }
+  .ht-icon-branch { background:#FFF7ED; color:#C2410C; }
+  .ht-icon-dept { background:#F0FDFA; color:#0F766E; }
+  .ht-name { font-weight:600; color:var(--text); white-space:nowrap; }
+  .ht-name-bold { font-weight:700; font-family:'Outfit',sans-serif; }
+  .ht-meta { font-size:11px; color:var(--text3); display:flex; align-items:center; gap:3px; }
+  .ht-head { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--text2); background:var(--s2); padding:2px 8px 2px 2px; border-radius:10px; border:1px solid var(--border); }
+  .ht-av { width:18px; height:18px; border-radius:5px; background:var(--brand); color:white; font-size:8px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+  .ht-count { font-size:10px; font-weight:700; background:var(--teal-bg); color:var(--teal); padding:1px 6px; border-radius:8px; }
+  .ht-prods { display:inline-flex; gap:4px; flex-wrap:wrap; }
+  .ht-actions { display:flex; gap:2px; margin-left:auto; opacity:0; transition:opacity 0.15s; }
+  .ht-btn { background:none; border:none; cursor:pointer; color:var(--text3); padding:3px; border-radius:4px; display:flex; align-items:center; }
+  .ht-btn:hover { background:var(--s3); color:var(--text2); }
+  .ht-btn-add:hover { color:var(--brand); }
+  .ht-btn-del:hover { color:var(--red); }
+  .ht-leaf .ht-row { padding-left:26px; }
+
+  /* ── TEAM HIERARCHY TREE ── */
+  .th-tree { padding:16px 12px; }
+  .th-node { position:relative; }
+  .th-children { margin-left:24px; padding-left:16px; border-left:2px solid var(--border); }
+  .th-row { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; font-size:13px; min-height:40px; transition:background 0.1s; }
+  .th-row:hover { background:var(--s2); }
+  .th-row:hover .th-actions { opacity:1; }
+  .th-clickable { cursor:pointer; }
+  .th-av { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; }
+  .th-info { flex:1; min-width:0; }
+  .th-name { font-weight:600; font-size:13px; color:var(--text); }
+  .th-sub { font-size:11px; color:var(--text3); }
+  .th-role { font-size:10px; font-weight:600; padding:2px 8px; border-radius:6px; white-space:nowrap; }
+  .th-actions { display:flex; gap:2px; opacity:0; transition:opacity 0.15s; }
+  .th-direct { font-size:10px; color:var(--text3); background:var(--s3); padding:1px 6px; border-radius:8px; font-weight:600; }
+
   /* ── TEAM & USERS ── */
   .team-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; margin-bottom:20px; }
   .team-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--rl); overflow:hidden; }
