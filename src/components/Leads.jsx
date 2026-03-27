@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
@@ -274,7 +274,7 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   );
 }
 
-function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit, orgUsers }) {
+function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit, orgUsers, activities: allActivities, callReports, setActivities, setCallReports }) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -296,13 +296,63 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
     displayContacts.push({ name: linkedAccount.owner ? (_teamMap[linkedAccount.owner]?.name || "Account Manager") : "Account Manager", designation: "Account Manager", department: "Management", email: "", phone: "" });
   }
 
-  // Mock activity timeline
-  const activities = [
-    { icon: <Mail size={13}/>, title: "Email Sent", desc: `Follow-up email to ${lead.contact}`, time: lead.nextCall ? `Scheduled: ${lead.nextCall}` : "2 days ago" },
-    { icon: <Phone size={13}/>, title: "Phone Call", desc: `Discovery call with ${lead.contact}`, time: "4 days ago" },
-    { icon: <FileText size={13}/>, title: "Note Added", desc: lead.notes?.slice(0, 60) || "General notes updated", time: "1 week ago" },
+  // Real activity timeline
+  const leadActivities = (allActivities||[]).filter(a => a.accountId === lead.accountId || a.contactId === lead.contact);
+  const leadCalls = (callReports||[]).filter(cr => cr.accountId === lead.accountId || cr.leadId === lead.id);
+
+  const combinedTimeline = [
+    ...leadActivities.map(a => ({ type: "activity", date: a.date || a.createdDate || "", icon: <MessageSquare size={13}/>, title: a.title || a.type || "Activity", desc: a.notes || a.description || "—", time: a.date || a.createdDate || "—" })),
+    ...leadCalls.map(cr => ({ type: "call", date: cr.date || cr.callDate || "", icon: <Phone size={13}/>, title: cr.callType || "Call", desc: cr.notes || cr.outcome || "—", time: cr.date || cr.callDate || "—" })),
+  ].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  // If no real activities, show a placeholder
+  const displayTimeline = combinedTimeline.length > 0 ? combinedTimeline : [
     { icon: <Calendar size={13}/>, title: "Lead Created", desc: `Lead ${lead.leadId} was created`, time: lead.createdDate || "—" },
   ];
+
+  // Inline form states
+  const [showCallForm, setShowCallForm] = useState(false);
+  const [showActivityForm, setShowActivityForm] = useState(false);
+  const [callForm, setCallForm] = useState({ callType: "Discovery", date: today, notes: "", outcome: "Interested", nextCallDate: "" });
+  const [actForm, setActForm] = useState({ title: "", type: "Call", date: today, notes: "" });
+
+  const saveCallLog = () => {
+    if (!callForm.notes?.trim()) return;
+    const newCall = {
+      id: `cr-${Date.now()}`,
+      accountId: lead.accountId || "",
+      leadId: lead.id,
+      contactId: lead.contact || "",
+      callType: callForm.callType,
+      date: callForm.date,
+      callDate: callForm.date,
+      notes: callForm.notes,
+      outcome: callForm.outcome,
+      nextCallDate: callForm.nextCallDate,
+      createdBy: "",
+    };
+    setCallReports(p => [...p, newCall]);
+    setCallForm({ callType: "Discovery", date: today, notes: "", outcome: "Interested", nextCallDate: "" });
+    setShowCallForm(false);
+  };
+
+  const saveActivity = () => {
+    if (!actForm.title?.trim()) return;
+    const newAct = {
+      id: `act-${Date.now()}`,
+      accountId: lead.accountId || "",
+      contactId: lead.contact || "",
+      leadId: lead.id,
+      title: actForm.title,
+      type: actForm.type,
+      date: actForm.date,
+      notes: actForm.notes,
+      createdDate: today,
+    };
+    setActivities(p => [...p, newAct]);
+    setActForm({ title: "", type: "Call", date: today, notes: "" });
+    setShowActivityForm(false);
+  };
 
   // Mock documents
   const documents = [
@@ -548,10 +598,85 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 
               {/* Recent Activity */}
               <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                  <Clock size={15} style={{color:"var(--brand)"}}/> Recent Activity
+                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <Clock size={15} style={{color:"var(--brand)"}}/> Recent Activity
+                  </div>
+                  <div style={{display:"flex",gap:4}}>
+                    <button className="btn btn-sm btn-sec" style={{fontSize:10,padding:"3px 8px"}} onClick={() => { setShowCallForm(v => !v); setShowActivityForm(false); }}>
+                      <Phone size={11}/>Log Call
+                    </button>
+                    <button className="btn btn-sm btn-sec" style={{fontSize:10,padding:"3px 8px"}} onClick={() => { setShowActivityForm(v => !v); setShowCallForm(false); }}>
+                      <Plus size={11}/>Log Activity
+                    </button>
+                  </div>
                 </div>
-                {activities.map((a, i) => (
+
+                {/* Inline Call Log Form */}
+                {showCallForm && (
+                  <div style={{background:"var(--s2,#F8FAFC)",borderRadius:8,padding:12,marginBottom:12,border:"1px solid var(--border)"}}>
+                    <div style={{fontSize:11,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log a Call</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Call Type</label>
+                        <select value={callForm.callType} onChange={e => setCallForm(f => ({...f, callType: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                          {["Discovery","Follow-up","Demo","Negotiation","Support","Cold Call"].map(t => <option key={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
+                        <input type="date" value={callForm.date} onChange={e => setCallForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/>
+                      </div>
+                    </div>
+                    <div style={{marginBottom:8}}>
+                      <label style={{fontSize:10,color:"var(--text3)"}}>Notes</label>
+                      <textarea value={callForm.notes} onChange={e => setCallForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Call notes..."/>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Outcome</label>
+                        <select value={callForm.outcome} onChange={e => setCallForm(f => ({...f, outcome: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                          {["Interested","Not Interested","Call Back","Voicemail","No Answer","Meeting Booked"].map(t => <option key={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Next Call Date</label>
+                        <input type="date" value={callForm.nextCallDate} onChange={e => setCallForm(f => ({...f, nextCallDate: e.target.value}))} style={{fontSize:11,width:"100%"}}/>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                      <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowCallForm(false)}>Cancel</button>
+                      <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveCallLog}><Check size={11}/>Save</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Inline Activity Log Form */}
+                {showActivityForm && (
+                  <div style={{background:"var(--s2,#F8FAFC)",borderRadius:8,padding:12,marginBottom:12,border:"1px solid var(--border)"}}>
+                    <div style={{fontSize:11,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log an Activity</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Title</label>
+                        <input value={actForm.title} onChange={e => setActForm(f => ({...f, title: e.target.value}))} style={{fontSize:11,width:"100%"}} placeholder="Activity title"/>
+                      </div>
+                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Type</label>
+                        <select value={actForm.type} onChange={e => setActForm(f => ({...f, type: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                          {["Call","Email","Meeting","Task","Note","Follow-up"].map(t => <option key={t}>{t}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{marginBottom:8}}>
+                      <label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
+                      <input type="date" value={actForm.date} onChange={e => setActForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/>
+                    </div>
+                    <div style={{marginBottom:8}}>
+                      <label style={{fontSize:10,color:"var(--text3)"}}>Notes</label>
+                      <textarea value={actForm.notes} onChange={e => setActForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Activity notes..."/>
+                    </div>
+                    <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                      <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowActivityForm(false)}>Cancel</button>
+                      <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveActivity}><Check size={11}/>Save</button>
+                    </div>
+                  </div>
+                )}
+
+                {displayTimeline.map((a, i) => (
                   <div key={i}>{activityItem(a.icon, a.title, a.desc, a.time)}</div>
                 ))}
               </div>
@@ -595,9 +720,31 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 // ═══════════════════════════════════════════════════════════════════
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, orgUsers }) {
+function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, orgUsers, activities, setActivities, callReports, setCallReports }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
+
+  // Auto-generate leadId for bulk-uploaded leads that are missing one
+  useEffect(() => {
+    const missing = leads.filter(l => !l.leadId);
+    if (missing.length === 0) return;
+
+    let maxSeq = 0;
+    const year = new Date().getFullYear();
+    leads.forEach(l => {
+      const m = l.leadId?.match(/(?:LEAD-|#FL-)(\d{4})-?(\d+)/);
+      if (m) maxSeq = Math.max(maxSeq, parseInt(m[2]));
+    });
+
+    const updated = leads.map(l => {
+      if (l.leadId) return l;
+      maxSeq++;
+      return { ...l, leadId: `#FL-${year}-${String(maxSeq).padStart(3, "0")}` };
+    });
+
+    setLeads(updated);
+  }, [leads]);
+
   const [search, setSearch] = useState("");
   const [productF, setProductF] = useState("All");
   const [stageF, setStageF] = useState("All");
@@ -709,11 +856,11 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   // ─── Computed KPIs (date-filtered) ───
   const activeLeads = filtered.filter(l => l.stage !== "NA" && l.stage !== "Converted").length;
   const convertedCount = filtered.filter(l => l.stage === "Converted").length;
-  const avgScore = filtered.length > 0 ? Math.round(filtered.reduce((s, l) => s + l.score, 0) / filtered.length) : 0;
+  const avgScore = filtered.length > 0 ? Math.round(filtered.reduce((s, l) => s + (Number(l.score) || 0), 0) / filtered.length) : 0;
   const salCount = filtered.filter(l => l.stage === "SAL").length;
   const mqlCount = filtered.filter(l => l.stage === "MQL").length;
   const sqlCount = filtered.filter(l => l.stage === "SQL").length;
-  const pipelineValue = filtered.reduce((s, l) => s + (l.score * 0.5), 0);
+  const pipelineValue = filtered.reduce((s, l) => s + ((Number(l.score) || 0) * 0.5), 0);
   const overdueLeads = filtered.filter(l => l.nextCall && l.nextCall < today && l.stage !== "NA").length;
   const hotLeads = filtered.filter(l => l.score >= 70 && l.stage !== "NA").length;
   const avgAge = filtered.length > 0 ? Math.round(filtered.reduce((s, l) => s + (daysSince(l.createdDate) || 0), 0) / filtered.length) : 0;
@@ -1205,6 +1352,10 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           onConvertToOpp={handleConvert}
           onEdit={(l) => { setDetail(null); openEdit(l); }}
           orgUsers={orgUsers}
+          activities={activities}
+          callReports={callReports}
+          setActivities={setActivities}
+          setCallReports={setCallReports}
         />
       )}
     </div>
