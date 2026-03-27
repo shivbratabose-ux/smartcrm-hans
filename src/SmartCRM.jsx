@@ -43,7 +43,22 @@ import BulkUpload from "./components/BulkUpload";
 export default function SmartCRM() {
   const saved = useMemo(() => loadState(), []);
   const [currentUser,setCurrentUser] = useState(null);
-  const [page,setPage]               = useState("dashboard");
+
+  // ── Hash-based routing ──
+  const getPageFromHash = () => {
+    const hash = window.location.hash.replace(/^#\/?/, "");
+    return hash || "dashboard";
+  };
+  const [page,_setPage] = useState(getPageFromHash);
+  const setPage = useCallback((p) => {
+    _setPage(p);
+    window.location.hash = p === "dashboard" ? "/" : `/${p}`;
+  }, []);
+  useEffect(() => {
+    const onHash = () => _setPage(getPageFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
   const [collapsed,setCollapsed]     = useState(false);
   const [accounts,setAccounts]       = useState(saved?.accounts || INIT_ACCOUNTS);
   const [contacts,setContacts]       = useState(saved?.contacts || INIT_CONTACTS);
