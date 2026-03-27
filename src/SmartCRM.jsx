@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 
 // Data & Utils
 import { INIT_USERS, PROD_MAP, STAGE_PROB, INIT_USER_PASSWORDS } from "./data/constants";
@@ -39,6 +39,7 @@ import Quotations from "./components/Quotations";
 import CalendarView from "./components/CalendarView";
 import CommLog from "./components/CommLog";
 import BulkUpload from "./components/BulkUpload";
+import Profile from "./components/Profile";
 
 // ── Session persistence with 30-min idle timeout ──
 const SESSION_KEY = "smartcrm_session";
@@ -131,51 +132,36 @@ export default function SmartCRM() {
     return () => { events.forEach(e => window.removeEventListener(e, touch)); clearInterval(timer); };
   }, [currentUser]);
 
-  // ── Supabase-syncing setter factory ──
-  // Wraps a React setter so that mutations also write through to Supabase
-  const dbSet = useCallback((module, baseSetter) => {
-    if (!isSupabaseConfigured) return baseSetter;
-    return (updater) => {
-      baseSetter(prev => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        // Detect what changed and sync to Supabase
-        if (Array.isArray(next) && Array.isArray(prev)) {
-          const prevIds = new Set(prev.map(r => r.id));
-          const nextIds = new Set(next.map(r => r.id));
-          // Inserts
-          next.forEach(r => { if (r.id && !prevIds.has(r.id)) insertRecord(module, r); });
-          // Deletes
-          prev.forEach(r => { if (r.id && !nextIds.has(r.id)) deleteRecord(module, r.id); });
-          // Updates
-          next.forEach(r => {
-            if (r.id && prevIds.has(r.id)) {
-              const old = prev.find(p => p.id === r.id);
-              if (old && JSON.stringify(old) !== JSON.stringify(r)) updateRecord(module, r.id, r);
-            }
-          });
-        }
-        return next;
-      });
-    };
-  }, []);
+  // ── Supabase sync: detect array changes via useEffect and sync to DB ──
+  const prevRef = useRef({});
+  const syncModules = useMemo(() => ({
+    accounts, contacts, opps, activities, tickets, leads, callReports,
+    contracts, collections, targets, quotes, commLogs, events, notes, files,
+    users: orgUsers,
+  }), [accounts,contacts,opps,activities,tickets,leads,callReports,contracts,collections,targets,quotes,commLogs,events,notes,files,orgUsers]);
 
-  // Wrap all module setters for Supabase sync
-  const syncAccounts    = useMemo(() => dbSet("accounts", setAccounts), [dbSet]);
-  const syncContacts    = useMemo(() => dbSet("contacts", setContacts), [dbSet]);
-  const syncOpps        = useMemo(() => dbSet("opps", setOpps), [dbSet]);
-  const syncActivities  = useMemo(() => dbSet("activities", setActivities), [dbSet]);
-  const syncTickets     = useMemo(() => dbSet("tickets", setTickets), [dbSet]);
-  const syncLeads       = useMemo(() => dbSet("leads", setLeads), [dbSet]);
-  const syncCallReports = useMemo(() => dbSet("callReports", setCallReports), [dbSet]);
-  const syncContracts   = useMemo(() => dbSet("contracts", setContracts), [dbSet]);
-  const syncCollections = useMemo(() => dbSet("collections", setCollections), [dbSet]);
-  const syncTargets     = useMemo(() => dbSet("targets", setTargets), [dbSet]);
-  const syncQuotes      = useMemo(() => dbSet("quotes", setQuotes), [dbSet]);
-  const syncCommLogs    = useMemo(() => dbSet("commLogs", setCommLogs), [dbSet]);
-  const syncEvents      = useMemo(() => dbSet("events", setEvents), [dbSet]);
-  const syncNotes       = useMemo(() => dbSet("notes", setNotes), [dbSet]);
-  const syncFiles       = useMemo(() => dbSet("files", setFiles), [dbSet]);
-  const syncOrgUsers    = useMemo(() => dbSet("users", setOrgUsers), [dbSet]);
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const prev = prevRef.current;
+    for (const [module, next] of Object.entries(syncModules)) {
+      const old = prev[module];
+      if (!old || old === next || !Array.isArray(next) || !Array.isArray(old)) continue;
+      const prevIds = new Set(old.map(r => r.id));
+      const nextIds = new Set(next.map(r => r.id));
+      // Inserts
+      next.forEach(r => { if (r.id && !prevIds.has(r.id)) insertRecord(module === "users" ? "users" : module, r); });
+      // Deletes
+      old.forEach(r => { if (r.id && !nextIds.has(r.id)) deleteRecord(module === "users" ? "users" : module, r.id); });
+      // Updates — only compare records that exist in both
+      next.forEach(r => {
+        if (r.id && prevIds.has(r.id)) {
+          const o = old.find(p => p.id === r.id);
+          if (o && JSON.stringify(o) !== JSON.stringify(r)) updateRecord(module === "users" ? "users" : module, r.id, r);
+        }
+      });
+    }
+    prevRef.current = { ...syncModules };
+  }, [syncModules]);
 
   // ── Supabase: Load data from cloud on mount ──
   const [dbReady, setDbReady] = useState(!isSupabaseConfigured);
@@ -249,46 +235,45 @@ export default function SmartCRM() {
     }
   }, []);
 
-  // Persist all data to localStorage on change (fallback mode)
+  // Persist all data to localStorage on every change (works as primary store without Supabase, backup with Supabase)
   useEffect(() => {
-    if (isSupabaseConfigured) return; // skip localStorage when using Supabase
     saveState({ accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
       leads, callReports, contracts, collections, targets, quotes, commLogs, events, customPermissions });
   }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
     leads, callReports, contracts, collections, targets, quotes, commLogs, events, customPermissions]);
 
-  const addNote = note => syncNotes(p=>[...p,note]);
-  const addFile = file => syncFiles(p=>[...p,file]);
+  const addNote = note => setNotes(p=>[...p,note]);
+  const addFile = file => setFiles(p=>[...p,file]);
   const logout  = () => { if(isSupabaseConfigured) supabaseSignOut(); clearSession(); setCurrentUser(null); setPage("dashboard"); };
 
   // Cascade delete: remove all linked records when an account is deleted
   const cascadeDeleteAccount = useCallback((accId) => {
-    syncAccounts(p => p.filter(a => a.id !== accId));
-    syncContacts(p => p.filter(c => c.accountId !== accId));
-    syncOpps(p => p.filter(o => o.accountId !== accId));
-    syncActivities(p => p.filter(a => a.accountId !== accId));
-    syncTickets(p => p.filter(t => t.accountId !== accId));
-    syncNotes(p => p.filter(n => !(n.recordType === "account" && n.recordId === accId)));
-    syncFiles(p => p.map(f => ({...f, linkedTo: f.linkedTo.filter(l => !(l.type === "account" && l.id === accId))})));
-    syncContracts(p => p.filter(c => c.accountId !== accId));
-    syncCollections(p => p.filter(c => c.accountId !== accId));
-    syncCallReports(p => p.filter(r => r.accountId !== accId));
-  }, [syncAccounts,syncContacts,syncOpps,syncActivities,syncTickets,syncNotes,syncFiles,syncContracts,syncCollections,syncCallReports]);
+    setAccounts(p => p.filter(a => a.id !== accId));
+    setContacts(p => p.filter(c => c.accountId !== accId));
+    setOpps(p => p.filter(o => o.accountId !== accId));
+    setActivities(p => p.filter(a => a.accountId !== accId));
+    setTickets(p => p.filter(t => t.accountId !== accId));
+    setNotes(p => p.filter(n => !(n.recordType === "account" && n.recordId === accId)));
+    setFiles(p => p.map(f => ({...f, linkedTo: f.linkedTo.filter(l => !(l.type === "account" && l.id === accId))})));
+    setContracts(p => p.filter(c => c.accountId !== accId));
+    setCollections(p => p.filter(c => c.accountId !== accId));
+    setCallReports(p => p.filter(r => r.accountId !== accId));
+  }, []);
 
   // Cascade delete: remove linked activities/notes/files when an opportunity is deleted
   const cascadeDeleteOpp = useCallback((oppId) => {
-    syncOpps(p => p.filter(o => o.id !== oppId));
-    syncActivities(p => p.map(a => a.oppId === oppId ? {...a, oppId: ""} : a));
-    syncNotes(p => p.filter(n => !(n.recordType === "opp" && n.recordId === oppId)));
-    syncFiles(p => p.map(f => ({...f, linkedTo: f.linkedTo.filter(l => !(l.type === "opp" && l.id === oppId))})));
-    syncContracts(p => p.map(c => c.oppId === oppId ? {...c, oppId: ""} : c));
-  }, [syncOpps,syncActivities,syncNotes,syncFiles,syncContracts]);
+    setOpps(p => p.filter(o => o.id !== oppId));
+    setActivities(p => p.map(a => a.oppId === oppId ? {...a, oppId: ""} : a));
+    setNotes(p => p.filter(n => !(n.recordType === "opp" && n.recordId === oppId)));
+    setFiles(p => p.map(f => ({...f, linkedTo: f.linkedTo.filter(l => !(l.type === "opp" && l.id === oppId))})));
+    setContracts(p => p.map(c => c.oppId === oppId ? {...c, oppId: ""} : c));
+  }, []);
 
   // Cascade delete: unlink activities when a contact is deleted
   const cascadeDeleteContact = useCallback((conId) => {
-    syncContacts(p => p.filter(c => c.id !== conId));
-    syncActivities(p => p.map(a => a.contactId === conId ? {...a, contactId: ""} : a));
-  }, [syncContacts,syncActivities]);
+    setContacts(p => p.filter(c => c.id !== conId));
+    setActivities(p => p.map(a => a.contactId === conId ? {...a, contactId: ""} : a));
+  }, []);
 
   // Convert lead to opportunity — accepts conversion data from modal
   const convertLeadToOpp = useCallback((lead, conversionData) => {
@@ -313,9 +298,9 @@ export default function SmartCRM() {
       forecastCategory: data.forecastCategory || "Likely-Case",
       dealSize: data.dealSize || "Medium",
     };
-    syncOpps(p => [...p, newOpp]);
+    setOpps(p => [...p, newOpp]);
     // Mark lead as Converted (keep for history) instead of deleting
-    syncLeads(p => p.map(l => l.id === lead.id ? { ...l, stage: "Converted", convertedDate: today, convertedOppId: newOpp.id } : l));
+    setLeads(p => p.map(l => l.id === lead.id ? { ...l, stage: "Converted", convertedDate: today, convertedOppId: newOpp.id } : l));
     // Create initial activity for the new opportunity
     const initialAct = {
       id: `act_${Date.now()}`,
@@ -332,21 +317,21 @@ export default function SmartCRM() {
       notes: `Lead ${lead.leadId} converted to opportunity. Qualification: ${data.notes || lead.notes || "Initial qualification complete."}`,
       outcome: "Positive",
     };
-    syncActivities(p => [...p, initialAct]);
+    setActivities(p => [...p, initialAct]);
     setPage("pipeline");
-  }, [syncOpps,syncLeads,syncActivities]);
+  }, []);
 
   // Bulk upload handler
   const handleBulkUpload = useCallback((type, records) => {
     switch(type) {
-      case "Leads": syncLeads(p => [...p, ...records]); break;
-      case "Customers": syncAccounts(p => [...p, ...records]); break;
-      case "Contacts": syncContacts(p => [...p, ...records]); break;
-      case "Collections": syncCollections(p => [...p, ...records]); break;
-      case "Support Tickets": syncTickets(p => [...p, ...records]); break;
-      case "Contracts": syncContracts(p => [...p, ...records]); break;
+      case "Leads": setLeads(p => [...p, ...records]); break;
+      case "Customers": setAccounts(p => [...p, ...records]); break;
+      case "Contacts": setContacts(p => [...p, ...records]); break;
+      case "Collections": setCollections(p => [...p, ...records]); break;
+      case "Support Tickets": setTickets(p => [...p, ...records]); break;
+      case "Contracts": setContracts(p => [...p, ...records]); break;
     }
-  }, [syncLeads,syncAccounts,syncContacts,syncCollections,syncTickets,syncContracts]);
+  }, []);
 
   if(!currentUser) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers} userPasswords={userPasswords}/></>
@@ -359,27 +344,28 @@ export default function SmartCRM() {
       <div className="app">
         <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={tickets} leads={leads} collections={collections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions}/>
         <div className="main">
-          <Header page={page} accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} setPage={setPage} currentUser={currentUser}/>
+          <Header page={page} accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers}/>
           <div className="content" id="main-content" role="main">
             {page==="dashboard"  && <Dashboard accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} setPage={setPage}/>}
-            {page==="leads"      && <Leads leads={leads} setLeads={syncLeads} accounts={accounts} contacts={contacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp}/>}
-            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={syncAccounts} onDeleteAccount={cascadeDeleteAccount} opps={opps} activities={activities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} leads={leads}/>}
-            {page==="contacts"   && <Contacts contacts={contacts} setContacts={syncContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={opps} activities={activities}/>}
-            {page==="pipeline"   && <Pipeline opps={opps} setOpps={syncOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={syncActivities} callReports={callReports}/>}
-            {page==="activities" && <Activities activities={activities} setActivities={syncActivities} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} files={files} onAddFile={addFile}/>}
-            {page==="callreports"&& <CallReports callReports={callReports} setCallReports={syncCallReports} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
-            {page==="tickets"    && <Tickets tickets={tickets} setTickets={syncTickets} accounts={accounts}/>}
-            {page==="contracts"  && <Contracts contracts={contracts} setContracts={syncContracts} accounts={accounts} opps={opps} currentUser={currentUser}/>}
-            {page==="collections"&& <Collections collections={collections} setCollections={syncCollections} accounts={accounts} contracts={contracts} currentUser={currentUser}/>}
-            {page==="quotations" && <Quotations quotes={quotes} setQuotes={syncQuotes} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
-            {page==="calendar"   && <CalendarView events={events} setEvents={syncEvents} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
-            {page==="communications"&& <CommLog commLogs={commLogs} setCommLogs={syncCommLogs} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
-            {page==="targets"    && <Targets targets={targets} setTargets={syncTargets} currentUser={currentUser}/>}
+            {page==="leads"      && <Leads leads={leads} setLeads={setLeads} accounts={accounts} contacts={contacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp}/>}
+            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={opps} activities={activities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} leads={leads}/>}
+            {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={opps} activities={activities}/>}
+            {page==="pipeline"   && <Pipeline opps={opps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={setActivities} callReports={callReports}/>}
+            {page==="activities" && <Activities activities={activities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} files={files} onAddFile={addFile}/>}
+            {page==="callreports"&& <CallReports callReports={callReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
+            {page==="tickets"    && <Tickets tickets={tickets} setTickets={setTickets} accounts={accounts}/>}
+            {page==="contracts"  && <Contracts contracts={contracts} setContracts={setContracts} accounts={accounts} opps={opps} currentUser={currentUser}/>}
+            {page==="collections"&& <Collections collections={collections} setCollections={setCollections} accounts={accounts} contracts={contracts} currentUser={currentUser}/>}
+            {page==="quotations" && <Quotations quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
+            {page==="calendar"   && <CalendarView events={events} setEvents={setEvents} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
+            {page==="communications"&& <CommLog commLogs={commLogs} setCommLogs={setCommLogs} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
+            {page==="targets"    && <Targets targets={targets} setTargets={setTargets} currentUser={currentUser}/>}
             {page==="reports"    && <Reports accounts={accounts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} contacts={contacts} contracts={contracts} quotes={quotes} currentUser={currentUser}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers}/>}
-            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={syncOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
+            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
+            {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/>}
           </div>
         </div>
       </div>
