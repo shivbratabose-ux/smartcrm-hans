@@ -440,7 +440,6 @@ export const CSS = `
   .ht-children { margin-left:24px; padding-left:16px; border-left:2px solid var(--border); }
   .ht-row { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:8px; font-size:13px; min-height:36px; transition:background 0.1s; position:relative; }
   .ht-row:hover { background:var(--s2); }
-  .ht-row:hover .ht-actions { opacity:1; }
   .ht-clickable { cursor:pointer; }
   .ht-chevron { color:var(--text3); flex-shrink:0; transition:transform 0.15s; }
   .ht-icon { width:24px; height:24px; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -456,7 +455,8 @@ export const CSS = `
   .ht-av { width:18px; height:18px; border-radius:5px; background:var(--brand); color:white; font-size:8px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
   .ht-count { font-size:10px; font-weight:700; background:var(--teal-bg); color:var(--teal); padding:1px 6px; border-radius:8px; }
   .ht-prods { display:inline-flex; gap:4px; flex-wrap:wrap; }
-  .ht-actions { display:flex; gap:2px; margin-left:auto; opacity:0; transition:opacity 0.15s; }
+  .ht-actions { display:flex; gap:2px; margin-left:auto; opacity:0.4; transition:opacity 0.15s; }
+  .ht-row:hover .ht-actions { opacity:1; }
   .ht-btn { background:none; border:none; cursor:pointer; color:var(--text3); padding:3px; border-radius:4px; display:flex; align-items:center; }
   .ht-btn:hover { background:var(--s3); color:var(--text2); }
   .ht-btn-add:hover { color:var(--brand); }
@@ -476,7 +476,8 @@ export const CSS = `
   .th-name { font-weight:600; font-size:13px; color:var(--text); }
   .th-sub { font-size:11px; color:var(--text3); }
   .th-role { font-size:10px; font-weight:600; padding:2px 8px; border-radius:6px; white-space:nowrap; }
-  .th-actions { display:flex; gap:2px; opacity:0; transition:opacity 0.15s; }
+  .th-actions { display:flex; gap:2px; opacity:0.4; transition:opacity 0.15s; }
+  .th-row:hover .th-actions { opacity:1; }
   .th-direct { font-size:10px; color:var(--text3); background:var(--s3); padding:1px 6px; border-radius:8px; font-weight:600; }
 
   /* ── TEAM & USERS ── */
