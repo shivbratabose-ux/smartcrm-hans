@@ -105,15 +105,28 @@ export class ErrorBoundary extends Component {
   }
 }
 
-export const canAccess = (userId, module, orgUsers) => {
+export const canAccess = (userId, module, orgUsers, customPermissions) => {
   const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
   if(!u) return false;
+  // Check user-level override first
+  const userOverride = customPermissions?.__users?.[userId]?.[module];
+  if(userOverride!==undefined) return userOverride && userOverride!==false;
+  // Then role-level custom override
+  const roleOverride = customPermissions?.[u.role]?.[module];
+  if(roleOverride!==undefined) return roleOverride && roleOverride!==false;
+  // Fall back to default
   const perm = PERMISSIONS[u.role];
   if(!perm) return false;
   return perm[module] && perm[module]!==false;
 };
-export const canWrite = (userId, module, orgUsers) => {
+export const canWrite = (userId, module, orgUsers, customPermissions) => {
   const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
   if(!u) return false;
+  // Check user-level override first
+  const userOverride = customPermissions?.__users?.[userId]?.[module];
+  if(userOverride!==undefined) return userOverride==="rw";
+  // Then role-level custom override
+  const roleOverride = customPermissions?.[u.role]?.[module];
+  if(roleOverride!==undefined) return roleOverride==="rw";
   return PERMISSIONS[u.role]?.[module]==="rw";
 };
