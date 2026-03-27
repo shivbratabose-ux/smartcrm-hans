@@ -87,6 +87,8 @@ function Masters({masters,setMasters,catalog,setCatalog}) {
           <MasterSection title="Countries" items={masters.countries} onAdd={v=>addItem("countries",v)} onEdit={(id,v)=>editItem("countries",id,v)} onDelete={id=>delItem("countries",id)} renderSub="Region"/>
           <MasterSection title="Priorities" items={masters.priorities} onAdd={v=>addItem("priorities",v)} onEdit={(id,v)=>editItem("priorities",id,v)} onDelete={id=>delItem("priorities",id)}/>
           <MasterSection title="Ticket Types" items={masters.ticketTypes} onAdd={v=>addItem("ticketTypes",v)} onEdit={(id,v)=>editItem("ticketTypes",id,v)} onDelete={id=>delItem("ticketTypes",id)}/>
+          <MasterSection title="Call Types" items={masters.callTypes||[]} onAdd={v=>addItem("callTypes",v)} onEdit={(id,v)=>editItem("callTypes",id,v)} onDelete={id=>delItem("callTypes",id)}/>
+          <MasterSection title="Call Subjects / Objectives" items={masters.callSubjects||[]} onAdd={v=>addItem("callSubjects",v)} onEdit={(id,v)=>editItem("callSubjects",id,v)} onDelete={id=>delItem("callSubjects",id)}/>
         </div>
       )}
       {tab==="products"&&<ProductCatalogPage catalog={catalog} setCatalog={setCatalog}/>}

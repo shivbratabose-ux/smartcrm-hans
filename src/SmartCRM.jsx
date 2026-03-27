@@ -40,6 +40,7 @@ import CalendarView from "./components/CalendarView";
 import CommLog from "./components/CommLog";
 import BulkUpload from "./components/BulkUpload";
 import Profile from "./components/Profile";
+import QuickLogFAB from "./components/QuickLog";
 
 // ── Session persistence with 30-min idle timeout ──
 const SESSION_KEY = "smartcrm_session";
@@ -368,6 +369,7 @@ export default function SmartCRM() {
             {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/>}
           </div>
         </div>
+        <QuickLogFAB accounts={accounts} contacts={contacts} opps={opps} leads={leads} orgUsers={orgUsers} currentUser={currentUser} callReports={callReports} setCallReports={setCallReports} activities={activities} setActivities={setActivities} masters={masters}/>
       </div>
     </ErrorBoundary>
   );

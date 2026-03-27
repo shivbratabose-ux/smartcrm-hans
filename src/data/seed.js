@@ -1,4 +1,4 @@
-import { ACT_TYPES, CUST_TYPES, COUNTRIES, REGIONS, PRIORITIES, STAGES, STAGE_PROB, TICKET_TYPES } from './constants.js';
+import { ACT_TYPES, CUST_TYPES, COUNTRIES, REGIONS, PRIORITIES, STAGES, STAGE_PROB, TICKET_TYPES, CALL_TYPES, CALL_OBJECTIVES } from './constants.js';
 
 // ═══════════════════════════════════════════════════════════════════
 // SEED DATA
@@ -232,6 +232,8 @@ export const INIT_MASTERS = {
   priorities:    PRIORITIES.map((p,i)=>({id:`pr${i+1}`,name:p})),
   stages:        STAGES.map(s=>({id:`st${s}`,name:s,probability:STAGE_PROB[s]||0})),
   ticketTypes:   TICKET_TYPES.map((t,i)=>({id:`tt${i+1}`,name:t})),
+  callTypes:     CALL_TYPES.map((t,i)=>({id:`clt${i+1}`,name:t})),
+  callSubjects:  CALL_OBJECTIVES.map((t,i)=>({id:`cls${i+1}`,name:t})),
 };
 
 // ── Blank form templates ──
