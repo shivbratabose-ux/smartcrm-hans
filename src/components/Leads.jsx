@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, UserPlus, ChevronDown, ChevronUp, ShieldCheck, X } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, UserPlus, ChevronDown, ChevronUp, ShieldCheck, X, Save, RotateCcw, Home, Warehouse, Upload, ChevronRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES } from '../data/constants';
+import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty, InlineContactForm, LogCallModal } from './shared';
@@ -391,11 +391,12 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   );
 }
 
-function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts }) {
+function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts, setLeads }) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [showStageGate, setShowStageGate] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
   const linkedAccount = lead.accountId ? accounts.find(a => a.id === lead.accountId) : null;
   const stageInfo = LEAD_STAGE_MAP[lead.stage];
   const productInfo = PROD_MAP[lead.product];
@@ -404,109 +405,164 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
   const dealValue = (lead.score * 0.5).toFixed(2);
   const pipelineValue = (dealValue * winProb / 100).toFixed(2);
 
-  // Generate associated contacts from the lead's contact info + real contacts
+  // ── Inline editing state ──
+  const [editing, setEditing] = useState(null);
+  const [editData, setEditData] = useState({});
+  const startEdit = (section) => { setEditing(section); setEditData({...lead}); };
+  const saveEdit = () => {
+    if (setLeads) setLeads(prev => prev.map(l => l.id === lead.id ? {...l, ...editData} : l));
+    setEditing(null); setEditData({});
+  };
+  const cancelEdit = () => { setEditing(null); setEditData({}); };
+  const updateLead = (patch) => {
+    if (setLeads) setLeads(prev => prev.map(l => l.id === lead.id ? {...l, ...patch} : l));
+  };
+
+  // ── Contacts data ──
   const linkedContactIds = lead.contactIds || [];
   const linkedContacts = (contacts || []).filter(c => linkedContactIds.includes(c.id));
   const accountContacts = (contacts || []).filter(c => lead.accountId && c.accountId === lead.accountId && !linkedContactIds.includes(c.id));
   const contactRolesMap = lead.contactRoles || {};
   const displayContacts = [
-    { name: lead.contact, designation: lead.designation || "Primary Contact", department: productInfo?.name || "General", email: lead.email, phone: lead.phone, role: "Primary Contact", isPrimary: true },
-    ...linkedContacts.map(c => ({ name: c.name, designation: c.designation || "", department: c.department || "—", email: c.email, phone: c.phone, role: contactRolesMap[c.id] || "—" })),
-    ...accountContacts.map(c => ({ name: c.name, designation: c.designation || c.role, department: c.department || "—", email: c.email, phone: c.phone, role: contactRolesMap[c.id] || "Account Contact" })),
+    { id: "_primary", name: lead.contact, designation: lead.designation || "Primary Contact", department: productInfo?.name || "General", email: lead.email, phone: lead.phone, role: "Primary Contact", isPrimary: true },
+    ...linkedContacts.map(c => ({ id: c.id, name: c.name, designation: c.designation || "", department: c.department || "", email: c.email, phone: c.phone, role: contactRolesMap[c.id] || "Other" })),
+    ...accountContacts.map(c => ({ id: c.id, name: c.name, designation: c.designation || c.role, department: c.department || "", email: c.email, phone: c.phone, role: contactRolesMap[c.id] || "Account Contact" })),
   ];
-  if (linkedAccount && !linkedContacts.length && !accountContacts.length) {
-    displayContacts.push({ name: linkedAccount.owner ? (_teamMap[linkedAccount.owner]?.name || "Account Manager") : "Account Manager", designation: "Account Manager", department: "Management", email: "", phone: "", role: "Account Manager" });
-  }
 
-  // Real activity timeline
-  const leadActivities = (allActivities||[]).filter(a => a.accountId === lead.accountId || a.contactId === lead.contact);
+  // ── Addresses data ──
+  const addresses = lead.addresses || [];
+
+  // ── Sales Team data ──
+  const salesTeam = lead.salesTeam || [{userId: lead.assignedTo, role: "Sales Owner"}];
+  const TEAM_ROLES = ["Sales Owner","Account Manager","Pre-sales","Inside Sales","Support"];
+
+  // ── Activities / Timeline ──
+  const leadActivities = (allActivities||[]).filter(a => a.accountId === lead.accountId || a.contactId === lead.contact || a.leadId === lead.id);
   const leadCalls = (callReports||[]).filter(cr => cr.accountId === lead.accountId || cr.leadId === lead.id);
-
   const combinedTimeline = [
-    ...leadActivities.map(a => ({ type: "activity", date: a.date || a.createdDate || "", icon: <MessageSquare size={13}/>, title: a.title || a.type || "Activity", desc: a.notes || a.description || "—", time: a.date || a.createdDate || "—" })),
-    ...leadCalls.map(cr => ({ type: "call", date: cr.date || cr.callDate || "", icon: <Phone size={13}/>, title: cr.callType || "Call", desc: cr.notes || cr.outcome || "—", time: cr.date || cr.callDate || "—" })),
+    ...leadActivities.map(a => ({ type: "activity", date: a.date || a.createdDate || "", icon: <MessageSquare size={13}/>, title: a.title || a.type || "Activity", desc: a.notes || a.description || "", time: a.date || a.createdDate || "" })),
+    ...leadCalls.map(cr => ({ type: "call", date: cr.date || cr.callDate || "", icon: <Phone size={13}/>, title: cr.callType || "Call", desc: cr.notes || cr.outcome || "", time: cr.date || cr.callDate || "" })),
   ].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-
-  // If no real activities, show a placeholder
   const displayTimeline = combinedTimeline.length > 0 ? combinedTimeline : [
-    { icon: <Calendar size={13}/>, title: "Lead Created", desc: `Lead ${lead.leadId} was created`, time: lead.createdDate || "—" },
+    { icon: <Calendar size={13}/>, title: "Lead Created", desc: `Lead ${lead.leadId} was created`, time: lead.createdDate || "" },
   ];
 
-  // Inline form states
+  // ── Inline forms for activities tab ──
   const [showCallForm, setShowCallForm] = useState(false);
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [callForm, setCallForm] = useState({ callType: "Discovery", date: today, notes: "", outcome: "Interested", nextCallDate: "" });
   const [actForm, setActForm] = useState({ title: "", type: "Call", date: today, notes: "" });
+  const [expandedTimeline, setExpandedTimeline] = useState(null);
 
   const saveCallLog = () => {
     if (!callForm.notes?.trim()) return;
-    const newCall = {
-      id: `cr-${Date.now()}`,
-      accountId: lead.accountId || "",
-      leadId: lead.id,
-      contactId: lead.contact || "",
-      callType: callForm.callType,
-      date: callForm.date,
-      callDate: callForm.date,
-      notes: callForm.notes,
-      outcome: callForm.outcome,
-      nextCallDate: callForm.nextCallDate,
-      createdBy: "",
-    };
+    const newCall = { id: `cr-${Date.now()}`, accountId: lead.accountId || "", leadId: lead.id, contactId: lead.contact || "", callType: callForm.callType, date: callForm.date, callDate: callForm.date, notes: callForm.notes, outcome: callForm.outcome, nextCallDate: callForm.nextCallDate, createdBy: "" };
     setCallReports(p => [...p, newCall]);
     setCallForm({ callType: "Discovery", date: today, notes: "", outcome: "Interested", nextCallDate: "" });
     setShowCallForm(false);
   };
-
   const saveActivity = () => {
     if (!actForm.title?.trim()) return;
-    const newAct = {
-      id: `act-${Date.now()}`,
-      accountId: lead.accountId || "",
-      contactId: lead.contact || "",
-      leadId: lead.id,
-      title: actForm.title,
-      type: actForm.type,
-      date: actForm.date,
-      notes: actForm.notes,
-      createdDate: today,
-    };
+    const newAct = { id: `act-${Date.now()}`, accountId: lead.accountId || "", contactId: lead.contact || "", leadId: lead.id, title: actForm.title, type: actForm.type, date: actForm.date, notes: actForm.notes, createdDate: today };
     setActivities(p => [...p, newAct]);
     setActForm({ title: "", type: "Call", date: today, notes: "" });
     setShowActivityForm(false);
   };
 
-  // Mock documents
-  const documents = [
+  // ── Contacts tab state ──
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [showNewContactForm, setShowNewContactForm] = useState(false);
+  const [editingContact, setEditingContact] = useState(null);
+  const [contactEditData, setContactEditData] = useState({});
+
+  // ── Addresses tab state ──
+  const [showAddAddress, setShowAddAddress] = useState(false);
+  const [addressForm, setAddressForm] = useState({ type: "HQ", line1: "", line2: "", city: "", state: "", country: "India", pin: "", phone: "", email: "", status: "Active", isPrimary: false });
+  const [editingAddress, setEditingAddress] = useState(null);
+  const [expandedAddress, setExpandedAddress] = useState(null);
+
+  // ── Team tab state ──
+  const [showAddTeamMember, setShowAddTeamMember] = useState(false);
+  const [newTeamMember, setNewTeamMember] = useState({ userId: "", role: "Inside Sales" });
+
+  // ── Documents ──
+  const documents = lead.documents || [
     { name: `${lead.company}_Proposal.pdf`, size: "2.4 MB", date: lead.createdDate },
     { name: `NDA_${lead.company}.docx`, size: "156 KB", date: lead.createdDate },
     { name: `Meeting_Notes.pdf`, size: "890 KB", date: lead.nextCall || lead.createdDate },
   ];
 
-  // Revenue source mock data bar widths
-  const revSources = [
-    { label: "Direct", pct: 45, color: "#1B6B5A" },
-    { label: "Referral", pct: 30, color: "#3B82F6" },
-    { label: "Inbound", pct: 25, color: "#F59E0B" },
+  // ── Tab definitions ──
+  const TABS = [
+    { id: "overview", label: "Overview", icon: <TrendingUp size={13}/> },
+    { id: "contacts", label: "Contacts", icon: <Users size={13}/> },
+    { id: "addresses", label: "Addresses", icon: <MapPin size={13}/> },
+    { id: "team", label: "Team", icon: <User size={13}/> },
+    { id: "activities", label: "Activities", icon: <Clock size={13}/> },
+    { id: "documents", label: "Documents", icon: <Paperclip size={13}/> },
+    ...(lead.stage !== "NA" ? [{ id: "convert", label: "Convert", icon: <ArrowRightCircle size={13}/> }] : []),
   ];
+
+  // ── Editable field helper ──
+  const editField = (label, field, type, options) => {
+    const isEditing = editing === "general";
+    const val = isEditing ? (editData[field] ?? "") : (lead[field] ?? "");
+    if (!isEditing) {
+      let display = val;
+      if (field === "product") display = PROD_MAP[val]?.name || val;
+      else if (field === "stage") display = LEAD_STAGE_MAP[val]?.name || val;
+      else if (field === "assignedTo") display = _teamMap[val]?.name || val;
+      return infoRow(label, display || "\u2014");
+    }
+    const inputStyle = {fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid var(--border)",width:"100%",boxSizing:"border-box"};
+    let input;
+    if (type === "select" && options) {
+      input = <select value={val} onChange={e => setEditData(d => ({...d, [field]: e.target.value}))} style={inputStyle}>
+        {options.map(o => <option key={typeof o === "object" ? o.id : o} value={typeof o === "object" ? o.id : o}>{typeof o === "object" ? o.name : o}</option>)}
+      </select>;
+    } else if (type === "date") {
+      input = <input type="date" value={val} onChange={e => setEditData(d => ({...d, [field]: e.target.value}))} style={inputStyle}/>;
+    } else if (type === "range") {
+      input = <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <input type="range" min="0" max="100" value={val} onChange={e => setEditData(d => ({...d, [field]: +e.target.value}))} style={{flex:1}}/>
+        <span style={{fontSize:12,fontWeight:600,minWidth:28}}>{val}</span>
+      </div>;
+    } else if (type === "textarea") {
+      input = <textarea value={val} onChange={e => setEditData(d => ({...d, [field]: e.target.value}))} rows={3} style={{...inputStyle,resize:"vertical"}}/>;
+    } else {
+      input = <input value={val} onChange={e => setEditData(d => ({...d, [field]: e.target.value}))} style={inputStyle}/>;
+    }
+    return (
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid var(--border)",gap:12}}>
+        <span style={{fontSize:12,color:"var(--text3)",fontWeight:500,minWidth:100,flexShrink:0}}>{label}</span>
+        <div style={{flex:1,maxWidth:"60%"}}>{input}</div>
+      </div>
+    );
+  };
+
+  // ── Stage gate for advance ──
+  const STAGE_ORDER = ["MQL","SQL","SAL","Converted"];
+  const curIdx = STAGE_ORDER.indexOf(lead.stage);
+  const nextStage = curIdx >= 0 && curIdx < STAGE_ORDER.length - 1 ? STAGE_ORDER[curIdx + 1] : null;
+  const nextGateResult = nextStage ? validateStageGate(lead, nextStage, STAGE_GATES) : null;
 
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Lead Profile"
       onClick={e => e.target === e.currentTarget && onClose()}
       style={{zIndex:1000}}>
       <div style={{
-        background:"var(--bg,#F1F5F9)",width:"92vw",maxWidth:1100,maxHeight:"92vh",
+        background:"var(--bg,#F1F5F9)",width:"94vw",maxWidth:1200,maxHeight:"94vh",
         borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",
         boxShadow:"0 25px 60px rgba(0,0,0,0.3)"
       }}>
-        {/* Header */}
-        <div style={{background:"white",padding:"20px 28px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+        {/* ═══ Header ═══ */}
+        <div style={{background:"white",padding:"18px 28px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <div style={{width:44,height:44,borderRadius:12,background:"#1B6B5A",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:16,fontWeight:700}}>
               {lead.company?.slice(0,2).toUpperCase()}
             </div>
             <div>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                 <span style={{fontSize:18,fontWeight:700,color:"var(--text1)"}}>{lead.company}</span>
                 <LeadStageBadge stage={lead.stage}/>
                 <span style={{fontSize:11,fontFamily:"'Courier New',monospace",color:"var(--text3)",background:"var(--s2)",padding:"2px 8px",borderRadius:4}}>{lead.leadId}</span>
@@ -519,12 +575,12 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {lead.stage === "SAL" && (
               <button className="btn btn-primary" onClick={() => setShowConvertModal(true)}>
-                <ArrowRightCircle size={14}/>Convert to Opportunity
+                <ArrowRightCircle size={14}/>Convert
               </button>
             )}
             {lead.stage === "Converted" && (
               <span style={{fontSize:11,fontWeight:600,color:"#16A34A",background:"#F0FDF4",padding:"5px 12px",borderRadius:6}}>
-                ✓ Converted{lead.convertedOppRefId ? ` → ${lead.convertedOppRefId}` : ""}
+                Converted{lead.convertedOppRefId ? ` \u2192 ${lead.convertedOppRefId}` : ""}
               </span>
             )}
             <button className="btn btn-sec" style={{color:"#3B82F6"}} onClick={() => onLogCall && onLogCall(lead)}>
@@ -533,382 +589,689 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
             <button className="btn btn-sec" onClick={() => { onClose(); onEdit(lead); }}>
               <Edit2 size={14}/>Edit
             </button>
-            <button className="icon-btn" onClick={onClose} aria-label="Close" style={{width:32,height:32,fontSize:18}}>✕</button>
+            <button className="icon-btn" onClick={onClose} aria-label="Close" style={{width:32,height:32,fontSize:18}}>&#10005;</button>
           </div>
         </div>
 
-        {/* Stage Advancement Section */}
-        {lead.stage !== "Converted" && lead.stage !== "NA" && (() => {
-          const STAGE_ORDER = ["MQL","SQL","SAL","Converted"];
-          const curIdx = STAGE_ORDER.indexOf(lead.stage);
-          const nextStage = curIdx >= 0 && curIdx < STAGE_ORDER.length - 1 ? STAGE_ORDER[curIdx + 1] : null;
-          const gateResult = nextStage ? validateStageGate(lead, nextStage, STAGE_GATES) : null;
-          return (
-            <div style={{padding:"0 28px",paddingBottom:0}}>
-              <div style={{background:"white",borderRadius:10,border:"1px solid var(--border)",padding:"14px 18px"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:showStageGate ? 10 : 0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:12}}>
-                    <span style={{fontSize:12,fontWeight:600,color:"var(--text3)"}}>Stage Progression:</span>
-                    {STAGE_ORDER.map((s, i) => {
-                      const si = LEAD_STAGE_MAP[s];
-                      const isCurrent = s === lead.stage;
-                      const isPast = i < curIdx;
-                      return (
-                        <div key={s} style={{display:"flex",alignItems:"center",gap:4}}>
-                          {i > 0 && <div style={{width:20,height:2,background: isPast ? "#22C55E" : "var(--border)"}}/>}
-                          <span style={{fontSize:11,fontWeight:isCurrent ? 700 : 500,padding:"3px 8px",borderRadius:6,
-                            background: isCurrent ? si?.color + "18" : isPast ? "#22C55E18" : "var(--s2)",
-                            color: isCurrent ? si?.color : isPast ? "#22C55E" : "var(--text3)",
-                            border: isCurrent ? `1.5px solid ${si?.color}` : "1px solid transparent"}}>{s}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    {nextStage && (
-                      <button className="btn btn-sm" style={{fontSize:11,padding:"4px 12px",borderRadius:6,
-                        background: gateResult?.canAdvance ? "var(--brand)" : "var(--s2)",
-                        color: gateResult?.canAdvance ? "white" : "var(--text3)",
-                        border:"none",cursor: gateResult?.canAdvance ? "pointer" : "not-allowed",opacity: gateResult?.canAdvance ? 1 : 0.7}}
-                        disabled={!gateResult?.canAdvance}
-                        onClick={() => {
-                          if (nextStage === "Converted") { setShowConvertModal(true); }
-                          else { onEdit({ ...lead, stage: nextStage, stageHistory: [...(lead.stageHistory||[]), {from:lead.stage,to:nextStage,date:today}] }); onClose(); }
-                        }}>
-                        <ArrowRightCircle size={12}/>{nextStage === "Converted" ? "Convert" : `Advance to ${nextStage}`}
+        {/* ═══ Tab Bar ═══ */}
+        <div style={{background:"white",borderBottom:"1px solid var(--border)",padding:"0 28px",display:"flex",gap:0,flexShrink:0,position:"sticky",top:0,zIndex:10}}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)}
+              style={{display:"flex",alignItems:"center",gap:5,padding:"10px 16px",fontSize:12,fontWeight: activeTab === t.id ? 700 : 500,
+                color: activeTab === t.id ? "var(--brand,#1B6B5A)" : "var(--text3)",
+                borderBottom: activeTab === t.id ? "2px solid var(--brand,#1B6B5A)" : "2px solid transparent",
+                background:"none",border:"none",borderBottomStyle:"solid",cursor:"pointer",transition:"all 0.15s"}}>
+              {t.icon}{t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ═══ Scrollable Body ═══ */}
+        <div style={{flex:1,overflow:"auto",padding:"20px 28px 28px"}}>
+
+          {/* ─────────── OVERVIEW TAB ─────────── */}
+          {activeTab === "overview" && <>
+            {/* Stage Advancement */}
+            {lead.stage !== "Converted" && lead.stage !== "NA" && (
+              <div style={{marginBottom:16}}>
+                <div style={{background:"white",borderRadius:10,border:"1px solid var(--border)",padding:"14px 18px"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:showStageGate ? 10 : 0}}>
+                    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                      <span style={{fontSize:12,fontWeight:600,color:"var(--text3)"}}>Stage Progression:</span>
+                      {STAGE_ORDER.map((s, i) => {
+                        const si = LEAD_STAGE_MAP[s];
+                        const isCurrent = s === lead.stage;
+                        const isPast = i < curIdx;
+                        return (
+                          <div key={s} style={{display:"flex",alignItems:"center",gap:4}}>
+                            {i > 0 && <div style={{width:20,height:2,background: isPast ? "#22C55E" : "var(--border)"}}/>}
+                            <span style={{fontSize:11,fontWeight:isCurrent ? 700 : 500,padding:"3px 8px",borderRadius:6,
+                              background: isCurrent ? (si?.color || "#94A3B8") + "18" : isPast ? "#22C55E18" : "var(--s2)",
+                              color: isCurrent ? (si?.color || "#94A3B8") : isPast ? "#22C55E" : "var(--text3)",
+                              border: isCurrent ? `1.5px solid ${si?.color || "#94A3B8"}` : "1px solid transparent"}}>{s}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      {nextStage && (
+                        <button className="btn btn-sm" style={{fontSize:11,padding:"4px 12px",borderRadius:6,
+                          background: nextGateResult?.canAdvance ? "var(--brand)" : "var(--s2)",
+                          color: nextGateResult?.canAdvance ? "white" : "var(--text3)",
+                          border:"none",cursor: nextGateResult?.canAdvance ? "pointer" : "not-allowed",opacity: nextGateResult?.canAdvance ? 1 : 0.7}}
+                          disabled={!nextGateResult?.canAdvance}
+                          onClick={() => {
+                            if (nextStage === "Converted") { setShowConvertModal(true); }
+                            else { updateLead({ stage: nextStage, stageHistory: [...(lead.stageHistory||[]), {from:lead.stage,to:nextStage,date:today}] }); }
+                          }}>
+                          <ArrowRightCircle size={12}/>{nextStage === "Converted" ? "Convert" : `Advance to ${nextStage}`}
+                        </button>
+                      )}
+                      <button type="button" onClick={() => setShowStageGate(v => !v)}
+                        style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",display:"flex",alignItems:"center",gap:2,fontSize:11}}>
+                        {showStageGate ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+                        {showStageGate ? "Hide" : "Gates"}
                       </button>
-                    )}
-                    <button type="button" onClick={() => setShowStageGate(v => !v)}
-                      style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",display:"flex",alignItems:"center",gap:2,fontSize:11}}>
-                      {showStageGate ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
-                      {showStageGate ? "Hide" : "Gates"}
-                    </button>
-                  </div>
-                </div>
-                {showStageGate && gateResult && (
-                  <div style={{background: gateResult.canAdvance ? "#F0FDF4" : "#FFFBEB",borderRadius:8,padding:"10px 14px",border:`1px solid ${gateResult.canAdvance ? "#BBF7D0" : "#FDE68A"}`}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"var(--text2)",marginBottom:6}}>Requirements for {gateResult.label || nextStage}:</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
-                      {gateResult.passed.map(c => (
-                        <div key={c.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}>
-                          <Check size={12} style={{color:"#16A34A"}}/><span style={{color:"#15803D"}}>{c.label}</span>
-                        </div>
-                      ))}
-                      {gateResult.failed.map(c => (
-                        <div key={c.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}>
-                          <X size={12} style={{color:"#DC2626"}}/><span style={{color:"#991B1B"}}>{c.label}</span>
-                        </div>
-                      ))}
                     </div>
                   </div>
-                )}
+                  {showStageGate && nextGateResult && (
+                    <div style={{background: nextGateResult.canAdvance ? "#F0FDF4" : "#FFFBEB",borderRadius:8,padding:"10px 14px",border:`1px solid ${nextGateResult.canAdvance ? "#BBF7D0" : "#FDE68A"}`}}>
+                      <div style={{fontSize:11,fontWeight:700,color:"var(--text2)",marginBottom:6}}>Requirements for {nextGateResult.label || nextStage}:</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+                        {nextGateResult.passed.map(c => (
+                          <div key={c.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}>
+                            <Check size={12} style={{color:"#16A34A"}}/><span style={{color:"#15803D"}}>{c.label}</span>
+                          </div>
+                        ))}
+                        {nextGateResult.failed.map(c => (
+                          <div key={c.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}>
+                            <X size={12} style={{color:"#DC2626"}}/><span style={{color:"#991B1B"}}>{c.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
+            )}
+
+            {/* KPI Metrics */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+              {kpiCard(<TrendingUp size={15}/>, "Deal Value", `\u20B9${dealValue} L`, `Based on score: ${lead.score}`)}
+              {kpiCard(<Star size={15}/>, "Win Probability", `${winProb}%`, stageInfo?.name || lead.stage, "#3B82F6")}
+              {kpiCard(<Briefcase size={15}/>, "Pipeline Value", `\u20B9${pipelineValue} L`, "Weighted value", "#8B5CF6")}
+              {kpiCard(<Calendar size={15}/>, "Next Call", lead.nextCall ? fmt.short(lead.nextCall) : "\u2014", "Scheduled follow-up", "#F59E0B")}
             </div>
-          );
-        })()}
 
-        {/* Scrollable Body */}
-        <div style={{flex:1,overflow:"auto",padding:"20px 28px 28px"}}>
-          {/* KPI Metrics Row */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
-            {kpiCard(<TrendingUp size={15}/>, "Deal Value", `₹${dealValue} L`, `Based on score: ${lead.score}`)}
-            {kpiCard(<Star size={15}/>, "Win Probability", `${winProb}%`, stageInfo?.name || lead.stage, "#3B82F6")}
-            {kpiCard(<Briefcase size={15}/>, "Pipeline Value", `₹${pipelineValue} L`, "Weighted value", "#8B5CF6")}
-            {kpiCard(<Calendar size={15}/>, "Last Activity", lead.nextCall ? fmt.short(lead.nextCall) : "—", "Next scheduled call", "#F59E0B")}
-          </div>
-
-          <div style={{display:"grid",gridTemplateColumns:"1fr 340px",gap:20}}>
-            {/* Left Column */}
-            <div style={{display:"flex",flexDirection:"column",gap:16}}>
-              {/* General Information */}
-              <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+            {/* General Information - Inline Editable */}
+            <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
+              <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <Building2 size={15} style={{color:"var(--brand)"}}/> General Information
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 24px"}}>
-                  <div>
-                    {infoRow("Phase (Stage)", stageInfo?.name || lead.stage)}
-                    {infoRow("Financial Rating", lead.score >= 70 ? "A — High Value" : lead.score >= 40 ? "B — Medium Value" : "C — Low Value")}
-                    {infoRow("Region", lead.region)}
-                    {infoRow("Vertical", lead.vertical)}
-                    {lead.branch && infoRow("Branch", lead.branch)}
+                {editing === "general" ? (
+                  <div style={{display:"flex",gap:6}}>
+                    <button className="btn btn-sm btn-sec" style={{fontSize:10,padding:"3px 10px"}} onClick={cancelEdit}><RotateCcw size={11}/>Cancel</button>
+                    <button className="btn btn-sm btn-primary" style={{fontSize:10,padding:"3px 10px"}} onClick={saveEdit}><Save size={11}/>Save</button>
                   </div>
-                  <div>
-                    {infoRow("Product Interest", productInfo?.name || lead.product)}
-                    {infoRow("Lead Source", lead.source)}
-                    {infoRow("Sentiment Score", `${lead.score}/100`)}
-                    {infoRow("Created Date", fmt.short(lead.createdDate))}
-                    {lead.location && infoRow("Location", lead.location)}
-                    {lead.department && infoRow("Department", lead.department)}
-                  </div>
-                </div>
-                {lead.notes && (
-                  <div style={{marginTop:12,padding:"10px 14px",background:"var(--s2,#F8FAFC)",borderRadius:8,border:"1px solid var(--border)"}}>
-                    <div style={{fontSize:11,fontWeight:600,color:"var(--text3)",marginBottom:4}}>NOTES</div>
-                    <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.5}}>{lead.notes}</div>
-                  </div>
-                )}
-              </div>
-
-              {/* Associated Contacts */}
-              <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                  <Users size={15} style={{color:"var(--brand)"}}/> Associated Contacts
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12}}>
-                  {displayContacts.map((c, i) => {
-                    const ROLE_COLORS = {"Primary Contact":"#1B6B5A","Decision Maker/HOD":"#DC2626","Technical/IT":"#3B82F6","End User":"#8B5CF6","Finance/Accounts":"#F59E0B","Presales/Demo":"#0D9488","Management":"#7C3AED","Operations":"#EA580C","Account Contact":"#64748B","Account Manager":"#64748B","Other":"#94A3B8"};
-                    const roleColor = ROLE_COLORS[c.role] || "#64748B";
-                    return (
-                    <div key={i} style={{border:"1px solid var(--border)",borderRadius:10,padding:"14px 16px",background:"var(--s2,#F8FAFC)"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                        <div className="u-av" style={{width:36,height:36,borderRadius:10,fontSize:12,flexShrink:0}}>
-                          {c.name?.split(" ").map(n=>n[0]).join("").slice(0,2)}
-                        </div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:13,fontWeight:600,color:"var(--text1)"}}>{c.name}</div>
-                          {c.designation && <div style={{fontSize:11,color:"var(--text3)"}}>{c.designation}</div>}
-                          <div style={{fontSize:10,color:"var(--brand)",fontWeight:500}}>{c.department}</div>
-                        </div>
-                      </div>
-                      <div style={{marginBottom:8}}>
-                        <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:roleColor+"18",color:roleColor}}>{c.role}</span>
-                      </div>
-                      <div style={{display:"flex",gap:6}}>
-                        {c.email && (
-                          <a href={`mailto:${c.email}`} style={{width:28,height:28,borderRadius:6,background:"var(--brand)",color:"white",display:"flex",alignItems:"center",justifyContent:"center",textDecoration:"none"}} title={c.email}>
-                            <Mail size={13}/>
-                          </a>
-                        )}
-                        {c.phone && (
-                          <a href={`tel:${c.phone}`} style={{width:28,height:28,borderRadius:6,background:"#3B82F6",color:"white",display:"flex",alignItems:"center",justifyContent:"center",textDecoration:"none"}} title={c.phone}>
-                            <Phone size={13}/>
-                          </a>
-                        )}
-                        <div style={{width:28,height:28,borderRadius:6,background:"#0A66C2",color:"white",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}} title="LinkedIn">
-                          <Globe size={13}/>
-                        </div>
-                      </div>
-                    </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Related Opportunities */}
-              <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                  <Briefcase size={15} style={{color:"var(--brand)"}}/> Related Opportunities
-                </div>
-                {lead.stage === "SAL" ? (
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                    <thead>
-                      <tr style={{borderBottom:"2px solid var(--border)"}}>
-                        <th style={{textAlign:"left",padding:"8px 10px",fontSize:10,fontWeight:600,color:"var(--text3)",textTransform:"uppercase"}}>Opp Name</th>
-                        <th style={{textAlign:"left",padding:"8px 10px",fontSize:10,fontWeight:600,color:"var(--text3)",textTransform:"uppercase"}}>Stage</th>
-                        <th style={{textAlign:"right",padding:"8px 10px",fontSize:10,fontWeight:600,color:"var(--text3)",textTransform:"uppercase"}}>Value</th>
-                        <th style={{textAlign:"center",padding:"8px 10px",fontSize:10,fontWeight:600,color:"var(--text3)",textTransform:"uppercase"}}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr style={{borderBottom:"1px solid var(--border)"}}>
-                        <td style={{padding:"10px",fontWeight:600}}>{lead.company} — {productInfo?.name}</td>
-                        <td style={{padding:"10px"}}>Qualification</td>
-                        <td style={{padding:"10px",textAlign:"right",fontWeight:600}}>₹{dealValue} L</td>
-                        <td style={{padding:"10px",textAlign:"center"}}>
-                          <span style={{padding:"3px 10px",borderRadius:6,background:"#22C55E18",color:"#22C55E",fontSize:11,fontWeight:600}}>Active</span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
                 ) : (
-                  <div style={{textAlign:"center",padding:"20px",color:"var(--text3)",fontSize:12}}>
-                    No opportunities linked yet. {lead.stage !== "NA" && "Lead must reach SAL stage to convert."}
-                  </div>
+                  <button className="btn btn-sm btn-sec" style={{fontSize:10,padding:"3px 10px"}} onClick={() => startEdit("general")}><Edit2 size={11}/>Edit</button>
                 )}
               </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 24px"}}>
+                <div>
+                  {editField("Company", "company", "text")}
+                  {editField("Stage", "stage", "select", LEAD_STAGES)}
+                  {editField("Region", "region", "select", REGIONS)}
+                  {editField("Vertical", "vertical", "select", VERTICALS.map(v => ({id:v, name:v})))}
+                  {editField("Branch", "branch", "text")}
+                  {editField("Location", "location", "text")}
+                  {editField("Department", "department", "text")}
+                </div>
+                <div>
+                  {editField("Product Interest", "product", "select", PRODUCTS)}
+                  {editField("Lead Source", "source", "select", LEAD_SOURCES.map(s => ({id:s, name:s})))}
+                  {editField("Score", "score", "range")}
+                  {editField("Temperature", "temperature", "select", LEAD_TEMPERATURES.map(t => ({id:t, name:t})))}
+                  {editField("Next Call Date", "nextCall", "date")}
+                  {editField("Assigned To", "assignedTo", "select", _team)}
+                  {editField("Created Date", "createdDate", "date")}
+                </div>
+              </div>
+              {/* Notes section */}
+              {editing === "general" ? (
+                <div style={{marginTop:12}}>
+                  <label style={{fontSize:11,fontWeight:600,color:"var(--text3)"}}>NOTES</label>
+                  <textarea value={editData.notes || ""} onChange={e => setEditData(d => ({...d, notes: e.target.value}))} rows={3}
+                    style={{width:"100%",fontSize:12,padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",marginTop:4,resize:"vertical",boxSizing:"border-box"}}/>
+                </div>
+              ) : lead.notes ? (
+                <div style={{marginTop:12,padding:"10px 14px",background:"var(--s2,#F8FAFC)",borderRadius:8,border:"1px solid var(--border)"}}>
+                  <div style={{fontSize:11,fontWeight:600,color:"var(--text3)",marginBottom:4}}>NOTES</div>
+                  <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.5}}>{lead.notes}</div>
+                </div>
+              ) : null}
+            </div>
 
-              {/* Financial & Billing */}
-              <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
+            {/* Linked Account */}
+            {linkedAccount && (
+              <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)",marginTop:16}}>
                 <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                  <TrendingUp size={15} style={{color:"var(--brand)"}}/> Financial & Billing
+                  <Building2 size={15} style={{color:"var(--brand)"}}/> Linked Account
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-                  {/* Revenue Source Bar */}
-                  <div>
-                    <div style={{fontSize:11,fontWeight:600,color:"var(--text3)",textTransform:"uppercase",marginBottom:10}}>Revenue Source</div>
-                    {revSources.map((s, i) => (
-                      <div key={i} style={{marginBottom:8}}>
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                          <span style={{fontSize:11,color:"var(--text2)"}}>{s.label}</span>
-                          <span style={{fontSize:11,fontWeight:600,color:"var(--text1)"}}>{s.pct}%</span>
-                        </div>
-                        <div style={{height:6,background:"#E2E8F0",borderRadius:3,overflow:"hidden"}}>
-                          <div style={{width:`${s.pct}%`,height:"100%",background:s.color,borderRadius:3}}/>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {/* Monthly Revenue Sparkline */}
-                  <div>
-                    <div style={{fontSize:11,fontWeight:600,color:"var(--text3)",textTransform:"uppercase",marginBottom:10}}>Monthly Revenue Trend</div>
-                    <div style={{display:"flex",alignItems:"flex-end",gap:4,height:60}}>
-                      {[30,45,38,52,48,65,58,72,68,80,75,lead.score].map((v,i) => (
-                        <div key={i} style={{flex:1,height:`${v * 0.7}%`,background: i === 11 ? "#1B6B5A" : "#CBD5E1",borderRadius:2,minHeight:4}}/>
-                      ))}
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
-                      <span style={{fontSize:9,color:"var(--text3)"}}>Jan</span>
-                      <span style={{fontSize:9,color:"var(--text3)"}}>Dec</span>
-                    </div>
-                  </div>
-                </div>
+                {infoRow("Account Name", linkedAccount.name)}
+                {infoRow("Industry", linkedAccount.industry)}
+                {infoRow("Region", linkedAccount.region)}
+                {linkedAccount.hierarchyPath && infoRow("Hierarchy", linkedAccount.hierarchyPath)}
+              </div>
+            )}
+          </>}
+
+          {/* ─────────── CONTACTS TAB ─────────── */}
+          {activeTab === "contacts" && <>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+              <div style={{fontSize:14,fontWeight:700,color:"var(--text1)"}}>Contacts ({displayContacts.length})</div>
+              <div style={{display:"flex",gap:6}}>
+                <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => { setShowAddContact(true); setShowNewContactForm(false); }}>
+                  <UserPlus size={12}/>Add Existing
+                </button>
+                <button className="btn btn-sm btn-primary" style={{fontSize:11}} onClick={() => { setShowNewContactForm(true); setShowAddContact(false); }}>
+                  <Plus size={12}/>New Contact
+                </button>
               </div>
             </div>
 
-            {/* Right Column */}
-            <div style={{display:"flex",flexDirection:"column",gap:16}}>
-              {/* Sales Team */}
-              <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                  <User size={15} style={{color:"var(--brand)"}}/> Sales Team
+            {/* Add existing contact dropdown */}
+            {showAddContact && (
+              <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Link Existing Contact</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"end"}}>
+                  <select id="addContactSelect" style={{fontSize:12,padding:"6px 10px",borderRadius:6,border:"1px solid var(--border)"}}>
+                    <option value="">-- Select Contact --</option>
+                    {(contacts || []).filter(c => !linkedContactIds.includes(c.id)).map(c => (
+                      <option key={c.id} value={c.id}>{c.name}{c.designation ? ` - ${c.designation}` : ""}{c.email ? ` (${c.email})` : ""}</option>
+                    ))}
+                  </select>
+                  <button className="btn btn-sm btn-primary" style={{fontSize:11}} onClick={() => {
+                    const sel = document.getElementById("addContactSelect")?.value;
+                    if (!sel) return;
+                    updateLead({ contactIds: [...linkedContactIds, sel] });
+                    setShowAddContact(false);
+                  }}><Check size={11}/>Link</button>
+                  <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => setShowAddContact(false)}>Cancel</button>
                 </div>
-                {[lead.assignedTo, ...(linkedAccount?.owner && linkedAccount.owner !== lead.assignedTo ? [linkedAccount.owner] : [])].map((uid, i) => {
-                  const member = _teamMap[uid];
-                  if (!member) return null;
+              </div>
+            )}
+
+            {/* Create new contact inline */}
+            {showNewContactForm && (
+              <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
+                <InlineContactForm
+                  accountId={lead.accountId || ""}
+                  onSave={(contactData) => {
+                    const newContact = { ...contactData, id: `c-${uid()}`, accountId: lead.accountId || "", primary: false, contactId: `CON-${Date.now()}`, departments: [], products: [], branches: [], countries: [], linkedOpps: [] };
+                    if (setContacts) setContacts(p => [...p, newContact]);
+                    updateLead({ contactIds: [...linkedContactIds, newContact.id], contactRoles: { ...contactRolesMap, [newContact.id]: "Other" } });
+                    setShowNewContactForm(false);
+                  }}
+                  onCancel={() => setShowNewContactForm(false)}
+                />
+              </div>
+            )}
+
+            {/* Contact cards */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+              {displayContacts.map((c, i) => {
+                const ROLE_COLORS = {"Primary Contact":"#1B6B5A","Decision Maker/HOD":"#DC2626","Technical/IT":"#3B82F6","End User":"#8B5CF6","Finance/Accounts":"#F59E0B","Presales/Demo":"#0D9488","Management":"#7C3AED","Operations":"#EA580C","Account Contact":"#64748B","Other":"#94A3B8"};
+                const roleColor = ROLE_COLORS[c.role] || "#64748B";
+                const isEditingThis = editingContact === c.id;
+
+                if (isEditingThis) {
                   return (
-                    <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom: i === 0 ? "1px solid var(--border)" : "none"}}>
-                      <div className="u-av" style={{width:34,height:34,borderRadius:10,fontSize:11}}>
-                        {member.name?.split(" ").map(n=>n[0]).join("").slice(0,2)}
+                    <div key={c.id} style={{border:"1px solid var(--brand)",borderRadius:10,padding:"14px 16px",background:"white"}}>
+                      <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Edit Contact</div>
+                      <div style={{display:"grid",gap:6}}>
+                        <input placeholder="Name" value={contactEditData.name || ""} onChange={e => setContactEditData(d => ({...d, name: e.target.value}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}/>
+                        <input placeholder="Email" value={contactEditData.email || ""} onChange={e => setContactEditData(d => ({...d, email: e.target.value}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}/>
+                        <input placeholder="Phone" value={contactEditData.phone || ""} onChange={e => setContactEditData(d => ({...d, phone: e.target.value}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}/>
+                        <input placeholder="Designation" value={contactEditData.designation || ""} onChange={e => setContactEditData(d => ({...d, designation: e.target.value}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}/>
+                        <select value={contactEditData.role || ""} onChange={e => setContactEditData(d => ({...d, role: e.target.value}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
+                          {LEAD_CONTACT_ROLES.map(r => <option key={r}>{r}</option>)}
+                        </select>
                       </div>
-                      <div>
-                        <div style={{fontSize:12.5,fontWeight:600,color:"var(--text1)"}}>{member.name}</div>
-                        <div style={{fontSize:11,color:"var(--text3)"}}>{i === 0 ? "Assigned Owner" : "Account Manager"}</div>
+                      <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginTop:8}}>
+                        <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setEditingContact(null)}>Cancel</button>
+                        <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={() => {
+                          if (c.id === "_primary") {
+                            updateLead({ contact: contactEditData.name, email: contactEditData.email, phone: contactEditData.phone, designation: contactEditData.designation });
+                          } else {
+                            if (setContacts) setContacts(prev => prev.map(cc => cc.id === c.id ? {...cc, ...contactEditData} : cc));
+                            updateLead({ contactRoles: { ...contactRolesMap, [c.id]: contactEditData.role } });
+                          }
+                          setEditingContact(null);
+                        }}><Check size={11}/>Save</button>
                       </div>
                     </div>
                   );
-                })}
+                }
+
+                return (
+                  <div key={c.id} style={{border:"1px solid var(--border)",borderRadius:10,padding:"14px 16px",background:"white"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                      <div className="u-av" style={{width:36,height:36,borderRadius:10,fontSize:12,flexShrink:0}}>
+                        {c.name?.split(" ").map(n=>n[0]).join("").slice(0,2)}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:600,color:"var(--text1)"}}>{c.name}</div>
+                        {c.designation && <div style={{fontSize:11,color:"var(--text3)"}}>{c.designation}</div>}
+                        {c.department && <div style={{fontSize:10,color:"var(--brand)",fontWeight:500}}>{c.department}</div>}
+                      </div>
+                      {c.isPrimary && <span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#F59E0B18",color:"#D97706"}}>PRIMARY</span>}
+                    </div>
+                    <div style={{marginBottom:8}}>
+                      <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:roleColor+"18",color:roleColor}}>{c.role}</span>
+                    </div>
+                    {c.email && <div style={{fontSize:11,color:"var(--text2)",marginBottom:2,display:"flex",alignItems:"center",gap:4}}><Mail size={11} style={{color:"var(--text3)"}}/>{c.email}</div>}
+                    {c.phone && <div style={{fontSize:11,color:"var(--text2)",marginBottom:6,display:"flex",alignItems:"center",gap:4}}><Phone size={11} style={{color:"var(--text3)"}}/>{c.phone}</div>}
+                    <div style={{display:"flex",gap:6}}>
+                      <button className="btn btn-sm btn-sec" style={{fontSize:10,padding:"2px 8px"}} onClick={() => {
+                        setEditingContact(c.id);
+                        setContactEditData({ name: c.name, email: c.email, phone: c.phone, designation: c.designation, role: c.role, department: c.department });
+                      }}><Edit2 size={10}/>Edit</button>
+                      {c.id !== "_primary" && (
+                        <button className="btn btn-sm btn-sec" style={{fontSize:10,padding:"2px 8px",color:"#DC2626"}} onClick={() => {
+                          const newIds = linkedContactIds.filter(id => id !== c.id);
+                          const newRoles = {...contactRolesMap};
+                          delete newRoles[c.id];
+                          updateLead({ contactIds: newIds, contactRoles: newRoles });
+                        }}><Trash2 size={10}/>Unlink</button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>}
+
+          {/* ─────────── ADDRESSES TAB ─────────── */}
+          {activeTab === "addresses" && <>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+              <div style={{fontSize:14,fontWeight:700,color:"var(--text1)"}}>Addresses ({addresses.length})</div>
+              <button className="btn btn-sm btn-primary" style={{fontSize:11}} onClick={() => {
+                setShowAddAddress(true);
+                setAddressForm({ type: "HQ", line1: "", line2: "", city: "", state: "", country: "India", pin: "", phone: "", email: "", status: "Active", isPrimary: addresses.length === 0 });
+                setEditingAddress(null);
+              }}><Plus size={12}/>Add Address</button>
+            </div>
+
+            {/* Add/Edit address form */}
+            {(showAddAddress || editingAddress !== null) && (
+              <div style={{background:"white",borderRadius:10,padding:16,border:"1px solid var(--border)",marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:10}}>{editingAddress !== null ? "Edit Address" : "New Address"}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Type</label>
+                    <select value={addressForm.type} onChange={e => setAddressForm(f => ({...f, type: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
+                      {["HQ","Branch","Warehouse","Office"].map(t => <option key={t}>{t}</option>)}
+                    </select></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Country</label>
+                    <select value={addressForm.country} onChange={e => setAddressForm(f => ({...f, country: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
+                      {COUNTRIES.map(c => <option key={c}>{c}</option>)}
+                    </select></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Status</label>
+                    <select value={addressForm.status} onChange={e => setAddressForm(f => ({...f, status: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
+                      {["Active","Inactive"].map(s => <option key={s}>{s}</option>)}
+                    </select></div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Address Line 1</label>
+                    <input value={addressForm.line1} onChange={e => setAddressForm(f => ({...f, line1: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}} placeholder="Street address"/></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Address Line 2</label>
+                    <input value={addressForm.line2} onChange={e => setAddressForm(f => ({...f, line2: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}} placeholder="Suite, floor"/></div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>City</label>
+                    <input value={addressForm.city} onChange={e => setAddressForm(f => ({...f, city: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}}/></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>State</label>
+                    <input value={addressForm.state} onChange={e => setAddressForm(f => ({...f, state: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}}/></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>PIN/ZIP</label>
+                    <input value={addressForm.pin} onChange={e => setAddressForm(f => ({...f, pin: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}}/></div>
+                  <div style={{display:"flex",alignItems:"end",gap:6}}>
+                    <label style={{fontSize:10,display:"flex",alignItems:"center",gap:4,cursor:"pointer"}}>
+                      <input type="checkbox" checked={addressForm.isPrimary} onChange={e => setAddressForm(f => ({...f, isPrimary: e.target.checked}))}/>Primary
+                    </label>
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Phone</label>
+                    <input value={addressForm.phone} onChange={e => setAddressForm(f => ({...f, phone: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}}/></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Email</label>
+                    <input value={addressForm.email} onChange={e => setAddressForm(f => ({...f, email: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}}/></div>
+                </div>
+                <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                  <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => { setShowAddAddress(false); setEditingAddress(null); }}>Cancel</button>
+                  <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={() => {
+                    const addr = { ...addressForm, id: editingAddress !== null ? editingAddress : `addr-${Date.now()}` };
+                    let newAddrs;
+                    if (editingAddress !== null) {
+                      newAddrs = addresses.map(a => a.id === editingAddress ? addr : a);
+                    } else {
+                      newAddrs = [...addresses, addr];
+                    }
+                    if (addr.isPrimary) newAddrs = newAddrs.map(a => ({ ...a, isPrimary: a.id === addr.id }));
+                    updateLead({ addresses: newAddrs });
+                    setShowAddAddress(false); setEditingAddress(null);
+                  }}><Save size={11}/>{editingAddress !== null ? "Update" : "Add"}</button>
+                </div>
               </div>
+            )}
 
-              {/* Linked Account */}
-              {linkedAccount && (
-                <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                    <Building2 size={15} style={{color:"var(--brand)"}}/> Linked Account
+            {addresses.length === 0 && !showAddAddress && (
+              <div style={{textAlign:"center",padding:40,color:"var(--text3)",fontSize:12}}>No addresses yet. Click "Add Address" to begin.</div>
+            )}
+
+            {/* Address cards */}
+            <div style={{display:"grid",gap:12}}>
+              {addresses.map(a => {
+                const isExpanded = expandedAddress === a.id;
+                const TYPE_ICONS = { HQ: <Home size={14}/>, Branch: <Building2 size={14}/>, Warehouse: <Warehouse size={14}/>, Office: <Briefcase size={14}/> };
+                return (
+                  <div key={a.id} style={{background:"white",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}} onClick={() => setExpandedAddress(isExpanded ? null : a.id)}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{width:32,height:32,borderRadius:8,background:"var(--brand-light,#E8F5F1)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--brand)"}}>
+                          {TYPE_ICONS[a.type] || <MapPin size={14}/>}
+                        </div>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:600,color:"var(--text1)",display:"flex",alignItems:"center",gap:6}}>
+                            {a.type}{a.isPrimary && <span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:4,background:"#F59E0B18",color:"#D97706"}}>PRIMARY</span>}
+                            <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background: a.status === "Active" ? "#22C55E18" : "#EF444418",color: a.status === "Active" ? "#22C55E" : "#EF4444"}}>{a.status}</span>
+                          </div>
+                          <div style={{fontSize:11,color:"var(--text3)"}}>{[a.city, a.state, a.country].filter(Boolean).join(", ")}</div>
+                        </div>
+                      </div>
+                      <ChevronRight size={14} style={{color:"var(--text3)",transform: isExpanded ? "rotate(90deg)" : "none",transition:"transform 0.15s"}}/>
+                    </div>
+                    {isExpanded && (
+                      <div style={{padding:"0 16px 14px",borderTop:"1px solid var(--border)"}}>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,padding:"10px 0"}}>
+                          {infoRow("Line 1", a.line1)}
+                          {a.line2 && infoRow("Line 2", a.line2)}
+                          {infoRow("City", a.city)}
+                          {infoRow("State", a.state)}
+                          {infoRow("Country", a.country)}
+                          {infoRow("PIN/ZIP", a.pin)}
+                          {a.phone && infoRow("Phone", a.phone)}
+                          {a.email && infoRow("Email", a.email)}
+                        </div>
+                        <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                          <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={(e) => {
+                            e.stopPropagation();
+                            setAddressForm({...a});
+                            setEditingAddress(a.id);
+                            setShowAddAddress(false);
+                          }}><Edit2 size={10}/>Edit</button>
+                          {!a.isPrimary && <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={(e) => {
+                            e.stopPropagation();
+                            updateLead({ addresses: addresses.map(x => ({...x, isPrimary: x.id === a.id})) });
+                          }}><Star size={10}/>Set Primary</button>}
+                          <button className="btn btn-sm btn-sec" style={{fontSize:10,color:"#DC2626"}} onClick={(e) => {
+                            e.stopPropagation();
+                            updateLead({ addresses: addresses.filter(x => x.id !== a.id) });
+                          }}><Trash2 size={10}/>Delete</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {infoRow("Account Name", linkedAccount.name)}
-                  {infoRow("Industry", linkedAccount.industry)}
-                  {infoRow("Region", linkedAccount.region)}
-                  {linkedAccount.hierarchyPath && infoRow("Hierarchy", linkedAccount.hierarchyPath)}
+                );
+              })}
+            </div>
+          </>}
+
+          {/* ─────────── TEAM TAB ─────────── */}
+          {activeTab === "team" && <>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+              <div style={{fontSize:14,fontWeight:700,color:"var(--text1)"}}>Sales Team ({salesTeam.length})</div>
+              <button className="btn btn-sm btn-primary" style={{fontSize:11}} onClick={() => setShowAddTeamMember(true)}><Plus size={12}/>Add Member</button>
+            </div>
+
+            {showAddTeamMember && (
+              <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Add Team Member</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto auto",gap:8,alignItems:"end"}}>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>User</label>
+                    <select value={newTeamMember.userId} onChange={e => setNewTeamMember(f => ({...f, userId: e.target.value}))}
+                      style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
+                      <option value="">-- Select --</option>
+                      {_team.filter(u => !salesTeam.some(st => st.userId === u.id)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Role</label>
+                    <select value={newTeamMember.role} onChange={e => setNewTeamMember(f => ({...f, role: e.target.value}))}
+                      style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
+                      {TEAM_ROLES.map(r => <option key={r}>{r}</option>)}
+                    </select></div>
+                  <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={() => {
+                    if (!newTeamMember.userId) return;
+                    updateLead({ salesTeam: [...salesTeam, { userId: newTeamMember.userId, role: newTeamMember.role }] });
+                    setNewTeamMember({ userId: "", role: "Inside Sales" });
+                    setShowAddTeamMember(false);
+                  }}><Check size={11}/>Add</button>
+                  <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowAddTeamMember(false)}>Cancel</button>
                 </div>
-              )}
-
-              {/* Recent Activity */}
-              <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <Clock size={15} style={{color:"var(--brand)"}}/> Recent Activity
-                  </div>
-                  <div style={{display:"flex",gap:4}}>
-                    <button className="btn btn-sm btn-sec" style={{fontSize:10,padding:"3px 8px"}} onClick={() => { setShowCallForm(v => !v); setShowActivityForm(false); }}>
-                      <Phone size={11}/>Log Call
-                    </button>
-                    <button className="btn btn-sm btn-sec" style={{fontSize:10,padding:"3px 8px"}} onClick={() => { setShowActivityForm(v => !v); setShowCallForm(false); }}>
-                      <Plus size={11}/>Log Activity
-                    </button>
-                  </div>
-                </div>
-
-                {/* Inline Call Log Form */}
-                {showCallForm && (
-                  <div style={{background:"var(--s2,#F8FAFC)",borderRadius:8,padding:12,marginBottom:12,border:"1px solid var(--border)"}}>
-                    <div style={{fontSize:11,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log a Call</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Call Type</label>
-                        <select value={callForm.callType} onChange={e => setCallForm(f => ({...f, callType: e.target.value}))} style={{fontSize:11,width:"100%"}}>
-                          {["Discovery","Follow-up","Demo","Negotiation","Support","Cold Call"].map(t => <option key={t}>{t}</option>)}
-                        </select>
-                      </div>
-                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
-                        <input type="date" value={callForm.date} onChange={e => setCallForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/>
-                      </div>
-                    </div>
-                    <div style={{marginBottom:8}}>
-                      <label style={{fontSize:10,color:"var(--text3)"}}>Notes</label>
-                      <textarea value={callForm.notes} onChange={e => setCallForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Call notes..."/>
-                    </div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Outcome</label>
-                        <select value={callForm.outcome} onChange={e => setCallForm(f => ({...f, outcome: e.target.value}))} style={{fontSize:11,width:"100%"}}>
-                          {["Interested","Not Interested","Call Back","Voicemail","No Answer","Meeting Booked"].map(t => <option key={t}>{t}</option>)}
-                        </select>
-                      </div>
-                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Next Call Date</label>
-                        <input type="date" value={callForm.nextCallDate} onChange={e => setCallForm(f => ({...f, nextCallDate: e.target.value}))} style={{fontSize:11,width:"100%"}}/>
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-                      <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowCallForm(false)}>Cancel</button>
-                      <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveCallLog}><Check size={11}/>Save</button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Inline Activity Log Form */}
-                {showActivityForm && (
-                  <div style={{background:"var(--s2,#F8FAFC)",borderRadius:8,padding:12,marginBottom:12,border:"1px solid var(--border)"}}>
-                    <div style={{fontSize:11,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log an Activity</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Title</label>
-                        <input value={actForm.title} onChange={e => setActForm(f => ({...f, title: e.target.value}))} style={{fontSize:11,width:"100%"}} placeholder="Activity title"/>
-                      </div>
-                      <div><label style={{fontSize:10,color:"var(--text3)"}}>Type</label>
-                        <select value={actForm.type} onChange={e => setActForm(f => ({...f, type: e.target.value}))} style={{fontSize:11,width:"100%"}}>
-                          {["Call","Email","Meeting","Task","Note","Follow-up"].map(t => <option key={t}>{t}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                    <div style={{marginBottom:8}}>
-                      <label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
-                      <input type="date" value={actForm.date} onChange={e => setActForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/>
-                    </div>
-                    <div style={{marginBottom:8}}>
-                      <label style={{fontSize:10,color:"var(--text3)"}}>Notes</label>
-                      <textarea value={actForm.notes} onChange={e => setActForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Activity notes..."/>
-                    </div>
-                    <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-                      <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowActivityForm(false)}>Cancel</button>
-                      <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveActivity}><Check size={11}/>Save</button>
-                    </div>
-                  </div>
-                )}
-
-                {displayTimeline.map((a, i) => (
-                  <div key={i}>{activityItem(a.icon, a.title, a.desc, a.time)}</div>
-                ))}
               </div>
+            )}
 
-              {/* Documents & Files */}
-              <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                  <Paperclip size={15} style={{color:"var(--brand)"}}/> Documents & Files
+            <div style={{display:"grid",gap:10}}>
+              {salesTeam.map((st, i) => {
+                const member = _teamMap[st.userId];
+                if (!member) return null;
+                const isOwner = st.role === "Sales Owner";
+                return (
+                  <div key={st.userId + i} style={{background:"white",borderRadius:12,padding:"14px 18px",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      <div className="u-av" style={{width:40,height:40,borderRadius:10,fontSize:13}}>{member.name?.split(" ").map(n=>n[0]).join("").slice(0,2)}</div>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:600,color:"var(--text1)"}}>{member.name}</div>
+                        <div style={{fontSize:11,color:"var(--text3)"}}>{member.email || member.role}</div>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:6,
+                        background: isOwner ? "var(--brand-light,#E8F5F1)" : "var(--s2)",
+                        color: isOwner ? "var(--brand,#1B6B5A)" : "var(--text2)"}}>{st.role}</span>
+                      {isOwner ? (
+                        <select value={st.userId} onChange={e => {
+                          const newTeam = salesTeam.map((t2, j) => j === i ? {...t2, userId: e.target.value} : t2);
+                          updateLead({ salesTeam: newTeam, assignedTo: e.target.value });
+                        }} style={{fontSize:11,padding:"3px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
+                          {_team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        </select>
+                      ) : (
+                        <button className="btn btn-sm btn-sec" style={{fontSize:10,color:"#DC2626",padding:"2px 8px"}} onClick={() => {
+                          updateLead({ salesTeam: salesTeam.filter((_, j) => j !== i) });
+                        }}><Trash2 size={10}/>Remove</button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>}
+
+          {/* ─────────── ACTIVITIES TAB ─────────── */}
+          {activeTab === "activities" && <>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+              <div style={{fontSize:14,fontWeight:700,color:"var(--text1)"}}>Activity Timeline ({combinedTimeline.length})</div>
+              <div style={{display:"flex",gap:6}}>
+                <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => { setShowCallForm(v => !v); setShowActivityForm(false); }}>
+                  <Phone size={12}/>Log Call
+                </button>
+                <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => { setShowActivityForm(v => !v); setShowCallForm(false); }}>
+                  <Plus size={12}/>Log Activity
+                </button>
+                <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => {
+                  const followup = { id: `act-${Date.now()}`, accountId: lead.accountId || "", contactId: lead.contact || "", leadId: lead.id, title: `Follow-up: ${lead.company}`, type: "Follow-up", status: "Planned", date: today, notes: "", createdDate: today };
+                  setActivities(p => [...p, followup]);
+                }}><Calendar size={12}/>Set Follow-up</button>
+              </div>
+            </div>
+
+            {/* Inline Call Form */}
+            {showCallForm && (
+              <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log a Call</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Call Type</label>
+                    <select value={callForm.callType} onChange={e => setCallForm(f => ({...f, callType: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                      {["Discovery","Follow-up","Demo","Negotiation","Support","Cold Call"].map(t => <option key={t}>{t}</option>)}
+                    </select></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
+                    <input type="date" value={callForm.date} onChange={e => setCallForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Outcome</label>
+                    <select value={callForm.outcome} onChange={e => setCallForm(f => ({...f, outcome: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                      {["Interested","Not Interested","Call Back","Voicemail","No Answer","Meeting Booked"].map(t => <option key={t}>{t}</option>)}
+                    </select></div>
                 </div>
-                {documents.map((d, i) => (
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom: i < documents.length - 1 ? "1px solid var(--border)" : "none"}}>
-                    <div style={{width:32,height:32,borderRadius:8,background:"#EF444414",display:"flex",alignItems:"center",justifyContent:"center",color:"#EF4444",flexShrink:0}}>
-                      <FileText size={14}/>
+                <div style={{marginBottom:8}}><label style={{fontSize:10,color:"var(--text3)"}}>Notes *</label>
+                  <textarea value={callForm.notes} onChange={e => setCallForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Call notes..."/></div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"end"}}>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Next Call Date</label>
+                    <input type="date" value={callForm.nextCallDate} onChange={e => setCallForm(f => ({...f, nextCallDate: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
+                  <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowCallForm(false)}>Cancel</button>
+                  <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveCallLog}><Check size={11}/>Save</button>
+                </div>
+              </div>
+            )}
+
+            {/* Inline Activity Form */}
+            {showActivityForm && (
+              <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log an Activity</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Title *</label>
+                    <input value={actForm.title} onChange={e => setActForm(f => ({...f, title: e.target.value}))} style={{fontSize:11,width:"100%"}} placeholder="Activity title"/></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Type</label>
+                    <select value={actForm.type} onChange={e => setActForm(f => ({...f, type: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                      {["Call","Email","Meeting","Task","Note","Follow-up"].map(t => <option key={t}>{t}</option>)}
+                    </select></div>
+                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
+                    <input type="date" value={actForm.date} onChange={e => setActForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
+                </div>
+                <div style={{marginBottom:8}}><label style={{fontSize:10,color:"var(--text3)"}}>Notes</label>
+                  <textarea value={actForm.notes} onChange={e => setActForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Activity notes..."/></div>
+                <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                  <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowActivityForm(false)}>Cancel</button>
+                  <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveActivity}><Check size={11}/>Save</button>
+                </div>
+              </div>
+            )}
+
+            {/* Timeline */}
+            <div style={{background:"white",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
+              {displayTimeline.map((a, i) => (
+                <div key={i} style={{borderBottom: i < displayTimeline.length - 1 ? "1px solid var(--border)" : "none"}}>
+                  <div style={{display:"flex",gap:10,padding:"12px 16px",cursor:"pointer"}} onClick={() => setExpandedTimeline(expandedTimeline === i ? null : i)}>
+                    <div style={{width:30,height:30,borderRadius:8,background:"var(--brand-light,#E8F5F1)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--brand)",flexShrink:0}}>
+                      {a.icon}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <div style={{fontSize:12,fontWeight:600,color:"var(--text1)"}}>{a.title}</div>
+                        <div style={{fontSize:10,color:"var(--text3)"}}>{a.time}</div>
+                      </div>
+                      <div style={{fontSize:11,color:"var(--text3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace: expandedTimeline === i ? "normal" : "nowrap"}}>{a.desc}</div>
+                    </div>
+                  </div>
+                  {expandedTimeline === i && a.desc && (
+                    <div style={{padding:"0 16px 12px 56px"}}>
+                      <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.5,background:"var(--s2)",borderRadius:8,padding:"8px 12px"}}>{a.desc}</div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>}
+
+          {/* ─────────── DOCUMENTS TAB ─────────── */}
+          {activeTab === "documents" && <>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+              <div style={{fontSize:14,fontWeight:700,color:"var(--text1)"}}>Documents ({documents.length})</div>
+              <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => {
+                /* placeholder for file upload */
+                alert("File upload integration pending. Connect to your file storage API.");
+              }}><Upload size={12}/>Upload File</button>
+            </div>
+            <div style={{background:"white",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
+              {documents.map((d, i) => {
+                const extMap = { pdf: "#EF4444", docx: "#3B82F6", xlsx: "#22C55E", pptx: "#F59E0B", doc: "#3B82F6" };
+                const ext = d.name?.split(".").pop()?.toLowerCase() || "";
+                const iconColor = extMap[ext] || "#64748B";
+                return (
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",borderBottom: i < documents.length - 1 ? "1px solid var(--border)" : "none"}}>
+                    <div style={{width:34,height:34,borderRadius:8,background:iconColor+"14",display:"flex",alignItems:"center",justifyContent:"center",color:iconColor,flexShrink:0}}>
+                      <FileText size={15}/>
                     </div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
                       <div style={{fontSize:10,color:"var(--text3)"}}>{d.size} &middot; {fmt.short(d.date)}</div>
                     </div>
-                    <Download size={13} style={{color:"var(--text3)",cursor:"pointer",flexShrink:0}}/>
+                    <Download size={14} style={{color:"var(--text3)",cursor:"pointer",flexShrink:0}}/>
                   </div>
-                ))}
+                );
+              })}
+              {documents.length === 0 && (
+                <div style={{textAlign:"center",padding:40,color:"var(--text3)",fontSize:12}}>No documents yet.</div>
+              )}
+            </div>
+          </>}
+
+          {/* ─────────── CONVERT TAB ─────────── */}
+          {activeTab === "convert" && <>
+            <div style={{fontSize:14,fontWeight:700,color:"var(--text1)",marginBottom:14}}>Lead Conversion</div>
+
+            {/* Conversion Readiness Checklist */}
+            {(() => {
+              const convGate = validateStageGate(lead, "Converted", STAGE_GATES);
+              return (
+                <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)",marginBottom:16}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+                    <ShieldCheck size={15} style={{color: convGate.canAdvance ? "#16A34A" : "#D97706"}}/>
+                    Conversion Readiness: {convGate.canAdvance ? "All checks passed" : `${convGate.failed.length} check(s) remaining`}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                    {convGate.passed.map(c => (
+                      <div key={c.key} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+                        <Check size={13} style={{color:"#16A34A"}}/><span style={{color:"#15803D"}}>{c.label}</span>
+                      </div>
+                    ))}
+                    {convGate.failed.map(c => (
+                      <div key={c.key} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+                        <X size={13} style={{color:"#DC2626"}}/><span style={{color:"#991B1B"}}>{c.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Pre-filled conversion info */}
+            <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)",marginBottom:16}}>
+              <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12}}>Conversion Summary</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 24px"}}>
+                {infoRow("Company", lead.company)}
+                {infoRow("Product", productInfo?.name || lead.product)}
+                {infoRow("Lead Score", `${lead.score}/100`)}
+                {infoRow("Stage", stageInfo?.name || lead.stage)}
+                {infoRow("Assigned To", assignee?.name || lead.assignedTo)}
+                {infoRow("Primary Contact", lead.contact)}
+                {infoRow("Email", lead.email || "\u2014")}
+                {infoRow("Phone", lead.phone || "\u2014")}
               </div>
             </div>
-          </div>
+
+            {/* Conversion history */}
+            {(lead.convertedOppIds?.length > 0 || lead.stage === "Converted") && (
+              <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)",marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12}}>Conversion History</div>
+                {lead.convertedOppIds?.length > 0 ? lead.convertedOppIds.map((oppId, i) => (
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--border)"}}>
+                    <Check size={13} style={{color:"#16A34A"}}/>
+                    <span style={{fontSize:12,color:"var(--text1)"}}>Converted to Opportunity: {oppId}</span>
+                  </div>
+                )) : (
+                  <div style={{fontSize:12,color:"var(--text3)"}}>Lead has been converted.</div>
+                )}
+              </div>
+            )}
+
+            <button className="btn btn-primary" onClick={() => setShowConvertModal(true)}
+              disabled={lead.stage === "NA"}
+              style={{opacity: lead.stage === "NA" ? 0.5 : 1}}>
+              <ArrowRightCircle size={14}/>Convert to Deal
+            </button>
+          </>}
         </div>
+
+        {/* ═══ Convert Modal ═══ */}
         {showConvertModal && (
           <ConvertToOppModal
             lead={lead}
@@ -971,7 +1334,9 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [form, setForm] = useState(BLANK_LEAD);
   const [confirm, setConfirm] = useState(null);
   const [formErrors, setFormErrors] = useState({});
-  const [detail, setDetail] = useState(null);
+  const [detailId, setDetailId] = useState(null);
+  const detail = detailId ? leads.find(l => l.id === detailId) || null : null;
+  const setDetail = (v) => setDetailId(v ? (v.id || v) : null);
   const [rangeKey, setRangeKey] = useState("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState(today);
@@ -1783,6 +2148,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           setActivities={setActivities}
           setCallReports={setCallReports}
           setContacts={setContacts}
+          setLeads={setLeads}
         />
       )}
 
