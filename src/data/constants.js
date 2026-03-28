@@ -243,3 +243,45 @@ export const PERMISSIONS_EXT = {
   support:     {leads:false,callReports:"r",contracts:false,collections:false,targets:false},
   viewer:      {leads:"r", callReports:"r", contracts:"r", collections:"r", targets:false},
 };
+
+// ── Stage Gate Requirements for Lead Progression ──
+export const STAGE_GATES = {
+  MQL: {
+    label: "Marketing Qualified",
+    checks: [
+      { key: "company", label: "Company name provided", test: l => !!l.company },
+      { key: "contact", label: "Contact person identified", test: l => !!(l.contactIds?.length || l.contact) },
+      { key: "product", label: "Product interest identified", test: l => !!l.product },
+      { key: "source", label: "Lead source captured", test: l => !!l.source },
+    ]
+  },
+  SQL: {
+    label: "Sales Qualified",
+    checks: [
+      { key: "contactInfo", label: "Email or phone available", test: l => !!(l.email || l.phone) },
+      { key: "painPoints", label: "Pain points identified", test: l => !!(l.painPoints?.length) },
+      { key: "vertical", label: "Industry/vertical known", test: l => !!l.vertical },
+      { key: "score", label: "Lead score ≥ 40", test: l => (l.score||0) >= 40 },
+    ]
+  },
+  SAL: {
+    label: "Sales Accepted",
+    checks: [
+      { key: "budget", label: "Budget range known", test: l => !!l.budgetRange },
+      { key: "decisionMaker", label: "Decision maker identified", test: l => !!l.decisionMaker },
+      { key: "timeline", label: "Decision timeline set", test: l => !!l.decisionTimeline },
+      { key: "temperature", label: "Not Cold/Dead", test: l => l.temperature !== "Cold" && l.temperature !== "Dead" },
+    ]
+  },
+  Converted: {
+    label: "Convert to Opportunity",
+    checks: [
+      { key: "accountId", label: "Linked to account", test: l => !!l.accountId },
+      { key: "contacts", label: "At least one contact linked", test: l => !!(l.contactIds?.length || l.contact) },
+      { key: "score", label: "Lead score ≥ 60", test: l => (l.score||0) >= 60 },
+    ]
+  },
+};
+
+// ── Opportunity Contact Roles ──
+export const OPP_CONTACT_ROLES = ["Decision Maker","Technical Evaluator","Influencer","End User","Procurement","Legal/Compliance","Executive Sponsor","Champion"];

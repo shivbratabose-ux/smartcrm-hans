@@ -279,11 +279,14 @@ export default function SmartCRM() {
   // Convert lead to opportunity — accepts conversion data from modal
   const convertLeadToOpp = useCallback((lead, conversionData) => {
     const data = conversionData || {};
+    // Build contact roles array from the contactRoles map
+    const contactRoles = data.contactRoles ? Object.entries(data.contactRoles).filter(([,role]) => role).map(([contactId, role], i) => ({ contactId, role, isPrimary: i === 0 })) : [];
+    const primaryContact = contactRoles.find(r => r.isPrimary)?.contactId || data.primaryContactId || (lead.contactIds?.[0]) || "";
     const newOpp = {
       id: `o_${Date.now()}`,
       title: data.title || `${PROD_MAP[lead.product]?.name || lead.product} – ${lead.company}`,
       accountId: data.accountId || lead.accountId || "",
-      products: [lead.product],
+      products: data.selectedProducts?.length ? data.selectedProducts : [lead.product],
       stage: "Qualified",
       value: data.value || 0,
       probability: STAGE_PROB["Qualified"] || 25,
@@ -292,16 +295,23 @@ export default function SmartCRM() {
       country: data.country || (lead.region === "South Asia" ? "India" : ""),
       notes: `Converted from lead ${lead.leadId}. ${data.notes || lead.notes || ""}`,
       source: lead.accountId ? "Existing Customer – Upsell" : "New Lead",
-      primaryContactId: data.primaryContactId || "",
-      secondaryContactIds: data.secondaryOwners || [],
+      primaryContactId: primaryContact,
+      secondaryContactIds: contactRoles.filter(r => !r.isPrimary).map(r => r.contactId),
+      contactRoles,
+      sourceLeadIds: [lead.id],
+      lob: data.lob || "",
       hierarchyLevel: "Parent Company",
       leadId: lead.leadId || "",
       forecastCategory: data.forecastCategory || "Likely-Case",
       dealSize: data.dealSize || "Medium",
     };
     setOpps(p => [...p, newOpp]);
-    // Mark lead as Converted (keep for history) instead of deleting
-    setLeads(p => p.map(l => l.id === lead.id ? { ...l, stage: "Converted", convertedDate: today, convertedOppId: newOpp.id } : l));
+    // Handle "keep lead open for additional LOBs" vs full conversion
+    if (data.keepLeadOpen) {
+      setLeads(p => p.map(l => l.id === lead.id ? { ...l, convertedOppIds: [...(l.convertedOppIds||[]), newOpp.id], stageHistory: [...(l.stageHistory||[]), {from:l.stage,to:"Partial Convert",date:today}] } : l));
+    } else {
+      setLeads(p => p.map(l => l.id === lead.id ? { ...l, stage: "Converted", convertedDate: today, convertedOppId: newOpp.id, convertedOppIds: [...(l.convertedOppIds||[]), newOpp.id], stageHistory: [...(l.stageHistory||[]), {from:l.stage,to:"Converted",date:today}] } : l));
+    }
     // Create initial activity for the new opportunity
     const initialAct = {
       id: `act_${Date.now()}`,
@@ -311,7 +321,7 @@ export default function SmartCRM() {
       time: new Date().toTimeString().slice(0, 5),
       duration: 15,
       accountId: newOpp.accountId,
-      contactId: newOpp.primaryContactId,
+      contactId: primaryContact,
       oppId: newOpp.id,
       owner: newOpp.owner,
       title: `Lead Conversion – ${lead.company}`,
@@ -319,7 +329,7 @@ export default function SmartCRM() {
       outcome: "Positive",
     };
     setActivities(p => [...p, initialAct]);
-    setPage("pipeline");
+    if (!data.keepLeadOpen) setPage("pipeline");
   }, []);
 
   // Bulk upload handler
@@ -348,10 +358,10 @@ export default function SmartCRM() {
           <Header page={page} accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers}/>
           <div className="content" id="main-content" role="main">
             {page==="dashboard"  && <Dashboard accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} setPage={setPage}/>}
-            {page==="leads"      && <Leads leads={leads} setLeads={setLeads} accounts={accounts} contacts={contacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={activities} setActivities={setActivities} callReports={callReports} setCallReports={setCallReports} masters={masters}/>}
-            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={opps} activities={activities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} leads={leads} orgUsers={orgUsers} callReports={callReports} setCallReports={setCallReports} masters={masters}/>}
+            {page==="leads"      && <Leads leads={leads} setLeads={setLeads} accounts={accounts} contacts={contacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={activities} setActivities={setActivities} callReports={callReports} setCallReports={setCallReports} masters={masters}/>}
+            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={opps} activities={activities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} setContacts={setContacts} tickets={tickets} contracts={contracts} collections={collections} leads={leads} orgUsers={orgUsers} callReports={callReports} setCallReports={setCallReports} masters={masters}/>}
             {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={opps} activities={activities}/>}
-            {page==="pipeline"   && <Pipeline opps={opps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={setActivities} callReports={callReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters}/>}
+            {page==="pipeline"   && <Pipeline opps={opps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} setContacts={setContacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={setActivities} callReports={callReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters}/>}
             {page==="activities" && <Activities activities={activities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers}/>}
             {page==="callreports"&& <CallReports callReports={callReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="tickets"    && <Tickets tickets={tickets} setTickets={setTickets} accounts={accounts} orgUsers={orgUsers}/>}

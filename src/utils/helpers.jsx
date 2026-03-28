@@ -105,6 +105,19 @@ export class ErrorBoundary extends Component {
   }
 }
 
+// ── Stage Gate Validation ──
+export function validateStageGate(lead, targetStage, stageGates) {
+  const gate = stageGates[targetStage];
+  if (!gate) return { canAdvance: true, passed: [], failed: [] };
+  const passed = [];
+  const failed = [];
+  for (const check of gate.checks) {
+    if (check.test(lead)) passed.push(check);
+    else failed.push(check);
+  }
+  return { canAdvance: failed.length === 0, passed, failed, label: gate.label };
+}
+
 export const canAccess = (userId, module, orgUsers, customPermissions) => {
   const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
   if(!u) return false;

@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, UserPlus, ChevronDown, ChevronUp, ShieldCheck, X } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
+import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, hasErrors, today } from '../utils/helpers';
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
+import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate } from '../utils/helpers';
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty, InlineContactForm } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -134,8 +134,11 @@ const activityItem = (icon, title, desc, time) => (
 );
 
 /* ── Lead Conversion Modal ── */
-function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUsers }) {
+function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUsers, setContacts }) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+  const gateResult = validateStageGate(lead, "Converted", STAGE_GATES);
+  const [showGateDetails, setShowGateDetails] = useState(false);
+  const [showInlineContact, setShowInlineContact] = useState(false);
   const [form, setForm] = useState({
     title: `${PROD_MAP[lead.product]?.name || lead.product} – ${lead.company}`,
     accountId: lead.accountId || "",
@@ -149,6 +152,10 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
     forecastCategory: "Likely-Case",
     dealSize: "Medium",
     createNewAccount: !lead.accountId,
+    selectedProducts: lead.product ? [lead.product] : [],
+    keepLeadOpen: false,
+    contactRoles: {},
+    lob: "",
   });
   const [errors, setErrors] = useState({});
 
@@ -156,31 +163,45 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
     const errs = {};
     if (!form.title?.trim()) errs.title = "Opportunity name is required";
     if (!form.accountId && !form.createNewAccount) errs.accountId = "Select an account or create new";
-    if (!lead.email && !lead.phone) errs.contact = "Lead must have a valid email or phone";
+    if (!lead.email && !lead.phone && !(lead.contactIds?.length)) errs.contact = "Lead must have a valid email or phone";
     if (!form.notes?.trim() || form.notes.trim().length < 10) errs.notes = "Qualification notes required (min 10 chars)";
     if (!form.closeDate) errs.closeDate = "Expected close date is required";
-    // Duplicate check
-    if (form.accountId) {
-      const existing = (accounts || []).find(a => a.id === form.accountId);
-      if (existing) {
-        // just info, not blocking
-      }
-    }
+    if (form.selectedProducts.length === 0) errs.products = "Select at least one product";
     return errs;
   };
 
   const handleSubmit = () => {
     const errs = validate();
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
-    onConvert(lead, form);
+    onConvert(lead, { ...form, keepLeadOpen: form.keepLeadOpen });
     onClose();
   };
 
   const accContacts = form.accountId ? (contacts || []).filter(c => c.accountId === form.accountId) : [];
+  const leadContactIds = lead.contactIds || [];
+  const relevantContacts = accContacts.length > 0 ? accContacts : (contacts || []).filter(c => leadContactIds.includes(c.id));
+
+  const handleInlineContactSave = (contactData) => {
+    const newContact = {
+      ...contactData,
+      id: `c-${uid()}`,
+      accountId: form.accountId || lead.accountId || "",
+      primary: false,
+      contactId: `CON-${Date.now()}`,
+      departments: [],
+      products: [],
+      branches: [],
+      countries: [],
+      linkedOpps: [],
+    };
+    if (setContacts) setContacts(p => [...p, newContact]);
+    setForm(f => ({ ...f, contactRoles: { ...f.contactRoles, [newContact.id]: OPP_CONTACT_ROLES[0] } }));
+    setShowInlineContact(false);
+  };
 
   return (
     <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()} style={{zIndex:1100}}>
-      <div style={{background:"white",borderRadius:16,width:"90vw",maxWidth:680,maxHeight:"88vh",overflow:"auto",boxShadow:"0 25px 60px rgba(0,0,0,0.3)"}}>
+      <div style={{background:"white",borderRadius:16,width:"90vw",maxWidth:720,maxHeight:"88vh",overflow:"auto",boxShadow:"0 25px 60px rgba(0,0,0,0.3)"}}>
         <div style={{padding:"20px 28px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
             <div style={{fontSize:17,fontWeight:700,color:"var(--text1)"}}>Convert Lead to Opportunity</div>
@@ -189,8 +210,36 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
           <button className="icon-btn" onClick={onClose} style={{width:32,height:32,fontSize:18}}>✕</button>
         </div>
         <div style={{padding:"20px 28px"}}>
+
+          {/* Stage Gate Checklist */}
+          <div style={{background: gateResult.canAdvance ? "#F0FDF4" : "#FFFBEB",border:`1px solid ${gateResult.canAdvance ? "#BBF7D0" : "#FDE68A"}`,borderRadius:10,padding:"12px 16px",marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={() => setShowGateDetails(v => !v)}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <ShieldCheck size={16} style={{color: gateResult.canAdvance ? "#16A34A" : "#D97706"}}/>
+                <span style={{fontSize:13,fontWeight:700,color: gateResult.canAdvance ? "#15803D" : "#92400E"}}>
+                  Conversion Gate: {gateResult.canAdvance ? "All checks passed" : `${gateResult.failed.length} check${gateResult.failed.length > 1 ? "s" : ""} remaining`}
+                </span>
+              </div>
+              {showGateDetails ? <ChevronUp size={14} style={{color:"var(--text3)"}}/> : <ChevronDown size={14} style={{color:"var(--text3)"}}/>}
+            </div>
+            {showGateDetails && (
+              <div style={{marginTop:10,display:"grid",gap:4}}>
+                {gateResult.passed.map(c => (
+                  <div key={c.key} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+                    <Check size={13} style={{color:"#16A34A"}}/><span style={{color:"#15803D"}}>{c.label}</span>
+                  </div>
+                ))}
+                {gateResult.failed.map(c => (
+                  <div key={c.key} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+                    <X size={13} style={{color:"#DC2626"}}/><span style={{color:"#991B1B"}}>{c.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Validation Warning */}
-          {(!lead.email && !lead.phone) && (
+          {(!lead.email && !lead.phone && !(lead.contactIds?.length)) && (
             <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:8}}>
               <AlertTriangle size={16} style={{color:"#EF4444",flexShrink:0}}/>
               <span style={{fontSize:12,color:"#991B1B"}}>This lead has no valid email or phone. Cannot convert without contact info.</span>
@@ -220,9 +269,25 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
             </div>
           </div>
 
+          {/* Multi-Product Selection */}
+          <div className="form-group" style={{marginBottom:14}}>
+            <label>Products / Services *</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
+              {PRODUCTS.map(p => {
+                const sel = form.selectedProducts.includes(p.id);
+                return <button key={p.id} type="button" onClick={() => setForm(f => ({...f, selectedProducts: sel ? f.selectedProducts.filter(x => x !== p.id) : [...f.selectedProducts, p.id]}))}
+                  style={{fontSize:11,padding:"4px 10px",borderRadius:6,border: sel ? `2px solid ${p.color}` : "1px solid var(--border)",background: sel ? p.bg : "white",color: sel ? p.text : "var(--text2)",cursor:"pointer",fontWeight: sel ? 700 : 400,display:"flex",alignItems:"center",gap:4}}>
+                  {sel && <Check size={11}/>}{p.name}
+                </button>;
+              })}
+            </div>
+            {errors.products && <FormError error={errors.products}/>}
+          </div>
+
+          {/* LOB Field */}
           <div className="form-row">
-            <div className="form-group"><label>Product / Service</label>
-              <input value={PROD_MAP[lead.product]?.name || lead.product} disabled style={{background:"var(--s2)"}}/>
+            <div className="form-group"><label>Line of Business (LOB)</label>
+              <input value={form.lob} onChange={e => setForm(f => ({...f, lob: e.target.value}))} placeholder="e.g. Air Cargo Operations, Customs Brokerage"/>
             </div>
             <div className="form-group"><label>Opportunity Value (₹Cr) *</label>
               <input type="number" min="0" step="0.1" value={form.value} onChange={e => setForm(f => ({...f, value: +e.target.value}))}/>
@@ -255,6 +320,50 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
             </div>
           </div>
 
+          {/* Contact Role Assignment */}
+          {relevantContacts.length > 0 && (
+            <div className="form-group" style={{marginBottom:14}}>
+              <label style={{display:"flex",alignItems:"center",gap:6}}>Contact Roles
+                <button type="button" className="btn btn-sm btn-sec" style={{fontSize:10,padding:"2px 8px"}} onClick={() => setShowInlineContact(true)}>
+                  <UserPlus size={11}/>Add Contact
+                </button>
+              </label>
+              <div style={{border:"1px solid var(--border)",borderRadius:8,overflow:"hidden",marginTop:4}}>
+                {relevantContacts.map(c => (
+                  <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:"1px solid var(--border)",background:"white"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <span style={{fontSize:12,fontWeight:600,color:"var(--text1)"}}>{c.name}</span>
+                      {c.designation && <span style={{fontSize:11,color:"var(--text3)",marginLeft:6}}>{c.designation}</span>}
+                    </div>
+                    <select value={form.contactRoles[c.id] || ""} onChange={e => setForm(f => ({...f, contactRoles: {...f.contactRoles, [c.id]: e.target.value}}))}
+                      style={{fontSize:11,padding:"3px 8px",borderRadius:4,border:"1px solid var(--border)",minWidth:160}}>
+                      <option value="">— Assign role —</option>
+                      {OPP_CONTACT_ROLES.map(r => <option key={r}>{r}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Inline Add Contact */}
+          {showInlineContact && (
+            <InlineContactForm
+              accountId={form.accountId || lead.accountId || ""}
+              onSave={handleInlineContactSave}
+              onCancel={() => setShowInlineContact(false)}
+            />
+          )}
+
+          {/* Add Contact button when no contacts exist */}
+          {relevantContacts.length === 0 && !showInlineContact && (
+            <div style={{marginBottom:14}}>
+              <button type="button" className="btn btn-sm btn-sec" onClick={() => setShowInlineContact(true)} style={{fontSize:11}}>
+                <UserPlus size={12}/>Add Contact for Role Assignment
+              </button>
+            </div>
+          )}
+
           <div className="form-group" style={{marginBottom:14}}><label>Qualification Notes / Remarks *</label>
             <textarea value={form.notes} onChange={e => { setForm(f => ({...f, notes: e.target.value})); setErrors(e2 => ({...e2, notes: undefined})); }}
               placeholder="Key qualification details, client requirements, objections..." rows={3}
@@ -262,9 +371,16 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
             {errors.notes && <FormError error={errors.notes}/>}
           </div>
 
+          {/* Keep Lead Open Checkbox */}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"10px 14px",background:"var(--s2)",borderRadius:8}}>
+            <input type="checkbox" id="keepLeadOpen" checked={form.keepLeadOpen} onChange={e => setForm(f => ({...f, keepLeadOpen: e.target.checked}))}/>
+            <label htmlFor="keepLeadOpen" style={{fontSize:12,fontWeight:600,color:"var(--text1)",cursor:"pointer"}}>Keep lead open for additional LOBs</label>
+            <span style={{fontSize:11,color:"var(--text3)"}}>(won't mark as Converted; adds opp ID to lead)</span>
+          </div>
+
           <div style={{display:"flex",justifyContent:"flex-end",gap:8,paddingTop:12,borderTop:"1px solid var(--border)"}}>
             <button className="btn btn-sec" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" onClick={handleSubmit} disabled={!lead.email && !lead.phone}>
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={!lead.email && !lead.phone && !(lead.contactIds?.length)}>
               <ArrowRightCircle size={14}/>Convert to Opportunity
             </button>
           </div>
@@ -274,10 +390,11 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   );
 }
 
-function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit, orgUsers, activities: allActivities, callReports, setActivities, setCallReports }) {
+function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts }) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [showConvertModal, setShowConvertModal] = useState(false);
+  const [showStageGate, setShowStageGate] = useState(false);
   const linkedAccount = lead.accountId ? accounts.find(a => a.id === lead.accountId) : null;
   const stageInfo = LEAD_STAGE_MAP[lead.stage];
   const productInfo = PROD_MAP[lead.product];
@@ -409,6 +526,76 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
             <button className="icon-btn" onClick={onClose} aria-label="Close" style={{width:32,height:32,fontSize:18}}>✕</button>
           </div>
         </div>
+
+        {/* Stage Advancement Section */}
+        {lead.stage !== "Converted" && lead.stage !== "NA" && (() => {
+          const STAGE_ORDER = ["MQL","SQL","SAL","Converted"];
+          const curIdx = STAGE_ORDER.indexOf(lead.stage);
+          const nextStage = curIdx >= 0 && curIdx < STAGE_ORDER.length - 1 ? STAGE_ORDER[curIdx + 1] : null;
+          const gateResult = nextStage ? validateStageGate(lead, nextStage, STAGE_GATES) : null;
+          return (
+            <div style={{padding:"0 28px",paddingBottom:0}}>
+              <div style={{background:"white",borderRadius:10,border:"1px solid var(--border)",padding:"14px 18px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:showStageGate ? 10 : 0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <span style={{fontSize:12,fontWeight:600,color:"var(--text3)"}}>Stage Progression:</span>
+                    {STAGE_ORDER.map((s, i) => {
+                      const si = LEAD_STAGE_MAP[s];
+                      const isCurrent = s === lead.stage;
+                      const isPast = i < curIdx;
+                      return (
+                        <div key={s} style={{display:"flex",alignItems:"center",gap:4}}>
+                          {i > 0 && <div style={{width:20,height:2,background: isPast ? "#22C55E" : "var(--border)"}}/>}
+                          <span style={{fontSize:11,fontWeight:isCurrent ? 700 : 500,padding:"3px 8px",borderRadius:6,
+                            background: isCurrent ? si?.color + "18" : isPast ? "#22C55E18" : "var(--s2)",
+                            color: isCurrent ? si?.color : isPast ? "#22C55E" : "var(--text3)",
+                            border: isCurrent ? `1.5px solid ${si?.color}` : "1px solid transparent"}}>{s}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    {nextStage && (
+                      <button className="btn btn-sm" style={{fontSize:11,padding:"4px 12px",borderRadius:6,
+                        background: gateResult?.canAdvance ? "var(--brand)" : "var(--s2)",
+                        color: gateResult?.canAdvance ? "white" : "var(--text3)",
+                        border:"none",cursor: gateResult?.canAdvance ? "pointer" : "not-allowed",opacity: gateResult?.canAdvance ? 1 : 0.7}}
+                        disabled={!gateResult?.canAdvance}
+                        onClick={() => {
+                          if (nextStage === "Converted") { setShowConvertModal(true); }
+                          else { onEdit({ ...lead, stage: nextStage, stageHistory: [...(lead.stageHistory||[]), {from:lead.stage,to:nextStage,date:today}] }); onClose(); }
+                        }}>
+                        <ArrowRightCircle size={12}/>{nextStage === "Converted" ? "Convert" : `Advance to ${nextStage}`}
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setShowStageGate(v => !v)}
+                      style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",display:"flex",alignItems:"center",gap:2,fontSize:11}}>
+                      {showStageGate ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+                      {showStageGate ? "Hide" : "Gates"}
+                    </button>
+                  </div>
+                </div>
+                {showStageGate && gateResult && (
+                  <div style={{background: gateResult.canAdvance ? "#F0FDF4" : "#FFFBEB",borderRadius:8,padding:"10px 14px",border:`1px solid ${gateResult.canAdvance ? "#BBF7D0" : "#FDE68A"}`}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"var(--text2)",marginBottom:6}}>Requirements for {gateResult.label || nextStage}:</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+                      {gateResult.passed.map(c => (
+                        <div key={c.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}>
+                          <Check size={12} style={{color:"#16A34A"}}/><span style={{color:"#15803D"}}>{c.label}</span>
+                        </div>
+                      ))}
+                      {gateResult.failed.map(c => (
+                        <div key={c.key} style={{display:"flex",alignItems:"center",gap:5,fontSize:11}}>
+                          <X size={12} style={{color:"#DC2626"}}/><span style={{color:"#991B1B"}}>{c.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Scrollable Body */}
         <div style={{flex:1,overflow:"auto",padding:"20px 28px 28px"}}>
@@ -710,6 +897,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
             onConvert={(ld, data) => { onConvertToOpp(ld, data); onClose(); }}
             onClose={() => setShowConvertModal(false)}
             orgUsers={orgUsers}
+            setContacts={setContacts}
           />
         )}
       </div>
@@ -720,7 +908,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 // ═══════════════════════════════════════════════════════════════════
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters }) {
+function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
 
@@ -770,6 +958,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [sortCol, setSortCol] = useState("createdDate");
   const [sortDir, setSortDir] = useState("desc");
   const [callLogModal, setCallLogModal] = useState(null); // lead object when open
+  const [showFormInlineContact, setShowFormInlineContact] = useState(false);
   const [callLogForm, setCallLogForm] = useState(null);
 
   const range = useMemo(() => rangeKey === "custom" && customFrom ? { from: customFrom, to: customTo || today } : getDateRange(rangeKey), [rangeKey, customFrom, customTo]);
@@ -1303,10 +1492,101 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             <div className="form-group"><label>Company Name *</label><input value={form.company} onChange={e => { setForm(f => ({...f, company:e.target.value})); setFormErrors(e => ({...e, company:undefined})); }} placeholder="Company name" style={formErrors.company ? {borderColor:"#DC2626"} : {}}/><FormError error={formErrors.company}/></div>
             <div className="form-group"><label>Contact Name *</label><input value={form.contact} onChange={e => { setForm(f => ({...f, contact:e.target.value})); setFormErrors(e => ({...e, contact:undefined})); }} placeholder="Contact person" style={formErrors.contact ? {borderColor:"#DC2626"} : {}}/><FormError error={formErrors.contact}/></div>
           </div>
-          <div className="form-row">
-            <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e => { setForm(f => ({...f, email:e.target.value})); setFormErrors(e => ({...e, email:undefined})); }} placeholder="email@company.com" style={formErrors.email ? {borderColor:"#DC2626"} : {}}/><FormError error={formErrors.email}/></div>
-            <div className="form-group"><label>Phone / WhatsApp</label><input value={form.phone} onChange={e => setForm(f => ({...f, phone:e.target.value}))} placeholder="+91-98765-00000"/></div>
-          </div>
+
+          {/* Multi-contact picker when account is linked */}
+          {form.accountId && (() => {
+            const acctContacts = (allContacts || []).filter(c => c.accountId === form.accountId);
+            return acctContacts.length > 0 ? (
+              <div className="form-group" style={{marginBottom:12}}>
+                <label style={{display:"flex",alignItems:"center",gap:6}}>
+                  Linked Contacts (from account)
+                  <button type="button" className="btn btn-sm btn-sec" style={{fontSize:10,padding:"2px 8px"}} onClick={() => setShowFormInlineContact(true)}>
+                    <UserPlus size={11}/>New Contact
+                  </button>
+                </label>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4,padding:"8px 10px",border:"1px solid var(--border)",borderRadius:8,background:"white",minHeight:36}}>
+                  {acctContacts.map(c => {
+                    const sel = (form.contactIds || []).includes(c.id);
+                    return (
+                      <label key={c.id} style={{display:"flex",alignItems:"center",gap:4,fontSize:11,padding:"3px 8px",borderRadius:4,cursor:"pointer",
+                        background: sel ? "var(--brand)" : "var(--s2)",color: sel ? "white" : "var(--text2)",fontWeight: sel ? 700 : 400,border: sel ? "1px solid var(--brand)" : "1px solid var(--border)",userSelect:"none"}}>
+                        <input type="checkbox" checked={sel} onChange={() => setForm(f => ({...f, contactIds: sel ? (f.contactIds||[]).filter(x => x !== c.id) : [...(f.contactIds||[]), c.id]}))} style={{display:"none"}}/>
+                        {c.name}{c.designation ? ` (${c.designation})` : ""}
+                      </label>
+                    );
+                  })}
+                </div>
+                {showFormInlineContact && (
+                  <InlineContactForm
+                    accountId={form.accountId}
+                    onSave={(contactData) => {
+                      const newContact = {
+                        ...contactData,
+                        id: `c-${uid()}`,
+                        accountId: form.accountId,
+                        primary: false,
+                        contactId: `CON-${Date.now()}`,
+                        departments: [],
+                        products: [],
+                        branches: [],
+                        countries: [],
+                        linkedOpps: [],
+                      };
+                      if (setContacts) setContacts(p => [...p, newContact]);
+                      setForm(f => ({ ...f, contactIds: [...(f.contactIds||[]), newContact.id] }));
+                      setShowFormInlineContact(false);
+                    }}
+                    onCancel={() => setShowFormInlineContact(false)}
+                  />
+                )}
+              </div>
+            ) : (
+              <div style={{marginBottom:12}}>
+                <button type="button" className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => setShowFormInlineContact(true)}>
+                  <UserPlus size={12}/>Add Contact to Account
+                </button>
+                {showFormInlineContact && (
+                  <InlineContactForm
+                    accountId={form.accountId}
+                    onSave={(contactData) => {
+                      const newContact = {
+                        ...contactData,
+                        id: `c-${uid()}`,
+                        accountId: form.accountId,
+                        primary: false,
+                        contactId: `CON-${Date.now()}`,
+                        departments: [],
+                        products: [],
+                        branches: [],
+                        countries: [],
+                        linkedOpps: [],
+                      };
+                      if (setContacts) setContacts(p => [...p, newContact]);
+                      setForm(f => ({ ...f, contactIds: [...(f.contactIds||[]), newContact.id] }));
+                      setShowFormInlineContact(false);
+                    }}
+                    onCancel={() => setShowFormInlineContact(false)}
+                  />
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Contact details when no account linked */}
+          {!form.accountId && (
+            <>
+              <div className="form-row">
+                <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e => { setForm(f => ({...f, email:e.target.value})); setFormErrors(e => ({...e, email:undefined})); }} placeholder="email@company.com" style={formErrors.email ? {borderColor:"#DC2626"} : {}}/><FormError error={formErrors.email}/></div>
+                <div className="form-group"><label>Phone / WhatsApp</label><input value={form.phone} onChange={e => setForm(f => ({...f, phone:e.target.value}))} placeholder="+91-98765-00000"/></div>
+              </div>
+            </>
+          )}
+          {form.accountId && (
+            <div className="form-row">
+              <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e => { setForm(f => ({...f, email:e.target.value})); setFormErrors(e => ({...e, email:undefined})); }} placeholder="email@company.com" style={formErrors.email ? {borderColor:"#DC2626"} : {}}/><FormError error={formErrors.email}/></div>
+              <div className="form-group"><label>Phone / WhatsApp</label><input value={form.phone} onChange={e => setForm(f => ({...f, phone:e.target.value}))} placeholder="+91-98765-00000"/></div>
+            </div>
+          )}
           <div className="form-row">
             <div className="form-group"><label>Designation</label><input value={form.designation||""} onChange={e => setForm(f => ({...f, designation:e.target.value}))} placeholder="e.g. VP Operations, Owner/MD"/></div>
             <div className="form-group"><label>No. of Users</label><input type="number" min="0" value={form.noOfUsers||0} onChange={e => setForm(f => ({...f, noOfUsers:+e.target.value}))}/></div>

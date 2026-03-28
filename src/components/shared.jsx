@@ -111,6 +111,34 @@ export function NotesThread({notes,onAdd,currentUser}) {
 // ═══════════════════════════════════════════════════════════════════
 // FILES LIST (reusable on Account/Opp/Activity detail)
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// INLINE CONTACT FORM (Quick Add Contact)
+// ═══════════════════════════════════════════════════════════════════
+export function InlineContactForm({ accountId, onSave, onCancel }) {
+  const [form, setForm] = useState({ name: "", email: "", phone: "", designation: "", department: "" });
+  const set = (k,v) => setForm(p => ({...p, [k]: v}));
+
+  return (
+    <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, marginTop: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>Quick Add Contact</span>
+        <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text3)" }}>&#x2715;</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <input placeholder="Full Name *" value={form.name} onChange={e => set("name", e.target.value)} className="f-input" style={{ gridColumn: "1/-1" }} />
+        <input placeholder="Email" value={form.email} onChange={e => set("email", e.target.value)} className="f-input" />
+        <input placeholder="Phone" value={form.phone} onChange={e => set("phone", e.target.value)} className="f-input" />
+        <input placeholder="Designation" value={form.designation} onChange={e => set("designation", e.target.value)} className="f-input" />
+        <input placeholder="Department" value={form.department} onChange={e => set("department", e.target.value)} className="f-input" />
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+        <button onClick={onCancel} className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 12px" }}>Cancel</button>
+        <button onClick={() => { if (!form.name.trim()) return; onSave({ ...form, accountId }); }} className="btn btn-sm" style={{ fontSize: 12, padding: "4px 12px", background: "var(--brand)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }} disabled={!form.name.trim()}>Add Contact</button>
+      </div>
+    </div>
+  );
+}
+
 export function FilesList({files,onAdd,currentUser}) {
   const [form,setForm] = useState({name:"",type:"PDF",size:""});
   const [adding,setAdding] = useState(false);
