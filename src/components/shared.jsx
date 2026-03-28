@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { X, Send, FileText, Check, Paperclip } from "lucide-react";
-import { PROD_MAP, TEAM_MAP, FILE_TYPES } from "../data/constants";
-import { fmt, uid, today } from "../utils/helpers";
+import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
+import { fmt, uid, today, hasErrors } from "../utils/helpers";
 
 export function StatusBadge({status}) {
   const s = (status||"").toLowerCase().replace(/\s+/g,"-");
@@ -194,5 +194,194 @@ export function FilesList({files,onAdd,currentUser}) {
         <button className="btn btn-sec btn-sm" style={{marginTop:14}} onClick={()=>setAdding(true)}><Paperclip size={13}/>Attach File</button>
       )}
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LOG CALL MODAL (shared across Pipeline, Accounts, Leads)
+// ═══════════════════════════════════════════════════════════════════
+const nowTime = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+};
+
+export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUsers, masters, prefill = {} }) {
+  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== "Inactive") : TEAM;
+  const callTypes = masters?.callTypes?.length ? masters.callTypes : CALL_TYPES;
+  const callSubjects = masters?.callSubjects?.length ? masters.callSubjects : CALL_OBJECTIVES;
+  const [form, setForm] = useState({
+    callType: "Telephone Call", objective: "General Followup", callDate: today, callTime: nowTime(),
+    duration: 15, accountId: "", leadId: "", oppId: "", contactIds: [], participantIds: [],
+    notes: "", outcome: "Completed", nextCallDate: "", nextStepDesc: "", createFollowup: false,
+    followupTitle: "", followupAssign: "", followupDue: "",
+    ...prefill,
+  });
+  const [errors, setErrors] = useState({});
+
+  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: undefined })); };
+
+  const filteredContacts = useMemo(() =>
+    form.accountId ? (contacts || []).filter(c => c.accountId === form.accountId) : (contacts || []),
+  [contacts, form.accountId]);
+  const filteredOpps = useMemo(() =>
+    form.accountId ? (opps || []).filter(o => o.accountId === form.accountId) : (opps || []),
+  [opps, form.accountId]);
+
+  const acctName = (accounts || []).find(a => a.id === form.accountId)?.name || "";
+
+  const validate = () => {
+    const errs = {};
+    if (!form.callDate) errs.callDate = "Call date is required";
+    if (!form.notes?.trim()) errs.notes = "Discussion notes are required";
+    else if (form.notes.trim().length < 10) errs.notes = "Notes must be at least 10 characters";
+    return errs;
+  };
+
+  const submit = () => {
+    const errs = validate();
+    if (hasErrors(errs)) { setErrors(errs); return; }
+    onSave(form);
+    onClose();
+  };
+
+  return (
+    <Modal title="Log Call" onClose={onClose} lg footer={
+      <>
+        <button className="btn btn-sec" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={submit}><Check size={14} /> Save Call</button>
+      </>
+    }>
+      <div className="form-row">
+        <div className="form-group"><label>Call Type</label>
+          <select value={form.callType} onChange={e => set("callType", e.target.value)}>
+            {callTypes.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="form-group"><label>Call Subject</label>
+          <select value={form.objective} onChange={e => set("objective", e.target.value)}>
+            {callSubjects.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="form-row three">
+        <div className="form-group"><label>Date *</label>
+          <input type="date" value={form.callDate} onChange={e => set("callDate", e.target.value)}
+            style={errors.callDate ? { borderColor: "#DC2626" } : {}} />
+          <FormError error={errors.callDate} />
+        </div>
+        <div className="form-group"><label>Time</label>
+          <input type="time" value={form.callTime} onChange={e => set("callTime", e.target.value)} />
+        </div>
+        <div className="form-group"><label>Duration (min)</label>
+          <input type="number" min={0} step={5} value={form.duration}
+            onChange={e => set("duration", +e.target.value)} />
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group"><label>Company / Account</label>
+          <select value={form.accountId} onChange={e => set("accountId", e.target.value)}>
+            <option value="">-- Select --</option>
+            {(accounts || []).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+        <div className="form-group"><label>Opportunity</label>
+          <select value={form.oppId} onChange={e => set("oppId", e.target.value)}>
+            <option value="">-- None --</option>
+            {filteredOpps.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group"><label>Outcome</label>
+          <select value={form.outcome} onChange={e => set("outcome", e.target.value)}>
+            {CALL_OUTCOMES.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Multi-select contacts */}
+      <div className="form-group" style={{ marginBottom: 12 }}>
+        <label>Contacts</label>
+        <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 4, background: "white" }}>
+          {filteredContacts.length === 0 && <div style={{ fontSize: 11, color: "var(--text3)", padding: 8, textAlign: "center" }}>No contacts</div>}
+          {filteredContacts.map(c => (
+            <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>
+              <input type="checkbox" checked={form.contactIds.includes(c.id)}
+                onChange={() => set("contactIds", form.contactIds.includes(c.id) ? form.contactIds.filter(x => x !== c.id) : [...form.contactIds, c.id])}
+                style={{ accentColor: "var(--brand)" }} />
+              {c.name}{c.designation ? ` (${c.designation})` : ""}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Multi-select our participants */}
+      <div className="form-group" style={{ marginBottom: 12 }}>
+        <label>Our Participants</label>
+        <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 4, background: "white" }}>
+          {team.map(u => (
+            <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>
+              <input type="checkbox" checked={form.participantIds.includes(u.id)}
+                onChange={() => set("participantIds", form.participantIds.includes(u.id) ? form.participantIds.filter(x => x !== u.id) : [...form.participantIds, u.id])}
+                style={{ accentColor: "var(--brand)" }} />
+              {u.name}{u.role ? ` (${u.role})` : ""}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label>Discussion Notes * <span style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>(min 10 chars)</span></label>
+        <textarea rows={3} value={form.notes}
+          onChange={e => set("notes", e.target.value)}
+          placeholder="Discussion summary, objections, decisions, and next steps..."
+          style={{ ...(errors.notes ? { borderColor: "#DC2626" } : {}), width: "100%", resize: "vertical" }} />
+        <FormError error={errors.notes} />
+      </div>
+
+      <div className="form-row">
+        <div className="form-group"><label>Next Step / Follow-up Date</label>
+          <input type="date" value={form.nextCallDate} onChange={e => set("nextCallDate", e.target.value)} />
+        </div>
+        <div className="form-group"><label>Next Step Description</label>
+          <input value={form.nextStepDesc} onChange={e => set("nextStepDesc", e.target.value)}
+            placeholder="e.g. Send proposal, Schedule demo..." />
+        </div>
+      </div>
+
+      {/* Create follow-up task */}
+      <div style={{
+        marginTop: 10, padding: 12, borderRadius: 8, border: "1px solid var(--border)",
+        background: "var(--s2)"
+      }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+          <input type="checkbox" checked={form.createFollowup}
+            onChange={e => set("createFollowup", e.target.checked)}
+            style={{ accentColor: "var(--brand)" }} />
+          Create Follow-up Task
+        </label>
+        {form.createFollowup && (
+          <div style={{ marginTop: 10 }}>
+            <div className="form-row">
+              <div className="form-group"><label>Task Title</label>
+                <input value={form.followupTitle || `Follow-up: ${acctName}`}
+                  onChange={e => set("followupTitle", e.target.value)}
+                  placeholder="Follow-up task title" />
+              </div>
+              <div className="form-group"><label>Assign To</label>
+                <select value={form.followupAssign} onChange={e => set("followupAssign", e.target.value)}>
+                  <option value="">-- Select --</option>
+                  {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="form-group"><label>Due Date</label>
+              <input type="date" value={form.followupDue || form.nextCallDate}
+                onChange={e => set("followupDue", e.target.value)} />
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

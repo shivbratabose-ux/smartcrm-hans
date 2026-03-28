@@ -285,3 +285,6 @@ export const STAGE_GATES = {
 
 // ── Opportunity Contact Roles ──
 export const OPP_CONTACT_ROLES = ["Decision Maker","Technical Evaluator","Influencer","End User","Procurement","Legal/Compliance","Executive Sponsor","Champion"];
+
+// ── Lead Contact Roles ──
+export const LEAD_CONTACT_ROLES = ["Decision Maker/HOD","Technical/IT","End User","Finance/Accounts","Presales/Demo","Management","Operations","Other"];

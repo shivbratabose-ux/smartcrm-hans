@@ -9,7 +9,7 @@ import {
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid } from "./utils/helpers";
 import { CSS } from "./styles";
 
 // Supabase integration
@@ -282,35 +282,55 @@ export default function SmartCRM() {
     // Build contact roles array from the contactRoles map
     const contactRoles = data.contactRoles ? Object.entries(data.contactRoles).filter(([,role]) => role).map(([contactId, role], i) => ({ contactId, role, isPrimary: i === 0 })) : [];
     const primaryContact = contactRoles.find(r => r.isPrimary)?.contactId || data.primaryContactId || (lead.contactIds?.[0]) || "";
+    // Generate opportunity ID: O# prefix derived from lead ID
+    const oppId = lead.leadId
+      ? `O${lead.leadId}`  // e.g. #FL-2026-001 -> O#FL-2026-001
+      : `OPP-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
     const newOpp = {
-      id: `o_${Date.now()}`,
+      id: uid(),
+      oppId,
       title: data.title || `${PROD_MAP[lead.product]?.name || lead.product} – ${lead.company}`,
       accountId: data.accountId || lead.accountId || "",
       products: data.selectedProducts?.length ? data.selectedProducts : [lead.product],
-      stage: "Qualified",
+      stage: "Prospect",
       value: data.value || 0,
-      probability: STAGE_PROB["Qualified"] || 25,
+      probability: 10,
       owner: data.owner || lead.assignedTo,
       closeDate: data.closeDate || "",
       country: data.country || (lead.region === "South Asia" ? "India" : ""),
-      notes: `Converted from lead ${lead.leadId}. ${data.notes || lead.notes || ""}`,
-      source: lead.accountId ? "Existing Customer – Upsell" : "New Lead",
+      notes: data.notes || lead.notes || "",
+      source: "Lead Conversion",
       primaryContactId: primaryContact,
       secondaryContactIds: contactRoles.filter(r => !r.isPrimary).map(r => r.contactId),
       contactRoles,
+      leadId: lead.leadId || "",
       sourceLeadIds: [lead.id],
       lob: data.lob || "",
       hierarchyLevel: "Parent Company",
-      leadId: lead.leadId || "",
       forecastCategory: data.forecastCategory || "Likely-Case",
       dealSize: data.dealSize || "Medium",
     };
+    // If createNewAccount, create the account first
+    if (data.createNewAccount && lead.company) {
+      const newAccId = `acc_${uid()}`;
+      const newAcc = {
+        id: newAccId,
+        name: lead.company,
+        country: newOpp.country,
+        region: lead.region || "",
+        status: "Active",
+        owner: newOpp.owner,
+        source: "Lead Conversion",
+      };
+      setAccounts(p => [...p, newAcc]);
+      newOpp.accountId = newAccId;
+    }
     setOpps(p => [...p, newOpp]);
     // Handle "keep lead open for additional LOBs" vs full conversion
     if (data.keepLeadOpen) {
       setLeads(p => p.map(l => l.id === lead.id ? { ...l, convertedOppIds: [...(l.convertedOppIds||[]), newOpp.id], stageHistory: [...(l.stageHistory||[]), {from:l.stage,to:"Partial Convert",date:today}] } : l));
     } else {
-      setLeads(p => p.map(l => l.id === lead.id ? { ...l, stage: "Converted", convertedDate: today, convertedOppId: newOpp.id, convertedOppIds: [...(l.convertedOppIds||[]), newOpp.id], stageHistory: [...(l.stageHistory||[]), {from:l.stage,to:"Converted",date:today}] } : l));
+      setLeads(p => p.map(l => l.id === lead.id ? { ...l, stage: "Converted", convertedDate: today, convertedOppId: newOpp.id, convertedOppIds: [...(l.convertedOppIds||[]), newOpp.id], convertedOppRefId: newOpp.oppId, stageHistory: [...(l.stageHistory||[]), {from:l.stage,to:"Converted",date:today}] } : l));
     }
     // Create initial activity for the new opportunity
     const initialAct = {
@@ -335,9 +355,47 @@ export default function SmartCRM() {
   // Bulk upload handler
   const handleBulkUpload = useCallback((type, records) => {
     switch(type) {
-      case "Leads": setLeads(p => [...p, ...records]); break;
-      case "Customers": setAccounts(p => [...p, ...records]); break;
-      case "Contacts": setContacts(p => [...p, ...records]); break;
+      case "Leads": setLeads(p => {
+        const year = new Date().getFullYear();
+        const maxSeq = p.reduce((max, l) => {
+          const m = l.leadId?.match(/#FL-\d+-(\d+)/);
+          return m ? Math.max(max, parseInt(m[1])) : max;
+        }, 0);
+        const enriched = records.map((r, i) => ({
+          ...r,
+          leadId: `#FL-${year}-${String(maxSeq + i + 1).padStart(3, '0')}`,
+          score: Math.max(0, Math.min(100, Number(r.score) || 30)),
+          createdDate: r.createdDate || new Date().toISOString().slice(0, 10),
+          stage: r.stage || "MQL",
+          contactIds: [],
+          temperature: Number(r.score) >= 70 ? "Hot" : Number(r.score) >= 40 ? "Warm" : "Cool",
+        }));
+        return [...p, ...enriched];
+      }); break;
+      case "Customers": setAccounts(p => {
+        const year = new Date().getFullYear();
+        const maxSeq = p.reduce((max, a) => {
+          const m = a.accountNo?.match(/ACC-\d+-(\d+)/);
+          return m ? Math.max(max, parseInt(m[1])) : max;
+        }, 0);
+        const enriched = records.map((r, i) => ({
+          ...r,
+          accountNo: `ACC-${year}-${String(maxSeq + i + 1).padStart(3, '0')}`,
+          status: r.status || "Active",
+        }));
+        return [...p, ...enriched];
+      }); break;
+      case "Contacts": setContacts(p => {
+        const maxSeq = p.reduce((max, c) => {
+          const m = c.contactId?.match(/CON-(\d+)/);
+          return m ? Math.max(max, parseInt(m[1])) : max;
+        }, 0);
+        const enriched = records.map((r, i) => ({
+          ...r,
+          contactId: `CON-${String(maxSeq + i + 1).padStart(3, '0')}`,
+        }));
+        return [...p, ...enriched];
+      }); break;
       case "Collections": setCollections(p => [...p, ...records]); break;
       case "Support Tickets": setTickets(p => [...p, ...records]); break;
       case "Contracts": setContracts(p => [...p, ...records]); break;
