@@ -701,7 +701,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
                     </td>
                     <td style={{fontSize:12}}>{a.type}</td>
                     <td style={{fontSize:12}}>{a.country}</td>
-                    <td><div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{a.products.map(p => <ProdTag key={p} pid={p}/>)}</div></td>
+                    <td><div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{(a.products||[]).map(p => <ProdTag key={p} pid={p}/>)}</div></td>
                     <td><StatusBadge status={a.status}/></td>
                     <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{a.arrRevenue ? fmt.inr(a.arrRevenue) : "—"}</td>
                     <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700,color:"var(--brand)"}}>{a.potential ? fmt.inr(a.potential) : "—"}</td>

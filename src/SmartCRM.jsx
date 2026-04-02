@@ -150,7 +150,15 @@ function migrateState(raw) {
     }));
   }
 
-  // ── 4. Add newly-created contacts ──
+  // ── 4. Accounts: ensure products is always an array ──
+  if (Array.isArray(s.accounts)) {
+    s.accounts = s.accounts.map(a => ({
+      ...a,
+      products: Array.isArray(a.products) ? a.products : (a.products ? [a.products] : []),
+    }));
+  }
+
+  // ── 5. Add newly-created contacts ──
   if (newContacts.length) {
     s.contacts = [...allContacts, ...newContacts];
   }
@@ -503,6 +511,10 @@ export default function SmartCRM() {
         status: "Active",
         owner: newOpp.owner,
         source: "Lead Conversion",
+        products: newOpp.products || [],
+        hierarchyLevel: "Parent Company",
+        hierarchyPath: lead.company,
+        accountNo: "",
       };
       setAccounts(p => [...p, newAcc]);
       newOpp.accountId = newAccId;
