@@ -712,7 +712,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       <div className="pg-head">
         <div>
           <div className="pg-title">Pipeline</div>
-          <div className="pg-sub">{openDeals.length} open deals \u2022 {filtered.length} total filtered</div>
+          <div className="pg-sub">{openDeals.length} open deals • {filtered.length} total filtered</div>
         </div>
         <div className="pg-actions">
           {isManager && (
