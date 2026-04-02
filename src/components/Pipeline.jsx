@@ -435,7 +435,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
 /* ═══════════════════════════════════════════════════════
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
-function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters }) {
+function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, onDealWon }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const [view, setView] = useState("kanban");
   const [prodF, setProdF] = useState("All");
@@ -548,7 +548,9 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       if (dup && !window.confirm(`Warning: A deal for this account with overlapping products already exists ("${dup.title}"). Continue?`)) return;
       setOpps(p => [...p, { ...clean, probability: STAGE_PROB[clean.stage] || clean.probability }]);
     } else {
+      const prev = opps.find(o => o.id === clean.id);
       setOpps(p => p.map(o => o.id === clean.id ? { ...clean } : o));
+      if (clean.stage === "Won" && prev?.stage !== "Won" && onDealWon) onDealWon(clean);
     }
     setModal(null); setDetail(null); setFormErrors({});
   };
@@ -590,7 +592,9 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       setActivities(p => [...p, followUp]);
     }
     /* move stage */
-    setOpps(p => p.map(o => o.id === opp.id ? { ...o, stage: toStage, probability: STAGE_PROB[toStage] } : o));
+    const updated = { ...opp, stage: toStage, probability: STAGE_PROB[toStage] };
+    setOpps(p => p.map(o => o.id === opp.id ? updated : o));
+    if (toStage === "Won" && onDealWon) onDealWon(updated);
     setStageModal(null);
   };
 
@@ -863,6 +867,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                           <HealthBadge health={health} />
                         </div>
                         {o.oppId && <div style={{ fontSize: 10, fontFamily: "'Courier New',monospace", color: "#1B6B5A", background: "#F0FDF4", padding: "1px 6px", borderRadius: 4, marginBottom: 4, display: "inline-block" }}>{o.oppId}</div>}
+                        {o.stage === "Won" && acc?.accountNo && <div style={{ fontSize: 10, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "1px 6px", borderRadius: 4, marginBottom: 4, display: "inline-block", marginLeft: 4 }}>Customer: {acc.accountNo}</div>}
                         <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6 }}>{acc?.name}</div>
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
                           {o.products.slice(0, 2).map(p => <ProdTag key={p} pid={p} />)}

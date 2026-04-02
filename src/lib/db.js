@@ -51,6 +51,23 @@ const toSnake = (obj) => {
     recordId:"record_id", linkedTo:"linked_to", linkedOpps:"linked_opps",
     endTime:"end_time", authUserId:"auth_user_id", branchId:"branch_id",
     deptId:"dept_id", joinDate:"join_date", avatarUrl:"avatar_url",
+    // Lead fields
+    assignedTo:"assigned_to", contactIds:"contact_ids", contactRoles:"contact_roles",
+    additionalProducts:"additional_products", estimatedValue:"estimated_value",
+    stageHistory:"stage_history", convertedOppId:"converted_opp_id",
+    convertedOppIds:"converted_opp_ids", convertedOppRefId:"converted_opp_ref_id",
+    convertedDate:"converted_date", qualificationChecklist:"qualification_checklist",
+    // Opportunity fields
+    sourceLeadIds:"source_lead_ids", forecastCategory:"forecast_category", dealSize:"deal_size",
+    // Contact fields
+    linkedLeadIds:"linked_lead_ids",
+    // Lead address/team
+    salesTeam:"sales_team",
+    // General / activity fields
+    callTime:"call_time", nextStepDesc:"next_step_desc", participantIds:"participant_ids",
+    keepLeadOpen:"keep_lead_open", followupTitle:"followup_title",
+    followupAssign:"followup_assign", followupDue:"followup_due",
+    taskType:"task_type", taskStatus:"task_status",
   };
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -85,6 +102,23 @@ const toCamel = (obj) => {
     record_id:"recordId", linked_to:"linkedTo", linked_opps:"linkedOpps",
     end_time:"endTime", auth_user_id:"authUserId", branch_id:"branchId",
     dept_id:"deptId", join_date:"joinDate", avatar_url:"avatarUrl",
+    // Lead fields
+    assigned_to:"assignedTo", contact_ids:"contactIds", contact_roles:"contactRoles",
+    additional_products:"additionalProducts", estimated_value:"estimatedValue",
+    stage_history:"stageHistory", converted_opp_id:"convertedOppId",
+    converted_opp_ids:"convertedOppIds", converted_opp_ref_id:"convertedOppRefId",
+    converted_date:"convertedDate", qualification_checklist:"qualificationChecklist",
+    // Opportunity fields
+    source_lead_ids:"sourceLeadIds", forecast_category:"forecastCategory", deal_size:"dealSize",
+    // Contact fields
+    linked_lead_ids:"linkedLeadIds",
+    // Lead address/team
+    sales_team:"salesTeam",
+    // General / activity fields
+    call_time:"callTime", next_step_desc:"nextStepDesc", participant_ids:"participantIds",
+    keep_lead_open:"keepLeadOpen", followup_title:"followupTitle",
+    followup_assign:"followupAssign", followup_due:"followupDue",
+    task_type:"taskType", task_status:"taskStatus",
   };
   const out = {};
   for (const [k, v] of Object.entries(obj)) {

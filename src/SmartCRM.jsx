@@ -249,7 +249,7 @@ export default function SmartCRM() {
 
   // Cascade delete: remove all linked records when an account is deleted
   const cascadeDeleteAccount = useCallback((accId) => {
-    setAccounts(p => p.filter(a => a.id !== accId));
+    setAccounts(p => p.filter(a => a.id !== accId).map(a => a.parentId === accId ? {...a, parentId: ""} : a));
     setContacts(p => p.filter(c => c.accountId !== accId));
     setOpps(p => p.filter(o => o.accountId !== accId));
     setActivities(p => p.filter(a => a.accountId !== accId));
@@ -274,7 +274,65 @@ export default function SmartCRM() {
   const cascadeDeleteContact = useCallback((conId) => {
     setContacts(p => p.filter(c => c.id !== conId));
     setActivities(p => p.map(a => a.contactId === conId ? {...a, contactId: ""} : a));
+    setCallReports(p => p.map(cr => cr.contactId === conId ? {...cr, contactId: ""} : cr));
+    setLeads(p => p.map(l => l.contactIds?.includes(conId) ? {...l, contactIds: l.contactIds.filter(id => id !== conId)} : l));
+    setOpps(p => p.map(o => {
+      let changed = false, up = {...o};
+      if (o.primaryContactId === conId) { up.primaryContactId = ""; changed = true; }
+      if (o.secondaryContactIds?.includes(conId)) { up.secondaryContactIds = o.secondaryContactIds.filter(id => id !== conId); changed = true; }
+      return changed ? up : o;
+    }));
   }, []);
+
+  // Deal Won → Customer: auto-create or update account
+  const handleDealWon = useCallback((opp) => {
+    if (opp.accountId) {
+      // Update existing account: mark Active, add products
+      setAccounts(p => p.map(a => a.id === opp.accountId ? {
+        ...a,
+        status: "Active",
+        products: [...new Set([...(a.products || []), ...(opp.products || [])])],
+        arrRevenue: (a.arrRevenue || 0) + (opp.value || 0),
+      } : a));
+    } else {
+      // Auto-create account from deal
+      const year = new Date().getFullYear();
+      const maxSeq = accounts.reduce((max, a) => {
+        const m = a.accountNo?.match(/ACC-\d+-(\d+)/);
+        return m ? Math.max(max, parseInt(m[1])) : max;
+      }, 0);
+      const newAccId = `acc_${uid()}`;
+      const newAcc = {
+        id: newAccId,
+        accountNo: `ACC-${year}-${String(maxSeq + 1).padStart(3, '0')}`,
+        name: opp.title?.split(' – ').pop() || opp.title || "New Customer",
+        status: "Active",
+        owner: opp.owner,
+        country: opp.country || "",
+        region: "",
+        products: opp.products || [],
+        source: "Deal Won",
+        arrRevenue: opp.value || 0,
+      };
+      setAccounts(p => [...p, newAcc]);
+      setOpps(p => p.map(o => o.id === opp.id ? {...o, accountId: newAccId} : o));
+      // Link contacts to new account
+      const cIds = [opp.primaryContactId, ...(opp.secondaryContactIds || [])].filter(Boolean);
+      if (cIds.length) setContacts(p => p.map(c => cIds.includes(c.id) && !c.accountId ? {...c, accountId: newAccId} : c));
+      // Link activities to new account
+      setActivities(p => p.map(a => a.oppId === opp.id && !a.accountId ? {...a, accountId: newAccId} : a));
+    }
+    // Create "Deal Won" milestone activity
+    setActivities(p => [...p, {
+      id: `act_${Date.now()}`, type: "Meeting", status: "Completed", date: today,
+      time: new Date().toTimeString().slice(0, 5), duration: 0,
+      accountId: opp.accountId || "", contactId: opp.primaryContactId || "",
+      oppId: opp.id, owner: opp.owner,
+      title: `Deal Won – ${opp.title}`,
+      notes: `Deal ${opp.oppId || opp.id} marked as Won. Value: ₹${opp.value || 0}L`,
+      outcome: "Positive",
+    }]);
+  }, [accounts]);
 
   // Convert lead to opportunity — accepts conversion data from modal
   const convertLeadToOpp = useCallback((lead, conversionData) => {
@@ -349,10 +407,24 @@ export default function SmartCRM() {
       outcome: "Positive",
     };
     setActivities(p => [...p, initialAct]);
+    // Re-link existing activities from lead to new opportunity
+    setActivities(p => p.map(a => {
+      if (a.leadId === lead.id && !a.oppId) {
+        return { ...a, oppId: newOpp.id, accountId: a.accountId || newOpp.accountId };
+      }
+      return a;
+    }));
+    // Re-link existing call reports from lead to new opportunity
+    setCallReports(p => p.map(cr => {
+      if (cr.leadId === lead.id && !cr.oppId) {
+        return { ...cr, oppId: newOpp.id, accountId: cr.accountId || newOpp.accountId };
+      }
+      return cr;
+    }));
     if (!data.keepLeadOpen) setPage("pipeline");
   }, []);
 
-  // Bulk upload handler
+  // Bulk upload handler — matches leads→accounts, contacts→accounts by name/email
   const handleBulkUpload = useCallback((type, records) => {
     switch(type) {
       case "Leads": setLeads(p => {
@@ -361,15 +433,20 @@ export default function SmartCRM() {
           const m = l.leadId?.match(/#FL-\d+-(\d+)/);
           return m ? Math.max(max, parseInt(m[1])) : max;
         }, 0);
-        const enriched = records.map((r, i) => ({
-          ...r,
-          leadId: `#FL-${year}-${String(maxSeq + i + 1).padStart(3, '0')}`,
-          score: Math.max(0, Math.min(100, Number(r.score) || 30)),
-          createdDate: r.createdDate || new Date().toISOString().slice(0, 10),
-          stage: r.stage || "MQL",
-          contactIds: [],
-          temperature: Number(r.score) >= 70 ? "Hot" : Number(r.score) >= 40 ? "Warm" : "Cool",
-        }));
+        const enriched = records.map((r, i) => {
+          const matchedAccount = accounts.find(a => a.name?.toLowerCase().trim() === r.company?.toLowerCase().trim());
+          const matchedContact = r.email ? contacts.find(c => c.email?.toLowerCase() === r.email?.toLowerCase()) : null;
+          return {
+            ...r,
+            leadId: r.leadId || `#FL-${year}-${String(maxSeq + i + 1).padStart(3, '0')}`,
+            score: Math.max(0, Math.min(100, Number(r.score) || 30)),
+            createdDate: r.createdDate || today,
+            stage: r.stage || "MQL",
+            accountId: r.accountId || matchedAccount?.id || "",
+            contactIds: matchedContact ? [matchedContact.id] : [],
+            temperature: Number(r.score) >= 70 ? "Hot" : Number(r.score) >= 40 ? "Warm" : "Cool",
+          };
+        });
         return [...p, ...enriched];
       }); break;
       case "Customers": setAccounts(p => {
@@ -380,7 +457,7 @@ export default function SmartCRM() {
         }, 0);
         const enriched = records.map((r, i) => ({
           ...r,
-          accountNo: `ACC-${year}-${String(maxSeq + i + 1).padStart(3, '0')}`,
+          accountNo: r.accountNo || `ACC-${year}-${String(maxSeq + i + 1).padStart(3, '0')}`,
           status: r.status || "Active",
         }));
         return [...p, ...enriched];
@@ -390,17 +467,21 @@ export default function SmartCRM() {
           const m = c.contactId?.match(/CON-(\d+)/);
           return m ? Math.max(max, parseInt(m[1])) : max;
         }, 0);
-        const enriched = records.map((r, i) => ({
-          ...r,
-          contactId: `CON-${String(maxSeq + i + 1).padStart(3, '0')}`,
-        }));
+        const enriched = records.map((r, i) => {
+          const matchedAccount = !r.accountId && r.company ? accounts.find(a => a.name?.toLowerCase().trim() === r.company?.toLowerCase().trim()) : null;
+          return {
+            ...r,
+            contactId: r.contactId || `CON-${String(maxSeq + i + 1).padStart(3, '0')}`,
+            accountId: r.accountId || matchedAccount?.id || "",
+          };
+        });
         return [...p, ...enriched];
       }); break;
       case "Collections": setCollections(p => [...p, ...records]); break;
       case "Support Tickets": setTickets(p => [...p, ...records]); break;
       case "Contracts": setContracts(p => [...p, ...records]); break;
     }
-  }, []);
+  }, [accounts, contacts]);
 
   if(!currentUser) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers} userPasswords={userPasswords}/></>
@@ -419,7 +500,7 @@ export default function SmartCRM() {
             {page==="leads"      && <Leads leads={leads} setLeads={setLeads} accounts={accounts} contacts={contacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={activities} setActivities={setActivities} callReports={callReports} setCallReports={setCallReports} masters={masters}/>}
             {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={opps} activities={activities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} setContacts={setContacts} tickets={tickets} contracts={contracts} collections={collections} leads={leads} orgUsers={orgUsers} callReports={callReports} setCallReports={setCallReports} masters={masters}/>}
             {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={opps} activities={activities}/>}
-            {page==="pipeline"   && <Pipeline opps={opps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} setContacts={setContacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={setActivities} callReports={callReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters}/>}
+            {page==="pipeline"   && <Pipeline opps={opps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} setContacts={setContacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={setActivities} callReports={callReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} onDealWon={handleDealWon}/>}
             {page==="activities" && <Activities activities={activities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers}/>}
             {page==="callreports"&& <CallReports callReports={callReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="tickets"    && <Tickets tickets={tickets} setTickets={setTickets} accounts={accounts} orgUsers={orgUsers}/>}
