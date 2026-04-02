@@ -425,30 +425,68 @@ export default function SmartCRM() {
   }, []);
 
   // Bulk upload handler — matches leads→accounts, contacts→accounts by name/email
+  // Also auto-creates Contact records from lead contact info
   const handleBulkUpload = useCallback((type, records) => {
     switch(type) {
-      case "Leads": setLeads(p => {
+      case "Leads": {
+        // First, build new contacts from leads that don't match existing ones
+        const newContacts = [];
+        const conMaxSeq = contacts.reduce((max, c) => {
+          const m = c.contactId?.match(/CON-(\d+)/);
+          return m ? Math.max(max, parseInt(m[1])) : max;
+        }, 0);
+        let conSeq = conMaxSeq;
+
         const year = new Date().getFullYear();
-        const maxSeq = p.reduce((max, l) => {
+        const maxSeq = leads.reduce((max, l) => {
           const m = l.leadId?.match(/#FL-\d+-(\d+)/);
           return m ? Math.max(max, parseInt(m[1])) : max;
         }, 0);
+
         const enriched = records.map((r, i) => {
           const matchedAccount = accounts.find(a => a.name?.toLowerCase().trim() === r.company?.toLowerCase().trim());
-          const matchedContact = r.email ? contacts.find(c => c.email?.toLowerCase() === r.email?.toLowerCase()) : null;
+          const acctId = r.accountId || matchedAccount?.id || "";
+          // Try matching existing contact by email
+          let matchedContact = r.email ? contacts.find(c => c.email?.toLowerCase() === r.email?.toLowerCase()) : null;
+          // Also check newly created contacts in this batch
+          if (!matchedContact && r.email) {
+            matchedContact = newContacts.find(c => c.email?.toLowerCase() === r.email?.toLowerCase());
+          }
+          let contactId = matchedContact?.id || "";
+          // Auto-create contact if we have name+email and no match
+          if (!contactId && r.contact && r.email) {
+            conSeq++;
+            const newCon = {
+              id: `c_${uid()}`,
+              contactId: `CON-${String(conSeq).padStart(3, '0')}`,
+              name: r.contact,
+              email: r.email,
+              phone: r.phone || "",
+              designation: r.designation || "",
+              department: r.department || "",
+              role: "End User",
+              accountId: acctId,
+              linkedOpps: [],
+              products: r.product ? [r.product] : [],
+            };
+            newContacts.push(newCon);
+            contactId = newCon.id;
+          }
           return {
             ...r,
             leadId: r.leadId || `#FL-${year}-${String(maxSeq + i + 1).padStart(3, '0')}`,
             score: Math.max(0, Math.min(100, Number(r.score) || 30)),
             createdDate: r.createdDate || today,
             stage: r.stage || "MQL",
-            accountId: r.accountId || matchedAccount?.id || "",
-            contactIds: matchedContact ? [matchedContact.id] : [],
+            accountId: acctId,
+            contactIds: contactId ? [contactId] : [],
             temperature: Number(r.score) >= 70 ? "Hot" : Number(r.score) >= 40 ? "Warm" : "Cool",
           };
         });
-        return [...p, ...enriched];
-      }); break;
+        // Add new contacts to contacts state
+        if (newContacts.length) setContacts(p => [...p, ...newContacts]);
+        setLeads(p => [...p, ...enriched]);
+      } break;
       case "Customers": setAccounts(p => {
         const year = new Date().getFullYear();
         const maxSeq = p.reduce((max, a) => {
@@ -481,7 +519,7 @@ export default function SmartCRM() {
       case "Support Tickets": setTickets(p => [...p, ...records]); break;
       case "Contracts": setContracts(p => [...p, ...records]); break;
     }
-  }, [accounts, contacts]);
+  }, [accounts, contacts, leads]);
 
   if(!currentUser) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers} userPasswords={userPasswords}/></>

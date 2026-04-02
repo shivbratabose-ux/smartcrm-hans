@@ -573,7 +573,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            {lead.stage === "SAL" && (
+            {lead.stage !== "Converted" && lead.stage !== "NA" && (
               <button className="btn btn-primary" onClick={() => setShowConvertModal(true)}>
                 <ArrowRightCircle size={14}/>Convert
               </button>
@@ -1431,7 +1431,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   };
 
   const handleConvert = (lead, conversionData) => {
-    if (lead.stage !== "SAL") return;
+    if (lead.stage === "Converted" || lead.stage === "NA") return;
     onConvertToOpp(lead, conversionData);
   };
 
@@ -1735,7 +1735,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                           <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(l.id)}>
                             <Trash2 size={14}/>
                           </button>
-                          {l.stage === "SAL" && (
+                          {l.stage !== "Converted" && l.stage !== "NA" && (
                             <button className="icon-btn" aria-label="Convert to Opportunity"
                               title="Convert to Opportunity"
                               style={{ color: "var(--brand)" }}
