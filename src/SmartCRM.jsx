@@ -69,8 +69,94 @@ const clearSession = () => {
   localStorage.removeItem(SESSION_KEY);
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// DATA MIGRATION — runs on every load, idempotent, never loses user data
+// Backfills missing fields introduced in later schema versions
+// ═══════════════════════════════════════════════════════════════════
+function migrateState(raw) {
+  if (!raw) return null;
+  const s = { ...raw };
+
+  // ── 1. Contacts: build a lookup by email ──
+  let allContacts = Array.isArray(s.contacts) ? [...s.contacts] : [];
+  const byEmail = {};
+  allContacts.forEach(c => { if (c.email) byEmail[c.email.toLowerCase()] = c; });
+  let conSeq = allContacts.reduce((max, c) => {
+    const m = c.contactId?.match(/CON-(\d+)/);
+    return m ? Math.max(max, parseInt(m[1])) : max;
+  }, 0);
+  const newContacts = [];
+
+  // ── 2. Leads: backfill missing fields & auto-create Contact records ──
+  if (Array.isArray(s.leads)) {
+    s.leads = s.leads.map(l => {
+      // Ensure all new schema fields exist
+      const patched = {
+        addresses: [],
+        salesTeam: [],
+        contactRoles: {},
+        additionalProducts: [],
+        stageHistory: [],
+        convertedOppIds: [],
+        contactIds: [],
+        ...l,
+      };
+
+      // If no contactIds yet, try to link or create a Contact record
+      if (!patched.contactIds?.length && l.email) {
+        const key = l.email.toLowerCase();
+        let match = byEmail[key] || newContacts.find(c => c.email?.toLowerCase() === key);
+        if (!match && l.contact) {
+          // Auto-create a contact record for this lead's person
+          conSeq++;
+          match = {
+            id: `c_mig_${l.id}`,
+            contactId: `CON-${String(conSeq).padStart(3, "0")}`,
+            name: l.contact,
+            email: l.email,
+            phone: l.phone || "",
+            designation: l.designation || "",
+            role: l.designation || "Contact",
+            department: "",
+            departments: [],
+            products: l.product ? [l.product] : [],
+            branches: [],
+            countries: [],
+            linkedOpps: [],
+            accountId: l.accountId || "",
+          };
+          newContacts.push(match);
+          byEmail[key] = match;
+        }
+        if (match) patched.contactIds = [match.id];
+      }
+      return patched;
+    });
+  }
+
+  // ── 3. Opportunities: backfill missing fields ──
+  if (Array.isArray(s.opps)) {
+    s.opps = s.opps.map(o => ({
+      sourceLeadIds: [],
+      contactRoles: [],
+      forecastCategory: "Likely-Case",
+      dealSize: "Medium",
+      ...o,
+      // Ensure products is always an array
+      products: Array.isArray(o.products) ? o.products : (o.products ? [o.products] : []),
+    }));
+  }
+
+  // ── 4. Add newly-created contacts ──
+  if (newContacts.length) {
+    s.contacts = [...allContacts, ...newContacts];
+  }
+
+  return s;
+}
+
 export default function SmartCRM() {
-  const saved = useMemo(() => loadState(), []);
+  const saved = useMemo(() => migrateState(loadState()), []);
   const [currentUser,setCurrentUser] = useState(() => loadSession());
 
   // ── Hash-based routing ──
@@ -234,6 +320,26 @@ export default function SmartCRM() {
         commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, notes: INIT_NOTES, files: INIT_FILES,
       });
     }
+    // Admin escape hatch: call window.__resetCRM() in the browser console to wipe
+    // stale localStorage and reload with fresh seed data
+    window.__resetCRM = () => {
+      try { localStorage.removeItem("smartcrm_data"); } catch {}
+      window.location.reload();
+    };
+    // Expose migration audit for debugging
+    window.__crmAudit = () => {
+      const raw = localStorage.getItem("smartcrm_data");
+      const d = raw ? JSON.parse(raw) : null;
+      console.table({
+        leads: d?.leads?.length,
+        contacts: d?.contacts?.length,
+        opps: d?.opps?.length,
+        accounts: d?.accounts?.length,
+        leadsWithContactIds: d?.leads?.filter(l => l.contactIds?.length).length,
+        oppsFromLeads: d?.opps?.filter(o => o.sourceLeadIds?.length).length,
+      });
+      return d;
+    };
   }, []);
 
   // Persist all data to localStorage on every change (works as primary store without Supabase, backup with Supabase)
