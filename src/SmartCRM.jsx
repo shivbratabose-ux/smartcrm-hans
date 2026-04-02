@@ -72,7 +72,10 @@ const clearSession = () => {
 // ═══════════════════════════════════════════════════════════════════
 // DATA MIGRATION — runs on every load, idempotent, never loses user data
 // Backfills missing fields introduced in later schema versions
+// Bump DATA_VERSION whenever seed/schema changes to force a reset
 // ═══════════════════════════════════════════════════════════════════
+const DATA_VERSION = "v6";
+
 function migrateState(raw) {
   if (!raw) return null;
   const s = { ...raw };
@@ -156,7 +159,22 @@ function migrateState(raw) {
 }
 
 export default function SmartCRM() {
-  const saved = useMemo(() => migrateState(loadState()), []);
+  const saved = useMemo(() => {
+    const raw = loadState();
+    // If version is missing or stale, migrate from fresh INIT data so empty
+    // arrays (e.g. opps:[]) never override the seed records
+    const base = (raw?.version === DATA_VERSION) ? raw : {
+      accounts: INIT_ACCOUNTS, contacts: INIT_CONTACTS, opps: INIT_OPPS,
+      activities: INIT_ACTIVITIES, tickets: INIT_TICKETS, notes: INIT_NOTES,
+      files: INIT_FILES, masters: INIT_MASTERS, catalog: INIT_PRODUCT_CATALOG,
+      org: INIT_ORG, teams: INIT_TEAMS, orgUsers: INIT_USERS,
+      userPasswords: INIT_USER_PASSWORDS,
+      leads: INIT_LEADS, callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
+      collections: INIT_COLLECTIONS, targets: INIT_TARGETS, quotes: INIT_QUOTES,
+      commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, customPermissions: {},
+    };
+    return migrateState(base);
+  }, []);
   const [currentUser,setCurrentUser] = useState(() => loadSession());
 
   // ── Hash-based routing ──
@@ -344,7 +362,7 @@ export default function SmartCRM() {
 
   // Persist all data to localStorage on every change (works as primary store without Supabase, backup with Supabase)
   useEffect(() => {
-    saveState({ accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
+    saveState({ version: DATA_VERSION, accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
       leads, callReports, contracts, collections, targets, quotes, commLogs, events, customPermissions });
   }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
     leads, callReports, contracts, collections, targets, quotes, commLogs, events, customPermissions]);
