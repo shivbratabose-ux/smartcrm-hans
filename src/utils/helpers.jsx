@@ -6,7 +6,7 @@ import { INIT_USERS, PERMISSIONS } from "../data/constants.js";
 // ═══════════════════════════════════════════════════════════════════
 export const fmt = {
   date: d => { if(!d) return "—"; const dt = new Date(d); return dt.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); },
-  inr:  n => `₹${n}Cr`,
+  inr:  n => `₹${n}L`,
   pct:  n => `${n}%`,
   short:d => { if(!d) return "—"; const dt = new Date(d); return dt.toLocaleDateString("en-IN",{day:"2-digit",month:"short"}); },
   time: t => { if(!t) return ""; const [h,m]=t.split(":"); const hr=parseInt(h); return `${hr>12?hr-12:hr||12}:${m} ${hr>=12?"PM":"AM"}`; },

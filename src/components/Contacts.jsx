@@ -126,7 +126,7 @@ function ContactDetail({ c, onClose, onEdit, accounts, opps=[], activities=[] })
                   <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:"1px solid var(--border)"}}>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.title}</div>
-                      <div style={{fontSize:10,color:"var(--text3)"}}>₹{o.value}Cr · {o.stage}</div>
+                      <div style={{fontSize:10,color:"var(--text3)"}}>₹{o.value}L · {o.stage}</div>
                     </div>
                     <StatusBadge status={o.stage}/>
                   </div>

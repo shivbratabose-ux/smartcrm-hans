@@ -11,9 +11,9 @@ const CSV_COLS = [
   { label: "Salesperson", accessor: t => TEAM_MAP[t.userId]?.name || "" },
   { label: "Period", accessor: t => t.period },
   { label: "Product", accessor: t => t.product === "All" ? "All Products" : (PROD_MAP[t.product]?.name || t.product) },
-  { label: "Target (Cr)", accessor: t => t.targetValue },
-  { label: "Achieved (Cr)", accessor: t => t.achievedValue },
-  { label: "Gap (Cr)", accessor: t => t.targetValue - t.achievedValue },
+  { label: "Target (L)", accessor: t => t.targetValue },
+  { label: "Achieved (L)", accessor: t => t.achievedValue },
+  { label: "Gap (L)", accessor: t => t.targetValue - t.achievedValue },
   { label: "% Achievement", accessor: t => t.targetValue > 0 ? ((t.achievedValue/t.targetValue)*100).toFixed(0) : 0 },
   { label: "Target Deals", accessor: t => t.targetDeals },
   { label: "Achieved Deals", accessor: t => t.achievedDeals },
@@ -81,7 +81,7 @@ function Targets({ targets, setTargets, currentUser }) {
         <div>
           <div className="pg-title">Target vs Achievement</div>
           <div className="pg-sub">
-            ₹{totalTarget}Cr target · ₹{totalAchieved}Cr achieved · {overallPct}% overall
+            ₹{totalTarget}L target · ₹{totalAchieved}L achieved · {overallPct}% overall
           </div>
         </div>
         <div className="pg-actions">
@@ -94,11 +94,11 @@ function Targets({ targets, setTargets, currentUser }) {
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
         <div className="kpi">
           <div className="kpi-label">Revenue Target</div>
-          <div className="kpi-val">₹{totalTarget}Cr</div>
+          <div className="kpi-val">₹{totalTarget}L</div>
         </div>
         <div className="kpi">
           <div className="kpi-label">Achieved</div>
-          <div className="kpi-val" style={{color:pctColor(+overallPct)}}>₹{totalAchieved}Cr</div>
+          <div className="kpi-val" style={{color:pctColor(+overallPct)}}>₹{totalAchieved}L</div>
           <div className="kpi-sub">
             <span style={{color:pctColor(+overallPct),fontWeight:700}}>{overallPct}%</span> of target
           </div>
@@ -106,7 +106,7 @@ function Targets({ targets, setTargets, currentUser }) {
         <div className="kpi">
           <div className="kpi-label">Gap</div>
           <div className="kpi-val" style={{color:totalTarget-totalAchieved > 0 ? "var(--red)" : "var(--green)"}}>
-            ₹{(totalTarget - totalAchieved)}Cr
+            ₹{(totalTarget - totalAchieved)}L
           </div>
         </div>
         <div className="kpi">
@@ -119,13 +119,13 @@ function Targets({ targets, setTargets, currentUser }) {
       {/* Chart */}
       {chartData.length > 0 && (
         <div className="card" style={{marginBottom:16}}>
-          <div className="card-title">Target vs Achievement by Salesperson (₹Cr)</div>
+          <div className="card-title">Target vs Achievement by Salesperson (₹L)</div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={chartData} barGap={4} barSize={22}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)"/>
               <XAxis dataKey="name" tick={{fontSize:11}} tickLine={false}/>
               <YAxis tick={{fontSize:11}} tickLine={false} axisLine={false}/>
-              <Tooltip formatter={v=>`₹${v}Cr`} contentStyle={{borderRadius:8,fontSize:12}}/>
+              <Tooltip formatter={v=>`₹${v}L`} contentStyle={{borderRadius:8,fontSize:12}}/>
               <Legend wrapperStyle={{fontSize:12}}/>
               <Bar dataKey="target" name="Target" fill="#94A3B8" radius={[4,4,0,0]}/>
               <Bar dataKey="achieved" name="Achieved" fill="var(--brand)" radius={[4,4,0,0]}/>
@@ -151,8 +151,8 @@ function Targets({ targets, setTargets, currentUser }) {
                 <th>Salesperson</th>
                 <th>Period</th>
                 <th>Product</th>
-                <th>Target (₹Cr)</th>
-                <th>Achieved (₹Cr)</th>
+                <th>Target (₹L)</th>
+                <th>Achieved (₹L)</th>
                 <th>Achievement</th>
                 <th>Deals (T/A)</th>
                 <th>Calls (T/A)</th>
@@ -168,8 +168,8 @@ function Targets({ targets, setTargets, currentUser }) {
                     <td><UserPill uid={t.userId}/></td>
                     <td style={{fontSize:12.5,fontWeight:600}}>{t.period}</td>
                     <td style={{fontSize:12}}>{t.product === "All" ? "All Products" : (PROD_MAP[t.product]?.name || t.product)}</td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{t.targetValue}Cr</td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",color:pctColor(+pct)}}>₹{t.achievedValue}Cr</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{t.targetValue}L</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",color:pctColor(+pct)}}>₹{t.achievedValue}L</td>
                     <td>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
                         <div style={{width:60,height:6,background:"#E2E8F0",borderRadius:3,overflow:"hidden"}}>
@@ -222,11 +222,11 @@ function Targets({ targets, setTargets, currentUser }) {
           </div>
           <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginTop:14,marginBottom:8}}>REVENUE TARGETS</div>
           <div className="form-row">
-            <div className="form-group"><label>Target Value (₹Cr) *</label>
+            <div className="form-group"><label>Target Value (₹L) *</label>
               <input type="number" min={0} step={1} value={form.targetValue} onChange={e => setForm(f => ({...f, targetValue: +e.target.value}))}/>
               <FormError error={formErrors.targetValue}/>
             </div>
-            <div className="form-group"><label>Achieved Value (₹Cr)</label>
+            <div className="form-group"><label>Achieved Value (₹L)</label>
               <input type="number" min={0} step={0.5} value={form.achievedValue} onChange={e => setForm(f => ({...f, achievedValue: +e.target.value}))}/>
             </div>
           </div>

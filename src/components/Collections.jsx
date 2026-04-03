@@ -22,9 +22,9 @@ const CSV_COLS = [
   { label: "Account", accessor: c => c._accName || "" },
   { label: "Invoice Date", accessor: c => c.invoiceDate },
   { label: "Due Date", accessor: c => c.dueDate },
-  { label: "Billed (Cr)", accessor: c => c.billedAmount },
-  { label: "Collected (Cr)", accessor: c => c.collectedAmount },
-  { label: "Pending (Cr)", accessor: c => c.pendingAmount },
+  { label: "Billed (L)", accessor: c => c.billedAmount },
+  { label: "Collected (L)", accessor: c => c.collectedAmount },
+  { label: "Pending (L)", accessor: c => c.pendingAmount },
   { label: "Status", accessor: c => c.status },
   { label: "Payment Mode", accessor: c => c.paymentMode },
   { label: "Ageing", accessor: c => c._ageing || "" },
@@ -104,7 +104,7 @@ function Collections({ collections, setCollections, accounts, contracts, current
         <div>
           <div className="pg-title">Collections</div>
           <div className="pg-sub">
-            ₹{totalBilled.toFixed(1)}Cr billed · ₹{totalCollected.toFixed(1)}Cr collected · ₹{totalPending.toFixed(1)}Cr pending
+            ₹{totalBilled.toFixed(1)}L billed · ₹{totalCollected.toFixed(1)}L collected · ₹{totalPending.toFixed(1)}L pending
             {overdueCount > 0 && <span style={{color:"var(--red)",fontWeight:700}}> · {overdueCount} overdue</span>}
           </div>
         </div>
@@ -116,9 +116,9 @@ function Collections({ collections, setCollections, accounts, contracts, current
 
       {/* KPI Cards */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
-        <div className="kpi"><div className="kpi-label">Total Billed</div><div className="kpi-val">₹{totalBilled.toFixed(1)}Cr</div></div>
-        <div className="kpi"><div className="kpi-label">Collected</div><div className="kpi-val" style={{color:"var(--green)"}}>₹{totalCollected.toFixed(1)}Cr</div><div className="kpi-sub">{totalBilled>0?((totalCollected/totalBilled)*100).toFixed(0):0}% collection rate</div></div>
-        <div className="kpi"><div className="kpi-label">Pending</div><div className="kpi-val" style={{color:"var(--amber)"}}>₹{totalPending.toFixed(1)}Cr</div></div>
+        <div className="kpi"><div className="kpi-label">Total Billed</div><div className="kpi-val">₹{totalBilled.toFixed(1)}L</div></div>
+        <div className="kpi"><div className="kpi-label">Collected</div><div className="kpi-val" style={{color:"var(--green)"}}>₹{totalCollected.toFixed(1)}L</div><div className="kpi-sub">{totalBilled>0?((totalCollected/totalBilled)*100).toFixed(0):0}% collection rate</div></div>
+        <div className="kpi"><div className="kpi-label">Pending</div><div className="kpi-val" style={{color:"var(--amber)"}}>₹{totalPending.toFixed(1)}L</div></div>
         <div className="kpi"><div className="kpi-label">Overdue Invoices</div><div className="kpi-val" style={{color:overdueCount>0?"var(--red)":"var(--text2)"}}>{overdueCount}</div></div>
       </div>
 
@@ -131,7 +131,7 @@ function Collections({ collections, setCollections, accounts, contracts, current
               <div key={bucket} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:6,background:ageingColor(bucket)+"12",border:`1px solid ${ageingColor(bucket)}30`}}>
                 <div style={{width:8,height:8,borderRadius:"50%",background:ageingColor(bucket)}}/>
                 <span style={{fontSize:12,fontWeight:600,color:ageingColor(bucket)}}>{bucket} days</span>
-                <span style={{fontSize:12,color:"var(--text2)"}}>₹{amount.toFixed(1)}Cr</span>
+                <span style={{fontSize:12,color:"var(--text2)"}}>₹{amount.toFixed(1)}L</span>
               </div>
             ))}
           </div>
@@ -177,9 +177,9 @@ function Collections({ collections, setCollections, accounts, contracts, current
                     <td style={{fontSize:12.5}}>{c._accName}</td>
                     <td style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(c.invoiceDate)}</td>
                     <td style={{fontSize:12,color:c.pendingAmount>0&&c._ageing!=="Current"?"var(--red)":"var(--text3)",fontWeight:c.pendingAmount>0&&c._ageing!=="Current"?700:400}}>{fmt.short(c.dueDate)}</td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{c.billedAmount}Cr</td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",color:"var(--green)"}}>₹{c.collectedAmount}Cr</td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",color:c.pendingAmount>0?"var(--red)":"var(--text3)"}}>₹{c.pendingAmount}Cr</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{c.billedAmount}L</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",color:"var(--green)"}}>₹{c.collectedAmount}L</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",color:c.pendingAmount>0?"var(--red)":"var(--text3)"}}>₹{c.pendingAmount}L</td>
                     <td>
                       {c.pendingAmount > 0 ? (
                         <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:5,background:ac+"18",color:ac}}>
@@ -251,16 +251,16 @@ function Collections({ collections, setCollections, accounts, contracts, current
             </div>
           </div>
           <div className="form-row three">
-            <div className="form-group"><label>Billed Amount (₹Cr) *</label>
+            <div className="form-group"><label>Billed Amount (₹L) *</label>
               <input type="number" min={0} step={0.25} value={form.billedAmount}
                 onChange={e => setForm(f => ({...f, billedAmount: +e.target.value, pendingAmount: +e.target.value - f.collectedAmount}))}/>
               <FormError error={formErrors.billedAmount}/>
             </div>
-            <div className="form-group"><label>Collected (₹Cr)</label>
+            <div className="form-group"><label>Collected (₹L)</label>
               <input type="number" min={0} step={0.25} value={form.collectedAmount}
                 onChange={e => setForm(f => ({...f, collectedAmount: +e.target.value, pendingAmount: f.billedAmount - +e.target.value}))}/>
             </div>
-            <div className="form-group"><label>Pending (₹Cr)</label>
+            <div className="form-group"><label>Pending (₹L)</label>
               <input type="number" value={form.billedAmount - form.collectedAmount} disabled style={{background:"var(--s2)"}}/>
             </div>
           </div>

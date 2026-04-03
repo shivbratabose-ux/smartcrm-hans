@@ -22,7 +22,7 @@ const CSV_COLS = [
   { label: "Account", accessor: c => c._accName || "" },
   { label: "Product", accessor: c => PROD_MAP[c.product]?.name || c.product },
   { label: "Status", accessor: c => c.status },
-  { label: "Value (Cr)", accessor: c => c.value },
+  { label: "Value (L)", accessor: c => c.value },
   { label: "Bill Term", accessor: c => c.billTerm },
   { label: "Start Date", accessor: c => c.startDate },
   { label: "End Date", accessor: c => c.endDate },
@@ -149,7 +149,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
         <div>
           <div className="pg-title">Contracts</div>
           <div className="pg-sub">
-            {activeCount} active (₹{totalValue}Cr) · {pendingCount} pending
+            {activeCount} active (₹{totalValue}L) · {pendingCount} pending
             {expiringCount > 0 && <span style={{color:"var(--amber)",fontWeight:700}}> · {expiringCount} expiring soon</span>}
           </div>
         </div>
@@ -338,7 +338,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
                         {expiring && <AlertTriangle size={11}/>}
                       </span>
                     </td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{c.value}Cr</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{c.value}L</td>
                     <td><UserPill uid={c.owner}/></td>
                     <td>
                       <div style={{display:"flex",gap:4}}>
@@ -367,7 +367,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
               ["Account", detail._accName],
               ["Product", PROD_MAP[detail.product]?.name || detail.product],
               ["Status", detail.status],
-              ["Value", `₹${detail.value}Cr`],
+              ["Value", `₹${detail.value}L`],
               ["Bill Term", detail.billTerm],
               ["Bill Type", detail.billType],
               ["Start Date", fmt.date(detail.startDate)],
@@ -434,7 +434,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
             </div>
           </div>
           <div className="form-row three">
-            <div className="form-group"><label>Value (₹Cr) *</label>
+            <div className="form-group"><label>Value (₹L) *</label>
               <input type="number" min={0} step={0.5} value={form.value} onChange={e => setForm(f => ({...f, value: +e.target.value}))}/>
               <FormError error={formErrors.value}/>
             </div>

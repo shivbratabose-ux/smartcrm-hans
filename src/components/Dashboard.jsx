@@ -254,7 +254,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}>
       <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.8 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "'Outfit',sans-serif", marginTop: 4 }}>
-        {unit === "₹" && <span style={{ fontSize: 18, fontWeight: 600, opacity: 0.8 }}>₹</span>}{value}{unit === "Cr" && <span style={{ fontSize: 16, opacity: 0.7 }}> Cr</span>}{unit === "%" && <span style={{ fontSize: 18, opacity: 0.7 }}>%</span>}{unit === "d" && <span style={{ fontSize: 16, opacity: 0.7 }}> Days</span>}
+        {unit === "₹" && <span style={{ fontSize: 18, fontWeight: 600, opacity: 0.8 }}>₹</span>}{value}{unit === "Cr" && <span style={{ fontSize: 16, opacity: 0.7 }}> L</span>}{unit === "%" && <span style={{ fontSize: 18, opacity: 0.7 }}>%</span>}{unit === "d" && <span style={{ fontSize: 16, opacity: 0.7 }}> Days</span>}
       </div>
       {sub && <div style={{ fontSize: 11, marginTop: 4, opacity: 0.75, color: subColor || "inherit" }}>{sub}</div>}
     </div>
@@ -309,7 +309,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
         <MiniStat label="Activities" value={periodActivities} icon={<Activity size={16} />} color="#2563EB" onClick={() => setPage("activities")} />
         <MiniStat label="Deals Won" value={periodWon.length} icon={<TrendingUp size={16} />} color="#22C55E" onClick={() => setPage("pipeline")} />
-        <MiniStat label={`Won Value`} value={`₹${periodWonVal}Cr`} icon={<IndianRupee size={16} />} color="#1B6B5A" />
+        <MiniStat label={`Won Value`} value={`₹${periodWonVal}L`} icon={<IndianRupee size={16} />} color="#1B6B5A" />
         <MiniStat label="New Leads" value={newLeadsCount || (leads || []).filter(l => l.stage !== "NA").length} icon={<Users size={16} />} color="#7C3AED" onClick={() => setPage("leads")} />
         <MiniStat label="Calls Logged" value={periodCallReports || fActivities.filter(a => a.type === "Call").length} icon={<Phone size={16} />} color="#D97706" onClick={() => setPage("callreports")} />
         <MiniStat label="Open Tickets" value={openTix} icon={<AlertCircle size={16} />} color={critTix > 0 ? "#DC2626" : "#94A3B8"} onClick={() => setPage("tickets")} />
@@ -327,7 +327,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-              <Tooltip formatter={(v, name) => [name === "count" ? `${v} deals` : `₹${v}Cr`, name === "count" ? "Deals" : "Value"]} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
+              <Tooltip formatter={(v, name) => [name === "count" ? `${v} deals` : `₹${v}L`, name === "count" ? "Deals" : "Value"]} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
               <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                 {funnelData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
               </Bar>
@@ -336,7 +336,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
           <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 8 }}>
             {funnelData.map(f => (
               <div key={f.name} style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Outfit',sans-serif" }}>₹{f.value}Cr</div>
+                <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Outfit',sans-serif" }}>₹{f.value}L</div>
                 <div style={{ fontSize: 10, color: "var(--text3)" }}>{f.name}</div>
               </div>
             ))}
@@ -369,7 +369,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
               <Pie data={productRevenue} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
                 {productRevenue.map((entry, i) => <Cell key={i} fill={entry.color} />)}
               </Pie>
-              <Tooltip formatter={(v) => `₹${v}Cr`} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
+              <Tooltip formatter={(v) => `₹${v}L`} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
             </PieChart>
           </ResponsiveContainer>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 4 }}>
@@ -377,7 +377,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
               <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
                 <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color, flexShrink: 0 }} />
                 <span style={{ color: "var(--text2)" }}>{p.name}</span>
-                <span style={{ fontWeight: 700 }}>₹{p.value}Cr</span>
+                <span style={{ fontWeight: 700 }}>₹{p.value}L</span>
               </div>
             ))}
           </div>
@@ -402,19 +402,19 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
                   </div>
                   <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text1)" }}>{targetPct}%</span>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>₹{totalAchieved.toFixed(1)}Cr / ₹{totalTarget.toFixed(1)}Cr</div>
+                <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>₹{totalAchieved.toFixed(1)}L / ₹{totalTarget.toFixed(1)}L</div>
               </div>
             </div>
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--text3)", letterSpacing: "0.06em" }}>RISK ALERT</div>
               <div style={{ fontSize: 13, color: "var(--text2)", marginTop: 4, lineHeight: 1.5 }}>
                 {riskDeal
-                  ? <><strong>{riskDeal.account}</strong> — "{riskDeal.title}" (₹{riskDeal.value}Cr) stalled for <span style={{ color: "var(--red-t)", fontWeight: 700 }}>{riskDeal.days} days</span> in Negotiation.</>
+                  ? <><strong>{riskDeal.account}</strong> — "{riskDeal.title}" (₹{riskDeal.value}L) stalled for <span style={{ color: "var(--red-t)", fontWeight: 700 }}>{riskDeal.days} days</span> in Negotiation.</>
                   : "No significant stagnation detected in current pipeline."}
               </div>
               {pendingCollection > 0 && (
                 <div style={{ marginTop: 12, padding: "10px 12px", background: "#FEF3C7", borderRadius: 8, fontSize: 12 }}>
-                  <strong style={{ color: "#92400E" }}>Collections:</strong> <span style={{ color: "#92400E" }}>₹{pendingCollection}Cr pending{overdueCollections > 0 && ` (${overdueCollections} overdue)`}</span>
+                  <strong style={{ color: "#92400E" }}>Collections:</strong> <span style={{ color: "#92400E" }}>₹{pendingCollection}L pending{overdueCollections > 0 && ` (${overdueCollections} overdue)`}</span>
                 </div>
               )}
               <button className="btn btn-primary btn-sm" onClick={() => setPage("reports")} style={{ marginTop: 12 }}>FULL REPORT →</button>
@@ -431,8 +431,8 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
             {regionData.map((r, i) => (
               <div key={r.name} style={{ padding: 14, background: i === 0 ? "#1B6B5A" : "var(--s1)", borderRadius: 10, color: i === 0 ? "white" : "var(--text1)" }}>
                 <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", opacity: i === 0 ? 0.8 : 0.6 }}>{r.name}</div>
-                <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Outfit',sans-serif", marginTop: 4 }}>₹{r.arr}Cr</div>
-                <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{r.deals} deals · ₹{r.potential}Cr potential</div>
+                <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Outfit',sans-serif", marginTop: 4 }}>₹{r.arr}L</div>
+                <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{r.deals} deals · ₹{r.potential}L potential</div>
               </div>
             ))}
           </div>
@@ -472,7 +472,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
                   <div style={{ fontSize: 11, color: "var(--text3)" }}>{acc?.name} · {o.stage}</div>
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Outfit',sans-serif" }}>₹{o.value}Cr</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Outfit',sans-serif" }}>₹{o.value}L</div>
                   <div style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: prob >= 60 ? "#DCFCE7" : prob >= 30 ? "#FEF9C3" : "#FEE2E2", color: prob >= 60 ? "#166534" : prob >= 30 ? "#854D0E" : "#991B1B", fontWeight: 600 }}>{prob}% prob</div>
                 </div>
               </div>
@@ -499,7 +499,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</span>
                       <span style={{ fontSize: 11, color: "var(--text3)", marginLeft: 6 }}>{t.role}</span>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "'Outfit',sans-serif", color: "var(--brand)" }}>₹{t.achieved}Cr</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "'Outfit',sans-serif", color: "var(--brand)" }}>₹{t.achieved}L</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                     <div style={{ flex: 1, height: 5, background: "var(--s3)", borderRadius: 3, overflow: "hidden" }}>

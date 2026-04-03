@@ -187,7 +187,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
         <KpiCard
           icon={<TrendingUp size={18} color="#fff"/>}
           label="TOTAL QUOTE VALUE"
-          value={`\u20B9 ${totalQuoteValue.toFixed(1)} Cr`}
+          value={`\u20B9 ${totalQuoteValue.toFixed(1)} L`}
           sub={`+14.2% vs last month`}
         />
         <KpiCard
@@ -291,14 +291,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
           </div>
           <div style={{marginTop:16}}><div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginBottom:8}}>LINE ITEMS</div>
             <table className="tbl"><thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
-              <tbody>{detail.items.map((item,i)=><tr key={i}><td style={{fontSize:12.5}}>{item.description}</td><td>{item.qty}</td><td>₹{item.unitPrice}Cr</td><td style={{fontWeight:600}}>₹{item.amount}Cr</td></tr>)}</tbody>
+              <tbody>{detail.items.map((item,i)=><tr key={i}><td style={{fontSize:12.5}}>{item.description}</td><td>{item.qty}</td><td>₹{item.unitPrice}L</td><td style={{fontWeight:600}}>₹{item.amount}L</td></tr>)}</tbody>
             </table>
           </div>
           <div style={{marginTop:12,textAlign:"right",fontSize:13}}>
-            <div>Subtotal: <strong>₹{detail.subtotal}Cr</strong></div>
-            {detail.discount>0&&<div>Discount: <strong>-₹{detail.discount}Cr</strong></div>}
-            <div>Tax ({detail.taxType}): <strong>₹{detail.taxAmount}Cr</strong></div>
-            <div style={{fontSize:16,fontWeight:700,color:"var(--brand)",marginTop:4}}>Total: ₹{detail.total}Cr ({formatINR(detail.total)} INR)</div>
+            <div>Subtotal: <strong>₹{detail.subtotal}L</strong></div>
+            {detail.discount>0&&<div>Discount: <strong>-₹{detail.discount}L</strong></div>}
+            <div>Tax ({detail.taxType}): <strong>₹{detail.taxAmount}L</strong></div>
+            <div style={{fontSize:16,fontWeight:700,color:"var(--brand)",marginTop:4}}>Total: ₹{detail.total}L ({formatINR(detail.total)} INR)</div>
           </div>
           {detail.terms&&<div style={{marginTop:14,background:"var(--s2)",padding:"10px 12px",borderRadius:8,borderLeft:"3px solid var(--brand)",fontSize:12,color:"var(--text2)",whiteSpace:"pre-line"}}><strong>Terms:</strong><br/>{detail.terms}</div>}
           {detail.notes&&<div style={{marginTop:8,fontSize:12,color:"var(--text3)"}}><strong>Notes:</strong> {detail.notes}</div>}
@@ -336,7 +336,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
               <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 60px 80px 80px 30px",gap:8,alignItems:"end",marginBottom:8}}>
                 <div className="form-group"><label>{i===0?"Description":""}</label><input value={item.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Line item description"/></div>
                 <div className="form-group"><label>{i===0?"Qty":""}</label><input type="number" min={1} value={item.qty} onChange={e=>updateItem(i,"qty",+e.target.value)}/></div>
-                <div className="form-group"><label>{i===0?"Price(Cr)":""}</label><input type="number" min={0} step={0.5} value={item.unitPrice} onChange={e=>updateItem(i,"unitPrice",+e.target.value)}/></div>
+                <div className="form-group"><label>{i===0?"Price(L)":""}</label><input type="number" min={0} step={0.5} value={item.unitPrice} onChange={e=>updateItem(i,"unitPrice",+e.target.value)}/></div>
                 <div className="form-group"><label>{i===0?"Amount":""}</label><input disabled value={`₹${item.amount}`} style={{background:"var(--s2)"}}/></div>
                 <button className="icon-btn" style={{marginBottom:4}} onClick={()=>removeItem(i)}><Trash2 size={13}/></button>
               </div>
@@ -345,11 +345,11 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
             <div style={{marginTop:16,borderTop:"1px solid var(--border)",paddingTop:12}}>
               <div className="form-row three">
                 <div className="form-group"><label>Tax Type</label><select value={form.taxType} onChange={e=>{const t=e.target.value;setForm(f=>{const totals=recalc(f.items,t,f.discount);return{...f,taxType:t,...totals};});}}>{TAX_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
-                <div className="form-group"><label>Discount (₹Cr)</label><input type="number" min={0} step={0.5} value={form.discount} onChange={e=>{const d=+e.target.value;setForm(f=>{const totals=recalc(f.items,f.taxType,d);return{...f,discount:d,...totals};});}}/></div>
+                <div className="form-group"><label>Discount (₹L)</label><input type="number" min={0} step={0.5} value={form.discount} onChange={e=>{const d=+e.target.value;setForm(f=>{const totals=recalc(f.items,f.taxType,d);return{...f,discount:d,...totals};});}}/></div>
                 <div style={{textAlign:"right",paddingTop:20}}>
-                  <div style={{fontSize:12}}>Subtotal: ₹{form.subtotal}Cr</div>
-                  <div style={{fontSize:12}}>Tax: ₹{form.taxAmount}Cr</div>
-                  <div style={{fontSize:16,fontWeight:700,color:"var(--brand)"}}>Total: ₹{form.total}Cr</div>
+                  <div style={{fontSize:12}}>Subtotal: ₹{form.subtotal}L</div>
+                  <div style={{fontSize:12}}>Tax: ₹{form.taxAmount}L</div>
+                  <div style={{fontSize:16,fontWeight:700,color:"var(--brand)"}}>Total: ₹{form.total}L</div>
                 </div>
               </div>
             </div>

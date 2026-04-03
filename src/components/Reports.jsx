@@ -23,7 +23,7 @@ import {
 const CL = ["#1B6B5A","#2563EB","#7C3AED","#D97706","#0D9488","#DC2626","#F97316","#22C55E","#EC4899","#6366F1","#14B8A6","#F43F5E"];
 const daysBetween = (a,b) => { if(!a||!b) return 0; return Math.round((new Date(b)-new Date(a))/86400000); };
 const pct = (n,d) => d ? Math.round((n/d)*100) : 0;
-const crFmt = v => `₹${typeof v==='number' ? v.toFixed(1) : v}Cr`;
+const crFmt = v => `₹${typeof v==='number' ? v.toFixed(1) : v}L`;
 
 /* ─── Mini KPI Card ─── */
 const K = ({label,value,sub,color,icon:Icon,trend,trendVal}) => (
@@ -338,13 +338,13 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   const insights = useMemo(()=>{
     const items = [];
     // Stalled deals
-    if(metrics.stalledDeals.length>0) items.push({type:"critical",icon:AlertTriangle,title:`${metrics.stalledDeals.length} Stalled Deals`,desc:`₹${metrics.stalledDeals.reduce((s,o)=>s+o.value,0).toFixed(1)}Cr pipeline with no activity for 14+ days`,action:"Review and re-engage or close"});
+    if(metrics.stalledDeals.length>0) items.push({type:"critical",icon:AlertTriangle,title:`${metrics.stalledDeals.length} Stalled Deals`,desc:`₹${metrics.stalledDeals.reduce((s,o)=>s+o.value,0).toFixed(1)}L pipeline with no activity for 14+ days`,action:"Review and re-engage or close"});
     // At-risk deals
     if(metrics.atRiskDeals.length>0) items.push({type:"warning",icon:AlertCircle,title:`${metrics.atRiskDeals.length} At-Risk Deals`,desc:"No activity for 7-14 days — schedule follow-up",action:"Schedule calls immediately"});
     // Critical tickets
     if(metrics.criticalTickets>0) items.push({type:"critical",icon:XCircle,title:`${metrics.criticalTickets} Critical Tickets Open`,desc:"Immediate attention required for customer satisfaction",action:"Escalate to team leads"});
     // Overdue collections
-    if(metrics.overdueCollections.length>0) items.push({type:"warning",icon:DollarSign,title:`${metrics.overdueCollections.length} Overdue Invoices`,desc:`₹${metrics.overdueCollections.reduce((s,c)=>s+c.pendingAmount,0).toFixed(1)}Cr pending beyond due date`,action:"Send payment reminders"});
+    if(metrics.overdueCollections.length>0) items.push({type:"warning",icon:DollarSign,title:`${metrics.overdueCollections.length} Overdue Invoices`,desc:`₹${metrics.overdueCollections.reduce((s,c)=>s+c.pendingAmount,0).toFixed(1)}L pending beyond due date`,action:"Send payment reminders"});
     // Expiring contracts
     if(metrics.expiringContracts.length>0) items.push({type:"info",icon:FileText,title:`${metrics.expiringContracts.length} Contracts Expiring Soon`,desc:"Within next 30 days — initiate renewal discussions",action:"Start renewal process"});
     // Low win rate warning
@@ -425,7 +425,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
             <K label="Win Rate" value={`${metrics.winRate}%`} sub={`${metrics.wonOpps.length}W / ${metrics.lostOpps.length}L`} color={metrics.winRate>=35?"#22C55E":"#DC2626"} icon={Award}/>
             <K label="Avg Deal Size" value={crFmt(metrics.avgDealSize)} color="#7C3AED" icon={TrendingUp}/>
             <K label="Total ARR" value={crFmt(metrics.totalARR)} sub={`${accounts.length} accounts`} color="#0D9488" icon={Building2}/>
-            <K label="Collection Rate" value={`${metrics.collectionRate}%`} sub={`₹${metrics.totalPending.toFixed(1)}Cr pending`} color={metrics.collectionRate>=80?"#22C55E":"#DC2626"} icon={DollarSign}/>
+            <K label="Collection Rate" value={`${metrics.collectionRate}%`} sub={`₹${metrics.totalPending.toFixed(1)}L pending`} color={metrics.collectionRate>=80?"#22C55E":"#DC2626"} icon={DollarSign}/>
             <K label="Open Tickets" value={metrics.openTickets} sub={metrics.criticalTickets>0?`${metrics.criticalTickets} critical`:""} color={metrics.criticalTickets>0?"#DC2626":"#F59E0B"} icon={AlertTriangle}/>
           </div>
 
@@ -560,7 +560,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
             ))}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
-            <Card title="Pipeline by Stage (₹Cr)" subtitle="Value & deal count per stage">
+            <Card title="Pipeline by Stage (₹L)" subtitle="Value & deal count per stage">
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={stageData} barSize={28}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0"/>
@@ -573,7 +573,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                 </BarChart>
               </ResponsiveContainer>
             </Card>
-            <Card title="Pipeline by Country (₹Cr)" subtitle="Geographic distribution">
+            <Card title="Pipeline by Country (₹L)" subtitle="Geographic distribution">
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={countryData} layout="vertical" barSize={16}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0"/>
@@ -954,7 +954,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                   <YAxis tick={{fontSize:11}} tickLine={false} axisLine={false}/>
                   <Tooltip contentStyle={{borderRadius:8,fontSize:12}}/>
                   <Legend wrapperStyle={{fontSize:12}}/>
-                  <Bar dataKey="pipelineVal" name="Pipeline (₹Cr)" fill="#7C3AED" radius={[4,4,0,0]}/>
+                  <Bar dataKey="pipelineVal" name="Pipeline (₹L)" fill="#7C3AED" radius={[4,4,0,0]}/>
                   <Bar dataKey="calls" name="Calls" fill="#1B6B5A" radius={[4,4,0,0]}/>
                   <Bar dataKey="activities" name="Activities" fill="#2563EB" radius={[4,4,0,0]}/>
                 </BarChart>
@@ -997,7 +997,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
             <K label="Total Billed" value={crFmt(metrics.totalBilled)} color="#1B6B5A" icon={FileText}/>
             <K label="Collected" value={crFmt(metrics.totalCollected)} sub={`${metrics.collectionRate}% rate`} color="#22C55E" icon={CheckCircle}/>
             <K label="Pending" value={crFmt(metrics.totalPending)} color="#DC2626" icon={Clock}/>
-            <K label="Overdue" value={metrics.overdueCollections.length} sub={`₹${metrics.overdueCollections.reduce((s,c)=>s+c.pendingAmount,0).toFixed(1)}Cr`} color="#F97316" icon={AlertTriangle}/>
+            <K label="Overdue" value={metrics.overdueCollections.length} sub={`₹${metrics.overdueCollections.reduce((s,c)=>s+c.pendingAmount,0).toFixed(1)}L`} color="#F97316" icon={AlertTriangle}/>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1.2fr 0.8fr",gap:16,marginBottom:16}}>

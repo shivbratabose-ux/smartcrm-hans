@@ -290,7 +290,7 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
             <div className="form-group"><label>Line of Business (LOB)</label>
               <input value={form.lob} onChange={e => setForm(f => ({...f, lob: e.target.value}))} placeholder="e.g. Air Cargo Operations, Customs Brokerage"/>
             </div>
-            <div className="form-group"><label>Opportunity Value (₹Cr) *</label>
+            <div className="form-group"><label>Opportunity Value (₹L) *</label>
               <input type="number" min="0" step="0.1" value={form.value} onChange={e => setForm(f => ({...f, value: +e.target.value}))}/>
             </div>
           </div>

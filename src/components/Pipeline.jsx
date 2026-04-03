@@ -734,8 +734,8 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
 
       {/* KPI CARDS */}
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-        <KpiCard label="Total Pipeline" value={`\u20B9${totalPipe.toFixed(1)}Cr`} icon={Target} sub={`${openDeals.length} open deals`} />
-        <KpiCard label="Weighted Pipeline" value={`\u20B9${weighted.toFixed(1)}Cr`} icon={TrendingUp} />
+        <KpiCard label="Total Pipeline" value={`\u20B9${totalPipe.toFixed(1)}L`} icon={Target} sub={`${openDeals.length} open deals`} />
+        <KpiCard label="Weighted Pipeline" value={`\u20B9${weighted.toFixed(1)}L`} icon={TrendingUp} />
         <KpiCard label="Win Rate" value={`${winRate}%`} icon={Check} sub={`${wonCount}W / ${lostCount}L`} />
         <KpiCard label="At Risk" value={atRiskCount} icon={AlertTriangle} sub="7-14 days idle" />
         <KpiCard label="Stalled" value={stalledCount} icon={Clock} sub=">14 days idle" />
@@ -873,7 +873,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                           {o.products.slice(0, 2).map(p => <ProdTag key={p} pid={p} />)}
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                          <span style={{ fontSize: 14, fontWeight: 800, fontFamily: "'Outfit',sans-serif", color: "var(--text1)" }}>₹{o.value}Cr</span>
+                          <span style={{ fontSize: 14, fontWeight: 800, fontFamily: "'Outfit',sans-serif", color: "var(--text1)" }}>₹{o.value}L</span>
                           <span style={{ fontSize: 11, color: "var(--text3)" }}>{o.probability}%</span>
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -961,7 +961,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                     </td>
                     <td style={{ fontSize: 12 }}>{acc?.name || "\u2014"}</td>
                     <td><StatusBadge status={o.stage} /></td>
-                    <td style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700 }}>₹{o.value}Cr</td>
+                    <td style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700 }}>₹{o.value}L</td>
                     <td style={{ fontSize: 12, color: "var(--text3)" }}>{o.probability}%</td>
                     <td style={{ fontSize: 12, color: isOverdue(o.closeDate) ? "#DC2626" : "var(--text3)" }}>{fmt.short(o.closeDate)}</td>
                     <td><UserPill uid={o.owner} /></td>
@@ -1018,7 +1018,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
 
           {/* Weighted forecast by month */}
           <div className="card" style={{ padding: 20 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Weighted Forecast by Month (₹Cr)</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Weighted Forecast by Month (₹L)</div>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={forecastData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1060,7 +1060,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                   }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: STAGE_COL[s], marginBottom: 6 }}>{s}</div>
                     <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Outfit',sans-serif" }}>{stageOpps.length}</div>
-                    <div style={{ fontSize: 11, color: "var(--text3)" }}>₹{totalVal.toFixed(1)}Cr • {avgProb}% avg prob</div>
+                    <div style={{ fontSize: 11, color: "var(--text3)" }}>₹{totalVal.toFixed(1)}L • {avgProb}% avg prob</div>
                   </div>
                 );
               })}
@@ -1144,7 +1144,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label>Value (₹Cr)</label>
+              <label>Value (₹L)</label>
               <input type="number" min="0" value={form.value} onChange={e => setForm(f => ({ ...f, value: +e.target.value }))} />
               <FormError error={formErrors.value} />
             </div>

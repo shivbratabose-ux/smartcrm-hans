@@ -127,9 +127,9 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
           {/* KPI Row */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginTop:16}}>
             {[
-              { label: "ARR", value: totalARR ? `₹${totalARR}Cr` : "—", sub: "Annual recurring", color: "#1B6B5A" },
-              { label: "PIPELINE", value: `₹${pipelineValue}Cr`, sub: `${openDeals} open deals`, color: "#3B82F6" },
-              { label: "WON", value: `₹${wonValue}Cr`, sub: `${wonDeals.length} deals closed`, color: "#22C55E" },
+              { label: "ARR", value: totalARR ? `₹${totalARR}L` : "—", sub: "Annual recurring", color: "#1B6B5A" },
+              { label: "PIPELINE", value: `₹${pipelineValue}L`, sub: `${openDeals} open deals`, color: "#3B82F6" },
+              { label: "WON", value: `₹${wonValue}L`, sub: `${wonDeals.length} deals closed`, color: "#22C55E" },
               { label: "CONTACTS", value: accContacts.length, sub: `${accContacts.filter(c=>c.primary).length} primary`, color: "#8B5CF6" },
               { label: "OPEN TICKETS", value: openTickets, sub: openTickets > 0 ? "Action needed" : "All clear", color: openTickets > 0 ? "#DC2626" : "#0D9488" },
               { label: "CONTRACTS", value: activeContracts, sub: `${accContracts.length} total`, color: "#D97706" },
@@ -185,10 +185,10 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                     {currentProducts.map(p => <ProdTag key={p} pid={p}/>)}
                     {currentProducts.length === 0 && <span style={{fontSize:12,color:"var(--text3)"}}>No products assigned</span>}
                   </div>
-                  {infoRow("ARR (Annual Recurring Revenue)", totalARR ? `₹${totalARR} Cr` : "—")}
-                  {infoRow("Potential Value", a.potential ? `₹${a.potential} Cr` : "—")}
-                  {infoRow("Won Deal Value", wonValue ? `₹${wonValue} Cr` : "—")}
-                  {pendingCollections > 0 && infoRow("Pending Collections", <span style={{color:"#DC2626",fontWeight:700}}>₹{pendingCollections.toFixed(1)} Cr</span>)}
+                  {infoRow("ARR (Annual Recurring Revenue)", totalARR ? `₹${totalARR} L` : "—")}
+                  {infoRow("Potential Value", a.potential ? `₹${a.potential} L` : "—")}
+                  {infoRow("Won Deal Value", wonValue ? `₹${wonValue} L` : "—")}
+                  {pendingCollections > 0 && infoRow("Pending Collections", <span style={{color:"#DC2626",fontWeight:700}}>₹{pendingCollections.toFixed(1)} L</span>)}
                 </div>
 
                 {/* Cross-sell Opportunities */}
@@ -353,7 +353,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                     <td style={{fontWeight:600,fontSize:12.5}}>{o.title}</td>
                     <td><div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{(o.products||[]).map(p => <ProdTag key={p} pid={p}/>)}</div></td>
                     <td><StatusBadge status={o.stage}/></td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{o.value}Cr</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{o.value}L</td>
                     <td style={{fontSize:12}}>{o.probability}%</td>
                     <td style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(o.closeDate)}</td>
                     <td><UserPill uid={o.owner}/></td>
@@ -427,7 +427,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                       <td style={{fontSize:12,fontWeight:600}}>{c.title || c.contractId || c.id}</td>
                       <td><ProdTag pid={c.product}/></td>
                       <td><StatusBadge status={c.status}/></td>
-                      <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{c.value || 0}Cr</td>
+                      <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{c.value || 0}L</td>
                       <td style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(c.startDate)}</td>
                       <td style={{fontSize:12,color: isExpiring ? "#DC2626" : "var(--text3)",fontWeight: isExpiring ? 700 : 400}}>{fmt.short(c.endDate)}</td>
                       <td style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(c.renewalDate)}</td>
@@ -606,7 +606,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   const CSV_COLS = [
     {label:"Name",accessor:a=>a.name},{label:"Type",accessor:a=>a.type},{label:"Country",accessor:a=>a.country},
     {label:"City",accessor:a=>a.city},{label:"Status",accessor:a=>a.status},{label:"Segment",accessor:a=>a.segment},
-    {label:"ARR (Cr)",accessor:a=>a.arrRevenue},{label:"Potential (Cr)",accessor:a=>a.potential},
+    {label:"ARR (L)",accessor:a=>a.arrRevenue},{label:"Potential (L)",accessor:a=>a.potential},
     {label:"Products",accessor:a=>(a.products||[]).map(p=>PROD_MAP[p]?.name||p).join(", ")},
     {label:"Owner",accessor:a=>teamMap[a.owner]?.name||a.owner},
   ];
@@ -633,12 +633,12 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
         </div>
         <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>TOTAL ARR</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>₹{totalARR}Cr</div>
+          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>₹{totalARR}L</div>
           <div style={{fontSize:11,opacity:0.7}}>Active accounts</div>
         </div>
         <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>PIPELINE POTENTIAL</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>₹{totalPotential}Cr</div>
+          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>₹{totalPotential}L</div>
           <div style={{fontSize:11,opacity:0.7}}>Across all accounts</div>
         </div>
         <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
@@ -779,7 +779,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
                   <div style={{fontSize:11,fontWeight:600,color:"var(--text1)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
                   <div style={{fontSize:10,color:"var(--text3)"}}>{a.type} · {a.country}</div>
                 </div>
-                <span style={{fontSize:12,fontWeight:800,fontFamily:"'Outfit',sans-serif",color:"var(--brand)"}}>₹{a.arrRevenue}Cr</span>
+                <span style={{fontSize:12,fontWeight:800,fontFamily:"'Outfit',sans-serif",color:"var(--brand)"}}>₹{a.arrRevenue}L</span>
               </div>
             ))}
           </div>
@@ -824,7 +824,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
             </div>
           </div>
           <div className="form-row"><div className="form-group"><label>Status</label><select value={form.status} onChange={e => setForm(f => ({...f,status:e.target.value}))}><option>Active</option><option>Prospect</option><option>Inactive</option></select></div><div className="form-group"><label>Segment</label><select value={form.segment} onChange={e => setForm(f => ({...f,segment:e.target.value}))}>{["Enterprise","Mid-Market","SMB","Government","Association"].map(s => <option key={s}>{s}</option>)}</select></div></div>
-          <div className="form-row"><div className="form-group"><label>ARR (₹Cr)</label><input type="number" min="0" value={form.arrRevenue} onChange={e => setForm(f => ({...f,arrRevenue:+e.target.value}))}/><FormError error={formErrors.arrRevenue}/></div><div className="form-group"><label>Potential (₹Cr)</label><input type="number" min="0" value={form.potential} onChange={e => setForm(f => ({...f,potential:+e.target.value}))}/><FormError error={formErrors.potential}/></div></div>
+          <div className="form-row"><div className="form-group"><label>ARR (₹L)</label><input type="number" min="0" value={form.arrRevenue} onChange={e => setForm(f => ({...f,arrRevenue:+e.target.value}))}/><FormError error={formErrors.arrRevenue}/></div><div className="form-group"><label>Potential (₹L)</label><input type="number" min="0" value={form.potential} onChange={e => setForm(f => ({...f,potential:+e.target.value}))}/><FormError error={formErrors.potential}/></div></div>
           <div className="form-row"><div className="form-group"><label>Website</label><input value={form.website} onChange={e => setForm(f => ({...f,website:e.target.value}))} placeholder="website.com"/></div><div className="form-group"><label>Owner</label><select value={form.owner} onChange={e => setForm(f => ({...f,owner:e.target.value}))}>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
           <div className="form-group"><label>Products</label><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>{PRODUCTS.map(p => <button key={p.id} className="btn btn-xs" style={{background:form.products.includes(p.id)?p.color:"var(--s3)",color:form.products.includes(p.id)?"white":"var(--text2)",border:"none",cursor:"pointer"}} onClick={() => toggleProd(p.id)}>{p.name}</button>)}</div></div>
         </Modal>
