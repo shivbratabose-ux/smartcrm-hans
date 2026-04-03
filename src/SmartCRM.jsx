@@ -7,7 +7,7 @@ import {
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
   INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
-  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS
+  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid } from "./utils/helpers";
 import { CSS } from "./styles";
@@ -609,7 +609,11 @@ export default function SmartCRM() {
             contactId = newCon.id;
           }
           return {
+            // Start with all BLANK_LEAD defaults so no field is ever undefined
+            ...BLANK_LEAD,
+            // Overlay CSV data
             ...r,
+            // Override computed / derived fields
             leadId: r.leadId || `#FL-${year}-${String(maxSeq + i + 1).padStart(3, '0')}`,
             score: Math.max(0, Math.min(100, Number(r.score) || 30)),
             createdDate: r.createdDate || today,
