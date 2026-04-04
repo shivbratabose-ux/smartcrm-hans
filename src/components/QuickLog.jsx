@@ -129,12 +129,12 @@ function CallForm({ form, setForm, errors, setErrors, accounts, contacts, opps, 
       <div className="form-row">
         <div className="form-group"><label>Call Type</label>
           <select value={form.callType} onChange={e => set("callType", e.target.value)}>
-            {callTypes.map(t => <option key={t}>{t}</option>)}
+            {callTypes.map(t => { const v = typeof t === "object" ? t.name : t; return <option key={v} value={v}>{v}</option>; })}
           </select>
         </div>
         <div className="form-group"><label>Call Subject</label>
           <select value={form.objective} onChange={e => set("objective", e.target.value)}>
-            {callSubjects.map(o => <option key={o}>{o}</option>)}
+            {callSubjects.map(o => { const v = typeof o === "object" ? o.name : o; return <option key={v} value={v}>{v}</option>; })}
           </select>
         </div>
       </div>
@@ -346,7 +346,7 @@ function ActivityForm({ form, setForm, errors, setErrors, accounts, contacts, op
       <div className="form-row">
         <div className="form-group"><label>Type</label>
           <select value={form.type} onChange={e => set("type", e.target.value)}>
-            {actTypes.map(t => <option key={t}>{t}</option>)}
+            {actTypes.map(t => { const v = typeof t === "object" ? t.name : t; return <option key={v} value={v}>{v}</option>; })}
           </select>
         </div>
         <div className="form-group"><label>Title *</label>
