@@ -21,7 +21,7 @@ const infoRow = (label, value) => (
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNT PROFILE — Full Customer Profile Sheet
 // ═══════════════════════════════════════════════════════════════════
-function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets, contracts, collections, notes, files, onAddNote, onAddFile, currentUser, allAccounts, leads=[], orgUsers, onLogCall}) {
+function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets, contracts, collections, notes, files, onAddNote, onAddFile, currentUser, allAccounts, leads=[], orgUsers, onLogCall, onNavigate}) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [tab, setTab] = useState("overview");
@@ -54,7 +54,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
   const healthFactors = [
     totalARR > 0 ? 20 : 0,
     openDeals > 0 ? 15 : 0,
-    accActs.length > 0 ? 15 : (accActs.length > 2 ? 20 : 10),
+    accActs.length > 2 ? 20 : accActs.length > 0 ? 15 : 10,
     openTickets === 0 ? 15 : (openTickets <= 2 ? 5 : 0),
     activeContracts > 0 ? 15 : 0,
     accContacts.length > 0 ? 10 : 0,
@@ -299,16 +299,17 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 
           {/* ── CONTACTS TAB ── */}
           {tab === "contacts" && (
-            accContacts.length === 0 ? <Empty icon={<Users size={22}/>} title="No contacts" sub="No contacts linked to this account."/> :
+            accContacts.length === 0 ? <Empty icon={<Users size={22}/>} title="No contacts" sub="No contacts linked to this account."><button className="btn btn-primary" style={{marginTop:12}} onClick={()=>onNavigate?.("contacts")}><Plus size={13}/>Go to Contacts</button></Empty> :
             <div className="card" style={{padding:0}}>
               <table className="tbl">
                 <thead><tr><th>Name</th><th>Role</th><th>Department</th><th>Email</th><th>Phone</th><th>Primary</th></tr></thead>
                 <tbody>{accContacts.map(c => (
-                  <tr key={c.id}>
+                  <tr key={c.id} style={{cursor:"pointer"}} onClick={() => onNavigate?.("contacts")}
+                    onMouseEnter={e=>e.currentTarget.style.background="var(--s2)"} onMouseLeave={e=>e.currentTarget.style.background=""}>
                     <td style={{fontWeight:600,fontSize:12.5}}>{c.name}</td>
                     <td style={{fontSize:12}}>{c.role || c.designation || "—"}</td>
                     <td style={{fontSize:12}}>{c.department || "—"}</td>
-                    <td style={{fontSize:12,color:"var(--brand)"}}>{c.email || "—"}</td>
+                    <td style={{fontSize:12}}><a href={`mailto:${c.email}`} onClick={e=>e.stopPropagation()} style={{color:"var(--brand)"}}>{c.email || "—"}</a></td>
                     <td style={{fontSize:12}}>{c.phone || "—"}</td>
                     <td>{c.primary && <Star size={13} style={{color:"#F59E0B"}}/>}</td>
                   </tr>
@@ -319,14 +320,16 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 
           {/* ── LEADS TAB ── */}
           {tab === "leads" && (
-            accLeads.length === 0 ? <Empty icon={<Target size={22}/>} title="No leads" sub="No leads linked to this account."/> :
+            accLeads.length === 0 ? <Empty icon={<Target size={22}/>} title="No leads" sub="No leads linked to this account."><button className="btn btn-primary" style={{marginTop:12}} onClick={()=>onNavigate?.("leads")}><Plus size={13}/>Add Lead</button></Empty> :
             <div className="card" style={{padding:0}}>
               <table className="tbl">
                 <thead><tr><th>Lead ID</th><th>Contact</th><th>Product</th><th>Stage</th><th>Score</th><th>Temperature</th><th>Next Call</th><th>Assigned</th></tr></thead>
                 <tbody>{accLeads.map(l => {
                   const tempColors = {Hot:"#DC2626",Warm:"#F59E0B",Cool:"#3B82F6",Cold:"#94A3B8",Dead:"#64748B"};
                   return (
-                    <tr key={l.id} style={l.temperature === "Hot" ? {background:"#FEF2F214"} : undefined}>
+                    <tr key={l.id} style={{cursor:"pointer", background: l.temperature === "Hot" ? "#FEF2F214" : ""}}
+                      onClick={() => onNavigate?.("leads")}
+                      onMouseEnter={e=>e.currentTarget.style.background="var(--s2)"} onMouseLeave={e=>e.currentTarget.style.background=l.temperature==="Hot"?"#FEF2F214":""}>
                       <td><span style={{fontFamily:"'Courier New',monospace",fontSize:11,fontWeight:600,color:"var(--brand)"}}>{l.leadId}</span></td>
                       <td><div style={{fontSize:12,fontWeight:600}}>{l.contact}</div><div style={{fontSize:10,color:"var(--text3)"}}>{l.designation || l.email}</div></td>
                       <td><ProdTag pid={l.product}/></td>
@@ -344,12 +347,14 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 
           {/* ── DEALS TAB ── */}
           {tab === "deals" && (
-            accOpps.length === 0 ? <Empty icon={<TrendingUp size={22}/>} title="No deals" sub="No opportunities linked to this account."/> :
+            accOpps.length === 0 ? <Empty icon={<TrendingUp size={22}/>} title="No deals" sub="No opportunities linked to this account."><button className="btn btn-primary" style={{marginTop:12}} onClick={()=>onNavigate?.("pipeline")}><Plus size={13}/>Add Deal</button></Empty> :
             <div className="card" style={{padding:0}}>
               <table className="tbl">
                 <thead><tr><th>Deal</th><th>Products</th><th>Stage</th><th>Value</th><th>Probability</th><th>Close Date</th><th>Owner</th></tr></thead>
                 <tbody>{accOpps.map(o => (
-                  <tr key={o.id} style={o.stage === "Won" ? {background:"#F0FDF4"} : o.stage === "Lost" ? {background:"#FEF2F2"} : undefined}>
+                  <tr key={o.id} style={{cursor:"pointer", background: o.stage==="Won"?"#F0FDF4":o.stage==="Lost"?"#FEF2F2":""}}
+                    onClick={() => onNavigate?.("pipeline")}
+                    onMouseEnter={e=>e.currentTarget.style.background="var(--s2)"} onMouseLeave={e=>e.currentTarget.style.background=o.stage==="Won"?"#F0FDF4":o.stage==="Lost"?"#FEF2F2":""}>
                     <td style={{fontWeight:600,fontSize:12.5}}>{o.title}</td>
                     <td><div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{(o.products||[]).map(p => <ProdTag key={p} pid={p}/>)}</div></td>
                     <td><StatusBadge status={o.stage}/></td>
@@ -787,7 +792,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
       </div>
 
       {/* Account Profile */}
-      {detail && <AccountProfile a={detail} onClose={() => setDetail(null)} onEdit={() => { openEdit(detail); setDetail(null); }} opps={opps} activities={activities} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} notes={notes} files={files} onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser} allAccounts={accounts} leads={leads} orgUsers={orgUsers} onLogCall={(prefill) => { setDetail(null); setLogCallPrefill(prefill); }}/>}
+      {detail && <AccountProfile a={detail} onClose={() => setDetail(null)} onEdit={() => { openEdit(detail); setDetail(null); }} opps={opps} activities={activities} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} notes={notes} files={files} onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser} allAccounts={accounts} leads={leads} orgUsers={orgUsers} onLogCall={(prefill) => { setDetail(null); setLogCallPrefill(prefill); }} onNavigate={(page) => { setDetail(null); window.location.hash = `#/${page}`; }}/>}
 
       {/* Add / Edit Modal */}
       {modal && (

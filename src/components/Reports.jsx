@@ -11,6 +11,7 @@ import {
   SLA_HOURS, TICKET_TYPES
 } from "../data/constants";
 import { today, fmt, isOverdue } from "../utils/helpers";
+import { PageTip } from "./shared";
 import {
   TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle, Clock,
   BarChart3, PieChart as PieIcon, Users, Phone, Shield, Zap, DollarSign,
@@ -147,15 +148,22 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     const totalPending = (collections||[]).reduce((s,c)=>s+c.pendingAmount,0);
     const collectionRate = pct(totalCollected, totalBilled);
 
+    // Build last-activity map per opp (O(n) instead of O(n²))
+    const lastActByOpp = {};
+    activities.forEach(a => {
+      if (!a.oppId) return;
+      if (!lastActByOpp[a.oppId] || (a.date||"") > (lastActByOpp[a.oppId].date||"")) lastActByOpp[a.oppId] = a;
+    });
+
     // Stalled deals (no activity in 14+ days)
     const stalledDeals = activeOpps.filter(o=>{
-      const lastAct = activities.filter(a=>a.oppId===o.id).sort((a,b)=>b.date?.localeCompare(a.date))[0];
+      const lastAct = lastActByOpp[o.id];
       return !lastAct || daysBetween(lastAct.date, today) > 14;
     });
 
     // At-risk deals (no activity 7-14 days)
     const atRiskDeals = activeOpps.filter(o=>{
-      const lastAct = activities.filter(a=>a.oppId===o.id).sort((a,b)=>b.date?.localeCompare(a.date))[0];
+      const lastAct = lastActByOpp[o.id];
       if(!lastAct) return false;
       const days = daysBetween(lastAct.date, today);
       return days >= 7 && days <= 14;
@@ -383,6 +391,11 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   // ═══════════════════════════════════════════════════════════════
   return (
     <div>
+      <PageTip
+        id="reports-tip-v1"
+        title="Reports tip:"
+        text="All charts and figures are calculated live from your CRM data. Switch tabs to explore Pipeline, Revenue, Activity, Support, Collections, and Stalled Deals reports. Data auto-refreshes on each visit."
+      />
       <div className="pg-head">
         <div><div className="pg-title">Reports & Analytics</div><div className="pg-sub">Business intelligence, performance metrics & actionable insights</div></div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>

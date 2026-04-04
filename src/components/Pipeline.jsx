@@ -18,7 +18,7 @@ import {
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue } from "../utils/helpers";
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, NotesThread, FilesList, Empty, LogCallModal } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip } from "./shared";
 
 /* ───────── constants ───────── */
 const HEALTH_CFG = {
@@ -258,9 +258,62 @@ function QuickUpdatePopover({ opp, onSave, onClose }) {
    ═══════════════════════════════════════════════════════ */
 function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, onLogCall }) {
   const [tab, setTab] = useState("overview");
+
+  // ── Inline field editing ──
+  const [editingField, setEditingField] = useState(null);
+  const [fieldVal, setFieldVal] = useState("");
+  const startEdit = (f) => { setEditingField(f); setFieldVal(detail[f] ?? ""); };
+  const saveEdit = (f, v) => {
+    const val = v !== undefined ? v : fieldVal;
+    if (setOpps) setOpps(prev => prev.map(o => o.id === detail.id ? { ...o, [f]: val } : o));
+    setEditingField(null); setFieldVal("");
+  };
+  const cancelEdit = () => { setEditingField(null); setFieldVal(""); };
+  const iStyle = { fontSize:12, padding:"3px 7px", borderRadius:5, border:"1px solid var(--brand)", outline:"none", width:"100%", boxSizing:"border-box" };
+
+  const editableRow = (key, field, type, options) => {
+    const isEditing = editingField === field;
+    let display;
+    if (field === "value") display = fmt.inr(detail.value);
+    else if (field === "probability") display = fmt.pct(detail.probability);
+    else if (field === "closeDate") display = fmt.date(detail.closeDate);
+    else if (field === "stage") display = detail.stage;
+    else display = detail[field] || "—";
+
+    return (
+      <div className="dp-row" key={key}>
+        <span className="dp-key">{key}</span>
+        <span className="dp-val" style={{flex:1}}>
+          {isEditing ? (
+            <span style={{display:"flex",gap:4,alignItems:"center"}}>
+              {type === "select" ? (
+                <select autoFocus value={fieldVal} onChange={e=>setFieldVal(e.target.value)}
+                  onBlur={()=>saveEdit(field)} style={iStyle}>
+                  {(options||[]).map(o=><option key={o}>{o}</option>)}
+                </select>
+              ) : (
+                <input type={type || "text"} autoFocus value={fieldVal}
+                  onChange={e => setFieldVal(type==="number" ? +e.target.value : e.target.value)}
+                  onBlur={()=>saveEdit(field, type==="number" ? +fieldVal : fieldVal)}
+                  onKeyDown={e=>{if(e.key==="Enter")saveEdit(field, type==="number" ? +fieldVal : fieldVal); if(e.key==="Escape")cancelEdit();}}
+                  style={{...iStyle, maxWidth:160}} min={type==="number"?0:undefined} step={field==="probability"?1:0.01}/>
+              )}
+              <button onClick={cancelEdit} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",padding:0,fontSize:16,lineHeight:1}}>✕</button>
+            </span>
+          ) : (
+            <span style={{cursor:"pointer",display:"flex",alignItems:"center",gap:4}} onClick={()=>startEdit(field)}
+              title="Click to edit">
+              {field === "stage" ? <StatusBadge status={display}/> : display}
+              <Edit2 size={9} style={{color:"var(--text3)",opacity:0.4,flexShrink:0}}/>
+            </span>
+          )}
+        </span>
+      </div>
+    );
+  };
   const oppNotes = notes.filter(n => n.recordType === "opp" && n.recordId === detail.id);
   const oppFiles = files.filter(f => f.linkedTo.some(l => l.type === "opp" && l.id === detail.id));
-  const oppActs = (activities || []).filter(a => a.oppId === detail.id).sort((a, b) => b.date.localeCompare(a.date));
+  const oppActs = (activities || []).filter(a => a.oppId === detail.id).sort((a, b) => (b.date||"").localeCompare(a.date||""));
   const acc = accounts.find(a => a.id === detail.accountId);
   const primaryContact = (contacts || []).find(c => c.id === detail.primaryContactId);
   const secondaryContacts = (detail.secondaryContactIds || []).map(cid => (contacts || []).find(c => c.id === cid)).filter(Boolean);
@@ -337,19 +390,22 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
           {tab === "overview" && (
             <div>
               <div className="dp-grid">
-                {[
-                  ["Account", acc?.name || "\u2014"], ["Stage", detail.stage], ["Value", fmt.inr(detail.value)],
-                  ["Probability", fmt.pct(detail.probability)], ["Close Date", fmt.date(detail.closeDate)],
-                  ["Owner", TEAM_MAP[detail.owner]?.name || "\u2014"], ["Source", detail.source || "\u2014"],
-                  ["Primary Contact", primaryContact?.name || "\u2014"], ["Hierarchy Level", detail.hierarchyLevel || "\u2014"],
-                  ["Country", detail.country || "\u2014"], ["Health", health],
-                  ["Forecast", detail.forecastCat || "\u2014"], ["Deal Size", detail.dealSize || "\u2014"],
-                ].map(([k, v]) => (
-                  <div key={k} className="dp-row">
-                    <span className="dp-key">{k}</span>
-                    <span className="dp-val">{k === "Stage" ? <StatusBadge status={v} /> : k === "Health" ? <HealthBadge health={v} /> : v}</span>
-                  </div>
-                ))}
+                {/* Static rows */}
+                <div className="dp-row"><span className="dp-key">Account</span><span className="dp-val">{acc?.name || "—"}</span></div>
+                <div className="dp-row"><span className="dp-key">Health</span><span className="dp-val"><HealthBadge health={health}/></span></div>
+                {/* Editable rows */}
+                {editableRow("Stage", "stage", "select", ["Prospect","Qualified","Demo","Proposal","Negotiation","Won","Lost"])}
+                {editableRow("Value (₹L)", "value", "number")}
+                {editableRow("Probability (%)", "probability", "number")}
+                {editableRow("Close Date", "closeDate", "date")}
+                {/* Static rows */}
+                <div className="dp-row"><span className="dp-key">Owner</span><span className="dp-val">{TEAM_MAP[detail.owner]?.name || "—"}</span></div>
+                <div className="dp-row"><span className="dp-key">Source</span><span className="dp-val">{detail.source || "—"}</span></div>
+                <div className="dp-row"><span className="dp-key">Primary Contact</span><span className="dp-val">{primaryContact?.name || "—"}</span></div>
+                <div className="dp-row"><span className="dp-key">Hierarchy Level</span><span className="dp-val">{detail.hierarchyLevel || "—"}</span></div>
+                <div className="dp-row"><span className="dp-key">Country</span><span className="dp-val">{detail.country || "—"}</span></div>
+                <div className="dp-row"><span className="dp-key">Forecast</span><span className="dp-val">{detail.forecastCat || "—"}</span></div>
+                <div className="dp-row"><span className="dp-key">Deal Size</span><span className="dp-val">{detail.dealSize || "—"}</span></div>
               </div>
               {secondaryContacts.length > 0 && (
                 <div style={{ marginTop: 14 }}>
@@ -708,6 +764,11 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   /* ─────────────────── RENDER ─────────────────── */
   return (
     <div>
+      <PageTip
+        id="pipeline-tip-v1"
+        title="Pipeline tip:"
+        text="Click any deal card to open its detail. Value, stage, probability, and close date are all editable inline inside the panel. Drag cards between columns in Board view to advance a stage."
+      />
       {/* PAGE HEADER */}
       <div className="pg-head">
         <div>
@@ -1072,8 +1133,8 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       {/* ═════════ DEAL DETAIL ═════════ */}
       {detail && (
         <DealDetail
-          detail={detail} onClose={() => setDetail(null)}
-          onEdit={() => { openEdit(detail); setDetail(null); }}
+          detail={opps.find(o => o.id === detail.id) || detail} onClose={() => setDetail(null)}
+          onEdit={() => { openEdit(opps.find(o => o.id === detail.id) || detail); setDetail(null); }}
           accounts={accounts} contacts={contacts} notes={notes} files={files}
           onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser}
           activities={activities} setActivities={setActivities} opps={opps} setOpps={setOpps}

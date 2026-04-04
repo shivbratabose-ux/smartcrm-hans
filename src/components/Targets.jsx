@@ -143,7 +143,9 @@ function Targets({ targets, setTargets, currentUser }) {
 
       <div className="card" style={{padding:0}}>
         {filtered.length === 0 ? (
-          <Empty icon={<Target size={22}/>} title="No targets set" sub="Define targets for your sales team."/>
+          <Empty icon={<Target size={22}/>} title="No targets set" sub="Define targets for your sales team.">
+            <button className="btn btn-primary" style={{marginTop:12}} onClick={openAdd}><Plus size={14}/>Add First Target</button>
+          </Empty>
         ) : (
           <table className="tbl">
             <thead>

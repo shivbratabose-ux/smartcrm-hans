@@ -133,7 +133,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
       </div>
 
       <BulkActions count={bulk.count} onClear={bulk.clear}
-        onDelete={() => { if(window.confirm("Delete "+bulk.count+" call reports?")){ setCallReports(p=>p.filter(r=>!bulk.isSelected(r.id))); bulk.clear(); }}}
+        onDelete={() => setConfirm("bulk")}
         onExport={() => exportCSV(callReports.filter(r=>bulk.isSelected(r.id)), CSV_COLS, "call_reports")}
       />
 
@@ -286,7 +286,10 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
         </Modal>
       )}
 
-      {confirm && <Confirm title="Delete Call Report" msg="Remove this call report permanently?" onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>}
+      {confirm === "bulk"
+        ? <Confirm title={`Delete ${bulk.count} Call Reports`} msg="Remove selected call reports permanently?" onConfirm={() => { setCallReports(p=>p.filter(r=>!bulk.isSelected(r.id))); bulk.clear(); setConfirm(null); }} onCancel={() => setConfirm(null)}/>
+        : confirm && <Confirm title="Delete Call Report" msg="Remove this call report permanently?" onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>
+      }
     </div>
   );
 }

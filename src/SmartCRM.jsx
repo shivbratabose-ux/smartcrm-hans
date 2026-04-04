@@ -7,7 +7,7 @@ import {
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
   INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
-  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD
+  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, INIT_UPDATES
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid } from "./utils/helpers";
 import { CSS } from "./styles";
@@ -41,6 +41,8 @@ import CommLog from "./components/CommLog";
 import BulkUpload from "./components/BulkUpload";
 import Profile from "./components/Profile";
 import QuickLogFAB from "./components/QuickLog";
+import Updates from "./components/Updates";
+import Help from "./components/Help";
 
 // ── Session persistence with 30-min idle timeout ──
 const SESSION_KEY = "smartcrm_session";
@@ -74,7 +76,7 @@ const clearSession = () => {
 // Backfills missing fields introduced in later schema versions
 // Bump DATA_VERSION whenever seed/schema changes to force a reset
 // ═══════════════════════════════════════════════════════════════════
-const DATA_VERSION = "v6";
+const DATA_VERSION = "v7";
 
 function migrateState(raw) {
   if (!raw) return null;
@@ -163,6 +165,11 @@ function migrateState(raw) {
     s.contacts = [...allContacts, ...newContacts];
   }
 
+  // ── 6. Updates: seed if missing ──
+  if (!Array.isArray(s.updates)) {
+    s.updates = INIT_UPDATES;
+  }
+
   return s;
 }
 
@@ -179,7 +186,7 @@ export default function SmartCRM() {
       userPasswords: INIT_USER_PASSWORDS,
       leads: INIT_LEADS, callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
       collections: INIT_COLLECTIONS, targets: INIT_TARGETS, quotes: INIT_QUOTES,
-      commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, customPermissions: {},
+      commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, updates: INIT_UPDATES, customPermissions: {},
     };
     return migrateState(base);
   }, []);
@@ -223,7 +230,22 @@ export default function SmartCRM() {
   const [quotes,setQuotes]           = useState(saved?.quotes || INIT_QUOTES);
   const [commLogs,setCommLogs]       = useState(saved?.commLogs || INIT_COMM_LOGS);
   const [events,setEvents]           = useState(saved?.events || INIT_EVENTS);
+  const [updates,setUpdates]         = useState(saved?.updates || INIT_UPDATES);
   const [customPermissions,setCustomPermissions] = useState(saved?.customPermissions || {});
+
+  // ── Derived: unread update count for current user ──
+  const myUnreadCount = useMemo(() => {
+    if (!currentUser) return 0;
+    const allU = orgUsers || [];
+    const dbUser = allU.find(u => u.id === currentUser);
+    return (updates || []).filter(u => {
+      if (u.archived) return false;
+      const isRecipient = (u.recipientUserIds || []).includes(currentUser);
+      const isAuthor    = u.createdBy === currentUser;
+      if (!isRecipient && !isAuthor) return false;
+      return (u.readStatus || {})[currentUser] !== "read";
+    }).length;
+  }, [updates, currentUser, orgUsers]);
 
   // ── Session: persist login & track idle timeout ──
   const login = useCallback((userId) => { setCurrentUser(userId); saveSession(userId); }, []);
@@ -371,9 +393,9 @@ export default function SmartCRM() {
   // Persist all data to localStorage on every change (works as primary store without Supabase, backup with Supabase)
   useEffect(() => {
     saveState({ version: DATA_VERSION, accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
-      leads, callReports, contracts, collections, targets, quotes, commLogs, events, customPermissions });
+      leads, callReports, contracts, collections, targets, quotes, commLogs, events, updates, customPermissions });
   }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
-    leads, callReports, contracts, collections, targets, quotes, commLogs, events, customPermissions]);
+    leads, callReports, contracts, collections, targets, quotes, commLogs, events, updates, customPermissions]);
 
   const addNote = note => setNotes(p=>[...p,note]);
   const addFile = file => setFiles(p=>[...p,file]);
@@ -670,9 +692,9 @@ export default function SmartCRM() {
       <style dangerouslySetInnerHTML={{__html:CSS}}/>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={tickets} leads={leads} collections={collections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions}/>
+        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={tickets} leads={leads} collections={collections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount}/>
         <div className="main">
-          <Header page={page} accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers}/>
+          <Header page={page} accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={updates} myUnreadCount={myUnreadCount}/>
           <div className="content" id="main-content" role="main">
             {page==="dashboard"  && <Dashboard accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} setPage={setPage}/>}
             {page==="leads"      && <Leads leads={leads} setLeads={setLeads} accounts={accounts} contacts={contacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={activities} setActivities={setActivities} callReports={callReports} setCallReports={setCallReports} masters={masters}/>}
@@ -689,6 +711,8 @@ export default function SmartCRM() {
             {page==="communications"&& <CommLog commLogs={commLogs} setCommLogs={setCommLogs} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
             {page==="targets"    && <Targets targets={targets} setTargets={setTargets} currentUser={currentUser}/>}
             {page==="reports"    && <Reports accounts={accounts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} contacts={contacts} contracts={contracts} quotes={quotes} currentUser={currentUser}/>}
+            {page==="updates"    && <Updates updates={updates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
+            {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
@@ -697,6 +721,15 @@ export default function SmartCRM() {
           </div>
         </div>
         <QuickLogFAB accounts={accounts} contacts={contacts} opps={opps} leads={leads} orgUsers={orgUsers} currentUser={currentUser} callReports={callReports} setCallReports={setCallReports} activities={activities} setActivities={setActivities} masters={masters}/>
+        {/* Floating Help Button — always visible, bottom-left */}
+        {page !== "help" && (
+          <button className="help-fab" onClick={() => setPage("help")} title="Open Help & User Guide">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span className="help-fab-tooltip">Help & Guide</span>
+          </button>
+        )}
       </div>
     </ErrorBoundary>
   );

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Plus, Edit2, Trash2, Check, X, ChevronDown } from "lucide-react";
 import { PRODUCTS, PROD_MAP } from '../data/constants';
 import { uid } from '../utils/helpers';
-import { Modal, Confirm } from './shared';
+import { Modal, Confirm, HelpTooltip, PageTip } from './shared';
 
 // ═══════════════════════════════════════════════════════════════════
 // MASTERS PAGE
@@ -52,7 +52,7 @@ function MasterSection({title,items,onAdd,onEdit,onDelete,renderSub}) {
         <div className="masters-item" style={{background:"var(--s2)"}}>
           <div style={{flex:1,display:"flex",gap:8,alignItems:"center"}}>
             <input autoFocus value={val.name} onChange={e=>setVal(v=>({...v,name:e.target.value}))} placeholder="Name…" style={{flex:1,padding:"5px 8px",border:"1.5px solid var(--brand)",borderRadius:6,fontSize:13,outline:"none"}} onKeyDown={e=>e.key==="Enter"&&saveAdd()}/>
-            {renderSub&&<input value={val.sub} onChange={e=>setVal(v=>({...v,sub:e.target.value}))} placeholder={renderSub} style={{width:80,padding:"5px 8px",border:"1.5px solid var(--border)",borderRadius:6,fontSize:12,outline:"none"}}/>}
+            {renderSub&&<input value={val.sub} onChange={e=>setVal(v=>({...v,sub:e.target.value}))} placeholder={renderSub} style={{width:80,padding:"5px 8px",border:"1.5px solid var(--border)",borderRadius:6,fontSize:12,outline:"none"}} onKeyDown={e=>{if(e.key==="Enter")saveAdd();if(e.key==="Escape")cancel();}}/>}
             <button className="btn btn-primary btn-xs" onClick={saveAdd}><Check size={11}/>Save</button>
             <button className="btn btn-sec btn-xs" onClick={cancel}><X size={11}/></button>
           </div>
@@ -71,6 +71,11 @@ function Masters({masters,setMasters,catalog,setCatalog}) {
 
   return (
     <div>
+      <PageTip
+        id="masters-tip-v1"
+        title="Masters tip:"
+        text="Changes to reference data (stages, priorities, countries, etc.) apply immediately across all dropdowns in the app. The Product Catalogue tab manages product lines and their module/add-on structure."
+      />
       <div className="pg-head">
         <div><div className="pg-title">Masters</div><div className="pg-sub">Manage reference data and the product catalogue.</div></div>
       </div>
@@ -82,7 +87,7 @@ function Masters({masters,setMasters,catalog,setCatalog}) {
       {tab==="reference"&&(
         <div className="masters-grid">
           <MasterSection title="Activity Types" items={masters.activityTypes} onAdd={v=>addItem("activityTypes",v)} onEdit={(id,v)=>editItem("activityTypes",id,v)} onDelete={id=>delItem("activityTypes",id)}/>
-          <MasterSection title="Deal Stages" items={masters.stages} onAdd={v=>addItem("stages",v)} onEdit={(id,v)=>editItem("stages",id,v)} onDelete={id=>delItem("stages",id)} renderSub="Probability %"/>
+          <MasterSection title={<span>Deal Stages <HelpTooltip text="Probability % is used in weighted pipeline forecasting. Won = 100, Lost/Suspended = 0. Set values that reflect your average conversion rate at each stage." width={260}/></span>} items={masters.stages} onAdd={v=>addItem("stages",v)} onEdit={(id,v)=>editItem("stages",id,v)} onDelete={id=>delItem("stages",id)} renderSub="Probability %"/>
           <MasterSection title="Customer Types" items={masters.customerTypes} onAdd={v=>addItem("customerTypes",v)} onEdit={(id,v)=>editItem("customerTypes",id,v)} onDelete={id=>delItem("customerTypes",id)}/>
           <MasterSection title="Countries" items={masters.countries} onAdd={v=>addItem("countries",v)} onEdit={(id,v)=>editItem("countries",id,v)} onDelete={id=>delItem("countries",id)} renderSub="Region"/>
           <MasterSection title="Priorities" items={masters.priorities} onAdd={v=>addItem("priorities",v)} onEdit={(id,v)=>editItem("priorities",id,v)} onDelete={id=>delItem("priorities",id)}/>

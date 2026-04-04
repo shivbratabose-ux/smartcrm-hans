@@ -70,7 +70,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
   /* Avg renewal: average days between endDate and renewalDate for active contracts */
   const avgRenewal = useMemo(() => {
     const withRenewal = contracts.filter(c => c.status === "Active" && c.endDate && c.renewalDate);
-    if (withRenewal.length === 0) return 42; // fallback
+    if (withRenewal.length === 0) return null;
     const total = withRenewal.reduce((sum, c) => {
       const diff = (new Date(c.renewalDate) - new Date(c.endDate)) / (1000*60*60*24);
       return sum + Math.abs(diff);
@@ -91,7 +91,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
     // Status filter
     if (statusF !== "All") list = list.filter(c => c.status === statusF);
     if (search) list = list.filter(c => (c.title + c._accName + c.poNumber + c._contractId).toLowerCase().includes(search.toLowerCase()));
-    return list.sort((a, b) => b.startDate?.localeCompare(a.startDate || "") || 0);
+    return list.sort((a, b) => (b.startDate||"").localeCompare(a.startDate||""));
   }, [enriched, statusF, search, activeTab]);
 
   const pg = usePagination(filtered);
@@ -140,7 +140,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
   const billTypeLabel = (c) => c.billType || c.billTerm || "\u2014";
 
   /* Risk alerts count (expired + terminated) */
-  const riskAlerts = contracts.filter(c => c.status === "Expired" || c.status === "Terminated").length || 3;
+  const riskAlerts = contracts.filter(c => c.status === "Expired" || c.status === "Terminated").length;
 
   return (
     <div>
@@ -168,7 +168,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
             minWidth: 160, display: "flex", flexDirection: "column", gap: 4
           }}>
             <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", opacity: 0.85 }}>Avg. Renewal</span>
-            <span style={{ fontSize: 32, fontWeight: 800, fontFamily: "'Outfit',sans-serif", lineHeight: 1.1 }}>{avgRenewal} <span style={{ fontSize: 14, fontWeight: 500 }}>Days</span></span>
+            <span style={{ fontSize: 32, fontWeight: 800, fontFamily: "'Outfit',sans-serif", lineHeight: 1.1 }}>{avgRenewal !== null ? <>{avgRenewal} <span style={{ fontSize: 14, fontWeight: 500 }}>Days</span></> : <span style={{fontSize:16,opacity:0.6}}>N/A</span>}</span>
           </div>
           {/* Action buttons */}
           <div className="pg-actions" style={{ display: "flex", gap: 8 }}>

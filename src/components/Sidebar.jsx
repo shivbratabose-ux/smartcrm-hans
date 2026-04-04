@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, Building2, Users, TrendingUp, Activity,
   BarChart3, Ticket, Layers, SlidersHorizontal, ChevronLeft, LogOut,
-  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload
+  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle
 } from "lucide-react";
 import { TEAM_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 
@@ -18,7 +18,7 @@ const canAccess = (userId, module, orgUsers, customPermissions) => {
   return perm[module] && perm[module]!==false;
 };
 
-function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,currentUser,onLogout,orgUsers,customPermissions}) {
+function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,currentUser,onLogout,orgUsers,customPermissions,myUnreadCount}) {
   const openTix=tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const activeLeads=leads?.filter(l=>l.stage!=="NA").length||0;
   const overdueCollections=collections?.filter(c=>c.pendingAmount>0&&c.status==="Overdue").length||0;
@@ -27,7 +27,10 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
   const userRole = dbUser?.role || INIT_USERS.find(u=>u.id===currentUser)?.role || "viewer";
 
   const NAV=[
-    {section:"Overview",items:[{id:"dashboard",label:"Dashboard",icon:<LayoutDashboard size={17}/>}]},
+    {section:"Overview",items:[
+      {id:"dashboard",label:"Dashboard",icon:<LayoutDashboard size={17}/>},
+      {id:"updates",  label:"Updates",  icon:<Bell size={17}/>, badge: myUnreadCount||0},
+    ]},
     {section:"Sales",items:[
       {id:"leads",     label:"Leads",      icon:<UserPlus size={17}/>,badge:activeLeads},
       {id:"accounts",  label:"Accounts",   icon:<Building2 size={17}/>},
@@ -53,6 +56,9 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
       ...(canAccess(currentUser,"team",orgUsers,customPermissions)?[{id:"team",label:"Team & Users",icon:<Users size={17}/>}]:[]),
       {id:"bulkupload",label:"Bulk Upload",icon:<Upload size={17}/>},
       {id:"masters",label:"Masters",icon:<SlidersHorizontal size={17}/>},
+    ]},
+    {section:"Support",items:[
+      {id:"help",label:"Help & Guide",icon:<HelpCircle size={17}/>},
     ]},
   ];
 

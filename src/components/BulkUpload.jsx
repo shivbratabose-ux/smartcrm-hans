@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Upload, Download, FileText, Check, AlertCircle, X, RefreshCw } from "lucide-react";
 import { UPLOAD_TYPES } from '../data/constants';
 import { uid } from '../utils/helpers';
-import { Empty, Modal } from './shared';
+import { Empty, Modal, PageTip } from './shared';
 
 const SCHEMAS = {
   Leads: {
@@ -49,14 +49,32 @@ const SCHEMAS = {
   },
 };
 
+function parseCSVLine(line) {
+  const vals = [];
+  let cur = "", inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (ch === ',' && !inQ) {
+      vals.push(cur.trim()); cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  vals.push(cur.trim());
+  return vals;
+}
+
 function parseCSV(text) {
-  const lines = text.split("\n").map(l => l.trim()).filter(l => l);
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
   if (lines.length < 2) return { headers: [], rows: [] };
-  const headers = lines[0].split(",").map(h => h.trim());
+  const headers = parseCSVLine(lines[0]).map(h => h.trim());
   const rows = lines.slice(1).map((line, idx) => {
-    const vals = line.split(",").map(v => v.trim());
+    const vals = parseCSVLine(line);
     const obj = {};
-    headers.forEach((h, i) => { obj[h] = vals[i] || ""; });
+    headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
     obj._row = idx + 2;
     return obj;
   });
@@ -128,6 +146,11 @@ function BulkUpload({ onUpload }) {
 
   return (
     <div>
+      <PageTip
+        id="bulkupload-tip-v1"
+        title="Bulk Upload tip:"
+        text="Download the template first to get the exact column headers. Save your data as CSV (not XLSX). If any field contains a comma, wrap it in double-quotes. Existing records matched by email or company name will be linked — not duplicated."
+      />
       <div className="pg-head">
         <div><div className="pg-title">Bulk Upload</div>
           <div className="pg-sub">Import data from CSV files into CRM modules</div></div>

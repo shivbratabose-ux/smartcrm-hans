@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from "react";
-import { Search, Bell, BarChart3, User, Settings, LogOut, Key, ChevronDown } from "lucide-react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { Search, Bell, BarChart3, User, Settings, LogOut, Key, ChevronDown, HelpCircle } from "lucide-react";
 import { TEAM_MAP, ROLE_MAP, INIT_USERS } from '../data/constants';
 
 export const PAGE_LABELS={
@@ -9,26 +9,65 @@ export const PAGE_LABELS={
   targets:"Target vs Achievement",reports:"Reports",masters:"Masters",
   org:"Organisation",team:"Team & Users",profile:"My Profile",
   quotations:"Quotations",calendar:"Calendar",communications:"Communications",
-  bulkupload:"Bulk Upload"
+  bulkupload:"Bulk Upload",updates:"Internal Updates",help:"Help & User Guide"
 };
 
-function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,currentUser,onLogout,orgUsers}) {
+// Pages that have a specific help article — maps page id → help category id
+const PAGE_HELP_MAP = {
+  dashboard:"getting-started", leads:"leads", accounts:"accounts",
+  contacts:"contacts", pipeline:"pipeline", activities:"activities",
+  callreports:"callreports", tickets:"tickets", contracts:"contracts",
+  collections:"collections", quotations:"quotations", calendar:"calendar",
+  targets:"targets", reports:"reports", updates:"updates",
+  masters:"masters", bulkupload:"bulkupload", org:"org-team", team:"org-team",
+};
+
+const PRI_COLOR = { Critical:"#DC2626", High:"#D97706", Medium:"#2563EB", Low:"#64748B" };
+const PRI_BG    = { Critical:"#FEF2F2", High:"#FFFBEB", Medium:"#EFF6FF", Low:"#F8FAFC" };
+
+function timeAgoShort(iso) {
+  if (!iso) return "";
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs/24)}d ago`;
+}
+
+function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,currentUser,onLogout,orgUsers,updates,myUnreadCount}) {
   const [searchQ,setSearchQ]=useState("");
   const [results,setResults]=useState([]);
   const [showMenu,setShowMenu]=useState(false);
+  const [showBell,setShowBell]=useState(false);
   const menuRef=useRef(null);
+  const bellRef=useRef(null);
   const openTix=tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const dbUser=(orgUsers||[]).find(u=>u.id===currentUser);
   const user=dbUser||TEAM_MAP[currentUser];
   const roleInfo=ROLE_MAP[dbUser?.role||INIT_USERS.find(u=>u.id===currentUser)?.role];
 
-  // Close menu on outside click
+  // Recent unread updates for bell dropdown
+  const recentUnread = useMemo(() => {
+    if (!currentUser || !updates) return [];
+    return updates.filter(u => {
+      if (u.archived) return false;
+      const isRecipient = (u.recipientUserIds || []).includes(currentUser);
+      const isAuthor    = u.createdBy === currentUser;
+      return (isRecipient || isAuthor) && (u.readStatus || {})[currentUser] !== "read";
+    }).sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||"")).slice(0, 5);
+  }, [updates, currentUser]);
+
+  // Close dropdowns on outside click
   useEffect(()=>{
-    if(!showMenu) return;
-    const close=e=>{if(menuRef.current&&!menuRef.current.contains(e.target)) setShowMenu(false);};
+    if(!showMenu&&!showBell) return;
+    const close=e=>{
+      if(menuRef.current&&!menuRef.current.contains(e.target)) setShowMenu(false);
+      if(bellRef.current&&!bellRef.current.contains(e.target)) setShowBell(false);
+    };
     document.addEventListener("mousedown",close);
     return ()=>document.removeEventListener("mousedown",close);
-  },[showMenu]);
+  },[showMenu,showBell]);
 
   const computeResults = useCallback((q) => {
     if(!q.trim()){setResults([]);return;}
@@ -71,10 +110,50 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
         )}
       </div>
       <div className="hdr-actions">
-        <button className="icon-btn" onClick={()=>setPage("tickets")} title="Open tickets">
-          <Bell size={18}/>{openTix>0&&<span className="notif-dot"/>}
-        </button>
+        {/* Bell – Updates dropdown */}
+        <div ref={bellRef} style={{position:"relative"}}>
+          <button className="icon-btn" onClick={()=>setShowBell(p=>!p)} title="Internal Updates"
+            style={{position:"relative"}}>
+            <Bell size={18}/>
+            {(myUnreadCount||0)>0&&<span className="notif-dot" style={{position:"absolute",top:4,right:4}}/>}
+          </button>
+          {showBell&&(
+            <div className="bell-panel">
+              <div className="bell-panel-head">
+                <span>Updates</span>
+                {(myUnreadCount||0)>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:"var(--brand)",color:"white"}}>{myUnreadCount} unread</span>}
+              </div>
+              {recentUnread.length===0?(
+                <div style={{padding:"20px",textAlign:"center",color:"var(--text3)",fontSize:13}}>
+                  🎉 All caught up!
+                </div>
+              ):(
+                recentUnread.map(upd=>(
+                  <div key={upd.id} className="bell-item" onClick={()=>{setPage("updates");setShowBell(false);}}>
+                    <div style={{display:"flex",gap:5,alignItems:"center",marginBottom:3}}>
+                      <span style={{fontSize:10,fontWeight:700,padding:"1px 5px",borderRadius:4,background:PRI_BG[upd.priority],color:PRI_COLOR[upd.priority]}}>{upd.priority}</span>
+                      <span style={{fontSize:10,fontWeight:600,color:"var(--brand)",background:"var(--brand-bg)",padding:"1px 5px",borderRadius:4}}>{upd.category}</span>
+                    </div>
+                    <div style={{fontSize:12.5,fontWeight:600,color:"var(--text)",lineHeight:1.35}}>{upd.title}</div>
+                    <div style={{fontSize:11,color:"var(--text3)",marginTop:2}}>{timeAgoShort(upd.createdAt)}</div>
+                  </div>
+                ))
+              )}
+              <div className="bell-panel-foot" onClick={()=>{setPage("updates");setShowBell(false);}}>
+                View all updates →
+              </div>
+            </div>
+          )}
+        </div>
         <button className="icon-btn" onClick={()=>setPage("reports")} title="Reports"><BarChart3 size={18}/></button>
+        <button className="icon-btn help-btn" onClick={()=>setPage("help")}
+          title={`Help: ${PAGE_LABELS[page]||page}`}
+          style={{position:"relative"}}>
+          <HelpCircle size={18}/>
+          {PAGE_HELP_MAP[page] && (
+            <span style={{position:"absolute",bottom:3,right:3,width:6,height:6,borderRadius:"50%",background:"var(--brand)",border:"1.5px solid white"}}/>
+          )}
+        </button>
         <div ref={menuRef} style={{position:"relative"}}>
           <div className="avatar-menu-trigger" onClick={()=>setShowMenu(p=>!p)}
             style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",padding:"4px 8px",borderRadius:10,background:showMenu?"var(--brand-bg)":"transparent",transition:"background 0.15s"}}>

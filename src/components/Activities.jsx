@@ -8,7 +8,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { ACT_TYPES, ACT_STATUS, TEAM, TEAM_MAP } from '../data/constants';
 import { uid, fmt, today, sanitizeObj, validateActivity, hasErrors } from '../utils/helpers';
-import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList } from './shared';
+import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList, PageTip } from './shared';
 import Pagination, { usePagination } from './Pagination';
 
 const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
@@ -38,7 +38,7 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
     if(typeF!=="All") list=list.filter(a=>a.type===typeF);
     if(ownerF!=="All") list=list.filter(a=>a.owner===ownerF);
     if(search) list=list.filter(a=>a.title.toLowerCase().includes(search.toLowerCase()));
-    return list.sort((a,b)=>b.date.localeCompare(a.date));
+    return list.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   },[activities,tabS,typeF,ownerF,search]);
 
   const planned   = activities.filter(a=>a.status==="Planned"&&a.date>=today).length;
@@ -127,6 +127,11 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
 
   return (
     <div>
+      <PageTip
+        id="activities-tip-v1"
+        title="Activities tip:"
+        text="Log every call, email, or meeting here or from any account/deal page. Use the green + button (bottom-right) to quick-log from anywhere in the app without leaving your current page."
+      />
       <div className="pg-head">
         <div>
           <div className="pg-title">Activities</div>
@@ -141,7 +146,13 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
           <div style={{fontSize:28,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>
             {activities.filter(a=>a.date===today).length}
           </div>
-          <div style={{fontSize:11,opacity:0.7}}>+12% vs yesterday</div>
+          {(() => {
+            const yesterday = new Date(new Date(today).getTime()-864e5).toISOString().slice(0,10);
+            const yCount = activities.filter(a=>a.date===yesterday).length;
+            const tCount = activities.filter(a=>a.date===today).length;
+            const diff = tCount - yCount;
+            return <div style={{fontSize:11,opacity:0.7}}>{yCount===0 ? "No data yesterday" : diff===0 ? "Same as yesterday" : `${diff>0?"+":""}${diff} vs yesterday`}</div>;
+          })()}
         </div>
         <div style={{background:"#1B6B5A",borderRadius:12,padding:"16px 20px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",opacity:0.8}}>CONNECTED RATE</div>

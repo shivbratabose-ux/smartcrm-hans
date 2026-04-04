@@ -288,3 +288,15 @@ export const OPP_CONTACT_ROLES = ["Decision Maker","Technical Evaluator","Influe
 
 // ── Lead Contact Roles ──
 export const LEAD_CONTACT_ROLES = ["Decision Maker/HOD","Technical/IT","End User","Finance/Accounts","Presales/Demo","Management","Operations","Other"];
+
+// ── Internal Updates & Notifications ──
+export const UPDATE_CATEGORIES = [
+  "Policy","Announcement","Product Release","Sales Alert",
+  "HR","Operations","Finance","Technical","General"
+];
+export const UPDATE_RECIPIENT_MODES = ["org","team","specific"];
+export const UPDATE_ATTACHMENT_TYPES = ["PDF","Excel","Word","PPT","Image","Link","Other"];
+export const PERMISSIONS_UPDATES = {
+  canPost:      ["admin","md","director","line_mgr","country_mgr","bd_lead","tech_lead"],
+  canManageAll: ["admin","md","director"],
+};

@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useMemo } from "react";
-import { X, Send, FileText, Check, Paperclip } from "lucide-react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
+import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight } from "lucide-react";
 import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
 import { fmt, uid, today, hasErrors } from "../utils/helpers";
 
@@ -26,7 +26,8 @@ export function ProdTag({pid}) {
   return <span className="prod-tag" style={{background:p.bg,color:p.text}}>{p.name}</span>;
 }
 export function UserPill({uid:u}) {
-  const user=TEAM_MAP[u]; if(!user) return null;
+  const user=TEAM_MAP[u];
+  if(!user) return u ? <span className="u-pill"><span className="u-av" style={{background:"#94A3B8"}}>?</span><span className="u-name">{u}</span></span> : null;
   return <span className="u-pill"><span className="u-av">{user.initials}</span><span className="u-name">{user.name}</span></span>;
 }
 export function Modal({title,onClose,children,footer,lg}) {
@@ -55,12 +56,78 @@ export function Confirm({title,msg,onConfirm,onCancel}) {
     </Modal>
   );
 }
-export function Empty({icon,title,sub}) {
-  return <div className="empty"><div className="empty-icon">{icon}</div><div className="empty-title">{title}</div><div className="empty-sub">{sub}</div></div>;
+export function Empty({icon,title,sub,children}) {
+  return <div className="empty"><div className="empty-icon">{icon}</div><div className="empty-title">{title}</div><div className="empty-sub">{sub}</div>{children}</div>;
 }
 export function FormError({error}) {
   if (!error) return null;
   return <div style={{color:"#DC2626",fontSize:11,marginTop:3,fontWeight:500}}>{error}</div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HELP TOOLTIP — inline ? icon with hover popover
+// Usage: <HelpTooltip text="This is what this field means" />
+// ═══════════════════════════════════════════════════════════════════
+export function HelpTooltip({ text, width = 240 }) {
+  const [show, setShow] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!show) return;
+    const close = e => { if (ref.current && !ref.current.contains(e.target)) setShow(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [show]);
+  return (
+    <span ref={ref} className="help-tooltip-wrap" style={{ position:"relative", display:"inline-flex", alignItems:"center", marginLeft:4 }}>
+      <button
+        type="button"
+        className="help-tooltip-trigger"
+        onClick={e => { e.stopPropagation(); setShow(s => !s); }}
+        aria-label="Help"
+      >
+        <HelpCircle size={13} />
+      </button>
+      {show && (
+        <div className="help-tooltip-pop" style={{ width }}>
+          <div className="help-tooltip-arrow" />
+          {text}
+        </div>
+      )}
+    </span>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PAGE TIP — dismissible contextual tip banner shown once per page
+// Usage: <PageTip id="leads-tip-1" icon={...} title="..." text="..." />
+// ═══════════════════════════════════════════════════════════════════
+const TIPS_KEY = "smartcrm_dismissed_tips";
+const getDismissed = () => { try { return JSON.parse(localStorage.getItem(TIPS_KEY) || "[]"); } catch { return []; } };
+const dismissTip   = id => {
+  const d = getDismissed();
+  if (!d.includes(id)) { localStorage.setItem(TIPS_KEY, JSON.stringify([...d, id])); }
+};
+
+export function PageTip({ id, title, text, link, linkLabel, onLink }) {
+  const [visible, setVisible] = useState(() => !getDismissed().includes(id));
+  if (!visible) return null;
+  return (
+    <div className="page-tip">
+      <Lightbulb size={16} className="page-tip-icon" />
+      <div className="page-tip-body">
+        {title && <span className="page-tip-title">{title} </span>}
+        <span className="page-tip-text">{text}</span>
+        {link && onLink && (
+          <button className="page-tip-link" onClick={onLink}>
+            {linkLabel || link} <ChevronRight size={11} />
+          </button>
+        )}
+      </div>
+      <button className="page-tip-close" onClick={() => { dismissTip(id); setVisible(false); }} aria-label="Dismiss tip">
+        <X size={13} />
+      </button>
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -254,12 +321,12 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
       <div className="form-row">
         <div className="form-group"><label>Call Type</label>
           <select value={form.callType} onChange={e => set("callType", e.target.value)}>
-            {callTypes.map(t => <option key={t}>{t}</option>)}
+            {callTypes.map(t => { const v = typeof t==="object"?t.name:t; return <option key={v} value={v}>{v}</option>; })}
           </select>
         </div>
         <div className="form-group"><label>Call Subject</label>
           <select value={form.objective} onChange={e => set("objective", e.target.value)}>
-            {callSubjects.map(o => <option key={o}>{o}</option>)}
+            {callSubjects.map(o => { const v = typeof o==="object"?o.name:o; return <option key={v} value={v}>{v}</option>; })}
           </select>
         </div>
       </div>
@@ -306,8 +373,8 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
           {filteredContacts.length === 0 && <div style={{ fontSize: 11, color: "var(--text3)", padding: 8, textAlign: "center" }}>No contacts</div>}
           {filteredContacts.map(c => (
             <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>
-              <input type="checkbox" checked={form.contactIds.includes(c.id)}
-                onChange={() => set("contactIds", form.contactIds.includes(c.id) ? form.contactIds.filter(x => x !== c.id) : [...form.contactIds, c.id])}
+              <input type="checkbox" checked={(form.contactIds||[]).includes(c.id)}
+                onChange={() => { const ids = form.contactIds||[]; set("contactIds", ids.includes(c.id) ? ids.filter(x => x !== c.id) : [...ids, c.id]); }}
                 style={{ accentColor: "var(--brand)" }} />
               {c.name}{c.designation ? ` (${c.designation})` : ""}
             </label>

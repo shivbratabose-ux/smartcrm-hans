@@ -143,7 +143,7 @@ function CalendarView({events,setEvents,accounts,contacts,opps,currentUser,orgUs
             {monthDays.map((d,i)=>{
               const isToday=d&&dateStr(d)===today;
               const dayEvents=d?eventsOn(d):[];
-              return <div key={i} style={{borderRight:i%7<6?"1px solid var(--border)":"none",borderBottom:"1px solid var(--border)",padding:4,minHeight:80,background:isToday?"var(--brand-bg)":"d"&&!d?"var(--s2)":"transparent",cursor:d?"pointer":"default"}} onClick={()=>d&&openAdd(dateStr(d))}>
+              return <div key={i} style={{borderRight:i%7<6?"1px solid var(--border)":"none",borderBottom:"1px solid var(--border)",padding:4,minHeight:80,background:isToday?"var(--brand-bg)":!d?"var(--s2)":"transparent",cursor:d?"pointer":"default"}} onClick={()=>d&&openAdd(dateStr(d))}>
                 {d&&<div style={{fontSize:12,fontWeight:isToday?800:400,color:isToday?"var(--brand)":"var(--text2)",marginBottom:2}}>{d.getDate()}</div>}
                 {dayEvents.slice(0,3).map(ev=>{
                   const col=TYPE_COL[ev.type]||"var(--text3)";

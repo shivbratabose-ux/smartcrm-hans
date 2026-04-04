@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Activity, TrendingUp, TrendingDown, AlertCircle, Plus, Calendar, ChevronDown, Users, Target, Phone, FileText, IndianRupee, Filter } from 'lucide-react';
 import { PRODUCTS, PROD_MAP, STAGES, STAGE_PROB, TEAM, TEAM_MAP } from '../data/constants';
 import { fmt, isFuture, isOverdue, today } from '../utils/helpers';
-import { StatusBadge, ProdTag, PriorityBadge, UserPill } from './shared';
+import { StatusBadge, ProdTag, PriorityBadge, UserPill, PageTip } from './shared';
 
 /* ── Date range helpers ── */
 const daysBetween = (d1, d2) => Math.round((new Date(d2) - new Date(d1)) / 864e5);
@@ -61,7 +61,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
   const fLeads = useMemo(() => (leads || []).filter(l => inRange(l.createdDate, range)), [leads, range]);
 
   // Deals that had activity in the period or were created/closed in the period
-  const fOpps = useMemo(() => opps.filter(o =>
+  const fOpps = useMemo(() => (opps||[]).filter(o =>
     inRange(o.closeDate, range) || fActivities.some(a => a.oppId === o.id || a.accountId === o.accountId)
   ), [opps, range, fActivities]);
 
@@ -272,6 +272,11 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
 
   return (
     <div>
+      <PageTip
+        id="dashboard-tip-v1"
+        title="Welcome to SmartCRM!"
+        text="This is your executive dashboard. Use the date range filter to change the view period. Click any stat card to navigate to the full module. Use Ctrl+1–9 for keyboard shortcuts."
+      />
       {/* ──── HEADER + DATE FILTER ──── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>

@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, UserPlus, ChevronDown, ChevronUp, ShieldCheck, X, Save, RotateCcw, Home, Warehouse, Upload, ChevronRight } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, UserPlus, ChevronDown, ChevronUp, ShieldCheck, X, Save, Home, Warehouse, Upload, ChevronRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate } from '../utils/helpers';
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty, InlineContactForm, LogCallModal } from './shared';
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -402,18 +402,18 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
   const productInfo = PROD_MAP[lead.product];
   const assignee = _teamMap[lead.assignedTo];
   const winProb = Math.min(Math.round(lead.score * 0.85 + 5), 99);
-  const dealValue = (lead.score * 0.5).toFixed(2);
+  const dealValue = lead.estimatedValue > 0 ? Number(lead.estimatedValue).toFixed(2) : (lead.score * 0.5).toFixed(2);
   const pipelineValue = (dealValue * winProb / 100).toFixed(2);
 
-  // ── Inline editing state ──
-  const [editing, setEditing] = useState(null);
-  const [editData, setEditData] = useState({});
-  const startEdit = (section) => { setEditing(section); setEditData({...lead}); };
-  const saveEdit = () => {
-    if (setLeads) setLeads(prev => prev.map(l => l.id === lead.id ? {...l, ...editData} : l));
-    setEditing(null); setEditData({});
+  // ── Per-field click-to-edit state ──
+  const [editingField, setEditingField] = useState(null);
+  const [fieldVal, setFieldVal] = useState("");
+  const startFieldEdit = (field) => { setEditingField(field); setFieldVal(lead[field] ?? ""); };
+  const saveFieldEdit = (field, val) => {
+    updateLead({ [field]: val !== undefined ? val : fieldVal });
+    setEditingField(null); setFieldVal("");
   };
-  const cancelEdit = () => { setEditing(null); setEditData({}); };
+  const cancelFieldEdit = () => { setEditingField(null); setFieldVal(""); };
   const updateLead = (patch) => {
     if (setLeads) setLeads(prev => prev.map(l => l.id === lead.id ? {...l, ...patch} : l));
   };
@@ -437,7 +437,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
   const TEAM_ROLES = ["Sales Owner","Account Manager","Pre-sales","Inside Sales","Support"];
 
   // ── Activities / Timeline ──
-  const leadActivities = (allActivities||[]).filter(a => a.accountId === lead.accountId || a.contactId === lead.contact || a.leadId === lead.id);
+  const leadActivities = (allActivities||[]).filter(a => a.accountId === lead.accountId || (lead.contactIds||[]).includes(a.contactId) || a.leadId === lead.id);
   const leadCalls = (callReports||[]).filter(cr => cr.accountId === lead.accountId || cr.leadId === lead.id);
   const combinedTimeline = [
     ...leadActivities.map(a => ({ type: "activity", date: a.date || a.createdDate || "", icon: <MessageSquare size={13}/>, title: a.title || a.type || "Activity", desc: a.notes || a.description || "", time: a.date || a.createdDate || "" })),
@@ -486,11 +486,19 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
   const [newTeamMember, setNewTeamMember] = useState({ userId: "", role: "Inside Sales" });
 
   // ── Documents ──
-  const documents = lead.documents || [
-    { name: `${lead.company}_Proposal.pdf`, size: "2.4 MB", date: lead.createdDate },
-    { name: `NDA_${lead.company}.docx`, size: "156 KB", date: lead.createdDate },
-    { name: `Meeting_Notes.pdf`, size: "890 KB", date: lead.nextCall || lead.createdDate },
-  ];
+  const documents = lead.documents || [];
+  const [showDocForm, setShowDocForm] = useState(false);
+  const [docForm, setDocForm] = useState({ name: "", url: "", type: "PDF" });
+  const saveDoc = () => {
+    if (!docForm.name?.trim()) return;
+    const newDoc = { id: `doc-${Date.now()}`, name: docForm.name.trim(), url: docForm.url.trim(), type: docForm.type, size: "—", date: today };
+    updateLead({ documents: [...documents, newDoc] });
+    setDocForm({ name: "", url: "", type: "PDF" });
+    setShowDocForm(false);
+  };
+  const deleteDoc = (docId) => {
+    updateLead({ documents: documents.filter(d => d.id !== docId) });
+  };
 
   // ── Tab definitions ──
   const TABS = [
@@ -503,39 +511,65 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
     ...(lead.stage !== "NA" ? [{ id: "convert", label: "Convert", icon: <ArrowRightCircle size={13}/> }] : []),
   ];
 
-  // ── Editable field helper ──
+  // ── Editable field helper — click any value to edit inline ──
   const editField = (label, field, type, options) => {
-    const isEditing = editing === "general";
-    const val = isEditing ? (editData[field] ?? "") : (lead[field] ?? "");
+    const isEditing = editingField === field;
+    const rawVal = lead[field] ?? "";
+    const iStyle = {fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid var(--brand)",width:"100%",boxSizing:"border-box",outline:"none"};
+
     if (!isEditing) {
-      let display = val;
-      if (field === "product") display = PROD_MAP[val]?.name || val;
-      else if (field === "stage") display = LEAD_STAGE_MAP[val]?.name || val;
-      else if (field === "assignedTo") display = _teamMap[val]?.name || val;
-      return infoRow(label, display || "\u2014");
+      let display = rawVal;
+      if (field === "product") display = PROD_MAP[rawVal]?.name || rawVal;
+      else if (field === "stage") display = LEAD_STAGE_MAP[rawVal]?.name || rawVal;
+      else if (field === "assignedTo") display = _teamMap[rawVal]?.name || rawVal;
+      else if (field === "estimatedValue") display = rawVal > 0 ? `₹${rawVal} L` : "— (auto from score)";
+      return (
+        <div onClick={() => startFieldEdit(field)} title="Click to edit"
+          style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--border)",cursor:"pointer",borderRadius:4,transition:"background 0.1s"}}
+          onMouseEnter={e=>e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+          <span style={{fontSize:12,color:"var(--text3)",fontWeight:500}}>{label}</span>
+          <div style={{display:"flex",alignItems:"center",gap:5}}>
+            <span style={{fontSize:12,color:"var(--text1)",fontWeight:600,textAlign:"right"}}>{display || "—"}</span>
+            <Edit2 size={10} style={{color:"var(--text3)",opacity:0.4,flexShrink:0}}/>
+          </div>
+        </div>
+      );
     }
-    const inputStyle = {fontSize:12,padding:"4px 8px",borderRadius:6,border:"1px solid var(--border)",width:"100%",boxSizing:"border-box"};
+
     let input;
     if (type === "select" && options) {
-      input = <select value={val} onChange={e => setEditData(d => ({...d, [field]: e.target.value}))} style={inputStyle}>
-        {options.map(o => <option key={typeof o === "object" ? o.id : o} value={typeof o === "object" ? o.id : o}>{typeof o === "object" ? o.name : o}</option>)}
+      input = <select autoFocus value={fieldVal} onChange={e => setFieldVal(e.target.value)}
+        onBlur={() => saveFieldEdit(field)} style={iStyle}>
+        {options.map(o => <option key={typeof o==="object"?o.id:o} value={typeof o==="object"?o.id:o}>{typeof o==="object"?o.name:o}</option>)}
       </select>;
     } else if (type === "date") {
-      input = <input type="date" value={val} onChange={e => setEditData(d => ({...d, [field]: e.target.value}))} style={inputStyle}/>;
+      input = <input type="date" autoFocus value={fieldVal} onChange={e => setFieldVal(e.target.value)}
+        onBlur={() => saveFieldEdit(field)} onKeyDown={e=>{if(e.key==="Escape")cancelFieldEdit();}} style={iStyle}/>;
     } else if (type === "range") {
       input = <div style={{display:"flex",alignItems:"center",gap:8}}>
-        <input type="range" min="0" max="100" value={val} onChange={e => setEditData(d => ({...d, [field]: +e.target.value}))} style={{flex:1}}/>
-        <span style={{fontSize:12,fontWeight:600,minWidth:28}}>{val}</span>
+        <input type="range" min="0" max="100" value={fieldVal} onChange={e => setFieldVal(+e.target.value)} style={{flex:1}}/>
+        <span style={{fontSize:12,fontWeight:600,minWidth:28}}>{fieldVal}</span>
+        <button onClick={()=>saveFieldEdit(field)} style={{fontSize:10,padding:"2px 8px",borderRadius:5,background:"var(--brand)",color:"white",border:"none",cursor:"pointer"}}>✓</button>
+        <button onClick={cancelFieldEdit} style={{fontSize:10,padding:"2px 8px",borderRadius:5,background:"var(--s2)",border:"none",cursor:"pointer"}}>✕</button>
       </div>;
     } else if (type === "textarea") {
-      input = <textarea value={val} onChange={e => setEditData(d => ({...d, [field]: e.target.value}))} rows={3} style={{...inputStyle,resize:"vertical"}}/>;
+      input = <textarea autoFocus value={fieldVal} onChange={e => setFieldVal(e.target.value)}
+        onBlur={() => saveFieldEdit(field)} rows={3} style={{...iStyle,resize:"vertical"}}/>;
+    } else if (type === "number") {
+      input = <input type="number" min="0" step="0.01" autoFocus value={fieldVal} onChange={e => setFieldVal(e.target.value)}
+        onBlur={() => saveFieldEdit(field, +fieldVal)}
+        onKeyDown={e=>{if(e.key==="Enter")saveFieldEdit(field, +fieldVal);if(e.key==="Escape")cancelFieldEdit();}}
+        style={iStyle}/>;
     } else {
-      input = <input value={val} onChange={e => setEditData(d => ({...d, [field]: e.target.value}))} style={inputStyle}/>;
+      input = <input autoFocus value={fieldVal} onChange={e => setFieldVal(e.target.value)}
+        onBlur={() => saveFieldEdit(field)}
+        onKeyDown={e=>{if(e.key==="Enter")saveFieldEdit(field);if(e.key==="Escape")cancelFieldEdit();}}
+        style={iStyle}/>;
     }
     return (
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid var(--border)",gap:12}}>
         <span style={{fontSize:12,color:"var(--text3)",fontWeight:500,minWidth:100,flexShrink:0}}>{label}</span>
-        <div style={{flex:1,maxWidth:"60%"}}>{input}</div>
+        <div style={{flex:1,maxWidth:"65%"}}>{input}</div>
       </div>
     );
   };
@@ -599,8 +633,9 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
             <button key={t.id} onClick={() => setActiveTab(t.id)}
               style={{display:"flex",alignItems:"center",gap:5,padding:"10px 16px",fontSize:12,fontWeight: activeTab === t.id ? 700 : 500,
                 color: activeTab === t.id ? "var(--brand,#1B6B5A)" : "var(--text3)",
+                borderTop:"none",borderLeft:"none",borderRight:"none",
                 borderBottom: activeTab === t.id ? "2px solid var(--brand,#1B6B5A)" : "2px solid transparent",
-                background:"none",border:"none",borderBottomStyle:"solid",cursor:"pointer",transition:"all 0.15s"}}>
+                background:"none",cursor:"pointer",transition:"all 0.15s"}}>
               {t.icon}{t.label}
             </button>
           ))}
@@ -677,7 +712,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 
             {/* KPI Metrics */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
-              {kpiCard(<TrendingUp size={15}/>, "Deal Value", `\u20B9${dealValue} L`, `Based on score: ${lead.score}`)}
+              {kpiCard(<TrendingUp size={15}/>, "Deal Value", `\u20B9${dealValue} L`, lead.estimatedValue > 0 ? "Manually set" : `Score-based (${lead.score})`)}
               {kpiCard(<Star size={15}/>, "Win Probability", `${winProb}%`, stageInfo?.name || lead.stage, "#3B82F6")}
               {kpiCard(<Briefcase size={15}/>, "Pipeline Value", `\u20B9${pipelineValue} L`, "Weighted value", "#8B5CF6")}
               {kpiCard(<Calendar size={15}/>, "Next Call", lead.nextCall ? fmt.short(lead.nextCall) : "\u2014", "Scheduled follow-up", "#F59E0B")}
@@ -685,18 +720,9 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 
             {/* General Information - Inline Editable */}
             <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
-              <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <Building2 size={15} style={{color:"var(--brand)"}}/> General Information
-                </div>
-                {editing === "general" ? (
-                  <div style={{display:"flex",gap:6}}>
-                    <button className="btn btn-sm btn-sec" style={{fontSize:10,padding:"3px 10px"}} onClick={cancelEdit}><RotateCcw size={11}/>Cancel</button>
-                    <button className="btn btn-sm btn-primary" style={{fontSize:10,padding:"3px 10px"}} onClick={saveEdit}><Save size={11}/>Save</button>
-                  </div>
-                ) : (
-                  <button className="btn btn-sm btn-sec" style={{fontSize:10,padding:"3px 10px"}} onClick={() => startEdit("general")}><Edit2 size={11}/>Edit</button>
-                )}
+              <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+                <Building2 size={15} style={{color:"var(--brand)"}}/> General Information
+                <span style={{fontSize:10,color:"var(--text3)",fontWeight:400}}>(click any field to edit)</span>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 24px"}}>
                 <div>
@@ -712,6 +738,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
                   {editField("Product Interest", "product", "select", PRODUCTS)}
                   {editField("Lead Source", "source", "select", LEAD_SOURCES.map(s => ({id:s, name:s})))}
                   {editField("Score", "score", "range")}
+                  {editField("Est. Value (₹L)", "estimatedValue", "number")}
                   {editField("Temperature", "temperature", "select", LEAD_TEMPERATURES.map(t => ({id:t, name:t})))}
                   {editField("Next Call Date", "nextCall", "date")}
                   {editField("Assigned To", "assignedTo", "select", _team)}
@@ -719,18 +746,28 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
                 </div>
               </div>
               {/* Notes section */}
-              {editing === "general" ? (
-                <div style={{marginTop:12}}>
-                  <label style={{fontSize:11,fontWeight:600,color:"var(--text3)"}}>NOTES</label>
-                  <textarea value={editData.notes || ""} onChange={e => setEditData(d => ({...d, notes: e.target.value}))} rows={3}
-                    style={{width:"100%",fontSize:12,padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",marginTop:4,resize:"vertical",boxSizing:"border-box"}}/>
-                </div>
-              ) : lead.notes ? (
-                <div style={{marginTop:12,padding:"10px 14px",background:"var(--s2,#F8FAFC)",borderRadius:8,border:"1px solid var(--border)"}}>
-                  <div style={{fontSize:11,fontWeight:600,color:"var(--text3)",marginBottom:4}}>NOTES</div>
-                  <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.5}}>{lead.notes}</div>
-                </div>
-              ) : null}
+              <div style={{marginTop:12}}>
+                <div style={{fontSize:11,fontWeight:600,color:"var(--text3)",marginBottom:4}}>NOTES</div>
+                {editingField === "notes" ? (
+                  <div>
+                    <textarea autoFocus value={fieldVal} onChange={e => setFieldVal(e.target.value)}
+                      onBlur={() => saveFieldEdit("notes")} rows={3}
+                      style={{width:"100%",fontSize:12,padding:"8px 12px",borderRadius:8,border:"1px solid var(--brand)",resize:"vertical",boxSizing:"border-box",outline:"none"}}/>
+                    <div style={{display:"flex",gap:6,marginTop:4,justifyContent:"flex-end"}}>
+                      <button onClick={cancelFieldEdit} className="btn btn-sm btn-sec" style={{fontSize:10}}>Cancel</button>
+                      <button onClick={() => saveFieldEdit("notes")} className="btn btn-sm btn-primary" style={{fontSize:10}}><Check size={11}/>Save</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div onClick={() => startFieldEdit("notes")} title="Click to edit notes"
+                    style={{padding:"10px 14px",background:"var(--s2,#F8FAFC)",borderRadius:8,border:"1px solid var(--border)",cursor:"pointer",minHeight:40,transition:"border-color 0.15s"}}
+                    onMouseEnter={e=>e.currentTarget.style.borderColor="var(--brand)"} onMouseLeave={e=>e.currentTarget.style.borderColor="var(--border)"}>
+                    {lead.notes
+                      ? <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.5}}>{lead.notes}</div>
+                      : <div style={{fontSize:12,color:"var(--text3)",fontStyle:"italic",display:"flex",alignItems:"center",gap:5}}><Edit2 size={11}/>Click to add notes...</div>}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Linked Account */}
@@ -1175,31 +1212,73 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
           {activeTab === "documents" && <>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
               <div style={{fontSize:14,fontWeight:700,color:"var(--text1)"}}>Documents ({documents.length})</div>
-              <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => {
-                /* placeholder for file upload */
-                alert("File upload integration pending. Connect to your file storage API.");
-              }}><Upload size={12}/>Upload File</button>
+              <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => setShowDocForm(v => !v)}>
+                <Upload size={12}/>Add Document
+              </button>
             </div>
+
+            {/* Add Document Form */}
+            {showDocForm && (
+              <div style={{background:"white",borderRadius:10,border:"1px solid var(--brand)",padding:"14px 16px",marginBottom:12}}>
+                <div style={{fontSize:12,fontWeight:700,color:"var(--text1)",marginBottom:10}}>Add Document</div>
+                <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8,marginBottom:8}}>
+                  <div>
+                    <label style={{fontSize:11,color:"var(--text3)"}}>Document Name *</label>
+                    <input value={docForm.name} onChange={e => setDocForm(f => ({...f, name: e.target.value}))}
+                      placeholder="e.g. Proposal_v2.pdf"
+                      style={{width:"100%",fontSize:12,padding:"6px 10px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box",marginTop:2}}/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,color:"var(--text3)"}}>Type</label>
+                    <select value={docForm.type} onChange={e => setDocForm(f => ({...f, type: e.target.value}))}
+                      style={{width:"100%",fontSize:12,padding:"6px 10px",borderRadius:6,border:"1px solid var(--border)",marginTop:2}}>
+                      {["PDF","Word","Excel","PPT","Image","Other"].map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{marginBottom:10}}>
+                  <label style={{fontSize:11,color:"var(--text3)"}}>URL / Link (optional)</label>
+                  <input value={docForm.url} onChange={e => setDocForm(f => ({...f, url: e.target.value}))}
+                    placeholder="https://..."
+                    style={{width:"100%",fontSize:12,padding:"6px 10px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box",marginTop:2}}/>
+                </div>
+                <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                  <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => { setShowDocForm(false); setDocForm({ name: "", url: "", type: "PDF" }); }}>Cancel</button>
+                  <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveDoc} disabled={!docForm.name?.trim()}><Check size={11}/>Add</button>
+                </div>
+              </div>
+            )}
+
             <div style={{background:"white",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
               {documents.map((d, i) => {
-                const extMap = { pdf: "#EF4444", docx: "#3B82F6", xlsx: "#22C55E", pptx: "#F59E0B", doc: "#3B82F6" };
-                const ext = d.name?.split(".").pop()?.toLowerCase() || "";
-                const iconColor = extMap[ext] || "#64748B";
+                const extMap = { pdf: "#EF4444", docx: "#3B82F6", xlsx: "#22C55E", pptx: "#F59E0B", doc: "#3B82F6", word: "#3B82F6", excel: "#22C55E", image: "#EC4899" };
+                const typeKey = (d.type || d.name?.split(".").pop() || "").toLowerCase();
+                const iconColor = extMap[typeKey] || "#64748B";
                 return (
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",borderBottom: i < documents.length - 1 ? "1px solid var(--border)" : "none"}}>
+                  <div key={d.id || i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",borderBottom: i < documents.length - 1 ? "1px solid var(--border)" : "none"}}>
                     <div style={{width:34,height:34,borderRadius:8,background:iconColor+"14",display:"flex",alignItems:"center",justifyContent:"center",color:iconColor,flexShrink:0}}>
                       <FileText size={15}/>
                     </div>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
-                      <div style={{fontSize:10,color:"var(--text3)"}}>{d.size} &middot; {fmt.short(d.date)}</div>
+                      {d.url
+                        ? <a href={d.url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,fontWeight:600,color:"var(--brand)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>{d.name}</a>
+                        : <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>}
+                      <div style={{fontSize:10,color:"var(--text3)"}}>{d.type || ""}{d.size && d.size !== "—" ? ` · ${d.size}` : ""}{d.date ? ` · ${fmt.short(d.date)}` : ""}</div>
                     </div>
-                    <Download size={14} style={{color:"var(--text3)",cursor:"pointer",flexShrink:0}}/>
+                    <div style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
+                      {d.url && <a href={d.url} target="_blank" rel="noopener noreferrer"><Download size={14} style={{color:"var(--text3)",cursor:"pointer"}}/></a>}
+                      <button onClick={() => deleteDoc(d.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--red,#EF4444)",padding:2,display:"flex",alignItems:"center"}} title="Delete document">
+                        <X size={13}/>
+                      </button>
+                    </div>
                   </div>
                 );
               })}
-              {documents.length === 0 && (
-                <div style={{textAlign:"center",padding:40,color:"var(--text3)",fontSize:12}}>No documents yet.</div>
+              {documents.length === 0 && !showDocForm && (
+                <div style={{textAlign:"center",padding:40,color:"var(--text3)",fontSize:12}}>
+                  <Paperclip size={28} style={{opacity:0.3,marginBottom:8,display:"block",margin:"0 auto 8px"}}/>
+                  No documents yet. Click "Add Document" to attach links or files.
+                </div>
               )}
             </div>
           </>}
@@ -1546,6 +1625,11 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
 
   return (
     <div>
+      <PageTip
+        id="leads-tip-v1"
+        title="Leads module:"
+        text="Click any row to open a lead. All fields are editable inline — click any value to change it. Use the Convert tab to push a qualified lead into the Pipeline."
+      />
       <div className="pg-head">
         <div>
           <div className="pg-title">Leads</div>
