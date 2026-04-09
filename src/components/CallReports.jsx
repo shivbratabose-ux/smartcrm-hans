@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Phone, Mail, Video, MessageSquare, Globe, MapPin, Calendar, Clock, AlertCircle } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, LEAD_STAGES, LEAD_STAGE_MAP } from '../data/constants';
 import { BLANK_CALL_REPORT } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, getScopedUserIds } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
@@ -42,7 +42,11 @@ const CSV_COLS = [
 ];
 
 function CallReports({ callReports, setCallReports, accounts, contacts, opps, currentUser, orgUsers }) {
-  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+  const _crScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
+  const team = useMemo(() => {
+    const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+    return all.filter(u => _crScopedIds.has(u.id));
+  }, [orgUsers, _crScopedIds]);
   const [search, setSearch] = useState("");
   const [typeF, setTypeF] = useState("All");
   const [tabS, setTabS] = useState("All");

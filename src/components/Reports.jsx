@@ -85,7 +85,7 @@ const Progress = ({value,max,color,height=6}) => (
 );
 
 /* ═══════════════════════════════════════════════════════════════ */
-function Reports({accounts,opps,tickets,activities,leads,callReports,collections,targets,contacts,contracts,quotes,currentUser}) {
+function Reports({accounts,opps,tickets,activities,leads,callReports,collections,targets,contacts,contracts,quotes,currentUser,orgUsers}) {
   const [tab,setTab]=useState("executive");
   const [periodFilter,setPeriodFilter]=useState("all");
   const [ownerFilter,setOwnerFilter]=useState("all");
@@ -211,14 +211,17 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   })).filter(p=>p.arr+p.pipeline+p.won>0),[accounts,ownerOpps]);
 
   // ── Team Performance ──
-  const teamPerf = useMemo(()=>TEAM.map(u=>{
+  // Use orgUsers (live) instead of the static TEAM constant so dynamically added users appear.
+  const _reportTeam = useMemo(() => (orgUsers?.length ? orgUsers.filter(u => u.active !== false) : TEAM), [orgUsers]);
+  const teamPerf = useMemo(()=>_reportTeam.map(u=>{
     const userOpps = opps.filter(o=>o.owner===u.id);
     const active = userOpps.filter(o=>!["Won","Lost"].includes(o.stage));
     const won = userOpps.filter(o=>o.stage==="Won");
     const lost = userOpps.filter(o=>o.stage==="Lost");
     const userActs = activities.filter(a=>a.owner===u.id);
     const userCalls = (callReports||[]).filter(r=>r.marketingPerson===u.id);
-    const userLeads = (leads||[]).filter(l=>l.owner===u.id);
+    // leads use assignedTo, not owner
+    const userLeads = (leads||[]).filter(l=>l.assignedTo===u.id);
     const userTargets = (targets||[]).filter(t=>t.userId===u.id&&t.period==="2026-Q1");
     const targetVal = userTargets.reduce((s,t)=>s+t.targetValue,0);
     const achievedVal = userTargets.reduce((s,t)=>s+t.achievedValue,0);
@@ -233,7 +236,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
       winRate:wr, calls:userCalls.length, activities:userActs.length, leads:userLeads.length,
       targetVal, achievedVal, targetPct:pct(achievedVal,targetVal), actScore
     };
-  }).filter(u=>u.activeDeals>0||u.wonDeals>0||u.calls>0||u.activities>0),[opps,activities,callReports,leads,targets]);
+  }).filter(u=>u.activeDeals>0||u.wonDeals>0||u.calls>0||u.activities>0),[_reportTeam,opps,activities,callReports,leads,targets]);
 
   // ── Lead Analytics ──
   const leadData = useMemo(()=>{
