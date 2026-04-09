@@ -76,7 +76,7 @@ const clearSession = () => {
 // Backfills missing fields introduced in later schema versions
 // Bump DATA_VERSION whenever seed/schema changes to force a reset
 // ═══════════════════════════════════════════════════════════════════
-const DATA_VERSION = "v7";
+const DATA_VERSION = "v8";
 
 function migrateState(raw) {
   if (!raw) return null;
