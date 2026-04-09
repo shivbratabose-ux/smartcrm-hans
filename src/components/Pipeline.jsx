@@ -17,7 +17,7 @@ import {
   CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
-import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue } from "../utils/helpers";
+import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds } from "../utils/helpers";
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip } from "./shared";
 
 /* ───────── constants ───────── */
@@ -492,7 +492,11 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
 function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, onDealWon }) {
-  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+  const _pipelineScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
+  const team = useMemo(() => {
+    const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+    return all.filter(u => _pipelineScopedIds.has(u.id));
+  }, [orgUsers, _pipelineScopedIds]);
   const [view, setView] = useState("kanban");
   const [prodF, setProdF] = useState("All");
   const [ownerF, setOwnerF] = useState("All");

@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
@@ -1371,7 +1371,13 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════════════════
 function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters }) {
-  const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+  // Scope the team list to only users this logged-in user has visibility over.
+  // This keeps owner filter and assignment dropdowns consistent with the scoped data.
+  const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
+  const team = useMemo(() => {
+    const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+    return all.filter(u => _scopedIds.has(u.id));
+  }, [orgUsers, _scopedIds]);
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
 
   // Auto-generate leadId for bulk-uploaded leads that are missing one, and coerce score to number

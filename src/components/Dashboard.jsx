@@ -48,7 +48,7 @@ const FUNNEL_STAGES = ["Prospect", "Qualification", "Proposal", "Negotiation", "
 const FUNNEL_COLORS = { Prospect: "#94A3B8", Qualification: "#3B82F6", Proposal: "#F59E0B", Negotiation: "#7C3AED", Won: "#22C55E" };
 
 /* ── Component ── */
-function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callReports, collections, targets, setPage }) {
+function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callReports, collections, targets, setPage, orgUsers }) {
   const [rangeKey, setRangeKey] = useState("30d");
   const [showRangeMenu, setShowRangeMenu] = useState(false);
 
@@ -233,7 +233,11 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
   const topDeals = [...opps].filter(o => !["Won", "Lost"].includes(o.stage)).sort((a, b) => b.value - a.value).slice(0, 5);
 
   // ─── Team performance ───
-  const teamPerf = TEAM.filter(t => t.role !== "Tech Lead" && t.role !== "Support Engr").slice(0, 4).map(t => {
+  // Use live orgUsers (falling back to static TEAM constant) so dynamically added users appear.
+  const _dashTeam = (orgUsers?.length ? orgUsers.filter(u => u.active !== false) : TEAM)
+    .filter(t => !["tech_lead", "Tech Lead", "support", "Support Engr"].includes(t.role))
+    .slice(0, 4);
+  const teamPerf = _dashTeam.map(t => {
     const memberTargets = currentTargets.filter(ct => ct.owner === t.id);
     const achieved = memberTargets.reduce((s, ct) => s + ct.achievedValue, 0);
     const target = memberTargets.reduce((s, ct) => s + ct.targetValue, 0);

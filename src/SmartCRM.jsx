@@ -9,7 +9,7 @@ import {
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, INIT_UPDATES
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole } from "./utils/helpers";
 import { CSS } from "./styles";
 
 // Supabase integration
@@ -246,6 +246,33 @@ export default function SmartCRM() {
       return (u.readStatus || {})[currentUser] !== "read";
     }).length;
   }, [updates, currentUser, orgUsers]);
+
+  // ── Role-scoped data visibility ──
+  // Computes the set of user IDs whose records the current user may see.
+  // High-privilege roles (admin/md/director/bd_lead) receive the full dataset.
+  // line_mgr  → department peers; country_mgr → branch peers; others → self only.
+  const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
+  const _globalRole = useMemo(() => isGlobalRole(currentUser, orgUsers), [currentUser, orgUsers]);
+
+  const visibleLeads = useMemo(() => {
+    if (_globalRole) return leads;
+    return leads.filter(l => !l.assignedTo || _scopedIds.has(l.assignedTo));
+  }, [leads, _scopedIds, _globalRole]);
+
+  const visibleOpps = useMemo(() => {
+    if (_globalRole) return opps;
+    return opps.filter(o => !o.owner || _scopedIds.has(o.owner));
+  }, [opps, _scopedIds, _globalRole]);
+
+  const visibleActivities = useMemo(() => {
+    if (_globalRole) return activities;
+    return activities.filter(a => !a.owner || _scopedIds.has(a.owner));
+  }, [activities, _scopedIds, _globalRole]);
+
+  const visibleCallReports = useMemo(() => {
+    if (_globalRole) return callReports;
+    return callReports.filter(cr => !cr.marketingPerson || _scopedIds.has(cr.marketingPerson));
+  }, [callReports, _scopedIds, _globalRole]);
 
   // ── Session: persist login & track idle timeout ──
   const login = useCallback((userId) => { setCurrentUser(userId); saveSession(userId); }, []);
@@ -692,25 +719,25 @@ export default function SmartCRM() {
       <style dangerouslySetInnerHTML={{__html:CSS}}/>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={tickets} leads={leads} collections={collections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount}/>
+        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={tickets} leads={visibleLeads} collections={collections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount}/>
         <div className="main">
-          <Header page={page} accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={updates} myUnreadCount={myUnreadCount}/>
+          <Header page={page} accounts={accounts} contacts={contacts} opps={visibleOpps} tickets={tickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={updates} myUnreadCount={myUnreadCount}/>
           <div className="content" id="main-content" role="main">
-            {page==="dashboard"  && <Dashboard accounts={accounts} contacts={contacts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} setPage={setPage}/>}
-            {page==="leads"      && <Leads leads={leads} setLeads={setLeads} accounts={accounts} contacts={contacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={activities} setActivities={setActivities} callReports={callReports} setCallReports={setCallReports} masters={masters}/>}
-            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={opps} activities={activities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} setContacts={setContacts} tickets={tickets} contracts={contracts} collections={collections} leads={leads} orgUsers={orgUsers} callReports={callReports} setCallReports={setCallReports} masters={masters}/>}
-            {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={opps} activities={activities}/>}
-            {page==="pipeline"   && <Pipeline opps={opps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} setContacts={setContacts} leads={leads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={activities} setActivities={setActivities} callReports={callReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} onDealWon={handleDealWon}/>}
-            {page==="activities" && <Activities activities={activities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers}/>}
-            {page==="callreports"&& <CallReports callReports={callReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} orgUsers={orgUsers}/>}
+            {page==="dashboard"  && <Dashboard accounts={accounts} contacts={contacts} opps={visibleOpps} tickets={tickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={collections} targets={targets} setPage={setPage} orgUsers={orgUsers}/>}
+            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={accounts} contacts={contacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters}/>}
+            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} setContacts={setContacts} tickets={tickets} contracts={contracts} collections={collections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters}/>}
+            {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={visibleOpps} activities={visibleActivities}/>}
+            {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} onDealWon={handleDealWon}/>}
+            {page==="activities" && <Activities activities={visibleActivities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={visibleOpps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers}/>}
+            {page==="callreports"&& <CallReports callReports={visibleCallReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="tickets"    && <Tickets tickets={tickets} setTickets={setTickets} accounts={accounts} orgUsers={orgUsers}/>}
-            {page==="contracts"  && <Contracts contracts={contracts} setContracts={setContracts} accounts={accounts} opps={opps} currentUser={currentUser} orgUsers={orgUsers}/>}
+            {page==="contracts"  && <Contracts contracts={contracts} setContracts={setContracts} accounts={accounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="collections"&& <Collections collections={collections} setCollections={setCollections} accounts={accounts} contracts={contracts} currentUser={currentUser} orgUsers={orgUsers}/>}
-            {page==="quotations" && <Quotations quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} orgUsers={orgUsers}/>}
-            {page==="calendar"   && <CalendarView events={events} setEvents={setEvents} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser} orgUsers={orgUsers}/>}
-            {page==="communications"&& <CommLog commLogs={commLogs} setCommLogs={setCommLogs} accounts={accounts} contacts={contacts} opps={opps} currentUser={currentUser}/>}
+            {page==="quotations" && <Quotations quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers}/>}
+            {page==="calendar"   && <CalendarView events={events} setEvents={setEvents} accounts={accounts} contacts={contacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers}/>}
+            {page==="communications"&& <CommLog commLogs={commLogs} setCommLogs={setCommLogs} accounts={accounts} contacts={contacts} opps={visibleOpps} currentUser={currentUser}/>}
             {page==="targets"    && <Targets targets={targets} setTargets={setTargets} currentUser={currentUser}/>}
-            {page==="reports"    && <Reports accounts={accounts} opps={opps} tickets={tickets} activities={activities} leads={leads} callReports={callReports} collections={collections} targets={targets} contacts={contacts} contracts={contracts} quotes={quotes} currentUser={currentUser}/>}
+            {page==="reports"    && <Reports accounts={accounts} opps={visibleOpps} tickets={tickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={collections} targets={targets} contacts={contacts} contracts={contracts} quotes={quotes} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="updates"    && <Updates updates={updates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
@@ -720,7 +747,7 @@ export default function SmartCRM() {
             {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/>}
           </div>
         </div>
-        <QuickLogFAB accounts={accounts} contacts={contacts} opps={opps} leads={leads} orgUsers={orgUsers} currentUser={currentUser} callReports={callReports} setCallReports={setCallReports} activities={activities} setActivities={setActivities} masters={masters}/>
+        <QuickLogFAB accounts={accounts} contacts={contacts} opps={visibleOpps} leads={visibleLeads} orgUsers={orgUsers} currentUser={currentUser} callReports={visibleCallReports} setCallReports={setCallReports} activities={visibleActivities} setActivities={setActivities} masters={masters}/>
         {/* Floating Help Button — always visible, bottom-left */}
         {page !== "help" && (
           <button className="help-fab" onClick={() => setPage("help")} title="Open Help & User Guide">

@@ -118,6 +118,39 @@ export function validateStageGate(lead, targetStage, stageGates) {
   return { canAdvance: failed.length === 0, passed, failed, label: gate.label };
 }
 
+// ── Hierarchy-based data scoping ──
+// Returns the Set of user IDs whose records the given user is allowed to see.
+// Rule:
+//   admin / md / director / bd_lead  → all users (global scope)
+//   line_mgr                         → users in the same department (deptId)
+//   country_mgr                      → users in the same branch (branchId)
+//   everyone else                    → only themselves
+export const getScopedUserIds = (currentUserId, orgUsers) => {
+  const allUsers = orgUsers || [];
+  const user = allUsers.find(u => u.id === currentUserId);
+  if (!user) return new Set([currentUserId]);
+
+  const { role, deptId, branchId } = user;
+
+  if (["admin", "md", "director", "bd_lead"].includes(role)) {
+    return new Set(allUsers.map(u => u.id));
+  }
+  if (role === "line_mgr") {
+    return new Set(allUsers.filter(u => u.deptId === deptId).map(u => u.id));
+  }
+  if (role === "country_mgr") {
+    return new Set(allUsers.filter(u => u.branchId === branchId).map(u => u.id));
+  }
+  // sales_exec, tech_lead, support, viewer → own data only
+  return new Set([currentUserId]);
+};
+
+// Returns true if the role has unrestricted global data access
+export const isGlobalRole = (userId, orgUsers) => {
+  const user = (orgUsers || []).find(u => u.id === userId);
+  return !user || ["admin", "md", "director", "bd_lead"].includes(user.role);
+};
+
 export const canAccess = (userId, module, orgUsers, customPermissions) => {
   const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
   if(!u) return false;
