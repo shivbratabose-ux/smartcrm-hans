@@ -1661,20 +1661,22 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,flexWrap:"wrap"}}>
         <Calendar size={14} style={{color:"var(--text3)",marginRight:2}}/>
         {RANGE_PRESETS.filter(p => p.key !== "custom").map(p => (
-          <button key={p.key} className={`btn btn-sm ${rangeKey === p.key ? "btn-primary" : "btn-sec"}`}
-            style={{fontSize:11,padding:"4px 10px",borderRadius:6}} onClick={() => setRangeKey(p.key)}>
+          <button key={p.key}
+            style={{fontSize:11,padding:"5px 12px",borderRadius:6,cursor:"pointer",fontWeight:600,border:rangeKey===p.key?"none":"1.5px solid #CBD5E1",background:rangeKey===p.key?"#1B6B5A":"#fff",color:rangeKey===p.key?"#fff":"#334155",transition:"all 0.15s",whiteSpace:"nowrap"}}
+            onClick={() => setRangeKey(p.key)}>
             {p.label}
           </button>
         ))}
-        <button className={`btn btn-sm ${rangeKey === "custom" ? "btn-primary" : "btn-sec"}`}
-          style={{fontSize:11,padding:"4px 10px",borderRadius:6}} onClick={() => setRangeKey("custom")}>
+        <button
+          style={{fontSize:11,padding:"5px 12px",borderRadius:6,cursor:"pointer",fontWeight:600,border:rangeKey==="custom"?"none":"1.5px solid #CBD5E1",background:rangeKey==="custom"?"#1B6B5A":"#fff",color:rangeKey==="custom"?"#fff":"#334155",transition:"all 0.15s",whiteSpace:"nowrap"}}
+          onClick={() => setRangeKey("custom")}>
           Custom
         </button>
         {rangeKey === "custom" && (
           <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:4}}>
-            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{fontSize:11,padding:"3px 6px",borderRadius:4,border:"1px solid var(--border)"}}/>
-            <span style={{fontSize:11,color:"var(--text3)"}}>to</span>
-            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={{fontSize:11,padding:"3px 6px",borderRadius:4,border:"1px solid var(--border)"}}/>
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{fontSize:11,padding:"4px 8px",borderRadius:4,border:"1.5px solid #CBD5E1"}}/>
+            <span style={{fontSize:11,color:"#64748B"}}>to</span>
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={{fontSize:11,padding:"4px 8px",borderRadius:4,border:"1.5px solid #CBD5E1"}}/>
           </div>
         )}
       </div>
