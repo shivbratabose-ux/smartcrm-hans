@@ -43,6 +43,7 @@ const validateLead = (f) => {
   if (!f.contact?.trim()) errs.contact = "Contact name is required";
   if (f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) errs.email = "Invalid email format";
   if (f.stage !== "NA" && !f.nextCall) errs.nextCall = "Next call date is required for active leads";
+  if (!f.source?.trim()) errs.source = "Lead source is required";
   if (f.score < 0 || f.score > 100) errs.score = "Score must be between 0 and 100";
   return errs;
 };
@@ -1427,6 +1428,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [customTo, setCustomTo] = useState(today);
   const [sortCol, setSortCol] = useState("createdDate");
   const [sortDir, setSortDir] = useState("desc");
+  const [overdueOnly, setOverdueOnly] = useState(false); // true → show only overdue follow-up leads
   const [callLogModal, setCallLogModal] = useState(null); // prefill object when open
   const [showFormInlineContact, setShowFormInlineContact] = useState(null); // null=hidden, false=show existing dropdown, true=show new form
 
@@ -1443,6 +1445,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   };
 
   const filtered = useMemo(() => [...leads].filter(l => {
+    if (overdueOnly && !(l.nextCall && l.nextCall < today && l.stage !== "NA")) return false;
     if (rangeKey !== "all" && !inRange(l.createdDate, range)) return false;
     if (productF !== "All" && l.product !== productF) return false;
     if (stageF !== "All" && l.stage !== stageF) return false;
@@ -1457,7 +1460,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     else if (sortCol === "nextCall" || sortCol === "createdDate") v = (a[sortCol] || "").localeCompare(b[sortCol] || "");
     else v = cmp(a, b, sortCol);
     return sortDir === "desc" ? -v : v;
-  }), [leads, productF, stageF, sourceF, ownerF, search, range, rangeKey, sortCol, sortDir]);
+  }), [leads, productF, stageF, sourceF, ownerF, search, range, rangeKey, sortCol, sortDir, overdueOnly]);
 
   const bulk = useBulkSelect(filtered);
   const pg = usePagination(filtered);
@@ -1647,7 +1650,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           </div>
         </div>
         <div className="pg-actions">
-          {overdueLeads > 0 && <span style={{background:"var(--red-bg)",color:"var(--red-t)",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,display:"flex",alignItems:"center",gap:4}}><AlertTriangle size={12}/>{overdueLeads} overdue</span>}
+          {overdueLeads > 0 && <button onClick={() => setOverdueOnly(v => !v)} style={{background:overdueOnly?"#DC2626":"var(--red-bg)",color:overdueOnly?"#fff":"var(--red-t)",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,display:"flex",alignItems:"center",gap:4,border:"none",cursor:"pointer",transition:"all 0.15s"}} title={overdueOnly ? "Click to show all leads" : "Click to filter overdue only"}><AlertTriangle size={12}/>{overdueOnly ? `Showing ${overdueLeads} overdue` : `${overdueLeads} overdue`}</button>}
           <button className="btn btn-sec" onClick={() => exportCSV(filtered, CSV_COLS, "leads")}>
             <Download size={14}/>Export
           </button>
@@ -1703,10 +1706,10 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>{salCount}</div>
           <div style={{fontSize:11,opacity:0.7}}>SAL ready to convert</div>
         </div>
-        <div style={{background: overdueLeads > 0 ? "#DC2626" : "#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
-          <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>FOLLOW-UPS</div>
+        <div onClick={() => overdueLeads > 0 && setOverdueOnly(v => !v)} style={{background: overdueOnly ? "#7F1D1D" : overdueLeads > 0 ? "#DC2626" : "#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white",cursor:overdueLeads > 0 ? "pointer" : "default",transition:"all 0.15s",outline:overdueOnly?"2px solid #FCA5A5":"none"}}>
+          <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>{overdueOnly ? "FILTERED: OVERDUE" : "FOLLOW-UPS"}</div>
           <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>{overdueLeads}</div>
-          <div style={{fontSize:11,opacity:0.7}}>{overdueLeads > 0 ? "Overdue – act now!" : "All on track"}</div>
+          <div style={{fontSize:11,opacity:0.7}}>{overdueOnly ? "Click to show all" : overdueLeads > 0 ? "Overdue – click to filter!" : "All on track"}</div>
         </div>
       </div>
 
@@ -1906,9 +1909,9 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 <div style={{fontSize:18,fontWeight:800,color: hotLeads > 0 ? "#1B6B5A" : "var(--text1)"}}>{hotLeads}</div>
                 <div style={{fontSize:9,color:"var(--text3)",fontWeight:600,textTransform:"uppercase"}}>Hot Leads</div>
               </div>
-              <div style={{background: overdueLeads > 0 ? "#FEF2F2" : "var(--s2)",borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
-                <div style={{fontSize:18,fontWeight:800,color: overdueLeads > 0 ? "#DC2626" : "var(--text1)"}}>{overdueLeads}</div>
-                <div style={{fontSize:9,color: overdueLeads > 0 ? "#DC2626" : "var(--text3)",fontWeight:600,textTransform:"uppercase"}}>Overdue</div>
+              <div onClick={() => overdueLeads > 0 && setOverdueOnly(v => !v)} style={{background: overdueOnly ? "#DC2626" : overdueLeads > 0 ? "#FEF2F2" : "var(--s2)",borderRadius:8,padding:"8px 10px",textAlign:"center",cursor:overdueLeads > 0 ? "pointer" : "default",transition:"all 0.15s"}}>
+                <div style={{fontSize:18,fontWeight:800,color: overdueOnly ? "#fff" : overdueLeads > 0 ? "#DC2626" : "var(--text1)"}}>{overdueLeads}</div>
+                <div style={{fontSize:9,color: overdueOnly ? "#FCA5A5" : overdueLeads > 0 ? "#DC2626" : "var(--text3)",fontWeight:600,textTransform:"uppercase"}}>{overdueOnly ? "Filtered" : "Overdue"}</div>
               </div>
             </div>
 
@@ -2172,7 +2175,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           {/* ── F. NEXT STEPS & QUALIFICATION ── */}
           <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:16,paddingTop:12,borderTop:"1px solid var(--border)"}}>F. Next Steps & Qualification</div>
           <div className="form-row">
-            <div className="form-group"><label>Source</label><select value={form.source} onChange={e => setForm(f => ({...f, source:e.target.value}))}>{LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}</select></div>
+            <div className="form-group"><label>Source <span style={{color:"#EF4444"}}>*</span></label><select value={form.source} onChange={e => setForm(f => ({...f, source:e.target.value}))}><option value="">Select Source</option>{LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}</select><FormError msg={formErrors.source}/></div>
             <div className="form-group"><label>Next Step</label><select value={form.nextStep||""} onChange={e => setForm(f => ({...f, nextStep:e.target.value}))}><option value="">Select</option>{NEXT_STEPS.map(s => <option key={s}>{s}</option>)}</select></div>
           </div>
           <div className="form-row">
