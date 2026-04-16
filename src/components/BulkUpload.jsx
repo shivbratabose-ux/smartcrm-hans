@@ -43,13 +43,19 @@ const SCHEMAS = {
     optional:  [
       "accountNo","city","address","website","segment","status",
       "hierarchyLevel","parentId","products","arrRevenue","potential","owner",
+      "state","pincode","legalName","pan","gstin","cin","taxTreatment","tdsApplicable","poMandatory",
+      "billingAddress","billingCity","billingState","billingPincode","billingCountry",
+      "primaryContact","primaryEmail","primaryPhone",
+      "billingContactName","billingContactEmail","financeContactEmail",
+      "paymentTerms","creditDays","currency","billingFrequency",
+      "entityType","groupCode","territory",
     ],
     // Headers match Accounts export exactly — export CSV → edit in Excel → re-upload to UPDATE
     sample: [
-      "accountNo,name,type,country,city,address,website,segment,status,hierarchyLevel,parentId,products,arrRevenue,potential,owner",
-      "ACC-2026-001,Acme Airlines,Airline,India,Mumbai,Andheri East Mumbai 400069,acme.com,Enterprise,Active,Parent Company,,iCAFFE;WiseCargo,10,50,",
-      "ACC-2026-002,Delta Freight,Freight Forwarder,UAE,Dubai,,betafreight.ae,Mid-Market,Active,Parent Company,,WiseTrax,5,20,",
-      ",Beta Logistics,Customs Broker,India,Delhi,,beta.in,SMB,Prospect,Parent Company,,iCAFFE,0,15,",
+      "accountNo,name,type,country,city,state,pincode,address,legalName,pan,gstin,taxTreatment,website,segment,status,entityType,groupCode,paymentTerms,currency,billingFrequency,products,arrRevenue,potential,owner",
+      "ACC-2026-001,Acme Airlines,Airline,India,Mumbai,Maharashtra,400069,Andheri East Mumbai 400069,Acme Airlines Pvt Ltd,AAAAA1234A,27AAAAA1234A1Z5,Domestic,acme.com,Enterprise,Active,Head Office,GRP-ACM,Net 30,INR,Annual,iCAFFE;WiseCargo,10,50,",
+      "ACC-2026-002,Delta Freight,Freight Forwarder,UAE,Dubai,,,,,,,Export,betafreight.ae,Mid-Market,Active,Head Office,,Net 45,AED,Quarterly,WiseTrax,5,20,",
+      ",Beta Logistics,Customs Broker,India,Delhi,Delhi,110001,,Beta Logistics Pvt Ltd,BBBBB5678B,,Domestic,beta.in,SMB,Prospect,Head Office,,Net 30,INR,Annual,iCAFFE,0,15,",
     ].join("\n"),
     validate: (row) => {
       const e = [];

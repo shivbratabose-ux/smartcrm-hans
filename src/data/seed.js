@@ -123,7 +123,7 @@ export const INIT_MASTERS = {
 };
 
 // ── Blank form templates ──
-export const BLANK_ACC={name:"",type:"Airline",country:"India",city:"",website:"",segment:"Enterprise",status:"Prospect",products:[],owner:"u1",arrRevenue:0,potential:0,parentId:"",hierarchyLevel:"Parent Company",hierarchyPath:"",address:"",accountNo:""};
+export const BLANK_ACC={name:"",type:"Airline",country:"India",city:"",website:"",segment:"Enterprise",status:"Prospect",products:[],owner:"u1",arrRevenue:0,potential:0,parentId:"",hierarchyLevel:"Parent Company",hierarchyPath:"",address:"",accountNo:"",state:"",pincode:"",legalName:"",pan:"",gstin:"",cin:"",taxTreatment:"Domestic",tdsApplicable:"No",poMandatory:"No",billingAddress:"",billingCity:"",billingState:"",billingPincode:"",billingCountry:"",primaryContact:"",primaryEmail:"",primaryPhone:"",billingContactName:"",billingContactEmail:"",financeContactEmail:"",paymentTerms:"Net 30",creditDays:30,currency:"INR",billingFrequency:"Annual",entityType:"Head Office",groupCode:"",territory:""};
 export const BLANK_CON={name:"",role:"",email:"",phone:"",accountId:"",primary:false,contactId:"",designation:"",department:"",departments:[],products:[],branches:[],countries:[],linkedOpps:[]};
 export const BLANK_OPP={title:"",accountId:"",products:[],stage:"Prospect",value:0,probability:10,owner:"u1",closeDate:"",country:"India",notes:"",source:"New Lead",primaryContactId:"",secondaryContactIds:[],hierarchyLevel:"Parent Company",leadId:"",contactRoles:[],sourceLeadIds:[],lob:""};
 export const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
