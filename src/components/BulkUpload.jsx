@@ -1,61 +1,164 @@
-import { useState } from "react";
-import { Upload, Download, FileText, Check, AlertCircle, X, RefreshCw } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Upload, Download, Check, AlertCircle, RefreshCw, ArrowUpCircle, PlusCircle, Info } from "lucide-react";
 import { UPLOAD_TYPES } from '../data/constants';
 import { uid } from '../utils/helpers';
-import { Empty, Modal, PageTip } from './shared';
+import { Empty, PageTip } from './shared';
+
+// ─── Schemas ─────────────────────────────────────────────────────────────────
+// refKey   → field used to match an EXISTING record (UPDATE path)
+// uniqueKey→ field used for within-file duplicate detection
+// If a row's refKey value matches an existing record, it becomes an UPDATE.
+// If no match, it becomes a fresh INSERT.
 
 const SCHEMAS = {
   Leads: {
-    mandatory: ["company","contact","email","product","vertical","source","stage"],
-    optional: ["phone","region","assignedTo","notes","nextCall","score"],
-    sample: "company,contact,email,phone,product,vertical,region,source,stage,assignedTo,notes,nextCall,score\nAcme Corp,John Doe,john@acme.com,+91-98765-00001,iCAFFE,CHA,South Asia,Direct Sales,MQL,u1,Initial inquiry,2026-04-01,50",
+    refKey:    "leadId",   // e.g. #FL-2026-001  — leave blank for new leads
     uniqueKey: "email",
-    validate: (row) => { const errs=[]; if(!row.company) errs.push("Company required"); if(!row.contact) errs.push("Contact required"); if(!row.email) errs.push("Email required"); return errs; },
+    mandatory: ["company","email","product","source","stage"],
+    optional:  [
+      "leadId","contactName","phone","designation","vertical","region",
+      "assignedTo","notes","nextCall","score","temperature",
+      "noOfUsers","businessType","budgetRange","nextStep","objections",
+    ],
+    sample: [
+      "leadId,company,contactName,email,phone,product,vertical,region,source,stage,assignedTo,score,nextCall",
+      "#FL-2026-001,Acme Corp,John Doe,john@acme.com,+91-98765-00001,iCAFFE,CHA,South Asia,Inside Sales,MQL,,50,2026-04-30",
+      ",Beta Logistics,Jane Roe,jane@beta.com,+91-98765-00002,WiseCargo,Forwarder,South Asia,Referral,MQL,,60,2026-05-15",
+    ].join("\n"),
+    validate: (row) => {
+      const e = [];
+      if (!row.company?.trim())  e.push("Company required");
+      if (!row.email?.trim())    e.push("Email required");
+      if (!row.product?.trim())  e.push("Product required");
+      if (!row.source?.trim())   e.push("Source required");
+      if (!row.stage?.trim())    e.push("Stage required");
+      return e;
+    },
   },
+
   Customers: {
-    mandatory: ["name","type","country","status"],
-    optional: ["city","website","segment","products","owner","arrRevenue","potential"],
-    sample: "name,type,country,city,website,segment,products,status,owner,arrRevenue,potential\nAcme Airlines,Airline,India,Mumbai,acme.com,Enterprise,WiseCargo;WiseTrax,Active,u1,10,50",
+    refKey:    "accountNo",  // e.g. ACC-2026-001
     uniqueKey: "name",
-    validate: (row) => { const errs=[]; if(!row.name) errs.push("Name required"); if(!row.type) errs.push("Type required"); if(!row.country) errs.push("Country required"); return errs; },
+    mandatory: ["name","type","country"],
+    optional:  [
+      "accountNo","city","address","website","segment","products",
+      "status","owner","arrRevenue","potential","hierarchyLevel","parentId",
+    ],
+    sample: [
+      "accountNo,name,type,country,city,website,segment,products,status,owner,arrRevenue,potential",
+      "ACC-2026-001,Acme Airlines,Airline,India,Mumbai,acme.com,Enterprise,WiseCargo;WiseTrax,Active,,10,50",
+      ",Beta Freight,Freight Forwarder,UAE,Dubai,betafreight.ae,Mid-Market,iCAFFE,Prospect,,,0,20",
+    ].join("\n"),
+    validate: (row) => {
+      const e = [];
+      if (!row.name?.trim())    e.push("Name required");
+      if (!row.type?.trim())    e.push("Type required");
+      if (!row.country?.trim()) e.push("Country required");
+      return e;
+    },
   },
+
   Contacts: {
-    mandatory: ["name","email","accountId","role"],
-    optional: ["phone","title","department","disposition"],
-    sample: "name,email,phone,accountId,role,title,department,disposition\nJane Smith,jane@acme.com,+91-98765-00002,a1,Decision Maker/HOD,VP Operations,Operations,Favourable",
+    refKey:    "contactId",  // e.g. CON-001
     uniqueKey: "email",
-    validate: (row) => { const errs=[]; if(!row.name) errs.push("Name required"); if(!row.email) errs.push("Email required"); return errs; },
+    mandatory: ["name","email"],
+    optional:  [
+      "contactId","phone","designation","role","department",
+      "accountId","accountName","products","primary","countries","branches",
+    ],
+    sample: [
+      "contactId,name,email,phone,designation,role,department,accountId,accountName,primary",
+      "CON-001,Jane Smith,jane@acme.com,+91-98765-00002,VP Operations,Decision Maker/HOD,Operations,ACC-2026-001,,true",
+      ",Mark Lee,mark@acme.com,+91-98765-00003,IT Manager,End User,IT,ACC-2026-001,,false",
+    ].join("\n"),
+    validate: (row) => {
+      const e = [];
+      if (!row.name?.trim())  e.push("Name required");
+      if (!row.email?.trim()) e.push("Email required");
+      return e;
+    },
   },
+
   Collections: {
-    mandatory: ["invoiceNo","accountId","invoiceDate","dueDate","billedAmount"],
-    optional: ["collectedAmount","paymentMode","paymentDate","remarks","owner","status"],
-    sample: "invoiceNo,accountId,invoiceDate,dueDate,billedAmount,collectedAmount,paymentMode,paymentDate,remarks,owner,status\nINV-2026-100,a1,2026-04-01,2026-05-01,5,0,,,,u1,Current",
+    refKey:    "invoiceNo",  // e.g. INV-2026-100  — also uniqueKey
     uniqueKey: "invoiceNo",
-    validate: (row) => { const errs=[]; if(!row.invoiceNo) errs.push("Invoice # required"); if(!row.accountId) errs.push("Account ID required"); if(!row.billedAmount) errs.push("Billed amount required"); return errs; },
+    mandatory: ["invoiceNo","accountId","invoiceDate","dueDate","billedAmount"],
+    optional:  [
+      "collectedAmount","pendingAmount","status","paymentMode",
+      "paymentDate","remarks","owner",
+    ],
+    sample: [
+      "invoiceNo,accountId,invoiceDate,dueDate,billedAmount,collectedAmount,pendingAmount,status,paymentMode,paymentDate,remarks,owner",
+      "INV-2026-100,ACC-2026-001,2026-04-01,2026-05-01,500000,0,500000,Current,NEFT,,Full payment due,",
+      "INV-2026-099,ACC-2026-001,2026-03-01,2026-04-01,200000,200000,0,Paid,NEFT,2026-03-28,,",
+    ].join("\n"),
+    validate: (row) => {
+      const e = [];
+      if (!row.invoiceNo?.trim())    e.push("Invoice No. required");
+      if (!row.accountId?.trim())    e.push("Account ID required");
+      if (!row.invoiceDate?.trim())  e.push("Invoice date required");
+      if (!row.dueDate?.trim())      e.push("Due date required");
+      if (!row.billedAmount?.trim()) e.push("Billed amount required");
+      return e;
+    },
   },
+
   "Support Tickets": {
+    refKey:    "ticketNo",   // e.g. TKT-2026-001 — leave blank for new tickets
+    uniqueKey: "title",
     mandatory: ["title","accountId","product","priority"],
-    optional: ["type","description","assigned","category","subCategory","sla"],
-    sample: "title,accountId,product,type,priority,description,assigned,category,subCategory,sla\nLogin issue on portal,a1,WiseCargo,Bug / Glitch,High,Users unable to login since morning,u8,sc1,Login / Access,2026-04-02",
-    uniqueKey: "title",
-    validate: (row) => { const errs=[]; if(!row.title) errs.push("Title required"); if(!row.accountId) errs.push("Account ID required"); return errs; },
+    optional:  [
+      "ticketNo","type","description","assigned","status","sla",
+      "category","subCategory","created","resolved",
+    ],
+    sample: [
+      "ticketNo,title,accountId,product,type,priority,description,assigned,status,sla",
+      "TKT-2026-001,Login issue on portal,ACC-2026-001,WiseCargo,Bug / Glitch,High,Users unable to login,,Open,2026-04-02",
+      ",Data export failing,ACC-2026-001,iCAFFE,Feature Request,Medium,Export button throws error,,Open,",
+    ].join("\n"),
+    validate: (row) => {
+      const e = [];
+      if (!row.title?.trim())     e.push("Title required");
+      if (!row.accountId?.trim()) e.push("Account ID required");
+      if (!row.product?.trim())   e.push("Product required");
+      if (!row.priority?.trim())  e.push("Priority required");
+      return e;
+    },
   },
+
   Contracts: {
-    mandatory: ["title","accountId","product","status","value"],
-    optional: ["startDate","endDate","billTerm","billType","poNumber","owner","terms"],
-    sample: "title,accountId,product,status,value,startDate,endDate,billTerm,billType,poNumber,owner,terms\nWiseCargo License,a1,WiseCargo,Active,20,2026-01-01,2026-12-31,Yearly,Renewals,PO-2026-001,u1,Annual licensing",
+    refKey:    "contractNo", // e.g. CTR-2026-001 — leave blank for new contracts
     uniqueKey: "title",
-    validate: (row) => { const errs=[]; if(!row.title) errs.push("Title required"); if(!row.accountId) errs.push("Account ID required"); if(!row.value) errs.push("Value required"); return errs; },
+    mandatory: ["title","accountId","product","status","value"],
+    optional:  [
+      "contractNo","startDate","endDate","billTerm","billType",
+      "poNumber","owner","terms","notes","oppId",
+    ],
+    sample: [
+      "contractNo,title,accountId,product,status,value,startDate,endDate,billTerm,billType,poNumber,owner",
+      "CTR-2026-001,WiseCargo License — Acme,ACC-2026-001,WiseCargo,Active,200000,2026-01-01,2026-12-31,Yearly,Renewals,PO-2026-001,",
+      ",iCAFFE Starter — Beta,ACC-2026-002,iCAFFE,Draft,50000,2026-06-01,2027-05-31,Yearly,New License,,,",
+    ].join("\n"),
+    validate: (row) => {
+      const e = [];
+      if (!row.title?.trim())     e.push("Title required");
+      if (!row.accountId?.trim()) e.push("Account ID required");
+      if (!row.product?.trim())   e.push("Product required");
+      if (!row.status?.trim())    e.push("Status required");
+      if (!row.value?.trim())     e.push("Value required");
+      return e;
+    },
   },
 };
 
+// ─── CSV parser ──────────────────────────────────────────────────────────────
 function parseCSVLine(line) {
   const vals = [];
   let cur = "", inQ = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (ch === '"') {
-      if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
       else inQ = !inQ;
     } else if (ch === ',' && !inQ) {
       vals.push(cur.trim()); cur = "";
@@ -81,56 +184,112 @@ function parseCSV(text) {
   return { headers, rows };
 }
 
-function BulkUpload({ onUpload }) {
-  const [type, setType] = useState("Leads");
+// ─── Component ───────────────────────────────────────────────────────────────
+function BulkUpload({ onUpload, existingData = {} }) {
+  const [type, setType]       = useState("Leads");
   const [fileData, setFileData] = useState(null);
-  const [results, setResults] = useState(null);
-  const [preview, setPreview] = useState(false);
+  const [results, setResults]   = useState(null);
 
   const schema = SCHEMAS[type];
+
+  // Existing records for the currently selected type
+  const existing = useMemo(() => {
+    const map = {
+      Leads:            existingData.leads        || [],
+      Customers:        existingData.accounts     || [],
+      Contacts:         existingData.contacts     || [],
+      Collections:      existingData.collections  || [],
+      "Support Tickets":existingData.tickets      || [],
+      Contracts:        existingData.contracts    || [],
+    };
+    return map[type] || [];
+  }, [type, existingData]);
+
+  // Build a lookup: refKey value → existing record
+  const existingByRef = useMemo(() => {
+    const m = {};
+    const refField = {
+      Leads:            "leadId",
+      Customers:        "accountNo",
+      Contacts:         "contactId",
+      Collections:      "invoiceNo",
+      "Support Tickets":"ticketNo",
+      Contracts:        "contractNo",
+    }[type];
+    existing.forEach(r => {
+      const v = r[refField];
+      if (v) m[String(v).toLowerCase().trim()] = r;
+    });
+    return m;
+  }, [existing, type]);
 
   const handleFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const text = ev.target.result;
-      const parsed = parseCSV(text);
-      setFileData(parsed);
+      setFileData(parseCSV(ev.target.result));
       setResults(null);
     };
     reader.readAsText(file);
   };
 
   const validate = () => {
-    if (!fileData || !fileData.rows.length) return;
+    if (!fileData?.rows.length) return;
+
+    const seenInFile = new Set();
     const validated = fileData.rows.map(row => {
-      const errs = schema.validate(row);
-      // Check mandatory fields
-      schema.mandatory.forEach(f => { if (!row[f]?.trim()) errs.push(`${f} is required`); });
-      return { ...row, _errors: errs, _valid: errs.length === 0 };
+      const errs = [...schema.validate(row)];
+
+      // Mandatory check
+      schema.mandatory.forEach(f => {
+        if (!row[f]?.trim()) {
+          if (!errs.find(e => e.toLowerCase().includes(f.toLowerCase()))) {
+            errs.push(`${f} is required`);
+          }
+        }
+      });
+
+      // Within-file duplicate on uniqueKey
+      const uKey = row[schema.uniqueKey]?.toLowerCase().trim();
+      if (uKey && seenInFile.has(uKey)) errs.push(`Duplicate ${schema.uniqueKey} in file: "${row[schema.uniqueKey]}"`);
+      if (uKey) seenInFile.add(uKey);
+
+      // Match against existing records via refKey
+      const refVal = row[schema.refKey]?.trim();
+      const matched = refVal ? existingByRef[refVal.toLowerCase()] : null;
+      const mode = matched ? "update" : "insert";
+
+      return { ...row, _errors: errs, _valid: errs.length === 0, _mode: mode, _matchedId: matched?.id || null };
     });
-    // Duplicate check
-    const seen = new Set();
-    validated.forEach(row => {
-      const key = row[schema.uniqueKey];
-      if (key && seen.has(key.toLowerCase())) row._errors.push(`Duplicate ${schema.uniqueKey}: ${key}`);
-      if (key) seen.add(key.toLowerCase());
-    });
+
     setResults(validated);
   };
 
   const doUpload = () => {
     if (!results) return;
     const valid = results.filter(r => r._valid);
+
     const records = valid.map(r => {
       const clean = { ...r };
+      // Remove internal tracking fields
       delete clean._row; delete clean._errors; delete clean._valid;
-      clean.id = `bulk_${uid()}`;
+      delete clean._mode; delete clean._matchedId;
+
+      if (r._mode === "update") {
+        // Preserve the existing internal id so SmartCRM can match and merge
+        clean.id = r._matchedId;
+      } else {
+        // New record — assign a fresh internal id
+        clean.id = `bulk_${uid()}`;
+      }
+      clean._bulkMode = r._mode; // pass mode hint to handler
       return clean;
     });
+
     onUpload(type, records);
-    setResults(null); setFileData(null);
+    setResults(null);
+    setFileData(null);
   };
 
   const downloadSample = () => {
@@ -141,90 +300,138 @@ function BulkUpload({ onUpload }) {
     a.click(); URL.revokeObjectURL(url);
   };
 
-  const validCount = results ? results.filter(r => r._valid).length : 0;
-  const errorCount = results ? results.filter(r => !r._valid).length : 0;
+  const validCount   = results?.filter(r => r._valid).length  || 0;
+  const errorCount   = results?.filter(r => !r._valid).length || 0;
+  const updateCount  = results?.filter(r => r._valid && r._mode === "update").length || 0;
+  const insertCount  = results?.filter(r => r._valid && r._mode === "insert").length || 0;
 
   return (
     <div>
       <PageTip
-        id="bulkupload-tip-v1"
+        id="bulkupload-tip-v2"
         title="Bulk Upload tip:"
-        text="Download the template first to get the exact column headers. Save your data as CSV (not XLSX). If any field contains a comma, wrap it in double-quotes. Existing records matched by email or company name will be linked — not duplicated."
+        text={`Download the sample CSV for exact column headers. To UPDATE an existing record, include its reference ID (e.g. ${schema.refKey}) in the first column. Leave it blank for new records. Accounts can be referenced by Account No. (ACC-YYYY-NNN) in accountId fields.`}
       />
+
       <div className="pg-head">
-        <div><div className="pg-title">Bulk Upload</div>
-          <div className="pg-sub">Import data from CSV files into CRM modules</div></div>
+        <div>
+          <div className="pg-title">Bulk Upload</div>
+          <div className="pg-sub">Import or update records from a CSV file</div>
+        </div>
       </div>
 
-      {/* Upload Type Selection */}
+      {/* Type selector */}
       <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", marginBottom: 10 }}>SELECT UPLOAD TYPE</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", marginBottom: 10 }}>SELECT MODULE</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {UPLOAD_TYPES.map(t => (
-            <button key={t} className={`btn btn-sm ${type === t ? "btn-primary" : "btn-sec"}`} onClick={() => { setType(t); setFileData(null); setResults(null); }}>{t}</button>
+            <button key={t}
+              className={`btn btn-sm ${type === t ? "btn-primary" : "btn-sec"}`}
+              onClick={() => { setType(t); setFileData(null); setResults(null); }}>
+              {t}
+            </button>
           ))}
         </div>
       </div>
 
-      {/* Schema Info */}
+      {/* Schema info */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>{type} – Upload Requirements</div>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>{type} — Column Reference</div>
           <button className="btn btn-sec btn-sm" onClick={downloadSample}><Download size={13} />Download Sample CSV</button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 10 }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--red)", marginBottom: 4 }}>MANDATORY FIELDS</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--red)", marginBottom: 4 }}>MANDATORY</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {schema.mandatory.map(f => <span key={f} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "var(--red-bg)", color: "var(--red-t)", fontWeight: 600 }}>{f}</span>)}
+              {schema.mandatory.map(f => (
+                <span key={f} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "var(--red-bg)", color: "var(--red-t)", fontWeight: 600 }}>{f}</span>
+              ))}
             </div>
           </div>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text3)", marginBottom: 4 }}>OPTIONAL FIELDS</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text3)", marginBottom: 4 }}>OPTIONAL</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {schema.optional.map(f => <span key={f} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "var(--s3)", color: "var(--text2)" }}>{f}</span>)}
+              {schema.optional.map(f => (
+                <span key={f} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "var(--s3)", color: "var(--text2)" }}>{f}</span>
+              ))}
             </div>
           </div>
         </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: "var(--text3)" }}>
-          <strong>Unique Key:</strong> {schema.uniqueKey} (used for duplicate detection) · <strong>Format:</strong> CSV with UTF-8 encoding
+
+        <div style={{ fontSize: 11, padding: "8px 12px", borderRadius: 6, background: "var(--brand-bg)", color: "var(--brand)", display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <Info size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            <strong>Reference ID:</strong> <code style={{ fontSize: 11 }}>{schema.refKey}</code> — include to UPDATE an existing record.
+            Leave blank to INSERT a new one. &nbsp;·&nbsp;
+            <strong>Duplicate key (within file):</strong> <code style={{ fontSize: 11 }}>{schema.uniqueKey}</code>
+          </span>
         </div>
+
+        {existing.length > 0 && (
+          <div style={{ fontSize: 11, marginTop: 6, color: "var(--text3)" }}>
+            {existing.length} existing {type.toLowerCase()} records loaded — ref IDs matched against these.
+          </div>
+        )}
       </div>
 
-      {/* File Upload */}
-      <div className="card" style={{ marginBottom: 16, textAlign: "center", padding: 30, border: "2px dashed var(--border)" }}>
-        <Upload size={32} style={{ color: "var(--text3)", marginBottom: 8 }} />
-        <div style={{ fontSize: 13, marginBottom: 8 }}>
-          {fileData ? <span style={{ color: "var(--green)", fontWeight: 700 }}>{fileData.rows.length} rows loaded · {fileData.headers.length} columns</span> : "Drop CSV file or click to browse"}
+      {/* File drop zone */}
+      <div className="card" style={{ marginBottom: 16, textAlign: "center", padding: 28, border: "2px dashed var(--border)" }}>
+        <Upload size={30} style={{ color: "var(--text3)", marginBottom: 8 }} />
+        <div style={{ fontSize: 13, marginBottom: 10 }}>
+          {fileData
+            ? <span style={{ color: "var(--green)", fontWeight: 700 }}>{fileData.rows.length} rows loaded · {fileData.headers.length} columns detected</span>
+            : "Drop a CSV file or click to browse"}
         </div>
         <input type="file" accept=".csv,.txt" onChange={handleFile} style={{ marginBottom: 8 }} />
         {fileData && !results && (
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: 10 }}>
             <button className="btn btn-primary" onClick={validate}><Check size={14} />Validate Data</button>
           </div>
         )}
       </div>
 
-      {/* Validation Results */}
+      {/* Validation results */}
       {results && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div>
+            <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
               <span style={{ fontSize: 14, fontWeight: 700 }}>Validation Results</span>
-              <span style={{ marginLeft: 12, fontSize: 12, color: "var(--green)", fontWeight: 600 }}>{validCount} valid</span>
-              {errorCount > 0 && <span style={{ marginLeft: 8, fontSize: 12, color: "var(--red)", fontWeight: 600 }}>{errorCount} errors</span>}
+              {insertCount > 0 && (
+                <span style={{ fontSize: 12, color: "var(--green)", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                  <PlusCircle size={13} />{insertCount} new
+                </span>
+              )}
+              {updateCount > 0 && (
+                <span style={{ fontSize: 12, color: "var(--brand)", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                  <ArrowUpCircle size={13} />{updateCount} update
+                </span>
+              )}
+              {errorCount > 0 && (
+                <span style={{ fontSize: 12, color: "var(--red)", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                  <AlertCircle size={13} />{errorCount} error{errorCount !== 1 ? "s" : ""}
+                </span>
+              )}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-sec btn-sm" onClick={() => { setResults(null); setFileData(null); }}><RefreshCw size={13} />Reset</button>
-              {validCount > 0 && <button className="btn btn-primary btn-sm" onClick={doUpload}><Upload size={13} />Upload {validCount} Records</button>}
+              <button className="btn btn-sec btn-sm" onClick={() => { setResults(null); setFileData(null); }}>
+                <RefreshCw size={13} />Reset
+              </button>
+              {validCount > 0 && (
+                <button className="btn btn-primary btn-sm" onClick={doUpload}>
+                  <Upload size={13} />Apply {validCount} Records
+                </button>
+              )}
             </div>
           </div>
-          <div style={{ maxHeight: 400, overflow: "auto" }}>
+
+          <div style={{ maxHeight: 420, overflow: "auto" }}>
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Row</th>
-                  <th>Status</th>
+                  <th style={{ width: 40 }}>Row</th>
+                  <th style={{ width: 80 }}>Action</th>
                   {fileData.headers.slice(0, 5).map(h => <th key={h}>{h}</th>)}
                   <th>Errors</th>
                 </tr>
@@ -232,10 +439,24 @@ function BulkUpload({ onUpload }) {
               <tbody>
                 {results.map((r, i) => (
                   <tr key={i} style={{ background: r._valid ? "transparent" : "var(--red-bg)" }}>
-                    <td style={{ fontSize: 12 }}>{r._row}</td>
-                    <td>{r._valid ? <Check size={14} style={{ color: "var(--green)" }} /> : <AlertCircle size={14} style={{ color: "var(--red)" }} />}</td>
-                    {fileData.headers.slice(0, 5).map(h => <td key={h} style={{ fontSize: 11 }}>{r[h]?.substring(0, 30)}</td>)}
-                    <td style={{ fontSize: 11, color: "var(--red)" }}>{r._errors.join("; ")}</td>
+                    <td style={{ fontSize: 11, color: "var(--text3)" }}>{r._row}</td>
+                    <td>
+                      {r._valid ? (
+                        r._mode === "update"
+                          ? <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "var(--brand-bg)", color: "var(--brand)" }}>UPDATE</span>
+                          : <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a" }}>NEW</span>
+                      ) : (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "var(--red-bg)", color: "var(--red-t)" }}>ERROR</span>
+                      )}
+                    </td>
+                    {fileData.headers.slice(0, 5).map(h => (
+                      <td key={h} style={{ fontSize: 11, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r[h]?.substring(0, 40)}
+                      </td>
+                    ))}
+                    <td style={{ fontSize: 11, color: "var(--red)" }}>
+                      {r._errors.join("; ")}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -244,33 +465,37 @@ function BulkUpload({ onUpload }) {
         </div>
       )}
 
-      {/* Info Cards */}
+      {/* Info cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
         <div className="card">
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", marginBottom: 6 }}>FILE FORMAT</div>
-          <ul style={{ fontSize: 12, color: "var(--text2)", margin: 0, paddingLeft: 16, lineHeight: 1.8 }}>
-            <li>CSV or TXT (comma-separated)</li>
-            <li>UTF-8 encoding (with BOM)</li>
-            <li>First row must be column headers</li>
-            <li>Max 5000 rows per upload</li>
+          <ul style={{ fontSize: 12, color: "var(--text2)", margin: 0, paddingLeft: 16, lineHeight: 1.9 }}>
+            <li>CSV (comma-separated)</li>
+            <li>UTF-8 encoding recommended</li>
+            <li>Row 1 must be column headers</li>
+            <li>Max 5 000 rows per upload</li>
+            <li>Fields with commas → wrap in quotes</li>
           </ul>
         </div>
         <div className="card">
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", marginBottom: 6 }}>DUPLICATE HANDLING</div>
-          <ul style={{ fontSize: 12, color: "var(--text2)", margin: 0, paddingLeft: 16, lineHeight: 1.8 }}>
-            <li>Checked against unique key field</li>
-            <li>Duplicates flagged as errors</li>
-            <li>Existing records not overwritten</li>
-            <li>Review errors before upload</li>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", marginBottom: 6 }}>INSERT vs UPDATE</div>
+          <ul style={{ fontSize: 12, color: "var(--text2)", margin: 0, paddingLeft: 16, lineHeight: 1.9 }}>
+            <li><strong>Leave ref ID blank</strong> → new record</li>
+            <li><strong>Provide ref ID</strong> → updates existing</li>
+            <li>Matched fields overwrite current values</li>
+            <li>Un-mapped fields are preserved</li>
+            <li>Accounts: use Account No. in accountId</li>
           </ul>
         </div>
         <div className="card">
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", marginBottom: 6 }}>AFTER UPLOAD</div>
-          <ul style={{ fontSize: 12, color: "var(--text2)", margin: 0, paddingLeft: 16, lineHeight: 1.8 }}>
-            <li>Records added to CRM immediately</li>
-            <li>Available in respective modules</li>
-            <li>Error log available for review</li>
-            <li>Can re-upload corrected rows</li>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", marginBottom: 6 }}>REFERENCE IDs</div>
+          <ul style={{ fontSize: 12, color: "var(--text2)", margin: 0, paddingLeft: 16, lineHeight: 1.9 }}>
+            <li>Leads → <code>leadId</code> (#FL-2026-001)</li>
+            <li>Customers → <code>accountNo</code> (ACC-2026-001)</li>
+            <li>Contacts → <code>contactId</code> (CON-001)</li>
+            <li>Collections → <code>invoiceNo</code></li>
+            <li>Tickets → <code>ticketNo</code> (TKT-2026-001)</li>
+            <li>Contracts → <code>contractNo</code> (CTR-2026-001)</li>
           </ul>
         </div>
       </div>

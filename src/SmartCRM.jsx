@@ -7,7 +7,7 @@ import {
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
   INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
-  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, INIT_UPDATES
+  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole } from "./utils/helpers";
 import { CSS } from "./styles";
@@ -624,12 +624,27 @@ export default function SmartCRM() {
     if (!data.keepLeadOpen) setPage("pipeline");
   }, []);
 
-  // Bulk upload handler — matches leads→accounts, contacts→accounts by name/email
-  // Also auto-creates Contact records from lead contact info
+  // Bulk upload handler — supports both INSERT (new records) and UPDATE (existing by ref ID).
+  // Each record from BulkUpload carries _bulkMode ("insert"|"update") and _matchedId (for updates).
   const handleBulkUpload = useCallback((type, records) => {
+    const inserts = records.filter(r => r._bulkMode === "insert");
+    const updates = records.filter(r => r._bulkMode === "update");
+
+    // Helper: apply an array of update records onto existing state array by internal id
+    const applyUpdates = (existing, updList, cleanFn = r => r) =>
+      existing.map(ex => {
+        const upd = updList.find(u => u.id === ex.id);
+        return upd ? { ...ex, ...cleanFn(upd) } : ex;
+      });
+
+    // Strip BulkUpload-internal meta fields before saving
+    const strip = ({ _bulkMode, _matchedId, _rowErrors, _mode, ...rest }) => rest;
+
+    const year = new Date().getFullYear();
+
     switch(type) {
       case "Leads": {
-        // First, build new contacts from leads that don't match existing ones
+        // Build new contacts from INSERT leads (same logic as before)
         const newContacts = [];
         const conMaxSeq = contacts.reduce((max, c) => {
           const m = c.contactId?.match(/CON-(\d+)/);
@@ -637,93 +652,138 @@ export default function SmartCRM() {
         }, 0);
         let conSeq = conMaxSeq;
 
-        const year = new Date().getFullYear();
         const maxSeq = leads.reduce((max, l) => {
           const m = l.leadId?.match(/#FL-\d+-(\d+)/);
           return m ? Math.max(max, parseInt(m[1])) : max;
         }, 0);
 
-        const enriched = records.map((r, i) => {
+        let insertIdx = 0;
+        const enrichedInserts = inserts.map(r => {
           const matchedAccount = accounts.find(a => a.name?.toLowerCase().trim() === r.company?.toLowerCase().trim());
           const acctId = r.accountId || matchedAccount?.id || "";
-          // Try matching existing contact by email
           let matchedContact = r.email ? contacts.find(c => c.email?.toLowerCase() === r.email?.toLowerCase()) : null;
-          // Also check newly created contacts in this batch
-          if (!matchedContact && r.email) {
-            matchedContact = newContacts.find(c => c.email?.toLowerCase() === r.email?.toLowerCase());
-          }
+          if (!matchedContact && r.email) matchedContact = newContacts.find(c => c.email?.toLowerCase() === r.email?.toLowerCase());
           let contactId = matchedContact?.id || "";
-          // Auto-create contact if we have name+email and no match
           if (!contactId && r.contact && r.email) {
             conSeq++;
             const newCon = {
-              id: `c_${uid()}`,
-              contactId: `CON-${String(conSeq).padStart(3, '0')}`,
-              name: r.contact,
-              email: r.email,
-              phone: r.phone || "",
-              designation: r.designation || "",
-              department: r.department || "",
-              role: "End User",
-              accountId: acctId,
-              linkedOpps: [],
+              id: `c_${uid()}`, contactId: `CON-${String(conSeq).padStart(3, '0')}`,
+              name: r.contact, email: r.email, phone: r.phone || "",
+              designation: r.designation || "", department: r.department || "",
+              role: "End User", accountId: acctId, linkedOpps: [],
               products: r.product ? [r.product] : [],
             };
             newContacts.push(newCon);
             contactId = newCon.id;
           }
+          insertIdx++;
           return {
-            // Start with all BLANK_LEAD defaults so no field is ever undefined
-            ...BLANK_LEAD,
-            // Overlay CSV data
-            ...r,
-            // Override computed / derived fields
-            leadId: r.leadId || `#FL-${year}-${String(maxSeq + i + 1).padStart(3, '0')}`,
+            ...BLANK_LEAD, ...strip(r),
+            leadId: r.leadId || `#FL-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
             score: Math.max(0, Math.min(100, Number(r.score) || 30)),
             createdDate: r.createdDate || today,
             stage: r.stage || "MQL",
             accountId: acctId,
-            contactIds: contactId ? [contactId] : [],
+            contactIds: contactId ? [contactId] : r.contactIds || [],
             temperature: Number(r.score) >= 70 ? "Hot" : Number(r.score) >= 40 ? "Warm" : "Cool",
           };
         });
-        // Add new contacts to contacts state
+
         if (newContacts.length) setContacts(p => [...p, ...newContacts]);
-        setLeads(p => [...p, ...enriched]);
+        setLeads(p => {
+          const withUpdates = applyUpdates(p, updates.map(strip));
+          return [...withUpdates, ...enrichedInserts];
+        });
       } break;
-      case "Customers": setAccounts(p => {
-        const year = new Date().getFullYear();
-        const maxSeq = p.reduce((max, a) => {
+
+      case "Customers": {
+        const maxSeq = accounts.reduce((max, a) => {
           const m = a.accountNo?.match(/ACC-\d+-(\d+)/);
           return m ? Math.max(max, parseInt(m[1])) : max;
         }, 0);
-        const enriched = records.map((r, i) => ({
-          ...r,
-          accountNo: r.accountNo || `ACC-${year}-${String(maxSeq + i + 1).padStart(3, '0')}`,
-          status: r.status || "Active",
-        }));
-        return [...p, ...enriched];
-      }); break;
-      case "Contacts": setContacts(p => {
-        const maxSeq = p.reduce((max, c) => {
+        let insertIdx = 0;
+        const enrichedInserts = inserts.map(r => {
+          insertIdx++;
+          return {
+            ...r, ...strip(r),
+            accountNo: r.accountNo || `ACC-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
+            status: r.status || "Active",
+          };
+        });
+        setAccounts(p => {
+          const withUpdates = applyUpdates(p, updates.map(strip));
+          return [...withUpdates, ...enrichedInserts];
+        });
+      } break;
+
+      case "Contacts": {
+        const maxSeq = contacts.reduce((max, c) => {
           const m = c.contactId?.match(/CON-(\d+)/);
           return m ? Math.max(max, parseInt(m[1])) : max;
         }, 0);
-        const enriched = records.map((r, i) => {
-          const matchedAccount = !r.accountId && r.company ? accounts.find(a => a.name?.toLowerCase().trim() === r.company?.toLowerCase().trim()) : null;
+        let insertIdx = 0;
+        const enrichedInserts = inserts.map(r => {
+          const matchedAccount = !r.accountId && r.company
+            ? accounts.find(a => a.name?.toLowerCase().trim() === r.company?.toLowerCase().trim()) : null;
+          insertIdx++;
           return {
-            ...r,
-            contactId: r.contactId || `CON-${String(maxSeq + i + 1).padStart(3, '0')}`,
+            ...strip(r),
+            contactId: r.contactId || `CON-${String(maxSeq + insertIdx).padStart(3, '0')}`,
             accountId: r.accountId || matchedAccount?.id || "",
           };
         });
-        return [...p, ...enriched];
-      }); break;
-      case "Collections": setCollections(p => [...p, ...records]); break;
-      case "Support Tickets": setTickets(p => [...p, ...records]); break;
-      case "Contracts": setContracts(p => [...p, ...records]); break;
+        setContacts(p => {
+          const withUpdates = applyUpdates(p, updates.map(strip));
+          return [...withUpdates, ...enrichedInserts];
+        });
+      } break;
+
+      case "Collections": {
+        setCollections(p => {
+          const withUpdates = applyUpdates(p, updates.map(strip));
+          return [...withUpdates, ...inserts.map(strip)];
+        });
+      } break;
+
+      case "Support Tickets": {
+        const maxSeq = tickets.reduce((max, t) => {
+          const m = t.ticketNo?.match(/TKT-\d+-(\d+)/);
+          return m ? Math.max(max, parseInt(m[1])) : max;
+        }, 0);
+        let insertIdx = 0;
+        const enrichedInserts = inserts.map(r => {
+          insertIdx++;
+          return {
+            ...BLANK_TKT, ...strip(r),
+            ticketNo: r.ticketNo || `TKT-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
+          };
+        });
+        setTickets(p => {
+          const withUpdates = applyUpdates(p, updates.map(strip));
+          return [...withUpdates, ...enrichedInserts];
+        });
+      } break;
+
+      case "Contracts": {
+        const maxSeq = contracts.reduce((max, c) => {
+          const m = c.contractNo?.match(/CTR-\d+-(\d+)/);
+          return m ? Math.max(max, parseInt(m[1])) : max;
+        }, 0);
+        let insertIdx = 0;
+        const enrichedInserts = inserts.map(r => {
+          insertIdx++;
+          return {
+            ...BLANK_CONTRACT, ...strip(r),
+            contractNo: r.contractNo || `CTR-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
+          };
+        });
+        setContracts(p => {
+          const withUpdates = applyUpdates(p, updates.map(strip));
+          return [...withUpdates, ...enrichedInserts];
+        });
+      } break;
     }
-  }, [accounts, contacts, leads]);
+  }, [accounts, contacts, leads, tickets, contracts, collections]);
 
   if(!currentUser) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers}/></>
@@ -755,7 +815,7 @@ export default function SmartCRM() {
             {page==="reports"    && <Reports accounts={accounts} opps={visibleOpps} tickets={tickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={collections} targets={targets} contacts={contacts} contracts={contracts} quotes={quotes} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="updates"    && <Updates updates={updates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
-            {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
+            {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} existingData={{ leads, accounts, contacts, collections, tickets, contracts }}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
             {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
