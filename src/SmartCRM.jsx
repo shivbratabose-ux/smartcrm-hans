@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 
 // Data & Utils
-import { INIT_USERS, PROD_MAP, STAGE_PROB, INIT_USER_PASSWORDS } from "./data/constants";
+import { INIT_USERS, PROD_MAP, STAGE_PROB } from "./data/constants";
 import {
   INIT_ACCOUNTS, INIT_CONTACTS, INIT_OPPS, INIT_ACTIVITIES,
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
@@ -183,7 +183,6 @@ export default function SmartCRM() {
       activities: INIT_ACTIVITIES, tickets: INIT_TICKETS, notes: INIT_NOTES,
       files: INIT_FILES, masters: INIT_MASTERS, catalog: INIT_PRODUCT_CATALOG,
       org: INIT_ORG, teams: INIT_TEAMS, orgUsers: INIT_USERS,
-      userPasswords: INIT_USER_PASSWORDS,
       leads: INIT_LEADS, callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
       collections: INIT_COLLECTIONS, targets: INIT_TARGETS, quotes: INIT_QUOTES,
       commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, updates: INIT_UPDATES, customPermissions: {},
@@ -220,7 +219,6 @@ export default function SmartCRM() {
   const [org,setOrg]                 = useState(saved?.org || INIT_ORG);
   const [teams,setTeams]             = useState(saved?.teams || INIT_TEAMS);
   const [orgUsers,setOrgUsers]       = useState(saved?.orgUsers || INIT_USERS);
-  const [userPasswords,setUserPasswords] = useState(saved?.userPasswords || INIT_USER_PASSWORDS);
   // New CRM modules
   const [leads,setLeads]             = useState(saved?.leads || INIT_LEADS);
   const [callReports,setCallReports] = useState(saved?.callReports || INIT_CALL_REPORTS);
@@ -384,44 +382,43 @@ export default function SmartCRM() {
     return unsub;
   }, []);
 
-  // ── Expose seed function for admin migration ──
+  // ── Dev-only debug helpers (stripped from production builds) ──
   useEffect(() => {
-    if (isSupabaseConfigured) {
-      window.__seedSupabase = () => seedSupabase({
-        accounts: INIT_ACCOUNTS, contacts: INIT_CONTACTS, opps: INIT_OPPS,
-        activities: INIT_ACTIVITIES, tickets: INIT_TICKETS, leads: INIT_LEADS,
-        callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
-        collections: INIT_COLLECTIONS, targets: INIT_TARGETS, quotes: INIT_QUOTES,
-        commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, notes: INIT_NOTES, files: INIT_FILES,
-      });
+    if (import.meta.env.DEV) {
+      if (isSupabaseConfigured) {
+        window.__seedSupabase = () => seedSupabase({
+          accounts: INIT_ACCOUNTS, contacts: INIT_CONTACTS, opps: INIT_OPPS,
+          activities: INIT_ACTIVITIES, tickets: INIT_TICKETS, leads: INIT_LEADS,
+          callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
+          collections: INIT_COLLECTIONS, targets: INIT_TARGETS, quotes: INIT_QUOTES,
+          commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, notes: INIT_NOTES, files: INIT_FILES,
+        });
+      }
+      window.__resetCRM = () => {
+        try { localStorage.removeItem("smartcrm_data"); } catch {}
+        window.location.reload();
+      };
+      window.__crmAudit = () => {
+        const raw = localStorage.getItem("smartcrm_data");
+        const d = raw ? JSON.parse(raw) : null;
+        console.table({
+          leads: d?.leads?.length,
+          contacts: d?.contacts?.length,
+          opps: d?.opps?.length,
+          accounts: d?.accounts?.length,
+          leadsWithContactIds: d?.leads?.filter(l => l.contactIds?.length).length,
+          oppsFromLeads: d?.opps?.filter(o => o.sourceLeadIds?.length).length,
+        });
+        return d;
+      };
     }
-    // Admin escape hatch: call window.__resetCRM() in the browser console to wipe
-    // stale localStorage and reload with fresh seed data
-    window.__resetCRM = () => {
-      try { localStorage.removeItem("smartcrm_data"); } catch {}
-      window.location.reload();
-    };
-    // Expose migration audit for debugging
-    window.__crmAudit = () => {
-      const raw = localStorage.getItem("smartcrm_data");
-      const d = raw ? JSON.parse(raw) : null;
-      console.table({
-        leads: d?.leads?.length,
-        contacts: d?.contacts?.length,
-        opps: d?.opps?.length,
-        accounts: d?.accounts?.length,
-        leadsWithContactIds: d?.leads?.filter(l => l.contactIds?.length).length,
-        oppsFromLeads: d?.opps?.filter(o => o.sourceLeadIds?.length).length,
-      });
-      return d;
-    };
   }, []);
 
   // Persist all data to localStorage on every change (works as primary store without Supabase, backup with Supabase)
   useEffect(() => {
-    saveState({ version: DATA_VERSION, accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
+    saveState({ version: DATA_VERSION, accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
       leads, callReports, contracts, collections, targets, quotes, commLogs, events, updates, customPermissions });
-  }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
+  }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
     leads, callReports, contracts, collections, targets, quotes, commLogs, events, updates, customPermissions]);
 
   const addNote = note => setNotes(p=>[...p,note]);
@@ -711,7 +708,7 @@ export default function SmartCRM() {
   }, [accounts, contacts, leads]);
 
   if(!currentUser) return (
-    <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers} userPasswords={userPasswords}/></>
+    <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers}/></>
   );
 
   return (
@@ -743,8 +740,8 @@ export default function SmartCRM() {
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
-            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
-            {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/>}
+            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
+            {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers}/>}
           </div>
         </div>
         <QuickLogFAB accounts={accounts} contacts={contacts} opps={visibleOpps} leads={visibleLeads} orgUsers={orgUsers} currentUser={currentUser} callReports={visibleCallReports} setCallReports={setCallReports} activities={visibleActivities} setActivities={setActivities} masters={masters}/>

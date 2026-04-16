@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react";
 import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shield, AlertTriangle, Lock, Unlock, ChevronDown, ChevronRight, Users } from "lucide-react";
-import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS, hashPassword, DEMO_PW_HASH } from '../data/constants';
+import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { uid, fmt, today } from '../utils/helpers';
 import { Modal, Confirm } from './shared';
 
-function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPasswords,setUserPasswords,customPermissions,setCustomPermissions}) {
+function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPermissions,setCustomPermissions}) {
   const [tab,setTab]=useState("teams");
   const [modal,setModal]=useState(null);
   const [form,setForm]=useState({});
@@ -63,31 +64,29 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
     return {label:"Excellent",color:"#16A34A",pct:100};
   };
 
-  // Save password
-  const savePassword=()=>{
+  // Save password (own account only — uses active Supabase session)
+  const savePassword=async()=>{
     setPwErr("");setPwSuccess("");
-    const {password,confirm:confirmPw,current}=pwForm;
-    // For change password, verify current
-    if(pwModal.mode==="change"){
-      const currentHash=hashPassword(current);
-      const storedHash=userPasswords?.[pwModal.userId]||DEMO_PW_HASH;
-      if(currentHash!==storedHash){setPwErr("Current password is incorrect.");return;}
-    }
+    const {password,confirm:confirmPw}=pwForm;
     const errors=validatePassword(password);
     if(errors.length>0){setPwErr(errors.join(". ")+".");return;}
     if(password!==confirmPw){setPwErr("Passwords do not match.");return;}
-    const newHash=hashPassword(password);
-    setUserPasswords(prev=>({...prev,[pwModal.userId]:newHash}));
-    // Also update orgUsers CREDS-equivalent (email mapping) for dynamic users
-    setPwSuccess("Password saved successfully!");
+    if(!isSupabaseConfigured){setPwErr("Authentication not configured.");return;}
+    const {error}=await supabase.auth.updateUser({password});
+    if(error){setPwErr(error.message);return;}
+    setPwSuccess("Password updated successfully!");
     setTimeout(()=>{setPwModal(null);setPwSuccess("");setPwForm({password:"",confirm:"",current:""});setShowPw({pw:false,confirm:false,current:false});setGeneratedPw("");},1500);
   };
 
-  // Reset to default
-  const resetToDefault=(userId)=>{
-    setUserPasswords(prev=>({...prev,[userId]:DEMO_PW_HASH}));
-    setPwSuccess("Password reset to default (hans@2026).");
-    setTimeout(()=>{setPwModal(null);setPwSuccess("");},1500);
+  // Admin reset — sends a password reset email via Supabase Auth
+  const sendResetEmail=async(userId)=>{
+    const user=orgUsers.find(u=>u.id===userId);
+    if(!user?.email){setPwErr("No email on file for this user.");return;}
+    if(!isSupabaseConfigured){setPwErr("Authentication not configured.");return;}
+    const {error}=await supabase.auth.resetPasswordForEmail(user.email);
+    if(error){setPwErr(error.message);return;}
+    setPwSuccess(`Reset link sent to ${user.email}`);
+    setTimeout(()=>{setPwModal(null);setPwSuccess("");},2000);
   };
 
   const openAddUser=()=>setModal({mode:"adduser",form:{name:"",email:"",role:"sales_exec",lob:"iCAFFE",branchId:"br1",deptId:"dep1",initials:"",active:true,joinDate:today,password:"",confirmPassword:""}});
@@ -98,11 +97,6 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
       const newId=`u${uid()}`;
       const newUser={...f,id:newId,password:undefined,confirmPassword:undefined};
       setOrgUsers(p=>[...p,newUser]);
-      if(f.password && f.password.length>=8){
-        setUserPasswords(prev=>({...prev,[newId]:hashPassword(f.password)}));
-      } else {
-        setUserPasswords(prev=>({...prev,[newId]:DEMO_PW_HASH}));
-      }
     } else {
       setOrgUsers(p=>p.map(u=>u.id===form.id?{...form}:u));
     }
@@ -351,17 +345,13 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
               const roleInfo=ROLE_MAP[u.role];
               const branch=org.branches.find(b=>b.id===u.branchId);
               const dept=org.departments.find(d=>d.id===u.deptId);
-              const hasCustomPw=userPasswords?.[u.id]&&userPasswords[u.id]!==DEMO_PW_HASH;
               return (
                 <tr key={u.id} style={{opacity:u.active?1:0.5}}>
                   <td>
                     <div style={{display:"flex",alignItems:"center",gap:9}}>
                       <div className="u-av" style={{width:30,height:30,borderRadius:9,fontSize:10.5,background:roleInfo?roleInfo.color+"18":"var(--brand-bg)",color:roleInfo?.color||"var(--brand)"}}>{u.initials}</div>
                       <div>
-                        <div style={{fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:6}}>
-                          {u.name}
-                          {hasCustomPw&&<Shield size={11} style={{color:"#22C55E"}} title="Custom password set"/>}
-                        </div>
+                        <div style={{fontWeight:600,fontSize:13}}>{u.name}</div>
                         <div style={{fontSize:11,color:"var(--text3)"}}>{u.email}</div>
                       </div>
                     </div>
@@ -381,7 +371,7 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
                     <div style={{display:"flex",gap:4}}>
                       <button className="icon-btn" onClick={()=>openEditUser(u)} title="Edit user"><Edit2 size={13}/></button>
                       <button className="icon-btn" title="User permissions" onClick={()=>{const userOverrides=(customPermissions||{})?.__users?.[u.id]||{};setUserPermEdits({...getRolePerms(u.role),...userOverrides});setUserPermModal({userId:u.id,userName:u.name,role:u.role});}} style={{color:((customPermissions||{})?.__users?.[u.id])?"#D97706":"#0D9488"}}>{((customPermissions||{})?.__users?.[u.id])?<Unlock size={13}/>:<Lock size={13}/>}</button>
-                      <button className="icon-btn" title={u.id===currentUser?"Change password":"Reset password"} onClick={()=>{setPwModal({mode:u.id===currentUser?"change":"reset",userId:u.id,userName:u.name});setPwForm({password:"",confirm:"",current:""});setPwErr("");setPwSuccess("");setGeneratedPw("");setShowPw({pw:false,confirm:false,current:false});}} style={{color:"#7C3AED"}}><Key size={13}/></button>
+                      <button className="icon-btn" title={u.id===currentUser?"Change password":"Send password reset email"} onClick={()=>{if(u.id===currentUser){setPwModal({mode:"change",userId:u.id,userName:u.name});setPwForm({password:"",confirm:"",current:""});setPwErr("");setPwSuccess("");setGeneratedPw("");setShowPw({pw:false,confirm:false,current:false});}else{sendResetEmail(u.id);}}} style={{color:"#7C3AED"}}><Key size={13}/></button>
                       <button className="icon-btn" title={u.active?"Deactivate":"Activate"} onClick={()=>deactivate(u.id)} style={{color:u.active?"var(--amber)":"var(--green)"}}>{u.active?<X size={13}/>:<Check size={13}/>}</button>
                     </div>
                   </td>}
@@ -505,69 +495,11 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
                 <div className="form-row"><div className="form-group"><label>Branch</label><select value={f.branchId||""} onChange={e=>setF(prev=>({...prev,branchId:e.target.value}))}><option value="">Select…</option>{org.branches.map(b=><option key={b.id} value={b.id}>{b.name} ({b.country})</option>)}</select></div><div className="form-group"><label>Department</label><select value={f.deptId||""} onChange={e=>setF(prev=>({...prev,deptId:e.target.value}))}><option value="">Select…</option>{org.departments.filter(d=>!f.branchId||d.branchId===f.branchId).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></div></div>
                 <div className="form-row"><div className="form-group"><label>Join Date</label><input type="date" value={f.joinDate||""} onChange={e=>setF(prev=>({...prev,joinDate:e.target.value}))}/></div></div>
 
-                {/* Password section — only for new users */}
+                {/* New users self-register via the Sign Up form; admin assigns role here */}
                 {modal.mode==="adduser"&&(
-                  <div style={{marginTop:16,padding:16,background:"#F8FAFB",borderRadius:10,border:"1px solid #E2E9EF"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-                      <Key size={15} style={{color:"#7C3AED"}}/>
-                      <span style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>Set Login Password</span>
-                      <span style={{fontSize:11,color:"var(--text3)",marginLeft:"auto"}}>Leave blank for default (hans@2026)</span>
-                    </div>
-                    <div className="form-row">
-                      <div className="form-group">
-                        <label>Password</label>
-                        <div style={{position:"relative"}}>
-                          <input
-                            type={showPw.pw?"text":"password"}
-                            value={f.password||""}
-                            onChange={e=>setF(prev=>({...prev,password:e.target.value}))}
-                            placeholder="Min 8 characters"
-                            style={{paddingRight:36}}
-                          />
-                          <button type="button" onClick={()=>setShowPw(p=>({...p,pw:!p.pw}))} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#8BA3B4",padding:2}}>
-                            {showPw.pw?<EyeOff size={14}/>:<Eye size={14}/>}
-                          </button>
-                        </div>
-                        {f.password&&(
-                          <div style={{marginTop:6}}>
-                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                              <div style={{flex:1,height:4,borderRadius:2,background:"#E2E9EF",overflow:"hidden"}}>
-                                <div style={{width:`${strength.pct}%`,height:"100%",background:strength.color,borderRadius:2,transition:"all 0.3s"}}/>
-                              </div>
-                              <span style={{fontSize:10,fontWeight:600,color:strength.color}}>{strength.label}</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="form-group">
-                        <label>Confirm Password</label>
-                        <div style={{position:"relative"}}>
-                          <input
-                            type={showPw.confirm?"text":"password"}
-                            value={f.confirmPassword||""}
-                            onChange={e=>setF(prev=>({...prev,confirmPassword:e.target.value}))}
-                            placeholder="Re-enter password"
-                            style={{paddingRight:36}}
-                          />
-                          <button type="button" onClick={()=>setShowPw(p=>({...p,confirm:!p.confirm}))} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#8BA3B4",padding:2}}>
-                            {showPw.confirm?<EyeOff size={14}/>:<Eye size={14}/>}
-                          </button>
-                        </div>
-                        {f.password&&f.confirmPassword&&f.password!==f.confirmPassword&&(
-                          <div style={{fontSize:11,color:"#EF4444",marginTop:4,display:"flex",alignItems:"center",gap:4}}>
-                            <AlertTriangle size={11}/> Passwords don't match
-                          </div>
-                        )}
-                        {f.password&&f.confirmPassword&&f.password===f.confirmPassword&&f.password.length>=8&&(
-                          <div style={{fontSize:11,color:"#22C55E",marginTop:4,display:"flex",alignItems:"center",gap:4}}>
-                            <Check size={11}/> Passwords match
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <button type="button" onClick={()=>{const gp=generatePassword();setF(prev=>({...prev,password:gp,confirmPassword:gp}));setShowPw(p=>({...p,pw:true,confirm:true}));}} style={{fontSize:11,fontWeight:600,color:"#7C3AED",background:"#7C3AED12",border:"1px solid #7C3AED22",borderRadius:6,padding:"5px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:5,marginTop:4}}>
-                      <RefreshCw size={11}/> Generate Strong Password
-                    </button>
+                  <div style={{marginTop:16,padding:"10px 14px",background:"#EFF6FF",borderRadius:8,border:"1px solid #BFDBFE",fontSize:12,color:"#1D4ED8",display:"flex",alignItems:"flex-start",gap:8}}>
+                    <Shield size={14} style={{marginTop:1,flexShrink:0}}/>
+                    <span>The user will set their own password when they sign up with this email address via the Sign In page.</span>
                   </div>
                 )}
 
@@ -584,38 +516,12 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
 
       {/* Password Reset / Change Modal */}
       {pwModal&&(
-        <Modal title={pwModal.mode==="change"?"Change Your Password":`Manage Password — ${pwModal.userName}`} onClose={()=>{setPwModal(null);setPwErr("");setPwSuccess("");}}
+        <Modal title="Change Your Password" onClose={()=>{setPwModal(null);setPwErr("");setPwSuccess("");}}
           footer={<>
             <button className="btn btn-sec" onClick={()=>{setPwModal(null);setPwErr("");setPwSuccess("");}}>Cancel</button>
-            {pwModal.mode==="reset"&&<button className="btn btn-sec" onClick={()=>resetToDefault(pwModal.userId)} style={{color:"#F97316",borderColor:"#F97316"}}><RefreshCw size={13}/>Reset to Default</button>}
             <button className="btn btn-primary" onClick={savePassword}><Check size={14}/>Save Password</button>
           </>}>
           <div style={{marginBottom:16}}>
-            {pwModal.mode==="reset"&&(
-              <div style={{padding:"10px 14px",background:"#FEF3C7",border:"1px solid #F59E0B",borderRadius:8,fontSize:12,color:"#92400E",marginBottom:16,display:"flex",alignItems:"flex-start",gap:8}}>
-                <AlertTriangle size={14} style={{marginTop:1,flexShrink:0}}/>
-                <div>You are setting a new password for <strong>{pwModal.userName}</strong>. Share the password securely with the user.</div>
-              </div>
-            )}
-
-            {/* Current password — only for self-change */}
-            {pwModal.mode==="change"&&(
-              <div className="form-group" style={{marginBottom:14}}>
-                <label>Current Password *</label>
-                <div style={{position:"relative"}}>
-                  <input
-                    type={showPw.current?"text":"password"}
-                    value={pwForm.current}
-                    onChange={e=>setPwForm(p=>({...p,current:e.target.value}))}
-                    placeholder="Enter current password"
-                    style={{paddingRight:36}}
-                  />
-                  <button type="button" onClick={()=>setShowPw(p=>({...p,current:!p.current}))} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#8BA3B4",padding:2}}>
-                    {showPw.current?<EyeOff size={14}/>:<Eye size={14}/>}
-                  </button>
-                </div>
-              </div>
-            )}
 
             <div className="form-group" style={{marginBottom:14}}>
               <label>New Password *</label>

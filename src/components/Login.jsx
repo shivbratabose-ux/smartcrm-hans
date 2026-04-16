@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { Mail, Lock, Eye, EyeOff, Shield, ChevronRight, UserPlus, LogIn, User, Briefcase, ArrowLeft } from "lucide-react";
-import { CREDS, hashPassword, DEMO_PW_HASH, TEAM, ROLES_HIERARCHY } from "../data/constants";
+import { Mail, Lock, Eye, EyeOff, Shield, UserPlus, LogIn, User, ArrowLeft } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 
-function Login({onLogin, orgUsers, userPasswords}) {
+function Login({onLogin, orgUsers}) {
   const [mode,setMode] = useState("login"); // login | signup | forgot
   const [email,setEmail] = useState("");
   const [pass,setPass]   = useState("");
@@ -98,31 +97,11 @@ function Login({onLogin, orgUsers, userPasswords}) {
     setLoading(false);
   };
 
-  // ── localStorage fallback login ──
-  const handleLocalLogin = () => {
-    if(attempts >= 5) { setErr("Too many failed attempts. Please wait and try again."); return; }
-    const emailLower = email.toLowerCase().trim();
-    let uid = CREDS[emailLower];
-    if(!uid && orgUsers) {
-      const dynUser = orgUsers.find(u => u.email?.toLowerCase() === emailLower && u.active !== false);
-      if(dynUser) uid = dynUser.id;
-    }
-    if(!uid) { setErr("Email not found. Check your login email."); setAttempts(a=>a+1); return; }
-    const hashed = hashPassword(pass);
-    const expectedHash = userPasswords?.[uid] ?? DEMO_PW_HASH;
-    if(hashed !== expectedHash) { setErr("Incorrect password."); setAttempts(a=>a+1); return; }
-    setErr(""); setAttempts(0);
-    onLogin(uid);
-  };
-
   const handle = () => {
-    if (isSupabaseConfigured) {
-      if (mode === "signup") handleSupabaseSignup();
-      else if (mode === "forgot") handleForgot();
-      else handleSupabaseLogin();
-    } else {
-      handleLocalLogin();
-    }
+    if (!isSupabaseConfigured) { setErr("Authentication is not configured. Contact your administrator."); return; }
+    if (mode === "signup") handleSupabaseSignup();
+    else if (mode === "forgot") handleForgot();
+    else handleSupabaseLogin();
   };
 
   const s = {
@@ -219,22 +198,15 @@ function Login({onLogin, orgUsers, userPasswords}) {
           {mode==="login" ? "Sign in to your account to continue" : mode==="signup" ? "Set up your SmartCRM account" : "We'll send you a reset link"}
         </div>
 
-        {/* Tab switcher — only show for Supabase mode */}
-        {isSupabaseConfigured ? (
-          <div style={s.tabRow}>
-            <button style={s.tab(mode==="login")} onClick={()=>{setMode("login");setErr("");setSuccess("");}}>
-              <LogIn size={14}/>Sign In
-            </button>
-            <button style={s.tab(mode==="signup")} onClick={()=>{setMode("signup");setErr("");setSuccess("");}}>
-              <UserPlus size={14}/>Sign Up
-            </button>
-          </div>
-        ) : (
-          <div style={s.tabRow}>
-            <button style={s.tab(true)}>Simple Login</button>
-            <button style={s.tab(false)}>Magic Link</button>
-          </div>
-        )}
+        {/* Tab switcher */}
+        <div style={s.tabRow}>
+          <button style={s.tab(mode==="login")} onClick={()=>{setMode("login");setErr("");setSuccess("");}}>
+            <LogIn size={14}/>Sign In
+          </button>
+          <button style={s.tab(mode==="signup")} onClick={()=>{setMode("signup");setErr("");setSuccess("");}}>
+            <UserPlus size={14}/>Sign Up
+          </button>
+        </div>
 
         {/* Back link for forgot mode */}
         {mode==="forgot" && (
