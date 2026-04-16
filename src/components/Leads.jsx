@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds } from '../utils/helpers';
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip } from './shared';
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -1371,7 +1371,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 // ═══════════════════════════════════════════════════════════════════
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters }) {
+function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, canDelete }) {
   // Scope the team list to only users this logged-in user has visibility over.
   // This keeps owner filter and assignment dropdowns consistent with the scoped data.
   const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
@@ -1507,15 +1507,16 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   };
 
   const del = (id) => {
-    setLeads(p => p.filter(l => l.id !== id));
+    const now = new Date().toISOString();
+    setLeads(p => p.map(l => l.id === id ? { ...l, isDeleted: true, deletedAt: now, deletedBy: currentUser } : l));
     setConfirm(null);
   };
 
   const bulkDelete = () => {
-    if (window.confirm("Delete " + bulk.count + " leads permanently?")) {
-      setLeads(p => p.filter(l => !bulk.isSelected(l.id)));
-      bulk.clear();
-    }
+    if (!canDelete) return;
+    const now = new Date().toISOString();
+    setLeads(p => p.map(l => bulk.isSelected(l.id) ? { ...l, isDeleted: true, deletedAt: now, deletedBy: currentUser } : l));
+    bulk.clear();
   };
 
   const handleConvert = (lead, conversionData) => {
@@ -1827,9 +1828,11 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                           <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(l)}>
                             <Edit2 size={14}/>
                           </button>
-                          <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(l.id)}>
-                            <Trash2 size={14}/>
-                          </button>
+                          {canDelete && (
+                            <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(l.id)}>
+                              <Trash2 size={14}/>
+                            </button>
+                          )}
                           {l.stage !== "Converted" && l.stage !== "NA" && (
                             <button className="icon-btn" aria-label="Convert to Opportunity"
                               title="Convert to Opportunity"
@@ -2219,9 +2222,9 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
 
       {/* Delete Confirmation */}
       {confirm && (
-        <Confirm
+        <DeleteConfirm
           title="Delete Lead"
-          msg="This will permanently remove this lead. This action cannot be undone."
+          recordLabel={leads.find(l => l.id === confirm)?.company || "this lead"}
           onConfirm={() => del(confirm)}
           onCancel={() => setConfirm(null)}
         />

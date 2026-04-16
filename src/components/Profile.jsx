@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { Check, X, Edit2, Key, Eye, EyeOff, User, Mail, Briefcase, MapPin, Calendar, Shield } from "lucide-react";
-import { ROLE_MAP, INIT_USERS, hashPassword } from '../data/constants';
+import { ROLE_MAP, INIT_USERS } from '../data/constants';
 import { fmt } from '../utils/helpers';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
-function Profile({currentUser,orgUsers,setOrgUsers,userPasswords,setUserPasswords}) {
+function Profile({currentUser,orgUsers,setOrgUsers}) {
   const user=(orgUsers||[]).find(u=>u.id===currentUser)||INIT_USERS.find(u=>u.id===currentUser);
   const roleInfo=ROLE_MAP[user?.role];
   const [editing,setEditing]=useState(false);
   const [form,setForm]=useState({});
   const [pwMode,setPwMode]=useState(false);
-  const [pwForm,setPwForm]=useState({current:"",password:"",confirm:""});
-  const [showPw,setShowPw]=useState({current:false,password:false,confirm:false});
+  const [pwForm,setPwForm]=useState({password:"",confirm:""});
+  const [showPw,setShowPw]=useState({password:false,confirm:false});
   const [pwErr,setPwErr]=useState("");
   const [pwOk,setPwOk]=useState("");
   const [saveOk,setSaveOk]=useState("");
@@ -28,13 +29,13 @@ function Profile({currentUser,orgUsers,setOrgUsers,userPasswords,setUserPassword
     setTimeout(()=>setSaveOk(""),3000);
   };
 
-  const changePw=()=>{
+  const changePw=async()=>{
     setPwErr("");setPwOk("");
-    if(!pwForm.current){setPwErr("Current password is required");return;}
-    if(hashPassword(pwForm.current)!==userPasswords?.[currentUser]){setPwErr("Current password is incorrect");return;}
     if(pwForm.password.length<8){setPwErr("New password must be at least 8 characters");return;}
     if(pwForm.password!==pwForm.confirm){setPwErr("Passwords do not match");return;}
-    setUserPasswords(prev=>({...prev,[currentUser]:hashPassword(pwForm.password)}));
+    if(!isSupabaseConfigured){setPwErr("Password change requires authentication to be configured.");return;}
+    const {error}=await supabase.auth.updateUser({password:pwForm.password});
+    if(error){setPwErr(error.message);return;}
     setPwOk("Password changed successfully");
     setPwForm({current:"",password:"",confirm:""});
     setTimeout(()=>{setPwMode(false);setPwOk("");},2000);
@@ -137,11 +138,10 @@ function Profile({currentUser,orgUsers,setOrgUsers,userPasswords,setUserPassword
           <div style={{padding:"20px 28px"}}>
             {pwErr&&<div style={{padding:"8px 14px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,fontSize:12,color:"#DC2626",marginBottom:12}}>{pwErr}</div>}
             {pwOk&&<div style={{padding:"8px 14px",background:"#ECFDF5",border:"1px solid #A7F3D0",borderRadius:8,fontSize:12,color:"#065F46",marginBottom:12,display:"flex",alignItems:"center",gap:6}}><Check size={14}/>{pwOk}</div>}
-            <PwInput label="Current Password" field="current"/>
             <PwInput label="New Password (min 8 characters)" field="password"/>
             <PwInput label="Confirm New Password" field="confirm"/>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}}>
-              <button className="btn btn-sec" onClick={()=>{setPwMode(false);setPwForm({current:"",password:"",confirm:""});setPwErr("");}}><X size={13}/>Cancel</button>
+              <button className="btn btn-sec" onClick={()=>{setPwMode(false);setPwForm({password:"",confirm:""});setPwErr("");}}><X size={13}/>Cancel</button>
               <button className="btn btn-primary" onClick={changePw}><Check size={14}/>Update Password</button>
             </div>
           </div>

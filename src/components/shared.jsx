@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight } from "lucide-react";
+import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight, AlertTriangle, RotateCcw } from "lucide-react";
 import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
 import { fmt, uid, today, hasErrors } from "../utils/helpers";
 
@@ -53,6 +53,64 @@ export function Confirm({title,msg,onConfirm,onCancel}) {
   return (
     <Modal title={title} onClose={onCancel} footer={<><button className="btn btn-sec btn-sm" onClick={onCancel}>Cancel</button><button className="btn btn-danger btn-sm" onClick={onConfirm}>Delete</button></>}>
       <p style={{color:"var(--text2)",fontSize:13}}>{msg}</p>
+    </Modal>
+  );
+}
+
+/**
+ * DeleteConfirm — two-step typed confirmation required for destructive deletes.
+ * User must type "DELETE" exactly before the confirm button enables.
+ * Shows a clear warning that only Admins can reverse the action.
+ */
+export function DeleteConfirm({title, recordLabel, onConfirm, onCancel}) {
+  const [typed, setTyped] = useState("");
+  const ready = typed.trim() === "DELETE";
+  return (
+    <Modal title={title || "Confirm Delete"} onClose={onCancel}
+      footer={<>
+        <button className="btn btn-sec btn-sm" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-danger btn-sm" onClick={onConfirm} disabled={!ready}
+          style={{opacity: ready ? 1 : 0.45, cursor: ready ? "pointer" : "not-allowed"}}>
+          Delete{recordLabel ? ` "${recordLabel}"` : ""}
+        </button>
+      </>}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 14px",background:"#FEF3C7",border:"1px solid #F59E0B",borderRadius:8,marginBottom:16}}>
+        <AlertTriangle size={16} style={{color:"#D97706",flexShrink:0,marginTop:1}}/>
+        <div style={{fontSize:12.5,color:"#92400E",lineHeight:1.5}}>
+          <strong>This action can only be reversed by an Admin.</strong><br/>
+          The record will be soft-deleted and hidden from all users.
+        </div>
+      </div>
+      <p style={{fontSize:13,color:"var(--text2)",marginBottom:8}}>
+        Type <code style={{background:"#F3F4F6",padding:"1px 6px",borderRadius:4,fontWeight:700}}>DELETE</code> to confirm:
+      </p>
+      <input
+        autoFocus
+        value={typed}
+        onChange={e => setTyped(e.target.value)}
+        onKeyDown={e => e.key === "Enter" && ready && onConfirm()}
+        placeholder="Type DELETE"
+        style={{width:"100%",boxSizing:"border-box",padding:"8px 12px",border:`1.5px solid ${ready?"#EF4444":"var(--border)"}`,borderRadius:8,fontSize:13,fontFamily:"inherit",outline:"none"}}
+      />
+    </Modal>
+  );
+}
+
+/**
+ * RestoreConfirm — simple confirmation for admin restoring a soft-deleted record.
+ */
+export function RestoreConfirm({recordLabel, onConfirm, onCancel}) {
+  return (
+    <Modal title="Restore Record" onClose={onCancel}
+      footer={<>
+        <button className="btn btn-sec btn-sm" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-primary btn-sm" onClick={onConfirm} style={{background:"#0D9488"}}>
+          <RotateCcw size={13}/> Restore
+        </button>
+      </>}>
+      <p style={{fontSize:13,color:"var(--text2)"}}>
+        Restore <strong>{recordLabel}</strong>? It will become visible to all users again.
+      </p>
     </Modal>
   );
 }

@@ -18,7 +18,7 @@ import {
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds } from "../utils/helpers";
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip } from "./shared";
 
 /* ───────── constants ───────── */
 const HEALTH_CFG = {
@@ -491,7 +491,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
 /* ═══════════════════════════════════════════════════════
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
-function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, onDealWon }) {
+function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, onDealWon, canDelete }) {
   const _pipelineScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const team = useMemo(() => {
     const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
@@ -1036,7 +1036,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                     <td>
                       <div style={{ display: "flex", gap: 4 }}>
                         <button className="icon-btn" onClick={() => openEdit(o)}><Edit2 size={14} /></button>
-                        <button className="icon-btn" onClick={() => setConfirm(o.id)}><Trash2 size={14} /></button>
+                        {canDelete && <button className="icon-btn" onClick={() => setConfirm(o.id)}><Trash2 size={14} /></button>}
                       </div>
                     </td>
                   </tr>
@@ -1306,7 +1306,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       )}
 
       {/* ═════════ CONFIRM DELETE ═════════ */}
-      {confirm && <Confirm title="Delete Deal" msg="Remove this deal permanently?" onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)} />}
+      {confirm && <DeleteConfirm title="Delete Deal" recordLabel={opps.find(o => o.id === confirm)?.title || "this deal"} onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)} />}
 
       {/* ═════════ LOG CALL MODAL ═════════ */}
       {logCallPrefill && (

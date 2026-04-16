@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 
 // Data & Utils
-import { INIT_USERS, PROD_MAP, STAGE_PROB, INIT_USER_PASSWORDS } from "./data/constants";
+import { INIT_USERS, PROD_MAP, STAGE_PROB } from "./data/constants";
 import {
   INIT_ACCOUNTS, INIT_CONTACTS, INIT_OPPS, INIT_ACTIVITIES,
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
@@ -14,7 +14,7 @@ import { CSS } from "./styles";
 
 // Supabase integration
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, insertRecord, updateRecord, deleteRecord } from "./lib/db";
+import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, insertRecord, updateRecord, deleteRecord, restoreRecord, loadDeleted } from "./lib/db";
 
 // Components
 import Login from "./components/Login";
@@ -183,7 +183,6 @@ export default function SmartCRM() {
       activities: INIT_ACTIVITIES, tickets: INIT_TICKETS, notes: INIT_NOTES,
       files: INIT_FILES, masters: INIT_MASTERS, catalog: INIT_PRODUCT_CATALOG,
       org: INIT_ORG, teams: INIT_TEAMS, orgUsers: INIT_USERS,
-      userPasswords: INIT_USER_PASSWORDS,
       leads: INIT_LEADS, callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
       collections: INIT_COLLECTIONS, targets: INIT_TARGETS, quotes: INIT_QUOTES,
       commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, updates: INIT_UPDATES, customPermissions: {},
@@ -220,7 +219,6 @@ export default function SmartCRM() {
   const [org,setOrg]                 = useState(saved?.org || INIT_ORG);
   const [teams,setTeams]             = useState(saved?.teams || INIT_TEAMS);
   const [orgUsers,setOrgUsers]       = useState(saved?.orgUsers || INIT_USERS);
-  const [userPasswords,setUserPasswords] = useState(saved?.userPasswords || INIT_USER_PASSWORDS);
   // New CRM modules
   const [leads,setLeads]             = useState(saved?.leads || INIT_LEADS);
   const [callReports,setCallReports] = useState(saved?.callReports || INIT_CALL_REPORTS);
@@ -254,24 +252,41 @@ export default function SmartCRM() {
   const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const _globalRole = useMemo(() => isGlobalRole(currentUser, orgUsers), [currentUser, orgUsers]);
 
+  // Roles allowed to soft-delete records; all others can only archive (same action, UI label differs)
+  const canDelete = useMemo(() => {
+    const role = orgUsers.find(u => u.id === currentUser)?.role;
+    return ["admin","md","director","line_mgr"].includes(role);
+  }, [currentUser, orgUsers]);
+
+  // Only admins can restore soft-deleted records
+  const canRestore = useMemo(() => {
+    const role = orgUsers.find(u => u.id === currentUser)?.role;
+    return ["admin","md","director"].includes(role);
+  }, [currentUser, orgUsers]);
+
+  // Exclude soft-deleted records from all visible arrays
   const visibleLeads = useMemo(() => {
-    if (_globalRole) return leads;
-    return leads.filter(l => !l.assignedTo || _scopedIds.has(l.assignedTo));
+    const live = leads.filter(l => !l.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(l => !l.assignedTo || _scopedIds.has(l.assignedTo));
   }, [leads, _scopedIds, _globalRole]);
 
   const visibleOpps = useMemo(() => {
-    if (_globalRole) return opps;
-    return opps.filter(o => !o.owner || _scopedIds.has(o.owner));
+    const live = opps.filter(o => !o.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(o => !o.owner || _scopedIds.has(o.owner));
   }, [opps, _scopedIds, _globalRole]);
 
   const visibleActivities = useMemo(() => {
-    if (_globalRole) return activities;
-    return activities.filter(a => !a.owner || _scopedIds.has(a.owner));
+    const live = activities.filter(a => !a.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(a => !a.owner || _scopedIds.has(a.owner));
   }, [activities, _scopedIds, _globalRole]);
 
   const visibleCallReports = useMemo(() => {
-    if (_globalRole) return callReports;
-    return callReports.filter(cr => !cr.marketingPerson || _scopedIds.has(cr.marketingPerson));
+    const live = callReports.filter(cr => !cr.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(cr => !cr.marketingPerson || _scopedIds.has(cr.marketingPerson));
   }, [callReports, _scopedIds, _globalRole]);
 
   // ── Session: persist login & track idle timeout ──
@@ -312,8 +327,8 @@ export default function SmartCRM() {
       const nextIds = new Set(next.map(r => r.id));
       // Inserts
       next.forEach(r => { if (r.id && !prevIds.has(r.id)) insertRecord(module === "users" ? "users" : module, r); });
-      // Deletes
-      old.forEach(r => { if (r.id && !nextIds.has(r.id)) deleteRecord(module === "users" ? "users" : module, r.id); });
+      // Deletes (soft — deleteRecord now issues UPDATE is_deleted=true)
+      old.forEach(r => { if (r.id && !nextIds.has(r.id)) deleteRecord(module === "users" ? "users" : module, r.id, currentUser); });
       // Updates — only compare records that exist in both
       next.forEach(r => {
         if (r.id && prevIds.has(r.id)) {
@@ -384,44 +399,43 @@ export default function SmartCRM() {
     return unsub;
   }, []);
 
-  // ── Expose seed function for admin migration ──
+  // ── Dev-only debug helpers (stripped from production builds) ──
   useEffect(() => {
-    if (isSupabaseConfigured) {
-      window.__seedSupabase = () => seedSupabase({
-        accounts: INIT_ACCOUNTS, contacts: INIT_CONTACTS, opps: INIT_OPPS,
-        activities: INIT_ACTIVITIES, tickets: INIT_TICKETS, leads: INIT_LEADS,
-        callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
-        collections: INIT_COLLECTIONS, targets: INIT_TARGETS, quotes: INIT_QUOTES,
-        commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, notes: INIT_NOTES, files: INIT_FILES,
-      });
+    if (import.meta.env.DEV) {
+      if (isSupabaseConfigured) {
+        window.__seedSupabase = () => seedSupabase({
+          accounts: INIT_ACCOUNTS, contacts: INIT_CONTACTS, opps: INIT_OPPS,
+          activities: INIT_ACTIVITIES, tickets: INIT_TICKETS, leads: INIT_LEADS,
+          callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
+          collections: INIT_COLLECTIONS, targets: INIT_TARGETS, quotes: INIT_QUOTES,
+          commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, notes: INIT_NOTES, files: INIT_FILES,
+        });
+      }
+      window.__resetCRM = () => {
+        try { localStorage.removeItem("smartcrm_data"); } catch {}
+        window.location.reload();
+      };
+      window.__crmAudit = () => {
+        const raw = localStorage.getItem("smartcrm_data");
+        const d = raw ? JSON.parse(raw) : null;
+        console.table({
+          leads: d?.leads?.length,
+          contacts: d?.contacts?.length,
+          opps: d?.opps?.length,
+          accounts: d?.accounts?.length,
+          leadsWithContactIds: d?.leads?.filter(l => l.contactIds?.length).length,
+          oppsFromLeads: d?.opps?.filter(o => o.sourceLeadIds?.length).length,
+        });
+        return d;
+      };
     }
-    // Admin escape hatch: call window.__resetCRM() in the browser console to wipe
-    // stale localStorage and reload with fresh seed data
-    window.__resetCRM = () => {
-      try { localStorage.removeItem("smartcrm_data"); } catch {}
-      window.location.reload();
-    };
-    // Expose migration audit for debugging
-    window.__crmAudit = () => {
-      const raw = localStorage.getItem("smartcrm_data");
-      const d = raw ? JSON.parse(raw) : null;
-      console.table({
-        leads: d?.leads?.length,
-        contacts: d?.contacts?.length,
-        opps: d?.opps?.length,
-        accounts: d?.accounts?.length,
-        leadsWithContactIds: d?.leads?.filter(l => l.contactIds?.length).length,
-        oppsFromLeads: d?.opps?.filter(o => o.sourceLeadIds?.length).length,
-      });
-      return d;
-    };
   }, []);
 
   // Persist all data to localStorage on every change (works as primary store without Supabase, backup with Supabase)
   useEffect(() => {
-    saveState({ version: DATA_VERSION, accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
+    saveState({ version: DATA_VERSION, accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
       leads, callReports, contracts, collections, targets, quotes, commLogs, events, updates, customPermissions });
-  }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers, userPasswords,
+  }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
     leads, callReports, contracts, collections, targets, quotes, commLogs, events, updates, customPermissions]);
 
   const addNote = note => setNotes(p=>[...p,note]);
@@ -430,30 +444,31 @@ export default function SmartCRM() {
 
   // Cascade delete: remove all linked records when an account is deleted
   const cascadeDeleteAccount = useCallback((accId) => {
-    setAccounts(p => p.filter(a => a.id !== accId).map(a => a.parentId === accId ? {...a, parentId: ""} : a));
-    setContacts(p => p.filter(c => c.accountId !== accId));
-    setOpps(p => p.filter(o => o.accountId !== accId));
-    setActivities(p => p.filter(a => a.accountId !== accId));
-    setTickets(p => p.filter(t => t.accountId !== accId));
-    setNotes(p => p.filter(n => !(n.recordType === "account" && n.recordId === accId)));
-    setFiles(p => p.map(f => ({...f, linkedTo: f.linkedTo.filter(l => !(l.type === "account" && l.id === accId))})));
-    setContracts(p => p.filter(c => c.accountId !== accId));
-    setCollections(p => p.filter(c => c.accountId !== accId));
-    setCallReports(p => p.filter(r => r.accountId !== accId));
-  }, []);
+    const now = new Date().toISOString();
+    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
+    setAccounts(p => p.map(a => a.id === accId ? {...a, ...sd} : (a.parentId === accId ? {...a, parentId: ""} : a)));
+    setContacts(p => p.map(c => c.accountId === accId ? {...c, ...sd} : c));
+    setOpps(p => p.map(o => o.accountId === accId ? {...o, ...sd} : o));
+    setActivities(p => p.map(a => a.accountId === accId ? {...a, ...sd} : a));
+    setTickets(p => p.map(t => t.accountId === accId ? {...t, ...sd} : t));
+    setContracts(p => p.map(c => c.accountId === accId ? {...c, ...sd} : c));
+    setCollections(p => p.map(c => c.accountId === accId ? {...c, ...sd} : c));
+    setCallReports(p => p.map(r => r.accountId === accId ? {...r, ...sd} : r));
+    // notes/files: orphan rather than soft-delete (they carry content)
+  }, [currentUser]);
 
-  // Cascade delete: remove linked activities/notes/files when an opportunity is deleted
   const cascadeDeleteOpp = useCallback((oppId) => {
-    setOpps(p => p.filter(o => o.id !== oppId));
+    const now = new Date().toISOString();
+    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
+    setOpps(p => p.map(o => o.id === oppId ? {...o, ...sd} : o));
     setActivities(p => p.map(a => a.oppId === oppId ? {...a, oppId: ""} : a));
-    setNotes(p => p.filter(n => !(n.recordType === "opp" && n.recordId === oppId)));
-    setFiles(p => p.map(f => ({...f, linkedTo: f.linkedTo.filter(l => !(l.type === "opp" && l.id === oppId))})));
     setContracts(p => p.map(c => c.oppId === oppId ? {...c, oppId: ""} : c));
-  }, []);
+  }, [currentUser]);
 
-  // Cascade delete: unlink activities when a contact is deleted
   const cascadeDeleteContact = useCallback((conId) => {
-    setContacts(p => p.filter(c => c.id !== conId));
+    const now = new Date().toISOString();
+    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
+    setContacts(p => p.map(c => c.id === conId ? {...c, ...sd} : c));
     setActivities(p => p.map(a => a.contactId === conId ? {...a, contactId: ""} : a));
     setCallReports(p => p.map(cr => cr.contactId === conId ? {...cr, contactId: ""} : cr));
     setLeads(p => p.map(l => l.contactIds?.includes(conId) ? {...l, contactIds: l.contactIds.filter(id => id !== conId)} : l));
@@ -711,7 +726,7 @@ export default function SmartCRM() {
   }, [accounts, contacts, leads]);
 
   if(!currentUser) return (
-    <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers} userPasswords={userPasswords}/></>
+    <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers}/></>
   );
 
   return (
@@ -724,10 +739,10 @@ export default function SmartCRM() {
           <Header page={page} accounts={accounts} contacts={contacts} opps={visibleOpps} tickets={tickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={updates} myUnreadCount={myUnreadCount}/>
           <div className="content" id="main-content" role="main">
             {page==="dashboard"  && <Dashboard accounts={accounts} contacts={contacts} opps={visibleOpps} tickets={tickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={collections} targets={targets} setPage={setPage} orgUsers={orgUsers}/>}
-            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={accounts} contacts={contacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters}/>}
-            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} setContacts={setContacts} tickets={tickets} contracts={contracts} collections={collections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters}/>}
-            {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={visibleOpps} activities={visibleActivities}/>}
-            {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} onDealWon={handleDealWon}/>}
+            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={accounts} contacts={contacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} canDelete={canDelete}/>}
+            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} setContacts={setContacts} tickets={tickets} contracts={contracts} collections={collections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} canDelete={canDelete}/>}
+            {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={visibleOpps} activities={visibleActivities} canDelete={canDelete}/>}
+            {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} onDealWon={handleDealWon} canDelete={canDelete}/>}
             {page==="activities" && <Activities activities={visibleActivities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={visibleOpps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers}/>}
             {page==="callreports"&& <CallReports callReports={visibleCallReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="tickets"    && <Tickets tickets={tickets} setTickets={setTickets} accounts={accounts} orgUsers={orgUsers}/>}
@@ -743,8 +758,8 @@ export default function SmartCRM() {
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
-            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
-            {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/>}
+            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
+            {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers}/>}
           </div>
         </div>
         <QuickLogFAB accounts={accounts} contacts={contacts} opps={visibleOpps} leads={visibleLeads} orgUsers={orgUsers} currentUser={currentUser} callReports={visibleCallReports} setCallReports={setCallReports} activities={visibleActivities} setActivities={setActivities} masters={masters}/>

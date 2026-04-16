@@ -5,6 +5,11 @@
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { loadState, saveState } from "../utils/helpers";
 
+// Only log in development — never expose DB internals to prod console
+const dbLog = import.meta.env.DEV
+  ? (level, ...args) => console[level](...args)
+  : () => {};
+
 // ── Table name mapping (camelCase → snake_case) ──
 const TABLE_MAP = {
   accounts:    "accounts",
@@ -68,6 +73,8 @@ const toSnake = (obj) => {
     keepLeadOpen:"keep_lead_open", followupTitle:"followup_title",
     followupAssign:"followup_assign", followupDue:"followup_due",
     taskType:"task_type", taskStatus:"task_status",
+    // soft delete
+    isDeleted:"is_deleted", deletedAt:"deleted_at", deletedBy:"deleted_by",
   };
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -119,6 +126,8 @@ const toCamel = (obj) => {
     keep_lead_open:"keepLeadOpen", followup_title:"followupTitle",
     followup_assign:"followupAssign", followup_due:"followupDue",
     task_type:"taskType", task_status:"taskStatus",
+    // soft delete
+    is_deleted:"isDeleted", deleted_at:"deletedAt", deleted_by:"deletedBy",
   };
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -141,8 +150,10 @@ export async function loadAll(module) {
   const table = TABLE_MAP[module];
   if (!table) return null;
 
-  const { data, error } = await supabase.from(table).select("*").order("created_at", { ascending: false });
-  if (error) { console.error(`[DB] loadAll ${module}:`, error); return null; }
+  // files table uses uploaded_at instead of created_at
+  const orderCol = table === "files" ? "uploaded_at" : "created_at";
+  const { data, error } = await supabase.from(table).select("*").eq("is_deleted", false).order(orderCol, { ascending: false });
+  if (error) { dbLog('error', `[DB] loadAll ${module}:`, error); return null; }
   return (data || []).map(toCamel);
 }
 
@@ -176,7 +187,7 @@ export async function insertRecord(module, record) {
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
   const { data, error } = await supabase.from(table).insert(snaked).select().single();
-  if (error) console.error(`[DB] insert ${module}:`, error);
+  if (error) dbLog('error', `[DB] insert ${module}:`, error);
   return { data: data ? toCamel(data) : record, error };
 }
 
@@ -193,22 +204,55 @@ export async function updateRecord(module, id, updates) {
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
   const { data, error } = await supabase.from(table).update(snaked).eq("id", id).select().single();
-  if (error) console.error(`[DB] update ${module}:`, error);
+  if (error) dbLog('error', `[DB] update ${module}:`, error);
   return { data: data ? toCamel(data) : updates, error };
 }
 
 /**
- * Delete a record by id
+ * Soft-delete a record (sets is_deleted=true + logs audit).
+ * Hard DELETEs that bypass the app are also intercepted by the DB trigger.
  */
-export async function deleteRecord(module, id) {
+export async function deleteRecord(module, id, userId) {
   if (!isSupabaseConfigured) return { error: null };
-
   const table = TABLE_MAP[module];
   if (!table) return { error: "Unknown module" };
+  const { error } = await supabase.from(table).update({
+    is_deleted: true,
+    deleted_at: new Date().toISOString(),
+    deleted_by: userId || null,
+  }).eq("id", id);
+  if (error) { dbLog('error', `[DB] softDelete ${module}:`, error); return { error }; }
+  await logAudit(userId, "DELETE", table, id, null, { is_deleted: true });
+  return { error: null };
+}
 
-  const { error } = await supabase.from(table).delete().eq("id", id);
-  if (error) console.error(`[DB] delete ${module}:`, error);
-  return { error };
+/**
+ * Restore a soft-deleted record (admin only — enforced by RLS + caller check).
+ */
+export async function restoreRecord(module, id, userId) {
+  if (!isSupabaseConfigured) return { error: null };
+  const table = TABLE_MAP[module];
+  if (!table) return { error: "Unknown module" };
+  const { error } = await supabase.from(table).update({
+    is_deleted: false,
+    deleted_at: null,
+    deleted_by: null,
+  }).eq("id", id);
+  if (error) { dbLog('error', `[DB] restore ${module}:`, error); return { error }; }
+  await logAudit(userId, "RESTORE", table, id, { is_deleted: true }, { is_deleted: false });
+  return { error: null };
+}
+
+/**
+ * Load soft-deleted records for a module (admin panel).
+ */
+export async function loadDeleted(module) {
+  if (!isSupabaseConfigured) return [];
+  const table = TABLE_MAP[module];
+  if (!table) return [];
+  const { data, error } = await supabase.from(table).select("*").eq("is_deleted", true).order("deleted_at", { ascending: false });
+  if (error) { dbLog('error', `[DB] loadDeleted ${module}:`, error); return []; }
+  return (data || []).map(toCamel);
 }
 
 /**
@@ -222,7 +266,7 @@ export async function batchUpsert(module, records) {
 
   const snaked = records.map(toSnake);
   const { error } = await supabase.from(table).upsert(snaked, { onConflict: "id" });
-  if (error) console.error(`[DB] batchUpsert ${module}:`, error);
+  if (error) dbLog('error', `[DB] batchUpsert ${module}:`, error);
   return { error };
 }
 
@@ -239,14 +283,22 @@ export async function signIn(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { user: null, error: error.message };
 
-  // Get CRM user profile
+  // Get CRM user profile — must exist and be active
   const { data: profile } = await supabase
     .from("users")
     .select("*")
     .eq("auth_user_id", data.user.id)
     .single();
 
-  return { user: profile ? toCamel(profile) : null, session: data.session, error: null };
+  if (!profile) {
+    await supabase.auth.signOut();
+    return { user: null, error: "No CRM profile found. Contact your administrator." };
+  }
+  if (!profile.active) {
+    await supabase.auth.signOut();
+    return { user: null, error: "Your account has been deactivated. Contact your administrator." };
+  }
+  return { user: toCamel(profile), session: data.session, error: null };
 }
 
 /**
@@ -271,7 +323,12 @@ export async function getSession() {
     .eq("auth_user_id", session.user.id)
     .single();
 
-  return profile ? toCamel(profile) : null;
+  // No profile or deactivated — kill the session immediately
+  if (!profile || !profile.active) {
+    await supabase.auth.signOut();
+    return null;
+  }
+  return toCamel(profile);
 }
 
 /**
@@ -381,12 +438,12 @@ export async function seedSupabase(seedData) {
 
   for (const mod of order) {
     if (seedData[mod]?.length) {
-      console.log(`[Seed] Upserting ${mod}: ${seedData[mod].length} records`);
+      dbLog('log', `[Seed] Upserting ${mod}: ${seedData[mod].length} records`);
       const { error } = await batchUpsert(mod, seedData[mod]);
-      if (error) console.error(`[Seed] Failed ${mod}:`, error);
+      if (error) dbLog('error', `[Seed] Failed ${mod}:`, error);
     }
   }
-  console.log("[Seed] Complete!");
+  dbLog('log', "[Seed] Complete!");
   return { error: null };
 }
 

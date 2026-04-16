@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LEVELS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_ACC } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today } from '../utils/helpers';
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, NotesThread, FilesList, Empty, LogCallModal } from './shared';
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -458,7 +458,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNTS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, setActivities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers, callReports, setCallReports, masters}) {
+function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, setActivities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers, callReports, setCallReports, masters, canDelete}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
   const [typeF, setTypeF] = useState("All");
@@ -723,7 +723,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
                     <td>
                       <div style={{display:"flex",gap:4}}>
                         <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(a)}><Edit2 size={14}/></button>
-                        <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(a.id)}><Trash2 size={14}/></button>
+                        {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(a.id)}><Trash2 size={14}/></button>}
                       </div>
                     </td>
                   </tr>
@@ -834,7 +834,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           <div className="form-group"><label>Products</label><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>{PRODUCTS.map(p => <button key={p.id} className="btn btn-xs" style={{background:form.products.includes(p.id)?p.color:"var(--s3)",color:form.products.includes(p.id)?"white":"var(--text2)",border:"none",cursor:"pointer"}} onClick={() => toggleProd(p.id)}>{p.name}</button>)}</div></div>
         </Modal>
       )}
-      {confirm && <Confirm title="Delete Account" msg="This will permanently remove the account and all linked contacts, deals, activities, tickets, and notes." onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>}
+      {confirm && <DeleteConfirm title="Delete Account" recordLabel={accounts.find(a => a.id === confirm)?.name || "this account"} onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>}
 
       {/* ═════════ LOG CALL MODAL ═════════ */}
       {logCallPrefill && (
