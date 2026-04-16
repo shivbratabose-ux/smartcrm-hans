@@ -150,7 +150,9 @@ export async function loadAll(module) {
   const table = TABLE_MAP[module];
   if (!table) return null;
 
-  const { data, error } = await supabase.from(table).select("*").eq("is_deleted", false).order("created_at", { ascending: false });
+  // files table uses uploaded_at instead of created_at
+  const orderCol = table === "files" ? "uploaded_at" : "created_at";
+  const { data, error } = await supabase.from(table).select("*").eq("is_deleted", false).order(orderCol, { ascending: false });
   if (error) { dbLog('error', `[DB] loadAll ${module}:`, error); return null; }
   return (data || []).map(toCamel);
 }
@@ -281,14 +283,22 @@ export async function signIn(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { user: null, error: error.message };
 
-  // Get CRM user profile
+  // Get CRM user profile — must exist and be active
   const { data: profile } = await supabase
     .from("users")
     .select("*")
     .eq("auth_user_id", data.user.id)
     .single();
 
-  return { user: profile ? toCamel(profile) : null, session: data.session, error: null };
+  if (!profile) {
+    await supabase.auth.signOut();
+    return { user: null, error: "No CRM profile found. Contact your administrator." };
+  }
+  if (!profile.active) {
+    await supabase.auth.signOut();
+    return { user: null, error: "Your account has been deactivated. Contact your administrator." };
+  }
+  return { user: toCamel(profile), session: data.session, error: null };
 }
 
 /**
@@ -313,7 +323,12 @@ export async function getSession() {
     .eq("auth_user_id", session.user.id)
     .single();
 
-  return profile ? toCamel(profile) : null;
+  // No profile or deactivated — kill the session immediately
+  if (!profile || !profile.active) {
+    await supabase.auth.signOut();
+    return null;
+  }
+  return toCamel(profile);
 }
 
 /**
