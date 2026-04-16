@@ -451,16 +451,93 @@ CREATE POLICY "activities_write" ON public.activities FOR ALL USING (
   public.get_crm_role() NOT IN ('viewer')
 );
 
-CREATE POLICY "call_reports_all" ON public.call_reports FOR ALL USING (true);
-CREATE POLICY "tickets_all" ON public.tickets FOR ALL USING (true);
-CREATE POLICY "contracts_all" ON public.contracts FOR ALL USING (true);
-CREATE POLICY "collections_all" ON public.collections FOR ALL USING (true);
-CREATE POLICY "targets_all" ON public.targets FOR ALL USING (true);
-CREATE POLICY "quotations_all" ON public.quotations FOR ALL USING (true);
-CREATE POLICY "comm_logs_all" ON public.comm_logs FOR ALL USING (true);
-CREATE POLICY "events_all" ON public.events FOR ALL USING (true);
-CREATE POLICY "notes_all" ON public.notes FOR ALL USING (true);
-CREATE POLICY "files_all" ON public.files FOR ALL USING (true);
+-- ── call_reports: marketing_person owns the record ──
+CREATE POLICY "call_reports_read" ON public.call_reports FOR SELECT USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead')
+  OR marketing_person = public.get_crm_user_id()
+);
+CREATE POLICY "call_reports_write" ON public.call_reports FOR ALL USING (
+  public.get_crm_role() NOT IN ('viewer')
+);
+
+-- ── tickets: support sees all; others see assigned or manager ──
+CREATE POLICY "tickets_read" ON public.tickets FOR SELECT USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead','support')
+  OR assigned = public.get_crm_user_id()
+);
+CREATE POLICY "tickets_write" ON public.tickets FOR ALL USING (
+  public.get_crm_role() NOT IN ('viewer')
+);
+
+-- ── contracts: sensitive — managers write; execs read own ──
+CREATE POLICY "contracts_read" ON public.contracts FOR SELECT USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead')
+  OR owner = public.get_crm_user_id()
+);
+CREATE POLICY "contracts_write" ON public.contracts FOR ALL USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead')
+  OR owner = public.get_crm_user_id()
+);
+
+-- ── collections: same pattern as contracts ──
+CREATE POLICY "collections_read" ON public.collections FOR SELECT USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead')
+  OR owner = public.get_crm_user_id()
+);
+CREATE POLICY "collections_write" ON public.collections FOR ALL USING (
+  public.get_crm_role() NOT IN ('viewer','support','tech_lead')
+);
+
+-- ── targets: managers set targets; each user sees their own ──
+CREATE POLICY "targets_read" ON public.targets FOR SELECT USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead')
+  OR user_id = public.get_crm_user_id()
+);
+CREATE POLICY "targets_write" ON public.targets FOR ALL USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead')
+);
+
+-- ── quotations: tech_lead needs visibility; exec sees own ──
+CREATE POLICY "quotations_read" ON public.quotations FOR SELECT USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead','tech_lead')
+  OR owner = public.get_crm_user_id()
+);
+CREATE POLICY "quotations_write" ON public.quotations FOR ALL USING (
+  public.get_crm_role() NOT IN ('viewer','support')
+);
+
+-- ── comm_logs, events, notes, files: owner-scoped ──
+CREATE POLICY "comm_logs_read" ON public.comm_logs FOR SELECT USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead')
+  OR owner = public.get_crm_user_id()
+);
+CREATE POLICY "comm_logs_write" ON public.comm_logs FOR ALL USING (
+  public.get_crm_role() NOT IN ('viewer')
+);
+
+CREATE POLICY "events_read" ON public.events FOR SELECT USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead')
+  OR owner = public.get_crm_user_id()
+);
+CREATE POLICY "events_write" ON public.events FOR ALL USING (
+  public.get_crm_role() NOT IN ('viewer')
+);
+
+CREATE POLICY "notes_read" ON public.notes FOR SELECT USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead')
+  OR owner = public.get_crm_user_id()
+);
+CREATE POLICY "notes_write" ON public.notes FOR ALL USING (
+  public.get_crm_role() NOT IN ('viewer')
+);
+
+CREATE POLICY "files_read" ON public.files FOR SELECT USING (
+  public.get_crm_role() IN ('admin','md','director','line_mgr','country_mgr','bd_lead')
+  OR owner = public.get_crm_user_id()
+);
+CREATE POLICY "files_write" ON public.files FOR ALL USING (
+  public.get_crm_role() NOT IN ('viewer')
+);
 CREATE POLICY "audit_read" ON public.audit_log FOR SELECT USING (
   public.get_crm_role() IN ('admin','md','director','line_mgr')
 );
