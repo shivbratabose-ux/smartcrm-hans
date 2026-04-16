@@ -176,6 +176,36 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                   {a.address && infoRow("Address", a.address)}
                 </div>
 
+                {/* Legal & Tax */}
+                <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+                    <Shield size={15} style={{color:"var(--brand)"}}/> Legal &amp; Tax
+                  </div>
+                  {infoRow("Legal Name", a.legalName)}
+                  {infoRow("PAN / Tax ID", a.pan)}
+                  {infoRow("GSTIN", a.gstin)}
+                  {infoRow("CIN", a.cin)}
+                  {infoRow("Tax Treatment", a.taxTreatment)}
+                  {infoRow("TDS Applicable", a.tdsApplicable)}
+                  {infoRow("PO Mandatory", a.poMandatory)}
+                </div>
+
+                {/* Billing Profile */}
+                <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+                    <DollarSign size={15} style={{color:"var(--brand)"}}/> Billing Profile
+                  </div>
+                  {infoRow("Payment Terms", a.paymentTerms)}
+                  {infoRow("Credit Days", a.creditDays != null ? String(a.creditDays) : "")}
+                  {infoRow("Currency", a.currency)}
+                  {infoRow("Billing Frequency", a.billingFrequency)}
+                  {infoRow("Primary Contact", a.primaryContact)}
+                  {infoRow("Primary Email", a.primaryEmail)}
+                  {infoRow("Billing Contact", a.billingContactName)}
+                  {infoRow("Billing Contact Email", a.billingContactEmail)}
+                  {infoRow("Finance Contact Email", a.financeContactEmail)}
+                </div>
+
                 {/* Products */}
                 <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
                   <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
@@ -610,21 +640,48 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
 
   // Column headers match BulkUpload field names — export is directly re-importable for bulk UPDATE
   const CSV_COLS = [
-    {label:"accountNo",     accessor:a=>a.accountNo||""},
-    {label:"name",          accessor:a=>a.name||""},
-    {label:"type",          accessor:a=>a.type||""},
-    {label:"country",       accessor:a=>a.country||""},
-    {label:"city",          accessor:a=>a.city||""},
-    {label:"address",       accessor:a=>a.address||""},
-    {label:"website",       accessor:a=>a.website||""},
-    {label:"segment",       accessor:a=>a.segment||""},
-    {label:"status",        accessor:a=>a.status||""},
-    {label:"hierarchyLevel",accessor:a=>a.hierarchyLevel||"Parent Company"},
-    {label:"parentId",      accessor:a=>a.parentId||""},
-    {label:"products",      accessor:a=>(a.products||[]).join(";")},
-    {label:"arrRevenue",    accessor:a=>a.arrRevenue||0},
-    {label:"potential",     accessor:a=>a.potential||0},
-    {label:"owner",         accessor:a=>teamMap[a.owner]?.name||a.owner||""},
+    {label:"accountNo",          accessor:a=>a.accountNo||""},
+    {label:"name",               accessor:a=>a.name||""},
+    {label:"type",               accessor:a=>a.type||""},
+    {label:"country",            accessor:a=>a.country||""},
+    {label:"city",               accessor:a=>a.city||""},
+    {label:"address",            accessor:a=>a.address||""},
+    {label:"website",            accessor:a=>a.website||""},
+    {label:"segment",            accessor:a=>a.segment||""},
+    {label:"status",             accessor:a=>a.status||""},
+    {label:"hierarchyLevel",     accessor:a=>a.hierarchyLevel||"Parent Company"},
+    {label:"parentId",           accessor:a=>a.parentId||""},
+    {label:"products",           accessor:a=>(a.products||[]).join(";")},
+    {label:"arrRevenue",         accessor:a=>a.arrRevenue||0},
+    {label:"potential",          accessor:a=>a.potential||0},
+    {label:"owner",              accessor:a=>teamMap[a.owner]?.name||a.owner||""},
+    {label:"state",              accessor:a=>a.state||""},
+    {label:"pincode",            accessor:a=>a.pincode||""},
+    {label:"legalName",          accessor:a=>a.legalName||""},
+    {label:"pan",                accessor:a=>a.pan||""},
+    {label:"gstin",              accessor:a=>a.gstin||""},
+    {label:"cin",                accessor:a=>a.cin||""},
+    {label:"taxTreatment",       accessor:a=>a.taxTreatment||""},
+    {label:"tdsApplicable",      accessor:a=>a.tdsApplicable||""},
+    {label:"poMandatory",        accessor:a=>a.poMandatory||""},
+    {label:"billingAddress",     accessor:a=>a.billingAddress||""},
+    {label:"billingCity",        accessor:a=>a.billingCity||""},
+    {label:"billingState",       accessor:a=>a.billingState||""},
+    {label:"billingPincode",     accessor:a=>a.billingPincode||""},
+    {label:"billingCountry",     accessor:a=>a.billingCountry||""},
+    {label:"primaryContact",     accessor:a=>a.primaryContact||""},
+    {label:"primaryEmail",       accessor:a=>a.primaryEmail||""},
+    {label:"primaryPhone",       accessor:a=>a.primaryPhone||""},
+    {label:"billingContactName", accessor:a=>a.billingContactName||""},
+    {label:"billingContactEmail",accessor:a=>a.billingContactEmail||""},
+    {label:"financeContactEmail",accessor:a=>a.financeContactEmail||""},
+    {label:"paymentTerms",       accessor:a=>a.paymentTerms||""},
+    {label:"creditDays",         accessor:a=>a.creditDays??30},
+    {label:"currency",           accessor:a=>a.currency||""},
+    {label:"billingFrequency",   accessor:a=>a.billingFrequency||""},
+    {label:"entityType",         accessor:a=>a.entityType||""},
+    {label:"groupCode",          accessor:a=>a.groupCode||""},
+    {label:"territory",          accessor:a=>a.territory||""},
   ];
 
   return (
@@ -843,6 +900,66 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           <div className="form-row"><div className="form-group"><label>ARR (₹L)</label><input type="number" min="0" value={form.arrRevenue} onChange={e => setForm(f => ({...f,arrRevenue:+e.target.value}))}/><FormError error={formErrors.arrRevenue}/></div><div className="form-group"><label>Potential (₹L)</label><input type="number" min="0" value={form.potential} onChange={e => setForm(f => ({...f,potential:+e.target.value}))}/><FormError error={formErrors.potential}/></div></div>
           <div className="form-row"><div className="form-group"><label>Website</label><input value={form.website} onChange={e => setForm(f => ({...f,website:e.target.value}))} placeholder="website.com"/></div><div className="form-group"><label>Owner</label><select value={form.owner} onChange={e => setForm(f => ({...f,owner:e.target.value}))}>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
           <div className="form-group"><label>Products</label><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>{PRODUCTS.map(p => <button key={p.id} className="btn btn-xs" style={{background:form.products.includes(p.id)?p.color:"var(--s3)",color:form.products.includes(p.id)?"white":"var(--text2)",border:"none",cursor:"pointer"}} onClick={() => toggleProd(p.id)}>{p.name}</button>)}</div></div>
+
+          {/* ── Legal & Tax ── */}
+          <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:16,marginBottom:8,borderTop:"1px solid var(--border)",paddingTop:14}}>Legal &amp; Tax</div>
+          <div className="form-row"><div className="form-group"><label>Legal Name</label><input value={form.legalName||""} onChange={e => setForm(f => ({...f,legalName:e.target.value}))} placeholder="Full registered legal name"/></div></div>
+          <div className="form-row">
+            <div className="form-group"><label>PAN / Tax ID</label><input value={form.pan||""} onChange={e => setForm(f => ({...f,pan:e.target.value}))} placeholder="PAN number"/></div>
+            <div className="form-group"><label>GSTIN</label><input value={form.gstin||""} onChange={e => setForm(f => ({...f,gstin:e.target.value}))} placeholder="GST registration no."/></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>CIN</label><input value={form.cin||""} onChange={e => setForm(f => ({...f,cin:e.target.value}))} placeholder="Company registration no."/></div>
+            <div className="form-group"><label>Tax Treatment</label><select value={form.taxTreatment||"Domestic"} onChange={e => setForm(f => ({...f,taxTreatment:e.target.value}))}><option>Domestic</option><option>Export</option><option>Exempt</option><option>SEZ</option></select></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>TDS Applicable</label><select value={form.tdsApplicable||"No"} onChange={e => setForm(f => ({...f,tdsApplicable:e.target.value}))}><option>Yes</option><option>No</option></select></div>
+            <div className="form-group"><label>PO Mandatory</label><select value={form.poMandatory||"No"} onChange={e => setForm(f => ({...f,poMandatory:e.target.value}))}><option>Yes</option><option>No</option></select></div>
+          </div>
+
+          {/* ── Address Details ── */}
+          <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:16,marginBottom:8,borderTop:"1px solid var(--border)",paddingTop:14}}>Address Details</div>
+          <div className="form-row">
+            <div className="form-group"><label>State / Province</label><input value={form.state||""} onChange={e => setForm(f => ({...f,state:e.target.value}))} placeholder="Registered state"/></div>
+            <div className="form-group"><label>PIN / ZIP Code</label><input value={form.pincode||""} onChange={e => setForm(f => ({...f,pincode:e.target.value}))} placeholder="Pincode"/></div>
+          </div>
+          <div className="form-row"><div className="form-group"><label>Billing Address (if different)</label><input value={form.billingAddress||""} onChange={e => setForm(f => ({...f,billingAddress:e.target.value}))} placeholder="Billing address line"/></div></div>
+          <div className="form-row">
+            <div className="form-group"><label>Billing City</label><input value={form.billingCity||""} onChange={e => setForm(f => ({...f,billingCity:e.target.value}))} placeholder="Billing city"/></div>
+            <div className="form-group"><label>Billing State</label><input value={form.billingState||""} onChange={e => setForm(f => ({...f,billingState:e.target.value}))} placeholder="Billing state"/></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Billing Pincode</label><input value={form.billingPincode||""} onChange={e => setForm(f => ({...f,billingPincode:e.target.value}))} placeholder="Billing PIN/ZIP"/></div>
+            <div className="form-group"><label>Billing Country</label><input value={form.billingCountry||""} onChange={e => setForm(f => ({...f,billingCountry:e.target.value}))} placeholder="Billing country"/></div>
+          </div>
+
+          {/* ── Billing Profile ── */}
+          <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:16,marginBottom:8,borderTop:"1px solid var(--border)",paddingTop:14}}>Billing Profile</div>
+          <div className="form-row">
+            <div className="form-group"><label>Payment Terms</label><select value={form.paymentTerms||"Net 30"} onChange={e => setForm(f => ({...f,paymentTerms:e.target.value}))}><option>Advance</option><option>Net 7</option><option>Net 15</option><option>Net 30</option><option>Net 45</option><option>Net 60</option></select></div>
+            <div className="form-group"><label>Credit Days</label><input type="number" min="0" value={form.creditDays??30} onChange={e => setForm(f => ({...f,creditDays:+e.target.value}))}/></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Currency</label><select value={form.currency||"INR"} onChange={e => setForm(f => ({...f,currency:e.target.value}))}><option>INR</option><option>USD</option><option>AED</option><option>EUR</option><option>GBP</option></select></div>
+            <div className="form-group"><label>Billing Frequency</label><select value={form.billingFrequency||"Annual"} onChange={e => setForm(f => ({...f,billingFrequency:e.target.value}))}><option>Monthly</option><option>Quarterly</option><option>Half-Yearly</option><option>Annual</option><option>One-Time</option></select></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Primary Contact Name</label><input value={form.primaryContact||""} onChange={e => setForm(f => ({...f,primaryContact:e.target.value}))} placeholder="Primary contact name"/></div>
+            <div className="form-group"><label>Primary Phone</label><input value={form.primaryPhone||""} onChange={e => setForm(f => ({...f,primaryPhone:e.target.value}))} placeholder="Primary phone/mobile"/></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Primary Email</label><input value={form.primaryEmail||""} onChange={e => setForm(f => ({...f,primaryEmail:e.target.value}))} placeholder="Primary email"/></div>
+            <div className="form-group"><label>Billing Contact Email</label><input value={form.billingContactEmail||""} onChange={e => setForm(f => ({...f,billingContactEmail:e.target.value}))} placeholder="Billing contact email"/></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Billing Contact Name</label><input value={form.billingContactName||""} onChange={e => setForm(f => ({...f,billingContactName:e.target.value}))} placeholder="Billing contact name"/></div>
+            <div className="form-group"><label>Finance Contact Email</label><input value={form.financeContactEmail||""} onChange={e => setForm(f => ({...f,financeContactEmail:e.target.value}))} placeholder="Finance contact email"/></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Entity Type</label><select value={form.entityType||"Head Office"} onChange={e => setForm(f => ({...f,entityType:e.target.value}))}><option>Head Office</option><option>Branch Office</option><option>Sister Concern</option><option>Subsidiary</option><option>Franchise</option></select></div>
+            <div className="form-group"><label>Group Code</label><input value={form.groupCode||""} onChange={e => setForm(f => ({...f,groupCode:e.target.value}))} placeholder="Corporate group code"/></div>
+          </div>
+          <div className="form-row"><div className="form-group"><label>Territory / Region</label><input value={form.territory||""} onChange={e => setForm(f => ({...f,territory:e.target.value}))} placeholder="Territory or region"/></div></div>
         </Modal>
       )}
       {confirm && <DeleteConfirm title="Delete Account" recordLabel={accounts.find(a => a.id === confirm)?.name || "this account"} onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>}
