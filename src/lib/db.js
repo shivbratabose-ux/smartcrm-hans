@@ -73,6 +73,8 @@ const toSnake = (obj) => {
     keepLeadOpen:"keep_lead_open", followupTitle:"followup_title",
     followupAssign:"followup_assign", followupDue:"followup_due",
     taskType:"task_type", taskStatus:"task_status",
+    // soft delete
+    isDeleted:"is_deleted", deletedAt:"deleted_at", deletedBy:"deleted_by",
   };
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -124,6 +126,8 @@ const toCamel = (obj) => {
     keep_lead_open:"keepLeadOpen", followup_title:"followupTitle",
     followup_assign:"followupAssign", followup_due:"followupDue",
     task_type:"taskType", task_status:"taskStatus",
+    // soft delete
+    is_deleted:"isDeleted", deleted_at:"deletedAt", deleted_by:"deletedBy",
   };
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -146,7 +150,7 @@ export async function loadAll(module) {
   const table = TABLE_MAP[module];
   if (!table) return null;
 
-  const { data, error } = await supabase.from(table).select("*").order("created_at", { ascending: false });
+  const { data, error } = await supabase.from(table).select("*").eq("is_deleted", false).order("created_at", { ascending: false });
   if (error) { dbLog('error', `[DB] loadAll ${module}:`, error); return null; }
   return (data || []).map(toCamel);
 }
@@ -203,17 +207,50 @@ export async function updateRecord(module, id, updates) {
 }
 
 /**
- * Delete a record by id
+ * Soft-delete a record (sets is_deleted=true + logs audit).
+ * Hard DELETEs that bypass the app are also intercepted by the DB trigger.
  */
-export async function deleteRecord(module, id) {
+export async function deleteRecord(module, id, userId) {
   if (!isSupabaseConfigured) return { error: null };
-
   const table = TABLE_MAP[module];
   if (!table) return { error: "Unknown module" };
+  const { error } = await supabase.from(table).update({
+    is_deleted: true,
+    deleted_at: new Date().toISOString(),
+    deleted_by: userId || null,
+  }).eq("id", id);
+  if (error) { dbLog('error', `[DB] softDelete ${module}:`, error); return { error }; }
+  await logAudit(userId, "DELETE", table, id, null, { is_deleted: true });
+  return { error: null };
+}
 
-  const { error } = await supabase.from(table).delete().eq("id", id);
-  if (error) dbLog('error', `[DB] delete ${module}:`, error);
-  return { error };
+/**
+ * Restore a soft-deleted record (admin only — enforced by RLS + caller check).
+ */
+export async function restoreRecord(module, id, userId) {
+  if (!isSupabaseConfigured) return { error: null };
+  const table = TABLE_MAP[module];
+  if (!table) return { error: "Unknown module" };
+  const { error } = await supabase.from(table).update({
+    is_deleted: false,
+    deleted_at: null,
+    deleted_by: null,
+  }).eq("id", id);
+  if (error) { dbLog('error', `[DB] restore ${module}:`, error); return { error }; }
+  await logAudit(userId, "RESTORE", table, id, { is_deleted: true }, { is_deleted: false });
+  return { error: null };
+}
+
+/**
+ * Load soft-deleted records for a module (admin panel).
+ */
+export async function loadDeleted(module) {
+  if (!isSupabaseConfigured) return [];
+  const table = TABLE_MAP[module];
+  if (!table) return [];
+  const { data, error } = await supabase.from(table).select("*").eq("is_deleted", true).order("deleted_at", { ascending: false });
+  if (error) { dbLog('error', `[DB] loadDeleted ${module}:`, error); return []; }
+  return (data || []).map(toCamel);
 }
 
 /**

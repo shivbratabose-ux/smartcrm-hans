@@ -14,7 +14,7 @@ import { CSS } from "./styles";
 
 // Supabase integration
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, insertRecord, updateRecord, deleteRecord } from "./lib/db";
+import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, insertRecord, updateRecord, deleteRecord, restoreRecord, loadDeleted } from "./lib/db";
 
 // Components
 import Login from "./components/Login";
@@ -252,24 +252,41 @@ export default function SmartCRM() {
   const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const _globalRole = useMemo(() => isGlobalRole(currentUser, orgUsers), [currentUser, orgUsers]);
 
+  // Roles allowed to soft-delete records; all others can only archive (same action, UI label differs)
+  const canDelete = useMemo(() => {
+    const role = orgUsers.find(u => u.id === currentUser)?.role;
+    return ["admin","md","director","line_mgr"].includes(role);
+  }, [currentUser, orgUsers]);
+
+  // Only admins can restore soft-deleted records
+  const canRestore = useMemo(() => {
+    const role = orgUsers.find(u => u.id === currentUser)?.role;
+    return ["admin","md","director"].includes(role);
+  }, [currentUser, orgUsers]);
+
+  // Exclude soft-deleted records from all visible arrays
   const visibleLeads = useMemo(() => {
-    if (_globalRole) return leads;
-    return leads.filter(l => !l.assignedTo || _scopedIds.has(l.assignedTo));
+    const live = leads.filter(l => !l.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(l => !l.assignedTo || _scopedIds.has(l.assignedTo));
   }, [leads, _scopedIds, _globalRole]);
 
   const visibleOpps = useMemo(() => {
-    if (_globalRole) return opps;
-    return opps.filter(o => !o.owner || _scopedIds.has(o.owner));
+    const live = opps.filter(o => !o.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(o => !o.owner || _scopedIds.has(o.owner));
   }, [opps, _scopedIds, _globalRole]);
 
   const visibleActivities = useMemo(() => {
-    if (_globalRole) return activities;
-    return activities.filter(a => !a.owner || _scopedIds.has(a.owner));
+    const live = activities.filter(a => !a.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(a => !a.owner || _scopedIds.has(a.owner));
   }, [activities, _scopedIds, _globalRole]);
 
   const visibleCallReports = useMemo(() => {
-    if (_globalRole) return callReports;
-    return callReports.filter(cr => !cr.marketingPerson || _scopedIds.has(cr.marketingPerson));
+    const live = callReports.filter(cr => !cr.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(cr => !cr.marketingPerson || _scopedIds.has(cr.marketingPerson));
   }, [callReports, _scopedIds, _globalRole]);
 
   // ── Session: persist login & track idle timeout ──
@@ -310,8 +327,8 @@ export default function SmartCRM() {
       const nextIds = new Set(next.map(r => r.id));
       // Inserts
       next.forEach(r => { if (r.id && !prevIds.has(r.id)) insertRecord(module === "users" ? "users" : module, r); });
-      // Deletes
-      old.forEach(r => { if (r.id && !nextIds.has(r.id)) deleteRecord(module === "users" ? "users" : module, r.id); });
+      // Deletes (soft — deleteRecord now issues UPDATE is_deleted=true)
+      old.forEach(r => { if (r.id && !nextIds.has(r.id)) deleteRecord(module === "users" ? "users" : module, r.id, currentUser); });
       // Updates — only compare records that exist in both
       next.forEach(r => {
         if (r.id && prevIds.has(r.id)) {
@@ -427,30 +444,31 @@ export default function SmartCRM() {
 
   // Cascade delete: remove all linked records when an account is deleted
   const cascadeDeleteAccount = useCallback((accId) => {
-    setAccounts(p => p.filter(a => a.id !== accId).map(a => a.parentId === accId ? {...a, parentId: ""} : a));
-    setContacts(p => p.filter(c => c.accountId !== accId));
-    setOpps(p => p.filter(o => o.accountId !== accId));
-    setActivities(p => p.filter(a => a.accountId !== accId));
-    setTickets(p => p.filter(t => t.accountId !== accId));
-    setNotes(p => p.filter(n => !(n.recordType === "account" && n.recordId === accId)));
-    setFiles(p => p.map(f => ({...f, linkedTo: f.linkedTo.filter(l => !(l.type === "account" && l.id === accId))})));
-    setContracts(p => p.filter(c => c.accountId !== accId));
-    setCollections(p => p.filter(c => c.accountId !== accId));
-    setCallReports(p => p.filter(r => r.accountId !== accId));
-  }, []);
+    const now = new Date().toISOString();
+    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
+    setAccounts(p => p.map(a => a.id === accId ? {...a, ...sd} : (a.parentId === accId ? {...a, parentId: ""} : a)));
+    setContacts(p => p.map(c => c.accountId === accId ? {...c, ...sd} : c));
+    setOpps(p => p.map(o => o.accountId === accId ? {...o, ...sd} : o));
+    setActivities(p => p.map(a => a.accountId === accId ? {...a, ...sd} : a));
+    setTickets(p => p.map(t => t.accountId === accId ? {...t, ...sd} : t));
+    setContracts(p => p.map(c => c.accountId === accId ? {...c, ...sd} : c));
+    setCollections(p => p.map(c => c.accountId === accId ? {...c, ...sd} : c));
+    setCallReports(p => p.map(r => r.accountId === accId ? {...r, ...sd} : r));
+    // notes/files: orphan rather than soft-delete (they carry content)
+  }, [currentUser]);
 
-  // Cascade delete: remove linked activities/notes/files when an opportunity is deleted
   const cascadeDeleteOpp = useCallback((oppId) => {
-    setOpps(p => p.filter(o => o.id !== oppId));
+    const now = new Date().toISOString();
+    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
+    setOpps(p => p.map(o => o.id === oppId ? {...o, ...sd} : o));
     setActivities(p => p.map(a => a.oppId === oppId ? {...a, oppId: ""} : a));
-    setNotes(p => p.filter(n => !(n.recordType === "opp" && n.recordId === oppId)));
-    setFiles(p => p.map(f => ({...f, linkedTo: f.linkedTo.filter(l => !(l.type === "opp" && l.id === oppId))})));
     setContracts(p => p.map(c => c.oppId === oppId ? {...c, oppId: ""} : c));
-  }, []);
+  }, [currentUser]);
 
-  // Cascade delete: unlink activities when a contact is deleted
   const cascadeDeleteContact = useCallback((conId) => {
-    setContacts(p => p.filter(c => c.id !== conId));
+    const now = new Date().toISOString();
+    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
+    setContacts(p => p.map(c => c.id === conId ? {...c, ...sd} : c));
     setActivities(p => p.map(a => a.contactId === conId ? {...a, contactId: ""} : a));
     setCallReports(p => p.map(cr => cr.contactId === conId ? {...cr, contactId: ""} : cr));
     setLeads(p => p.map(l => l.contactIds?.includes(conId) ? {...l, contactIds: l.contactIds.filter(id => id !== conId)} : l));
@@ -721,10 +739,10 @@ export default function SmartCRM() {
           <Header page={page} accounts={accounts} contacts={contacts} opps={visibleOpps} tickets={tickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={updates} myUnreadCount={myUnreadCount}/>
           <div className="content" id="main-content" role="main">
             {page==="dashboard"  && <Dashboard accounts={accounts} contacts={contacts} opps={visibleOpps} tickets={tickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={collections} targets={targets} setPage={setPage} orgUsers={orgUsers}/>}
-            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={accounts} contacts={contacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters}/>}
-            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} setContacts={setContacts} tickets={tickets} contracts={contracts} collections={collections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters}/>}
-            {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={visibleOpps} activities={visibleActivities}/>}
-            {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} onDealWon={handleDealWon}/>}
+            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={accounts} contacts={contacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} canDelete={canDelete}/>}
+            {page==="accounts"   && <Accounts accounts={accounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={contacts} setContacts={setContacts} tickets={tickets} contracts={contracts} collections={collections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} canDelete={canDelete}/>}
+            {page==="contacts"   && <Contacts contacts={contacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={accounts} opps={visibleOpps} activities={visibleActivities} canDelete={canDelete}/>}
+            {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={accounts} contacts={contacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} onDealWon={handleDealWon} canDelete={canDelete}/>}
             {page==="activities" && <Activities activities={visibleActivities} setActivities={setActivities} accounts={accounts} contacts={contacts} opps={visibleOpps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers}/>}
             {page==="callreports"&& <CallReports callReports={visibleCallReports} setCallReports={setCallReports} accounts={accounts} contacts={contacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="tickets"    && <Tickets tickets={tickets} setTickets={setTickets} accounts={accounts} orgUsers={orgUsers}/>}

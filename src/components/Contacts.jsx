@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star,
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today } from "../utils/helpers";
 import { PRODUCTS, PROD_MAP, COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, FormError, Empty } from "./shared";
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -171,7 +171,7 @@ function ContactDetail({ c, onClose, onEdit, accounts, opps=[], activities=[] })
 // ═══════════════════════════════════════════════════════════════════
 // CONTACTS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], activities=[]}) {
+function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], activities=[], canDelete}) {
   const [search, setSearch] = useState("");
   const [accF, setAccF] = useState("All");
   const [deptF, setDeptF] = useState("All");
@@ -348,7 +348,7 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
                       <td>
                         <div style={{display:"flex",gap:4}}>
                           <button className="icon-btn" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
-                          <button className="icon-btn" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>
+                          {canDelete && <button className="icon-btn" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
                         </div>
                       </td>
                     </tr>
@@ -455,7 +455,7 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
           </div>
         </Modal>
       )}
-      {confirm && <Confirm title="Delete Contact" msg="Remove this contact permanently?" onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>}
+      {confirm && <DeleteConfirm title="Delete Contact" recordLabel={contacts.find(c => c.id === confirm)?.name || "this contact"} onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>}
     </div>
   );
 }

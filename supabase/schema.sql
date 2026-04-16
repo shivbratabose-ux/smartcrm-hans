@@ -332,6 +332,21 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
 );
 
 -- ═══════════════════════════════════════════════════════════════════
+-- SOFT DELETE COLUMNS (all entity tables)
+-- ═══════════════════════════════════════════════════════════════════
+DO $$ DECLARE tbl TEXT; BEGIN
+  FOREACH tbl IN ARRAY ARRAY[
+    'accounts','contacts','leads','opportunities','activities',
+    'call_reports','tickets','contracts','collections','targets',
+    'quotations','comm_logs','events','notes','files'
+  ] LOOP
+    EXECUTE format('ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false', tbl);
+    EXECUTE format('ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ', tbl);
+    EXECUTE format('ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS deleted_by TEXT REFERENCES public.users(id)', tbl);
+  END LOOP;
+END $$;
+
+-- ═══════════════════════════════════════════════════════════════════
 -- INDEXES for performance
 -- ═══════════════════════════════════════════════════════════════════
 CREATE INDEX IF NOT EXISTS idx_accounts_owner ON public.accounts(owner);
