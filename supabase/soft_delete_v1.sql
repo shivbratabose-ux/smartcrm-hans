@@ -34,7 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_quotations_live    ON public.quotations(created_a
 CREATE INDEX IF NOT EXISTS idx_comm_logs_live     ON public.comm_logs(created_at)     WHERE NOT is_deleted;
 CREATE INDEX IF NOT EXISTS idx_events_live        ON public.events(created_at)        WHERE NOT is_deleted;
 CREATE INDEX IF NOT EXISTS idx_notes_live         ON public.notes(created_at)         WHERE NOT is_deleted;
-CREATE INDEX IF NOT EXISTS idx_files_live         ON public.files(created_at)         WHERE NOT is_deleted;
+CREATE INDEX IF NOT EXISTS idx_files_live         ON public.files(uploaded_at)        WHERE NOT is_deleted;
 
 -- ── 3. TRIGGER: convert any hard DELETE → soft delete ─────────────
 -- Intercepts DELETE at the DB layer even if the frontend bypasses the app.
