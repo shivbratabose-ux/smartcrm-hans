@@ -7,7 +7,7 @@ import {
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
   INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
-  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES
+  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole } from "./utils/helpers";
 import { CSS } from "./styles";
@@ -697,6 +697,30 @@ export default function SmartCRM() {
       } break;
 
       case "Customers": {
+        // Resolve products: "iCAFFE;WiseCargo" → ["iCAFFE","WiseCargo"]
+        const resolveProducts = (raw) => {
+          if (!raw) return [];
+          if (Array.isArray(raw)) return raw;
+          return String(raw).split(/[;,]/).map(s => s.trim()).filter(Boolean);
+        };
+        // Resolve owner: name or email → user ID; falls back to raw value
+        const resolveOwner = (raw) => {
+          if (!raw?.trim()) return "";
+          const match = orgUsers.find(u =>
+            u.name?.toLowerCase() === raw.toLowerCase() ||
+            u.email?.toLowerCase() === raw.toLowerCase() ||
+            u.id === raw
+          );
+          return match?.id || raw;
+        };
+        const enrichRow = (r) => ({
+          ...strip(r),
+          products: resolveProducts(r.products),
+          owner:    resolveOwner(r.owner),
+          arrRevenue: Number(r.arrRevenue) || 0,
+          potential:  Number(r.potential)  || 0,
+        });
+
         const maxSeq = accounts.reduce((max, a) => {
           const m = a.accountNo?.match(/ACC-\d+-(\d+)/);
           return m ? Math.max(max, parseInt(m[1])) : max;
@@ -705,13 +729,15 @@ export default function SmartCRM() {
         const enrichedInserts = inserts.map(r => {
           insertIdx++;
           return {
-            ...r, ...strip(r),
+            ...BLANK_ACC,
+            ...enrichRow(r),
+            id: r.id || `a_${uid()}`,
             accountNo: r.accountNo || `ACC-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
-            status: r.status || "Active",
+            status: r.status || "Prospect",
           };
         });
         setAccounts(p => {
-          const withUpdates = applyUpdates(p, updates.map(strip));
+          const withUpdates = applyUpdates(p, updates.map(enrichRow));
           return [...withUpdates, ...enrichedInserts];
         });
       } break;
@@ -783,7 +809,7 @@ export default function SmartCRM() {
         });
       } break;
     }
-  }, [accounts, contacts, leads, tickets, contracts, collections]);
+  }, [accounts, contacts, leads, tickets, contracts, collections, orgUsers]);
 
   if(!currentUser) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers}/></>

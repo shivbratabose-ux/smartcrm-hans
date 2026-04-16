@@ -608,12 +608,23 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     setForm(f => ({...f, products: pp}));
   };
 
+  // Column headers match BulkUpload field names — export is directly re-importable for bulk UPDATE
   const CSV_COLS = [
-    {label:"Name",accessor:a=>a.name},{label:"Type",accessor:a=>a.type},{label:"Country",accessor:a=>a.country},
-    {label:"City",accessor:a=>a.city},{label:"Status",accessor:a=>a.status},{label:"Segment",accessor:a=>a.segment},
-    {label:"ARR (L)",accessor:a=>a.arrRevenue},{label:"Potential (L)",accessor:a=>a.potential},
-    {label:"Products",accessor:a=>(a.products||[]).map(p=>PROD_MAP[p]?.name||p).join(", ")},
-    {label:"Owner",accessor:a=>teamMap[a.owner]?.name||a.owner},
+    {label:"accountNo",     accessor:a=>a.accountNo||""},
+    {label:"name",          accessor:a=>a.name||""},
+    {label:"type",          accessor:a=>a.type||""},
+    {label:"country",       accessor:a=>a.country||""},
+    {label:"city",          accessor:a=>a.city||""},
+    {label:"address",       accessor:a=>a.address||""},
+    {label:"website",       accessor:a=>a.website||""},
+    {label:"segment",       accessor:a=>a.segment||""},
+    {label:"status",        accessor:a=>a.status||""},
+    {label:"hierarchyLevel",accessor:a=>a.hierarchyLevel||"Parent Company"},
+    {label:"parentId",      accessor:a=>a.parentId||""},
+    {label:"products",      accessor:a=>(a.products||[]).join(";")},
+    {label:"arrRevenue",    accessor:a=>a.arrRevenue||0},
+    {label:"potential",     accessor:a=>a.potential||0},
+    {label:"owner",         accessor:a=>teamMap[a.owner]?.name||a.owner||""},
   ];
 
   return (

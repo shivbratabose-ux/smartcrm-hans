@@ -37,17 +37,19 @@ const SCHEMAS = {
   },
 
   Customers: {
-    refKey:    "accountNo",  // e.g. ACC-2026-001
+    refKey:    "accountNo",  // e.g. ACC-2026-001 — leave blank for new accounts
     uniqueKey: "name",
     mandatory: ["name","type","country"],
     optional:  [
-      "accountNo","city","address","website","segment","products",
-      "status","owner","arrRevenue","potential","hierarchyLevel","parentId",
+      "accountNo","city","address","website","segment","status",
+      "hierarchyLevel","parentId","products","arrRevenue","potential","owner",
     ],
+    // Headers match Accounts export exactly — export CSV → edit in Excel → re-upload to UPDATE
     sample: [
-      "accountNo,name,type,country,city,website,segment,products,status,owner,arrRevenue,potential",
-      "ACC-2026-001,Acme Airlines,Airline,India,Mumbai,acme.com,Enterprise,WiseCargo;WiseTrax,Active,,10,50",
-      ",Beta Freight,Freight Forwarder,UAE,Dubai,betafreight.ae,Mid-Market,iCAFFE,Prospect,,,0,20",
+      "accountNo,name,type,country,city,address,website,segment,status,hierarchyLevel,parentId,products,arrRevenue,potential,owner",
+      "ACC-2026-001,Acme Airlines,Airline,India,Mumbai,Andheri East Mumbai 400069,acme.com,Enterprise,Active,Parent Company,,iCAFFE;WiseCargo,10,50,",
+      "ACC-2026-002,Delta Freight,Freight Forwarder,UAE,Dubai,,betafreight.ae,Mid-Market,Active,Parent Company,,WiseTrax,5,20,",
+      ",Beta Logistics,Customs Broker,India,Delhi,,beta.in,SMB,Prospect,Parent Company,,iCAFFE,0,15,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
