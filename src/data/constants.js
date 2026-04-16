@@ -65,17 +65,9 @@ export const PERMISSIONS = {
 };
 
 // ── Extended Users with roles, branch, dept ──
-export const INIT_USERS = [
-  {id:"u1",name:"Shivbrata Bose",  email:"shivbrata@hansinfomatic.com",  initials:"SB",role:"bd_lead",    lob:"All",         branchId:"br1",deptId:"dep1",active:true,joinDate:"2022-04-01"},
-  {id:"u2",name:"Rahul Sharma",    email:"rahul@hansinfomatic.com",      initials:"RS",role:"sales_exec", lob:"iCAFFE",      branchId:"br1",deptId:"dep1",active:true,joinDate:"2023-06-15"},
-  {id:"u3",name:"Priya Nair",      email:"priya@hansinfomatic.com",      initials:"PN",role:"sales_exec", lob:"WiseHandling",branchId:"br2",deptId:"dep1",active:true,joinDate:"2023-08-01"},
-  {id:"u4",name:"Charles Isabirye",email:"charles@hansinfomatic.com",    initials:"CI",role:"country_mgr",lob:"All",         branchId:"br3",deptId:"dep4",active:true,joinDate:"2024-02-23"},
-  {id:"u5",name:"Vikram Mehta",    email:"vikram@hansinfomatic.com",     initials:"VM",role:"line_mgr",   lob:"WiseCargo",   branchId:"br1",deptId:"dep1",active:true,joinDate:"2022-09-01"},
-  {id:"u6",name:"Aisha Patel",     email:"aisha@hansinfomatic.com",      initials:"AP",role:"sales_exec", lob:"WiseDox",     branchId:"br1",deptId:"dep1",active:true,joinDate:"2024-01-10"},
-  {id:"u7",name:"Tanbir Ansari",   email:"tanbir@hansinfomatic.com",     initials:"TA",role:"tech_lead",  lob:"All",         branchId:"br1",deptId:"dep2",active:true,joinDate:"2021-11-01"},
-  {id:"u8",name:"Suresh Kumar",    email:"suresh@hansinfomatic.com",     initials:"SK",role:"support",    lob:"All",         branchId:"br1",deptId:"dep3",active:true,joinDate:"2023-03-20"},
-];
-export const USERS_MAP = Object.fromEntries(INIT_USERS.map(u=>[u.id,u]));
+// Seed users cleared for production — all users load from Supabase
+export const INIT_USERS = [];
+export const USERS_MAP = {};
 
 // ── Verticals (Industry Segments) ──
 export const VERTICALS = ["CHA","Forwarder","Airline","CTO","Ocean","School","Shipper/Consignee","Bonded Trucking","Cross Border Ecomm","GSSA","Airport","Government"];

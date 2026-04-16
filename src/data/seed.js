@@ -107,16 +107,8 @@ export const INIT_ORG = {
   ],
 };
 
-// ── Teams per product line (structural — keep) ──
-export const INIT_TEAMS = [
-  {id:"t1",name:"iCAFFE Team",        productId:"iCAFFE",       lead:"u2",members:["u2","u6"],desc:"CHA and customs digitisation vertical"},
-  {id:"t2",name:"WiseHandling Team",  productId:"WiseHandling", lead:"u3",members:["u3","u4"],desc:"Ground handling ops management"},
-  {id:"t3",name:"WiseCargo Team",     productId:"WiseCargo",    lead:"u5",members:["u5","u4"],desc:"Air cargo management systems"},
-  {id:"t4",name:"WiseDox Team",       productId:"WiseDox",      lead:"u6",members:["u6"],      desc:"Document and compliance management"},
-  {id:"t5",name:"WiseTrax Team",      productId:"WiseTrax",     lead:"u1",members:["u1","u7"],desc:"Type-B messaging gateway"},
-  {id:"t6",name:"Africa Team",        productId:null,           lead:"u4",members:["u4"],      desc:"MPC-led Africa market development"},
-  {id:"t7",name:"Technology",         productId:null,           lead:"u7",members:["u7","u8"],desc:"Product engineering and support"},
-];
+// Teams cleared for production — created by admin in the app
+export const INIT_TEAMS = [];
 
 // Masters – editable reference data (structural — keep)
 export const INIT_MASTERS = {
