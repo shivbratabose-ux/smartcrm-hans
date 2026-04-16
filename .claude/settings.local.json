@@ -35,7 +35,14 @@
       "Bash(where \"C:\\\\Program Files \\(x86\\)\\\\GitHub CLI\\\\gh.exe\")",
       "Bash(dir \"C:\\\\Program Files\\\\GitHub CLI\")",
       "Bash(powershell -Command \"Get-Command gh -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\")",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Read(//c/Users/msdnu/Desktop/smartcrm-hans/**)",
+      "Bash(gh issue:*)",
+      "Bash(gh pr:*)",
+      "Bash(git -C \"C:/Users/msdnu/Desktop/smartcrm-hans\" log --oneline -5)",
+      "Bash(npm run:*)",
+      "Read(//c/Users/msdnu/Desktop/Apr 2026/**)",
+      "Bash(python -c ':*)"
     ]
   }
 }

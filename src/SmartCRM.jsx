@@ -7,7 +7,8 @@ import {
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
   INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
-  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES
+  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
+  BLANK_INVOICE, INIT_INVOICES
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole } from "./utils/helpers";
 import { CSS } from "./styles";
@@ -184,7 +185,7 @@ export default function SmartCRM() {
       files: INIT_FILES, masters: INIT_MASTERS, catalog: INIT_PRODUCT_CATALOG,
       org: INIT_ORG, teams: INIT_TEAMS, orgUsers: INIT_USERS,
       leads: INIT_LEADS, callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
-      collections: INIT_COLLECTIONS, targets: INIT_TARGETS, quotes: INIT_QUOTES,
+      collections: INIT_COLLECTIONS, invoices: INIT_INVOICES, targets: INIT_TARGETS, quotes: INIT_QUOTES,
       commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, updates: INIT_UPDATES, customPermissions: {},
     };
     return migrateState(base);
@@ -224,6 +225,7 @@ export default function SmartCRM() {
   const [callReports,setCallReports] = useState(saved?.callReports || INIT_CALL_REPORTS);
   const [contracts,setContracts]     = useState(saved?.contracts || INIT_CONTRACTS);
   const [collections,setCollections] = useState(saved?.collections || INIT_COLLECTIONS);
+  const [invoices,setInvoices]       = useState(saved?.invoices || INIT_INVOICES);
   const [targets,setTargets]         = useState(saved?.targets || INIT_TARGETS);
   const [quotes,setQuotes]           = useState(saved?.quotes || INIT_QUOTES);
   const [commLogs,setCommLogs]       = useState(saved?.commLogs || INIT_COMM_LOGS);
@@ -434,9 +436,9 @@ export default function SmartCRM() {
   // Persist all data to localStorage on every change (works as primary store without Supabase, backup with Supabase)
   useEffect(() => {
     saveState({ version: DATA_VERSION, accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
-      leads, callReports, contracts, collections, targets, quotes, commLogs, events, updates, customPermissions });
+      leads, callReports, contracts, collections, invoices, targets, quotes, commLogs, events, updates, customPermissions });
   }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
-    leads, callReports, contracts, collections, targets, quotes, commLogs, events, updates, customPermissions]);
+    leads, callReports, contracts, collections, invoices, targets, quotes, commLogs, events, updates, customPermissions]);
 
   const addNote = note => setNotes(p=>[...p,note]);
   const addFile = file => setFiles(p=>[...p,file]);
@@ -765,9 +767,18 @@ export default function SmartCRM() {
       } break;
 
       case "Collections": {
+        const enrichCollection = r => ({
+          ...strip(r),
+          billedAmount:    Number(r.billedAmount)    || 0,
+          collectedAmount: Number(r.collectedAmount) || 0,
+          pendingAmount:   Number(r.pendingAmount)   || 0,
+          gstAmount:       Number(r.gstAmount)       || 0,
+          tdsAmount:       Number(r.tdsAmount)       || 0,
+          netPayable:      Number(r.netPayable)      || 0,
+        });
         setCollections(p => {
-          const withUpdates = applyUpdates(p, updates.map(strip));
-          return [...withUpdates, ...inserts.map(strip)];
+          const withUpdates = applyUpdates(p, updates.map(enrichCollection));
+          return [...withUpdates, ...inserts.map(enrichCollection)];
         });
       } break;
 
@@ -791,6 +802,14 @@ export default function SmartCRM() {
       } break;
 
       case "Contracts": {
+        const enrichContract = r => ({
+          ...strip(r),
+          value:          Number(r.value)          || 0,
+          griPercentage:  Number(r.griPercentage)  || 0,
+          noOfUsers:      Number(r.noOfUsers)      || 0,
+          noOfBranches:   Number(r.noOfBranches)   || 0,
+          warrantyMonths: Number(r.warrantyMonths) || 0,
+        });
         const maxSeq = contracts.reduce((max, c) => {
           const m = c.contractNo?.match(/CTR-\d+-(\d+)/);
           return m ? Math.max(max, parseInt(m[1])) : max;
@@ -799,17 +818,55 @@ export default function SmartCRM() {
         const enrichedInserts = inserts.map(r => {
           insertIdx++;
           return {
-            ...BLANK_CONTRACT, ...strip(r),
+            ...BLANK_CONTRACT, ...enrichContract(r),
+            id: r.id || `ctr_${uid()}`,
             contractNo: r.contractNo || `CTR-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
           };
         });
         setContracts(p => {
-          const withUpdates = applyUpdates(p, updates.map(strip));
+          const withUpdates = applyUpdates(p, updates.map(enrichContract));
+          return [...withUpdates, ...enrichedInserts];
+        });
+      } break;
+
+      case "Invoices": {
+        const maxSeq = invoices.reduce((max, inv) => {
+          const m = inv.invoiceNo?.match(/INV-\d+-(\d+)/);
+          return m ? Math.max(max, parseInt(m[1])) : max;
+        }, 0);
+        let insertIdx = 0;
+        const enrichedInserts = inserts.map(r => {
+          insertIdx++;
+          const acct = !r.accountId && r.accountNo
+            ? accounts.find(a => a.accountNo === r.accountNo || a.id === r.accountNo) : null;
+          return {
+            ...BLANK_INVOICE, ...strip(r),
+            id: r.id || `inv_${uid()}`,
+            invoiceNo: r.invoiceNo || `INV-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
+            accountId: r.accountId || acct?.id || "",
+            billedAmount:    Number(r.billedAmount)    || 0,
+            gstAmount:       Number(r.gstAmount)       || 0,
+            tdsAmount:       Number(r.tdsAmount)       || 0,
+            netPayable:      Number(r.netPayable)      || 0,
+            collectedAmount: Number(r.collectedAmount) || 0,
+            pendingAmount:   Number(r.pendingAmount)   || 0,
+          };
+        });
+        setInvoices(p => {
+          const withUpdates = applyUpdates(p, updates.map(r => ({
+            ...strip(r),
+            billedAmount:    Number(r.billedAmount)    || 0,
+            gstAmount:       Number(r.gstAmount)       || 0,
+            tdsAmount:       Number(r.tdsAmount)       || 0,
+            netPayable:      Number(r.netPayable)      || 0,
+            collectedAmount: Number(r.collectedAmount) || 0,
+            pendingAmount:   Number(r.pendingAmount)   || 0,
+          })));
           return [...withUpdates, ...enrichedInserts];
         });
       } break;
     }
-  }, [accounts, contacts, leads, tickets, contracts, collections, orgUsers]);
+  }, [accounts, contacts, leads, tickets, contracts, collections, invoices, orgUsers]);
 
   if(!currentUser) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers}/></>
@@ -841,7 +898,7 @@ export default function SmartCRM() {
             {page==="reports"    && <Reports accounts={accounts} opps={visibleOpps} tickets={tickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={collections} targets={targets} contacts={contacts} contracts={contracts} quotes={quotes} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="updates"    && <Updates updates={updates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
-            {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} existingData={{ leads, accounts, contacts, collections, tickets, contracts }}/>}
+            {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} existingData={{ leads, accounts, contacts, collections, tickets, contracts, invoices }}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
             {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
