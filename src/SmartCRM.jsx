@@ -8,7 +8,7 @@ import {
   INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
-  BLANK_INVOICE, INIT_INVOICES
+  BLANK_INVOICE, INIT_INVOICES, BLANK_OPP
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole } from "./utils/helpers";
 import { CSS } from "./styles";
@@ -865,8 +865,61 @@ export default function SmartCRM() {
           return [...withUpdates, ...enrichedInserts];
         });
       } break;
+
+      case "Pipeline": {
+        // Resolve products: "iCAFFE;WiseCargo" → ["iCAFFE","WiseCargo"]
+        const resolveProducts = (raw) => {
+          if (!raw) return [];
+          if (Array.isArray(raw)) return raw;
+          return String(raw).split(/[;,]/).map(s => s.trim()).filter(Boolean);
+        };
+        const resolveOwner = (raw) => {
+          if (!raw?.trim()) return "";
+          const match = orgUsers.find(u =>
+            u.name?.toLowerCase() === raw.toLowerCase() ||
+            u.email?.toLowerCase() === raw.toLowerCase() ||
+            u.id === raw
+          );
+          return match?.id || raw;
+        };
+        const resolveAccount = (row) => {
+          if (row.accountId && accounts.find(a => a.id === row.accountId)) return row.accountId;
+          // try matching by accountNo
+          const acct = row.accountId ? accounts.find(a => a.accountNo === row.accountId) : null;
+          return acct?.id || row.accountId || "";
+        };
+        const enrichOpp = (r) => ({
+          ...strip(r),
+          products:    resolveProducts(r.products),
+          owner:       resolveOwner(r.owner),
+          accountId:   resolveAccount(r),
+          value:       Number(r.value)       || 0,
+          probability: Number(r.probability) || 0,
+        });
+
+        const maxSeq = opps.reduce((max, o) => {
+          const m = o.oppNo?.match(/OPP-\d+-(\d+)/);
+          return m ? Math.max(max, parseInt(m[1])) : max;
+        }, 0);
+        let insertIdx = 0;
+        const enrichedInserts = inserts.map(r => {
+          insertIdx++;
+          return {
+            ...BLANK_OPP,
+            ...enrichOpp(r),
+            id: r.id || `opp_${uid()}`,
+            oppNo: r.oppNo || `OPP-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
+            stage: r.stage || "Prospect",
+            createdDate: r.createdDate || today,
+          };
+        });
+        setOpps(p => {
+          const withUpdates = applyUpdates(p, updates.map(enrichOpp));
+          return [...withUpdates, ...enrichedInserts];
+        });
+      } break;
     }
-  }, [accounts, contacts, leads, tickets, contracts, collections, invoices, orgUsers]);
+  }, [accounts, contacts, leads, tickets, contracts, collections, invoices, opps, orgUsers]);
 
   if(!currentUser) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers}/></>
@@ -898,7 +951,7 @@ export default function SmartCRM() {
             {page==="reports"    && <Reports accounts={accounts} opps={visibleOpps} tickets={tickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={collections} targets={targets} contacts={contacts} contracts={contracts} quotes={quotes} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="updates"    && <Updates updates={updates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
-            {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} existingData={{ leads, accounts, contacts, collections, tickets, contracts, invoices }}/>}
+            {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} existingData={{ leads, accounts, contacts, collections, tickets, contracts, invoices, opps: visibleOpps }}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
             {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}

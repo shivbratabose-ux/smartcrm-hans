@@ -197,6 +197,33 @@ const SCHEMAS = {
       return e;
     },
   },
+
+  Pipeline: {
+    refKey:    "oppNo",       // e.g. OPP-2026-001 — leave blank for new deals
+    uniqueKey: "title",
+    mandatory: ["title","accountId","stage","value","closeDate"],
+    optional:  [
+      "oppNo","products","probability","source","country","lob","owner",
+      "hierarchyLevel","dealSize","forecastCat","currency","competitors",
+      "lossReason","nextStep","decisionDate","budget","territory",
+      "campaignSource","notes","createdDate",
+    ],
+    sample: [
+      "oppNo,title,accountId,stage,value,probability,closeDate,source,country,lob,products,dealSize,forecastCat,currency,nextStep,decisionDate,owner",
+      "OPP-2026-001,iCAFFE License — Acme,ACC-2026-001,Proposal,15,60,2026-06-30,Inside Sales,India,CHA,iCAFFE,Medium,Commit,INR,Send proposal,2026-05-15,",
+      "OPP-2026-002,WiseCargo — Delta Freight,ACC-2026-002,Demo,25,45,2026-07-31,Referral,UAE,Freight Forwarder,WiseCargo,Large,Pipeline,USD,Schedule demo,2026-06-01,",
+      ",WiseTrax Messaging — Beta,ACC-2026-003,Qualified,8,25,2026-08-31,Inside Sales,India,Airline,WiseTrax,Small,Pipeline,INR,Initial call done,,",
+    ].join("\n"),
+    validate: (row) => {
+      const e = [];
+      if (!row.title?.trim())     e.push("Title required");
+      if (!row.accountId?.trim()) e.push("Account ID required");
+      if (!row.stage?.trim())     e.push("Stage required");
+      if (!row.value?.trim())     e.push("Value required");
+      if (!row.closeDate?.trim()) e.push("Close date required");
+      return e;
+    },
+  },
 };
 
 // ─── CSV parser ──────────────────────────────────────────────────────────────
@@ -250,6 +277,7 @@ function BulkUpload({ onUpload, existingData = {} }) {
       "Support Tickets":existingData.tickets      || [],
       Contracts:        existingData.contracts    || [],
       Invoices:         existingData.invoices     || [],
+      Pipeline:         existingData.opps         || [],
     };
     return map[type] || [];
   }, [type, existingData]);
@@ -265,6 +293,7 @@ function BulkUpload({ onUpload, existingData = {} }) {
       "Support Tickets":"ticketNo",
       Contracts:        "contractNo",
       Invoices:         "invoiceNo",
+      Pipeline:         "oppNo",
     }[type];
     existing.forEach(r => {
       const v = r[refField];

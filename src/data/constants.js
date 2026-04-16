@@ -192,7 +192,7 @@ export const EVENT_TYPES = ["Call","Meeting","Demo","Follow-up","Site Visit","Pr
 export const EVENT_STATUSES = ["Scheduled","Completed","Cancelled","Rescheduled","No Show"];
 
 // ── Bulk Upload Types ──
-export const UPLOAD_TYPES = ["Leads","Customers","Contacts","Collections","Support Tickets","Contracts","Invoices"];
+export const UPLOAD_TYPES = ["Leads","Customers","Contacts","Collections","Support Tickets","Contracts","Invoices","Pipeline"];
 
 // ── Customer Hierarchy Levels ──
 export const HIERARCHY_LEVELS = ["Parent Company","Subsidiary","Branch","Department","Office","Country Entity"];
