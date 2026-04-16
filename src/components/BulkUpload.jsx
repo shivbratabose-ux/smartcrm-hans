@@ -19,11 +19,14 @@ const SCHEMAS = {
       "leadId","contactName","phone","designation","vertical","region",
       "assignedTo","notes","nextCall","score","temperature",
       "noOfUsers","businessType","budgetRange","nextStep","objections",
+      "country","state","city","companyWebsite","alternatePhone","alternateEmail",
+      "linkedInUrl","annualRevenue","campaignName","referredBy","expectedCloseDate",
+      "proposalSent","demoScheduled","competitorName","lastContactDate",
     ],
     sample: [
-      "leadId,company,contactName,email,phone,product,vertical,region,source,stage,assignedTo,score,nextCall",
-      "#FL-2026-001,Acme Corp,John Doe,john@acme.com,+91-98765-00001,iCAFFE,CHA,South Asia,Inside Sales,MQL,,50,2026-04-30",
-      ",Beta Logistics,Jane Roe,jane@beta.com,+91-98765-00002,WiseCargo,Forwarder,South Asia,Referral,MQL,,60,2026-05-15",
+      "leadId,company,contactName,email,phone,product,vertical,region,source,stage,country,state,score,expectedCloseDate,estimatedValue,campaignName,assignedTo",
+      "#FL-2026-001,Acme Corp,John Doe,john@acme.com,+91-98765-00001,iCAFFE,CHA,South Asia,Inside Sales,MQL,India,Maharashtra,50,2026-06-30,500000,,",
+      ",Beta Logistics,Jane Roe,jane@beta.com,+91-98765-00002,WiseCargo,Forwarder,South Asia,Referral,MQL,India,Delhi,60,2026-07-15,200000,Q1 Campaign,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
@@ -73,11 +76,14 @@ const SCHEMAS = {
     optional:  [
       "contactId","phone","designation","role","department",
       "accountId","accountName","products","primary","countries","branches",
+      "city","state","country","pincode","alternateEmail","alternatePhone",
+      "linkedInUrl","decisionLevel","influence","category",
+      "preferredContactMode","doNotContact","lastContactDate","source",
     ],
     sample: [
-      "contactId,name,email,phone,designation,role,department,accountId,accountName,primary",
-      "CON-001,Jane Smith,jane@acme.com,+91-98765-00002,VP Operations,Decision Maker/HOD,Operations,ACC-2026-001,,true",
-      ",Mark Lee,mark@acme.com,+91-98765-00003,IT Manager,End User,IT,ACC-2026-001,,false",
+      "contactId,name,email,phone,designation,role,department,accountId,city,state,country,decisionLevel,influence,category,preferredContactMode,linkedInUrl",
+      "CON-001,Jane Smith,jane@acme.com,+91-98765-00002,VP Operations,Decision Maker/HOD,Operations,ACC-2026-001,Mumbai,Maharashtra,India,VP-Director,High,Champion,Email,linkedin.com/in/janesmith",
+      ",Mark Lee,mark@acme.com,+91-98765-00003,IT Manager,End User,IT,ACC-2026-001,Mumbai,Maharashtra,India,Manager,Medium,Neutral,Phone,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
@@ -94,11 +100,13 @@ const SCHEMAS = {
     optional:  [
       "collectedAmount","pendingAmount","status","paymentMode",
       "paymentDate","remarks","owner",
+      "invoiceType","product","currency","gstAmount","tdsAmount","netPayable",
+      "billPeriodFrom","billPeriodTo","agingBucket","followUpDate","chequeRef","approvedBy",
     ],
     sample: [
-      "invoiceNo,accountId,invoiceDate,dueDate,billedAmount,collectedAmount,pendingAmount,status,paymentMode,paymentDate,remarks,owner",
-      "INV-2026-100,ACC-2026-001,2026-04-01,2026-05-01,500000,0,500000,Current,NEFT,,Full payment due,",
-      "INV-2026-099,ACC-2026-001,2026-03-01,2026-04-01,200000,200000,0,Paid,NEFT,2026-03-28,,",
+      "invoiceNo,accountId,invoiceDate,dueDate,billedAmount,gstAmount,tdsAmount,netPayable,collectedAmount,pendingAmount,status,currency,paymentMode,paymentDate,chequeRef,remarks",
+      "INV-2026-100,ACC-2026-001,2026-04-01,2026-05-01,500000,90000,0,590000,0,590000,Current,INR,NEFT,,,Full payment due",
+      "INV-2026-099,ACC-2026-001,2026-03-01,2026-04-01,200000,36000,20000,216000,216000,0,Paid,INR,NEFT,2026-03-28,UTR-123456,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
@@ -118,11 +126,13 @@ const SCHEMAS = {
     optional:  [
       "ticketNo","type","description","assigned","status","sla",
       "category","subCategory","created","resolved",
+      "reportedBy","reportedDate","resolvedDate","affectedModule",
+      "severity","environment","workaround","internalNotes","revisitDate","tags",
     ],
     sample: [
-      "ticketNo,title,accountId,product,type,priority,description,assigned,status,sla",
-      "TKT-2026-001,Login issue on portal,ACC-2026-001,WiseCargo,Bug / Glitch,High,Users unable to login,,Open,2026-04-02",
-      ",Data export failing,ACC-2026-001,iCAFFE,Feature Request,Medium,Export button throws error,,Open,",
+      "ticketNo,title,accountId,product,type,category,priority,severity,description,reportedBy,reportedDate,environment,affectedModule,assigned,status,resolvedDate",
+      "TKT-2026-001,Login issue on portal,ACC-2026-001,WiseCargo,Bug / Glitch,Technical,High,Critical,Users unable to login,John Smith,2026-04-01,Production,Auth Module,,Open,",
+      ",Data export failing,ACC-2026-001,iCAFFE,Feature Request,Functional,Medium,Medium,Export button throws error,Jane Roe,2026-04-05,Production,Reports,,Open,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
@@ -141,11 +151,14 @@ const SCHEMAS = {
     optional:  [
       "contractNo","startDate","endDate","billTerm","billType",
       "poNumber","owner","terms","notes","oppId",
+      "renewalType","paymentTerms","currency","billingFrequency","invoiceGenBasis",
+      "griApplicable","griPercentage","noOfUsers","noOfBranches","serviceStartDate",
+      "commercialModel","autoRenewal","warrantyMonths","goLiveDate","territory",
     ],
     sample: [
-      "contractNo,title,accountId,product,status,value,startDate,endDate,billTerm,billType,poNumber,owner",
-      "CTR-2026-001,WiseCargo License — Acme,ACC-2026-001,WiseCargo,Active,200000,2026-01-01,2026-12-31,Yearly,Renewals,PO-2026-001,",
-      ",iCAFFE Starter — Beta,ACC-2026-002,iCAFFE,Draft,50000,2026-06-01,2027-05-31,Yearly,New License,,,",
+      "contractNo,title,accountId,product,status,value,startDate,endDate,serviceStartDate,commercialModel,billingFrequency,paymentTerms,currency,noOfUsers,noOfBranches,renewalType,autoRenewal,griApplicable,griPercentage,goLiveDate,territory",
+      "CTR-2026-001,WiseCargo License — Acme,ACC-2026-001,WiseCargo,Active,200000,2026-01-01,2026-12-31,2026-02-01,Annual SaaS,Annual,Net 30,INR,50,3,Manual,No,No,0,2026-02-15,South Asia",
+      ",iCAFFE Starter — Beta,ACC-2026-002,iCAFFE,Draft,50000,2026-06-01,2027-05-31,,,Annual,Net 30,INR,10,1,Manual,No,No,0,,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
@@ -154,6 +167,33 @@ const SCHEMAS = {
       if (!row.product?.trim())   e.push("Product required");
       if (!row.status?.trim())    e.push("Status required");
       if (!row.value?.trim())     e.push("Value required");
+      return e;
+    },
+  },
+
+  Invoices: {
+    refKey:    "invoiceNo",
+    uniqueKey: "invoiceNo",
+    mandatory: ["invoiceNo","accountId","invoiceDate","dueDate","billedAmount","product"],
+    optional:  [
+      "accountNo","contractNo","invoiceType","billPeriodFrom","billPeriodTo",
+      "description","gstRate","gstAmount","tdsRate","tdsAmount","netPayable",
+      "currency","paymentTerms","status","paymentDate","paymentRef","paymentMode",
+      "collectedAmount","pendingAmount","agingBucket","remarks","owner",
+    ],
+    sample: [
+      "invoiceNo,accountId,accountNo,contractNo,invoiceType,billPeriodFrom,billPeriodTo,invoiceDate,dueDate,product,billedAmount,gstRate,gstAmount,tdsRate,tdsAmount,netPayable,currency,status,paymentMode,paymentDate,collectedAmount,pendingAmount,remarks",
+      "INV-2026-001,ACC-2026-001,ACC-2026-001,CTR-2026-001,Tax Invoice,2026-04-01,2026-04-30,2026-04-01,2026-05-01,iCAFFE,100000,18,18000,10,10000,108000,INR,Sent,NEFT,,0,108000,Q1 annual invoice",
+      "INV-2026-002,ACC-2026-002,,CTR-2026-002,Tax Invoice,2026-04-01,2026-04-30,2026-04-05,2026-05-05,WiseCargo,50000,18,9000,0,0,59000,INR,Paid,NEFT,2026-04-20,59000,0,Paid on time",
+    ].join("\n"),
+    validate: (row) => {
+      const e = [];
+      if (!row.invoiceNo?.trim())    e.push("Invoice No. required");
+      if (!row.accountId?.trim())    e.push("Account ID required");
+      if (!row.invoiceDate?.trim())  e.push("Invoice date required");
+      if (!row.dueDate?.trim())      e.push("Due date required");
+      if (!row.billedAmount?.trim()) e.push("Billed amount required");
+      if (!row.product?.trim())      e.push("Product required");
       return e;
     },
   },
@@ -209,6 +249,7 @@ function BulkUpload({ onUpload, existingData = {} }) {
       Collections:      existingData.collections  || [],
       "Support Tickets":existingData.tickets      || [],
       Contracts:        existingData.contracts    || [],
+      Invoices:         existingData.invoices     || [],
     };
     return map[type] || [];
   }, [type, existingData]);
@@ -223,6 +264,7 @@ function BulkUpload({ onUpload, existingData = {} }) {
       Collections:      "invoiceNo",
       "Support Tickets":"ticketNo",
       Contracts:        "contractNo",
+      Invoices:         "invoiceNo",
     }[type];
     existing.forEach(r => {
       const v = r[refField];
@@ -504,6 +546,7 @@ function BulkUpload({ onUpload, existingData = {} }) {
             <li>Collections → <code>invoiceNo</code></li>
             <li>Tickets → <code>ticketNo</code> (TKT-2026-001)</li>
             <li>Contracts → <code>contractNo</code> (CTR-2026-001)</li>
+            <li>Invoices → <code>invoiceNo</code> (INV-2026-001)</li>
           </ul>
         </div>
       </div>

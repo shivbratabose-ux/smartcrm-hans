@@ -248,10 +248,29 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
   const del = id => { onDeleteContact(id); setConfirm(null); setDetail(null); };
 
   const CSV_COLS = [
-    {label:"Contact ID",accessor:c=>c.contactId||""},{label:"Name",accessor:c=>c.name},{label:"Designation",accessor:c=>c.designation||""},
-    {label:"Role",accessor:c=>c.role},{label:"Departments",accessor:c=>(c.departments||[]).join("; ")},
-    {label:"Account",accessor:c=>accounts.find(a=>a.id===c.accountId)?.name||""},{label:"Email",accessor:c=>c.email},
-    {label:"Phone",accessor:c=>c.phone},{label:"Primary",accessor:c=>c.primary?"Yes":"No"},
+    {label:"contactId",             accessor:c=>c.contactId||""},
+    {label:"name",                  accessor:c=>c.name},
+    {label:"email",                 accessor:c=>c.email},
+    {label:"phone",                 accessor:c=>c.phone},
+    {label:"designation",           accessor:c=>c.designation||""},
+    {label:"role",                  accessor:c=>c.role},
+    {label:"department",            accessor:c=>(c.departments||[]).join("; ")},
+    {label:"accountId",             accessor:c=>accounts.find(a=>a.id===c.accountId)?.accountNo||c.accountId||""},
+    {label:"primary",               accessor:c=>c.primary?"Yes":"No"},
+    {label:"city",                  accessor:c=>c.city||""},
+    {label:"state",                 accessor:c=>c.state||""},
+    {label:"country",               accessor:c=>c.country||""},
+    {label:"pincode",               accessor:c=>c.pincode||""},
+    {label:"alternateEmail",        accessor:c=>c.alternateEmail||""},
+    {label:"alternatePhone",        accessor:c=>c.alternatePhone||""},
+    {label:"linkedInUrl",           accessor:c=>c.linkedInUrl||""},
+    {label:"decisionLevel",         accessor:c=>c.decisionLevel||""},
+    {label:"influence",             accessor:c=>c.influence||""},
+    {label:"category",              accessor:c=>c.category||""},
+    {label:"preferredContactMode",  accessor:c=>c.preferredContactMode||""},
+    {label:"doNotContact",          accessor:c=>c.doNotContact||"No"},
+    {label:"lastContactDate",       accessor:c=>c.lastContactDate||""},
+    {label:"source",                accessor:c=>c.source||""},
   ];
 
   return (

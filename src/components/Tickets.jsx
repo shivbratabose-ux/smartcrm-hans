@@ -46,11 +46,33 @@ function Tickets({tickets,setTickets,accounts,orgUsers}) {
   const pg = usePagination(filtered);
   const bulk = useBulkSelect(filtered);
 
+  const CSV_COLS = [
+    {label:"ticketNo",       accessor:t=>t.ticketNo||t.id||""},
+    {label:"title",          accessor:t=>t.title},
+    {label:"accountId",      accessor:t=>t.accountId||""},
+    {label:"product",        accessor:t=>t.product},
+    {label:"type",           accessor:t=>t.type},
+    {label:"category",       accessor:t=>t.category||""},
+    {label:"priority",       accessor:t=>t.priority},
+    {label:"severity",       accessor:t=>t.severity||""},
+    {label:"status",         accessor:t=>t.status},
+    {label:"description",    accessor:t=>t.description||""},
+    {label:"reportedBy",     accessor:t=>t.reportedBy||""},
+    {label:"reportedDate",   accessor:t=>t.reportedDate||""},
+    {label:"environment",    accessor:t=>t.environment||""},
+    {label:"affectedModule", accessor:t=>t.affectedModule||""},
+    {label:"assigned",       accessor:t=>t.assigned||""},
+    {label:"sla",            accessor:t=>t.sla||""},
+    {label:"resolvedDate",   accessor:t=>t.resolvedDate||""},
+    {label:"internalNotes",  accessor:t=>t.internalNotes||""},
+    {label:"tags",           accessor:t=>t.tags||""},
+  ];
+
   return (
     <div>
       <div className="pg-head">
         <div><div className="pg-title">Support Tickets</div><div className="pg-sub">{OPEN} open · {tickets.filter(t=>t.priority==="Critical"&&!["Resolved","Closed"].includes(t.status)).length} critical</div></div>
-        <div className="pg-actions"><button className="btn btn-sec" onClick={()=>exportCSV(tickets,[{label:"ID",accessor:t=>t.id},{label:"Title",accessor:t=>t.title},{label:"Product",accessor:t=>t.product},{label:"Type",accessor:t=>t.type},{label:"Priority",accessor:t=>t.priority},{label:"Status",accessor:t=>t.status},{label:"SLA",accessor:t=>t.sla}],"tickets")}><Download size={14}/>Export</button><button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>New Ticket</button></div>
+        <div className="pg-actions"><button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"tickets")}><Download size={14}/>Export</button><button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>New Ticket</button></div>
       </div>
       <div className="filter-bar">
         {["All","Open","Active","Resolved"].map(t=><button key={t} className={`btn btn-sm ${tabS===t?"btn-primary":"btn-sec"}`} onClick={()=>setTabS(t)}>{t}</button>)}
@@ -59,11 +81,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers}) {
       </div>
       <BulkActions count={bulk.count} onClear={bulk.clear}
         onDelete={()=>{ if(confirm("Delete "+bulk.count+" tickets?")){ bulk.selected.forEach(id=>del(id)); bulk.clear(); }}}
-        onExport={()=>exportCSV(
-          tickets.filter(t=>bulk.isSelected(t.id)),
-          [{label:"ID",accessor:t=>t.id},{label:"Title",accessor:t=>t.title},{label:"Product",accessor:t=>t.product},{label:"Type",accessor:t=>t.type},{label:"Priority",accessor:t=>t.priority},{label:"Status",accessor:t=>t.status},{label:"SLA",accessor:t=>t.sla}],
-          "tickets"
-        )}/>
+        onExport={()=>exportCSV(tickets.filter(t=>bulk.isSelected(t.id)),CSV_COLS,"tickets")}/>
       <div className="card" style={{padding:0}}>
         <table className="tbl">
           <thead><tr><th style={{width:36}}><input type="checkbox" checked={bulk.allSelected} onChange={bulk.toggleAll}/></th><th>Ticket</th><th>Product</th><th>Type</th><th>Priority</th><th>Status</th><th>Assigned</th><th>SLA</th><th></th></tr></thead>
