@@ -24,17 +24,9 @@ export const PRIORITIES   = ["Critical","High","Medium","Low"];
 export const FILE_TYPES   = ["PDF","Excel","Word","PPT","Image","CSV","Zip","Other"];
 export const REGIONS      = ["South Asia","Africa","Middle East","Southeast Asia","Europe","Americas"];
 
-export const TEAM = [
-  {id:"u1",name:"Shivbrata Bose",  role:"BD Lead",      lob:"All",          country:"India",        initials:"SB", email:"shivbrata@hansinfomatic.com"},
-  {id:"u2",name:"Rahul Sharma",    role:"Sales Exec",   lob:"iCAFFE",       country:"India",        initials:"RS", email:"rahul@hansinfomatic.com"},
-  {id:"u3",name:"Priya Nair",      role:"Sales Exec",   lob:"WiseHandling", country:"India",        initials:"PN", email:"priya@hansinfomatic.com"},
-  {id:"u4",name:"Charles Isabirye",role:"Country Mgr",  lob:"All",          country:"South Africa", initials:"CI", email:"charles@hansinfomatic.com"},
-  {id:"u5",name:"Vikram Mehta",    role:"Line Mgr",     lob:"WiseCargo",    country:"India",        initials:"VM", email:"vikram@hansinfomatic.com"},
-  {id:"u6",name:"Aisha Patel",     role:"Sales Exec",   lob:"WiseDox",      country:"India",        initials:"AP", email:"aisha@hansinfomatic.com"},
-  {id:"u7",name:"Tanbir Ansari",   role:"Tech Lead",    lob:"All",          country:"India",        initials:"TA", email:"tanbir@hansinfomatic.com"},
-  {id:"u8",name:"Suresh Kumar",    role:"Support Engr", lob:"All",          country:"India",        initials:"SK", email:"suresh@hansinfomatic.com"},
-];
-export const TEAM_MAP = Object.fromEntries(TEAM.map(u=>[u.id,u]));
+// Seed team cleared for production — all users load from Supabase
+export const TEAM = [];
+export const TEAM_MAP = {};
 
 // ── Role Hierarchy ──
 export const ROLES_HIERARCHY = [

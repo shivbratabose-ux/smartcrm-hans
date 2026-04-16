@@ -77,7 +77,7 @@ const clearSession = () => {
 // Backfills missing fields introduced in later schema versions
 // Bump DATA_VERSION whenever seed/schema changes to force a reset
 // ═══════════════════════════════════════════════════════════════════
-const DATA_VERSION = "v9"; // bumped: clears stale seed users/teams from localStorage
+const DATA_VERSION = "v10"; // bumped: clears stale TEAM/TEAM_MAP dummy users from org hierarchy
 
 function migrateState(raw) {
   if (!raw) return null;

@@ -20,7 +20,7 @@ export default function OrgHierarchy({org,setOrg,users,orgUsers}) {
   });
 
   const toggle=(id)=>setExpanded(p=>({...p,[id]:!p[id]}));
-  const userById=(id)=>users?.find(u=>u.id===id)||TEAM_MAP[id];
+  const userById=(id)=>users?.find(u=>u.id===id);
 
   const TYPE_CLS={HQ:"org-tag-hq",Office:"org-tag-office",Remote:"org-tag-remote",Partner:"org-tag-partner",Subsidiary:"org-tag-sub","Internal HQ":"org-tag-internal"};
 
