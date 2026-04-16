@@ -5,6 +5,11 @@
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { loadState, saveState } from "../utils/helpers";
 
+// Only log in development — never expose DB internals to prod console
+const dbLog = import.meta.env.DEV
+  ? (level, ...args) => console[level](...args)
+  : () => {};
+
 // ── Table name mapping (camelCase → snake_case) ──
 const TABLE_MAP = {
   accounts:    "accounts",
@@ -142,7 +147,7 @@ export async function loadAll(module) {
   if (!table) return null;
 
   const { data, error } = await supabase.from(table).select("*").order("created_at", { ascending: false });
-  if (error) { console.error(`[DB] loadAll ${module}:`, error); return null; }
+  if (error) { dbLog('error', `[DB] loadAll ${module}:`, error); return null; }
   return (data || []).map(toCamel);
 }
 
@@ -176,7 +181,7 @@ export async function insertRecord(module, record) {
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
   const { data, error } = await supabase.from(table).insert(snaked).select().single();
-  if (error) console.error(`[DB] insert ${module}:`, error);
+  if (error) dbLog('error', `[DB] insert ${module}:`, error);
   return { data: data ? toCamel(data) : record, error };
 }
 
@@ -193,7 +198,7 @@ export async function updateRecord(module, id, updates) {
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
   const { data, error } = await supabase.from(table).update(snaked).eq("id", id).select().single();
-  if (error) console.error(`[DB] update ${module}:`, error);
+  if (error) dbLog('error', `[DB] update ${module}:`, error);
   return { data: data ? toCamel(data) : updates, error };
 }
 
@@ -207,7 +212,7 @@ export async function deleteRecord(module, id) {
   if (!table) return { error: "Unknown module" };
 
   const { error } = await supabase.from(table).delete().eq("id", id);
-  if (error) console.error(`[DB] delete ${module}:`, error);
+  if (error) dbLog('error', `[DB] delete ${module}:`, error);
   return { error };
 }
 
@@ -222,7 +227,7 @@ export async function batchUpsert(module, records) {
 
   const snaked = records.map(toSnake);
   const { error } = await supabase.from(table).upsert(snaked, { onConflict: "id" });
-  if (error) console.error(`[DB] batchUpsert ${module}:`, error);
+  if (error) dbLog('error', `[DB] batchUpsert ${module}:`, error);
   return { error };
 }
 
@@ -381,12 +386,12 @@ export async function seedSupabase(seedData) {
 
   for (const mod of order) {
     if (seedData[mod]?.length) {
-      console.log(`[Seed] Upserting ${mod}: ${seedData[mod].length} records`);
+      dbLog('log', `[Seed] Upserting ${mod}: ${seedData[mod].length} records`);
       const { error } = await batchUpsert(mod, seedData[mod]);
-      if (error) console.error(`[Seed] Failed ${mod}:`, error);
+      if (error) dbLog('error', `[Seed] Failed ${mod}:`, error);
     }
   }
-  console.log("[Seed] Complete!");
+  dbLog('log', "[Seed] Complete!");
   return { error: null };
 }
 
