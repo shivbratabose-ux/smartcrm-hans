@@ -18,6 +18,7 @@ import {
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds } from "../utils/helpers";
+import { exportCSV } from "../utils/csv";
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip } from "./shared";
 
 /* ───────── constants ───────── */
@@ -497,6 +498,36 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
     return all.filter(u => _pipelineScopedIds.has(u.id));
   }, [orgUsers, _pipelineScopedIds]);
+  const teamMap = useMemo(() => {
+    const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+    return Object.fromEntries(all.map(u => [u.id, u]));
+  }, [orgUsers]);
+  const CSV_COLS = [
+    {label:"oppNo",           accessor:o=>o.oppNo||""},
+    {label:"title",           accessor:o=>o.title||""},
+    {label:"accountId",       accessor:o=>accounts.find(a=>a.id===o.accountId)?.accountNo||o.accountId||""},
+    {label:"stage",           accessor:o=>o.stage||""},
+    {label:"value",           accessor:o=>o.value||0},
+    {label:"probability",     accessor:o=>o.probability||0},
+    {label:"closeDate",       accessor:o=>o.closeDate||""},
+    {label:"source",          accessor:o=>o.source||""},
+    {label:"country",         accessor:o=>o.country||""},
+    {label:"lob",             accessor:o=>o.lob||""},
+    {label:"products",        accessor:o=>(o.products||[]).join(";")},
+    {label:"hierarchyLevel",  accessor:o=>o.hierarchyLevel||""},
+    {label:"dealSize",        accessor:o=>o.dealSize||""},
+    {label:"forecastCat",     accessor:o=>o.forecastCat||""},
+    {label:"currency",        accessor:o=>o.currency||"INR"},
+    {label:"competitors",     accessor:o=>o.competitors||""},
+    {label:"lossReason",      accessor:o=>o.lossReason||""},
+    {label:"nextStep",        accessor:o=>o.nextStep||""},
+    {label:"decisionDate",    accessor:o=>o.decisionDate||""},
+    {label:"budget",          accessor:o=>o.budget||""},
+    {label:"territory",       accessor:o=>o.territory||""},
+    {label:"campaignSource",  accessor:o=>o.campaignSource||""},
+    {label:"owner",           accessor:o=>teamMap[o.owner]?.name||o.owner||""},
+    {label:"notes",           accessor:o=>o.notes||""},
+  ];
   const [view, setView] = useState("kanban");
   const [prodF, setProdF] = useState("All");
   const [ownerF, setOwnerF] = useState("All");
@@ -793,6 +824,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
               </button>
             ))}
           </div>
+          <button className="btn btn-sec" onClick={() => exportCSV(filtered, CSV_COLS, "pipeline")}><Download size={14}/>Export</button>
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14} /> Add Deal</button>
         </div>
       </div>
