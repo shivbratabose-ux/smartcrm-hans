@@ -157,9 +157,14 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
     return rmap;
   },[orgUsers,org]);
 
-  // Build tree: find roots (no manager or manager is themselves)
+  // Build tree: find roots (no manager, self as manager, or manager no longer exists in orgUsers)
+  const activeUserIds = new Set(orgUsers.filter(u=>u.active!==false).map(u=>u.id));
   const getDirectReports=(managerId)=>orgUsers.filter(u=>u.active!==false&&reportsToMap[u.id]===managerId&&u.id!==managerId);
-  const roots=orgUsers.filter(u=>u.active!==false&&(!reportsToMap[u.id]||reportsToMap[u.id]===u.id));
+  const roots=orgUsers.filter(u=>{
+    if(u.active===false) return false;
+    const mgr=reportsToMap[u.id];
+    return !mgr || mgr===u.id || !activeUserIds.has(mgr);
+  });
 
   const setManager=(userId,managerId)=>{
     setOrgUsers(p=>p.map(u=>u.id===userId?{...u,reportsTo:managerId||undefined}:u));
