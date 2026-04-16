@@ -71,10 +71,10 @@ export const INIT_PRODUCT_CATALOG = [
 // ── Org Hierarchy: Market -> Company -> Division -> Country -> Branch -> Department (structural — keep) ──
 export const INIT_ORG = {
   markets:[
-    {id:"mk1",name:"South Asia",   region:"Asia",        head:"u1", notes:"India domestic + SAARC"},
-    {id:"mk2",name:"Africa",       region:"Africa",      head:"u4", notes:"East & Southern Africa + North Africa"},
-    {id:"mk3",name:"Middle East",  region:"MEA",         head:"u1", notes:"UAE, Qatar, Saudi Arabia"},
-    {id:"mk4",name:"Rest of World",region:"Global",      head:"u1", notes:"Europe, Americas, Southeast Asia"},
+    {id:"mk1",name:"South Asia",   region:"Asia",        head:"", notes:"India domestic + SAARC"},
+    {id:"mk2",name:"Africa",       region:"Africa",      head:"", notes:"East & Southern Africa + North Africa"},
+    {id:"mk3",name:"Middle East",  region:"MEA",         head:"", notes:"UAE, Qatar, Saudi Arabia"},
+    {id:"mk4",name:"Rest of World",region:"Global",      head:"", notes:"Europe, Americas, Southeast Asia"},
   ],
   companies:[
     {id:"co1",name:"Hans Infomatic Pvt. Ltd.",marketId:"mk1",type:"Internal HQ",country:"India",   regNo:"U72900MH2018PTC308XXX"},
@@ -82,11 +82,11 @@ export const INIT_ORG = {
     {id:"co3",name:"Hans Infomatic DMCC",      marketId:"mk3",type:"Subsidiary", country:"UAE",    regNo:"DMCC-HANS-2025"},
   ],
   divisions:[
-    {id:"dv1",name:"Aviation Products",  companyId:"co1",head:"u1",products:["WiseHandling","WiseCargo","WiseCCS","WiseTrax"]},
-    {id:"dv2",name:"CHA & Logistics",    companyId:"co1",head:"u2",products:["iCAFFE","WiseDox"]},
-    {id:"dv3",name:"Africa Business",    companyId:"co1",head:"u4",products:["WiseHandling","WiseCargo"]},
-    {id:"dv4",name:"MPC Reseller Ops",   companyId:"co2",head:"u4",products:["WiseHandling"]},
-    {id:"dv5",name:"Middle East Ops",    companyId:"co3",head:"u1",products:["WiseTrax","WiseCargo"]},
+    {id:"dv1",name:"Aviation Products",  companyId:"co1",head:"",products:["WiseHandling","WiseCargo","WiseCCS","WiseTrax"]},
+    {id:"dv2",name:"CHA & Logistics",    companyId:"co1",head:"",products:["iCAFFE","WiseDox"]},
+    {id:"dv3",name:"Africa Business",    companyId:"co1",head:"",products:["WiseHandling","WiseCargo"]},
+    {id:"dv4",name:"MPC Reseller Ops",   companyId:"co2",head:"",products:["WiseHandling"]},
+    {id:"dv5",name:"Middle East Ops",    companyId:"co3",head:"",products:["WiseTrax","WiseCargo"]},
   ],
   branches:[
     {id:"br1",name:"Mumbai HQ",        divisionId:"dv1",city:"Mumbai",      country:"India",       type:"HQ",     address:"Andheri East, Mumbai 400069"},
@@ -97,13 +97,13 @@ export const INIT_ORG = {
     {id:"br6",name:"Kolkata Office",   divisionId:"dv2",city:"Kolkata",     country:"India",       type:"Office", address:"Salt Lake, Kolkata 700091"},
   ],
   departments:[
-    {id:"dep1",name:"Business Development", branchId:"br1",head:"u1",headcount:4},
-    {id:"dep2",name:"Technology & Products",branchId:"br1",head:"u7",headcount:3},
-    {id:"dep3",name:"Customer Support",     branchId:"br1",head:"u8",headcount:2},
-    {id:"dep4",name:"Africa Sales",         branchId:"br3",head:"u4",headcount:1},
-    {id:"dep5",name:"CHA Sales – North",    branchId:"br2",head:"u3",headcount:2},
-    {id:"dep6",name:"CHA Sales – East",     branchId:"br6",head:"u6",headcount:1},
-    {id:"dep7",name:"MEA Business",         branchId:"br5",head:"u1",headcount:1},
+    {id:"dep1",name:"Business Development", branchId:"br1",head:"",headcount:4},
+    {id:"dep2",name:"Technology & Products",branchId:"br1",head:"",headcount:3},
+    {id:"dep3",name:"Customer Support",     branchId:"br1",head:"",headcount:2},
+    {id:"dep4",name:"Africa Sales",         branchId:"br3",head:"",headcount:1},
+    {id:"dep5",name:"CHA Sales – North",    branchId:"br2",head:"",headcount:2},
+    {id:"dep6",name:"CHA Sales – East",     branchId:"br6",head:"",headcount:1},
+    {id:"dep7",name:"MEA Business",         branchId:"br5",head:"",headcount:1},
   ],
 };
 
