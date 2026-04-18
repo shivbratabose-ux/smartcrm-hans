@@ -108,18 +108,34 @@ const MOD_TYPE_CLS={Core:"mod-core","Add-on":"mod-addon",Integration:"mod-integr
 
 function ProductCatalogPage({catalog,setCatalog}) {
   const [expanded,setExpanded]=useState({});
-  const [modal,setModal]=useState(null); // {prodId, mod?}
+  const [modal,setModal]=useState(null); // {mode:"addmod"|"editmod"|"addprod"|"editprod", prodId?, modId?}
   const [form,setForm]=useState({name:"",type:"Core",desc:""});
+  const [prodForm,setProdForm]=useState({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF"});
   const [confirm,setConfirm]=useState(null);
+
+  // Preset color/background pairs for product theming
+  const COLOR_PRESETS=[
+    {color:"#2563EB",bg:"#EFF6FF",label:"Blue"},
+    {color:"#16A34A",bg:"#F0FDF4",label:"Green"},
+    {color:"#7C3AED",bg:"#F5F3FF",label:"Purple"},
+    {color:"#D97706",bg:"#FFFBEB",label:"Amber"},
+    {color:"#0D9488",bg:"#F0FDFA",label:"Teal"},
+    {color:"#DC2626",bg:"#FEF2F2",label:"Red"},
+    {color:"#DB2777",bg:"#FDF2F8",label:"Pink"},
+    {color:"#0891B2",bg:"#ECFEFF",label:"Cyan"},
+    {color:"#65A30D",bg:"#F7FEE7",label:"Lime"},
+    {color:"#475569",bg:"#F1F5F9",label:"Slate"},
+  ];
 
   const toggle=id=>setExpanded(e=>({...e,[id]:!e[id]}));
   const openAddMod=prodId=>{setForm({name:"",type:"Core",desc:""});setModal({mode:"addmod",prodId});};
   const openEditMod=(prodId,mod)=>{setForm({name:mod.name,type:mod.type,desc:mod.desc});setModal({mode:"editmod",prodId,modId:mod.id});};
   const saveMod=()=>{
+    if(!form.name.trim()) return;
     setCatalog(c=>c.map(p=>{
       if(p.id!==modal.prodId) return p;
-      if(modal.mode==="addmod") return {...p,modules:[...p.modules,{id:`m_${uid()}`,name:form.name,type:form.type,desc:form.desc}]};
-      return {...p,modules:p.modules.map(m=>m.id===modal.modId?{...m,...form}:m)};
+      if(modal.mode==="addmod") return {...p,modules:[...p.modules,{id:`m_${uid()}`,name:form.name.trim(),type:form.type,desc:form.desc}]};
+      return {...p,modules:p.modules.map(m=>m.id===modal.modId?{...m,name:form.name.trim(),type:form.type,desc:form.desc}:m)};
     }));
     setModal(null);
   };
@@ -128,10 +144,34 @@ function ProductCatalogPage({catalog,setCatalog}) {
     setConfirm(null);
   };
 
+  // ── Product (line) CRUD ──
+  const openAddProd=()=>{setProdForm({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF"});setModal({mode:"addprod"});};
+  const openEditProd=(p)=>{setProdForm({id:p.id,name:p.name,desc:p.desc||"",color:p.color||"#2563EB",bg:p.bg||"#EFF6FF"});setModal({mode:"editprod",prodId:p.id});};
+  const saveProd=()=>{
+    const name=prodForm.name.trim();
+    if(!name) return;
+    if(modal.mode==="addprod"){
+      // Auto-generate a stable product id from the name (no spaces, capitalised)
+      const baseId=name.replace(/[^A-Za-z0-9]/g,"")||`prod${uid()}`;
+      let newId=baseId;
+      let n=1;
+      while(catalog.some(p=>p.id===newId)) newId=`${baseId}${++n}`;
+      setCatalog(c=>[...c,{id:newId,name,desc:prodForm.desc,color:prodForm.color,bg:prodForm.bg,modules:[]}]);
+    } else {
+      setCatalog(c=>c.map(p=>p.id===modal.prodId?{...p,name,desc:prodForm.desc,color:prodForm.color,bg:prodForm.bg}:p));
+    }
+    setModal(null);
+  };
+  const delProd=(prodId)=>{
+    setCatalog(c=>c.filter(p=>p.id!==prodId));
+    setConfirm(null);
+  };
+
   return (
     <div>
       <div className="pg-head">
         <div><div className="pg-title">Product Catalogue</div><div className="pg-sub">Manage product lines and their sub-products, modules, and value-add features.</div></div>
+        <div className="pg-actions"><button className="btn btn-primary" onClick={openAddProd}><Plus size={14}/>Add Product</button></div>
       </div>
       <div className="prod-catalog-grid">
         {catalog.map(p=>{
@@ -154,6 +194,8 @@ function ProductCatalogPage({catalog,setCatalog}) {
                     <span key={t} className={`module-type-tag ${MOD_TYPE_CLS[t]||"mod-core"}`}>{c} {t}</span>
                   ))}
                   <button className="btn btn-primary btn-xs" onClick={e=>{e.stopPropagation();openAddMod(p.id);}}><Plus size={11}/>Module</button>
+                  <button className="icon-btn" title="Edit product" onClick={e=>{e.stopPropagation();openEditProd(p);}}><Edit2 size={13}/></button>
+                  <button className="icon-btn" title="Delete product" onClick={e=>{e.stopPropagation();setConfirm({type:"product",prodId:p.id,name:p.name});}}><Trash2 size={13}/></button>
                   <ChevronDown size={16} style={{color:"var(--text3)",transform:isOpen?"rotate(180deg)":"none",transition:"transform 0.2s"}}/>
                 </div>
               </div>
@@ -177,12 +219,14 @@ function ProductCatalogPage({catalog,setCatalog}) {
           );
         })}
       </div>
-      {modal&&(
+      {(modal?.mode==="addmod"||modal?.mode==="editmod")&&(
         <Modal title={modal.mode==="addmod"?"Add Module / Sub-Product":"Edit Module"} onClose={()=>setModal(null)}
           footer={<><button className="btn btn-sec" onClick={()=>setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={saveMod}><Check size={14}/>Save Module</button></>}>
-          <div style={{background:PROD_MAP[modal.prodId]?.bg,border:`1.5px solid ${PROD_MAP[modal.prodId]?.color}22`,borderRadius:8,padding:"8px 12px",marginBottom:16,fontSize:12.5,fontWeight:600,color:PROD_MAP[modal.prodId]?.color}}>
-            Product: {PROD_MAP[modal.prodId]?.name}
-          </div>
+          {(()=>{const prod=catalog.find(c=>c.id===modal.prodId)||PROD_MAP[modal.prodId];return prod?(
+            <div style={{background:prod.bg,border:`1.5px solid ${prod.color}22`,borderRadius:8,padding:"8px 12px",marginBottom:16,fontSize:12.5,fontWeight:600,color:prod.color}}>
+              Product: {prod.name}
+            </div>
+          ):null;})()}
           <div className="form-row full"><div className="form-group"><label>Module / Feature Name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Ocean Tracking, OCR Engine, Mobile App"/></div></div>
           <div className="form-row">
             <div className="form-group"><label>Type</label>
@@ -194,7 +238,34 @@ function ProductCatalogPage({catalog,setCatalog}) {
           <div className="form-group"><label>Description</label><textarea value={form.desc} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} rows={2} placeholder="Brief description of what this module does…"/></div>
         </Modal>
       )}
-      {confirm&&<Confirm title="Delete Module" msg={`Remove "${confirm.name}" permanently from this product?`} onConfirm={()=>delMod(confirm.prodId,confirm.modId)} onCancel={()=>setConfirm(null)}/>}
+      {(modal?.mode==="addprod"||modal?.mode==="editprod")&&(
+        <Modal title={modal.mode==="addprod"?"Add Product Line":"Edit Product Line"} onClose={()=>setModal(null)}
+          footer={<><button className="btn btn-sec" onClick={()=>setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={saveProd}><Check size={14}/>Save Product</button></>}>
+          <div className="form-row full"><div className="form-group"><label>Product Name *</label><input autoFocus value={prodForm.name} onChange={e=>setProdForm(f=>({...f,name:e.target.value}))} placeholder="e.g. WiseFleet, iLogistics, CargoOne"/></div></div>
+          <div className="form-row full"><div className="form-group"><label>Description</label><input value={prodForm.desc} onChange={e=>setProdForm(f=>({...f,desc:e.target.value}))} placeholder="Brief tagline (e.g. Fleet Management Suite)"/></div></div>
+          <div className="form-group" style={{marginBottom:14}}>
+            <label>Theme Colour</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:6}}>
+              {COLOR_PRESETS.map(c=>(
+                <button key={c.color} type="button" onClick={()=>setProdForm(f=>({...f,color:c.color,bg:c.bg}))}
+                  style={{padding:"6px 12px",borderRadius:8,border:prodForm.color===c.color?`2px solid ${c.color}`:"1px solid var(--border)",background:c.bg,color:c.color,fontSize:12,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{width:12,height:12,borderRadius:3,background:c.color}}/>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{padding:"10px 14px",background:prodForm.bg,border:`1.5px solid ${prodForm.color}33`,borderRadius:8,fontSize:13,color:prodForm.color,fontWeight:600,display:"flex",alignItems:"center",gap:10}}>
+            <div className="prod-icon" style={{background:"#fff",color:prodForm.color,border:`1px solid ${prodForm.color}33`}}>{(prodForm.name||"NEW").replace("Wise","").slice(0,3).toUpperCase()}</div>
+            <div>
+              <div style={{fontSize:13,fontWeight:700}}>{prodForm.name||"Preview"}</div>
+              <div style={{fontSize:11,opacity:0.8,fontWeight:500}}>{prodForm.desc||"Tagline preview"}</div>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {confirm&&confirm.type==="product"&&<Confirm title="Delete Product Line" msg={`Permanently remove "${confirm.name}" and all its modules? This cannot be undone.`} onConfirm={()=>delProd(confirm.prodId)} onCancel={()=>setConfirm(null)}/>}
+      {confirm&&!confirm.type&&<Confirm title="Delete Module" msg={`Remove "${confirm.name}" permanently from this product?`} onConfirm={()=>delMod(confirm.prodId,confirm.modId)} onCancel={()=>setConfirm(null)}/>}
     </div>
   );
 }
