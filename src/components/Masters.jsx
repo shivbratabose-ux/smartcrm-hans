@@ -1,119 +1,306 @@
 import { useState } from "react";
-import { Plus, Edit2, Trash2, Check, X, ChevronDown } from "lucide-react";
-import { PRODUCTS, PROD_MAP } from '../data/constants';
+import { Plus, Edit2, Trash2, Check, X, ChevronDown, Search } from "lucide-react";
+import { PROD_MAP } from '../data/constants';
 import { uid } from '../utils/helpers';
 import { Modal, Confirm, HelpTooltip, PageTip } from './shared';
 
 // ═══════════════════════════════════════════════════════════════════
-// MASTERS PAGE
+// MASTERS PAGE — compact, chip-style, grouped into category tabs
 // ═══════════════════════════════════════════════════════════════════
-function MasterSection({title,items,onAdd,onEdit,onDelete,renderSub}) {
-  const [adding,setAdding]=useState(false);
-  const [editId,setEditId]=useState(null);
-  const [val,setVal]=useState({name:"",sub:""});
 
-  const startAdd=()=>{setVal({name:"",sub:""});setAdding(true);setEditId(null);};
-  const startEdit=it=>{setVal({name:it.name,sub:it.sub||it.probability||it.region||""});setEditId(it.id);setAdding(false);};
-  const saveAdd=()=>{if(!val.name.trim()) return; onAdd(val); setAdding(false);};
-  const saveEdit=()=>{if(!val.name.trim()) return; onEdit(editId,val); setEditId(null);};
-  const cancel=()=>{setAdding(false);setEditId(null);};
+// Per-section config: the "sub" column (probability, region, etc.)
+const SECTIONS = {
+  // ── Sales ───────────────────────────────────────────
+  sales: [
+    { key:"verticals",       title:"Industries / Verticals" },
+    { key:"leadSources",     title:"Lead Sources" },
+    { key:"leadTemperatures",title:"Lead Temperatures" },
+    { key:"leadStages",      title:"Lead Stages", subKey:"stage", subLabel:"Stage #", subType:"num" },
+    { key:"oppPhases",       title:"Opportunity Phases" },
+    { key:"oppStages",       title:"Opportunity Stages", subKey:"probability", subLabel:"Prob %", subType:"num" },
+    { key:"oppSources",      title:"Opportunity Sources" },
+    { key:"oppSizes",        title:"Deal Sizes" },
+    { key:"forecastCats",    title:"Forecast Categories" },
+    { key:"stages",          title:"Legacy Deal Stages", subKey:"probability", subLabel:"Prob %", subType:"num",
+      help:"Probability % is used in weighted pipeline forecasting. Won = 100, Lost = 0." },
+    { key:"winReasons",      title:"Win Reasons" },
+    { key:"lossReasons",     title:"Loss Reasons" },
+    { key:"suspendReasons",  title:"Suspend Reasons" },
+  ],
+  // ── Customer ─────────────────────────────────────────
+  customer: [
+    { key:"customerTypes",    title:"Customer Types (Business)" },
+    { key:"customerLifecycle",title:"Customer Lifecycle Stages" },
+    { key:"businessTypes",    title:"Business Types" },
+    { key:"staffSizes",       title:"Staff Sizes" },
+    { key:"currentSoftware",  title:"Current Software" },
+    { key:"painPoints",       title:"Pain Points" },
+    { key:"budgetRanges",     title:"Budget Ranges" },
+    { key:"decisionMakers",   title:"Decision Makers" },
+    { key:"decisionTimelines",title:"Decision Timelines" },
+    { key:"hierarchyLevels",  title:"Hierarchy Levels" },
+    { key:"countries",        title:"Countries", subKey:"region", subLabel:"Region", subType:"text" },
+  ],
+  // ── Contact ─────────────────────────────────────────
+  contact: [
+    { key:"contactRoles",       title:"Contact Roles" },
+    { key:"oppContactRoles",    title:"Opportunity Contact Roles" },
+    { key:"leadContactRoles",   title:"Lead Contact Roles" },
+    { key:"contactDispositions",title:"Contact Dispositions" },
+    { key:"contactDepartments", title:"Contact Departments" },
+  ],
+  // ── Activity ─────────────────────────────────────────
+  activity: [
+    { key:"activityTypes",   title:"Activity Types" },
+    { key:"activityStatuses",title:"Activity Statuses" },
+    { key:"callTypes",       title:"Call Types" },
+    { key:"callSubjects",    title:"Call Subjects / Objectives" },
+    { key:"callOutcomes",    title:"Call Outcomes" },
+    { key:"eventTypes",      title:"Calendar Event Types" },
+    { key:"eventStatuses",   title:"Calendar Event Statuses" },
+    { key:"commTypes",       title:"Communication Types" },
+    { key:"commStatuses",    title:"Communication Statuses" },
+    { key:"updateCategories",title:"Internal Update Categories" },
+  ],
+  // ── Support ─────────────────────────────────────────
+  support: [
+    { key:"ticketTypes",     title:"Ticket Types" },
+    { key:"ticketStatuses",  title:"Ticket Statuses" },
+    { key:"priorities",      title:"Priorities" },
+    { key:"escalationLevels",title:"Escalation Levels" },
+  ],
+  // ── Finance ─────────────────────────────────────────
+  finance: [
+    { key:"billTerms",         title:"Bill Terms" },
+    { key:"billTypes",         title:"Bill Types" },
+    { key:"paymentModes",      title:"Payment Modes" },
+    { key:"collectionStatuses",title:"Collection Statuses" },
+    { key:"ageingBuckets",     title:"Ageing Buckets" },
+    { key:"taxTypes",          title:"Tax Types" },
+    { key:"contractStatuses",  title:"Contract Statuses" },
+    { key:"contractDocTypes",  title:"Contract Doc Types" },
+    { key:"approvalChain",     title:"Approval Chain" },
+    { key:"quoteStatuses",     title:"Quote Statuses" },
+    { key:"quoteValidity",     title:"Quote Validity" },
+  ],
+};
+
+const GROUP_TABS = [
+  { id:"sales",    label:"Sales" },
+  { id:"customer", label:"Customer" },
+  { id:"contact",  label:"Contact" },
+  { id:"activity", label:"Activity" },
+  { id:"support",  label:"Support" },
+  { id:"finance",  label:"Finance" },
+];
+
+// ── Compact chip-style master section ────────────────────────────
+function MasterChipSection({ cfg, items, onAdd, onEdit, onDelete }) {
+  const [editId,setEditId]=useState(null);
+  const [adding,setAdding]=useState(false);
+  const [val,setVal]=useState({ name:"", sub:"" });
+
+  const subKey = cfg.subKey;
+  const startEdit = (it) => {
+    setVal({ name: it.name, sub: subKey ? (it[subKey]??"") : "" });
+    setEditId(it.id); setAdding(false);
+  };
+  const startAdd = () => { setVal({ name:"", sub:"" }); setAdding(true); setEditId(null); };
+  const commit = () => {
+    if (!val.name.trim()) { setAdding(false); setEditId(null); return; }
+    const extra = subKey ? { [subKey]: cfg.subType==="num" ? (+val.sub||0) : val.sub } : {};
+    if (adding) onAdd({ name: val.name.trim(), ...extra });
+    else onEdit(editId, { name: val.name.trim(), ...extra });
+    setAdding(false); setEditId(null);
+  };
+  const cancel = () => { setAdding(false); setEditId(null); };
 
   return (
-    <div className="masters-section">
-      <div className="masters-sec-head">
-        <div className="masters-sec-title">{title} <span style={{fontSize:11,fontWeight:400,color:"var(--text3)",marginLeft:4}}>{items.length} items</span></div>
-        <button className="btn btn-primary btn-xs" onClick={startAdd}><Plus size={11}/>Add</button>
+    <div className="m-sec">
+      <div className="m-sec-head">
+        <div className="m-sec-title">
+          {cfg.title}
+          {cfg.help && <HelpTooltip text={cfg.help} width={240}/>}
+          <span className="m-sec-count">{items.length}</span>
+        </div>
+        <button className="m-add-btn" onClick={startAdd} title={`Add to ${cfg.title}`}><Plus size={12}/>Add</button>
       </div>
-      {items.map(it=>(
-        <div key={it.id} className="masters-item">
-          {editId===it.id?(
-            <div style={{flex:1,display:"flex",gap:8,alignItems:"center"}}>
-              <input value={val.name} onChange={e=>setVal(v=>({...v,name:e.target.value}))} style={{flex:1,padding:"5px 8px",border:"1.5px solid var(--brand)",borderRadius:6,fontSize:13,outline:"none"}}/>
-              {renderSub&&<input value={val.sub} onChange={e=>setVal(v=>({...v,sub:e.target.value}))} placeholder={renderSub} style={{width:80,padding:"5px 8px",border:"1.5px solid var(--border)",borderRadius:6,fontSize:12,outline:"none"}}/>}
-              <button className="btn btn-primary btn-xs" onClick={saveEdit}><Check size={11}/></button>
-              <button className="btn btn-sec btn-xs" onClick={cancel}><X size={11}/></button>
-            </div>
-          ):(
-            <>
-              <div style={{flex:1}}>
-                <div className="masters-item-name">{it.name}</div>
-                {it.probability!==undefined&&<div className="masters-item-sub">Probability: {it.probability}%</div>}
-                {it.region&&<div className="masters-item-sub">{it.region}</div>}
-              </div>
-              <div className="masters-item-actions">
-                <button className="icon-btn" onClick={()=>startEdit(it)}><Edit2 size={13}/></button>
-                <button className="icon-btn" onClick={()=>onDelete(it.id)}><Trash2 size={13}/></button>
-              </div>
-            </>
-          )}
-        </div>
-      ))}
-      {adding&&(
-        <div className="masters-item" style={{background:"var(--s2)"}}>
-          <div style={{flex:1,display:"flex",gap:8,alignItems:"center"}}>
-            <input autoFocus value={val.name} onChange={e=>setVal(v=>({...v,name:e.target.value}))} placeholder="Name…" style={{flex:1,padding:"5px 8px",border:"1.5px solid var(--brand)",borderRadius:6,fontSize:13,outline:"none"}} onKeyDown={e=>e.key==="Enter"&&saveAdd()}/>
-            {renderSub&&<input value={val.sub} onChange={e=>setVal(v=>({...v,sub:e.target.value}))} placeholder={renderSub} style={{width:80,padding:"5px 8px",border:"1.5px solid var(--border)",borderRadius:6,fontSize:12,outline:"none"}} onKeyDown={e=>{if(e.key==="Enter")saveAdd();if(e.key==="Escape")cancel();}}/>}
-            <button className="btn btn-primary btn-xs" onClick={saveAdd}><Check size={11}/>Save</button>
-            <button className="btn btn-sec btn-xs" onClick={cancel}><X size={11}/></button>
+      <div className="m-chip-wrap">
+        {items.map(it => editId===it.id ? (
+          <div key={it.id} className="m-chip m-chip-edit">
+            <input autoFocus value={val.name} onChange={e=>setVal(v=>({...v,name:e.target.value}))}
+              onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape")cancel();}}
+              className="m-chip-input" />
+            {subKey && (
+              <input value={val.sub} onChange={e=>setVal(v=>({...v,sub:e.target.value}))}
+                placeholder={cfg.subLabel} className="m-chip-sub"
+                onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape")cancel();}} />
+            )}
+            <button className="m-ico-ok" onClick={commit}><Check size={11}/></button>
+            <button className="m-ico-x" onClick={cancel}><X size={11}/></button>
           </div>
-        </div>
-      )}
+        ) : (
+          <div key={it.id} className="m-chip" onClick={()=>startEdit(it)}>
+            <span className="m-chip-name">{it.name}</span>
+            {subKey && it[subKey]!==undefined && it[subKey]!=="" && (
+              <span className="m-chip-badge">{it[subKey]}{cfg.subType==="num" && subKey==="probability"?"%":""}</span>
+            )}
+            <button className="m-chip-del" onClick={e=>{e.stopPropagation();onDelete(it.id);}} title="Delete"><X size={10}/></button>
+          </div>
+        ))}
+        {adding && (
+          <div className="m-chip m-chip-edit">
+            <input autoFocus value={val.name} onChange={e=>setVal(v=>({...v,name:e.target.value}))}
+              placeholder="Name…" className="m-chip-input"
+              onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape")cancel();}} />
+            {subKey && (
+              <input value={val.sub} onChange={e=>setVal(v=>({...v,sub:e.target.value}))}
+                placeholder={cfg.subLabel} className="m-chip-sub"
+                onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape")cancel();}} />
+            )}
+            <button className="m-ico-ok" onClick={commit}><Check size={11}/></button>
+            <button className="m-ico-x" onClick={cancel}><X size={11}/></button>
+          </div>
+        )}
+        {items.length===0 && !adding && (
+          <span className="m-empty">No items yet — click Add to create one</span>
+        )}
+      </div>
     </div>
   );
 }
 
+// Inline CSS so this component works without touching the global CSS bundle
+const MASTERS_CSS = `
+.m-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px}
+.m-tab{padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:var(--s1);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s}
+.m-tab:hover{background:var(--brand-bg);color:var(--brand)}
+.m-tab.active{background:#1B6B5A;color:#fff;border-color:#1B6B5A}
+.m-search-wrap{position:relative;margin-bottom:14px;max-width:380px}
+.m-search-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3)}
+.m-search{width:100%;padding:8px 10px 8px 34px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--s1);outline:none}
+.m-search:focus{border-color:var(--brand)}
+.m-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media(max-width:1100px){.m-grid{grid-template-columns:1fr}}
+.m-sec{background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:12px 14px;min-height:60px}
+.m-sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px}
+.m-sec-title{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--text)}
+.m-sec-count{font-size:10.5px;font-weight:600;color:var(--text3);background:var(--s2);padding:1px 6px;border-radius:10px;margin-left:4px}
+.m-add-btn{display:flex;align-items:center;gap:4px;padding:4px 9px;border-radius:6px;border:1px solid var(--brand);background:var(--brand-bg);color:var(--brand);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.15s}
+.m-add-btn:hover{background:var(--brand);color:#fff}
+.m-chip-wrap{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.m-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 4px 4px 10px;background:#fff;border:1px solid var(--border);border-radius:16px;font-size:12px;color:var(--text);cursor:pointer;transition:all 0.15s;position:relative}
+.m-chip:hover{border-color:var(--brand);background:var(--brand-bg)}
+.m-chip-name{font-weight:500}
+.m-chip-badge{display:inline-flex;align-items:center;padding:1px 7px;background:var(--brand-bg);color:var(--brand);border-radius:10px;font-size:10.5px;font-weight:700}
+.m-chip-del{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:transparent;border:none;color:var(--text3);border-radius:50%;cursor:pointer;transition:all 0.12s;padding:0}
+.m-chip:hover .m-chip-del{color:var(--red-t);background:var(--red-bg)}
+.m-chip-edit{background:#fff;border-color:var(--brand);padding:2px 4px 2px 6px;gap:4px}
+.m-chip-input{border:none;outline:none;background:transparent;font-size:12px;padding:3px 4px;min-width:100px;max-width:160px}
+.m-chip-sub{border:none;outline:none;background:var(--s2);font-size:11px;padding:3px 6px;width:70px;border-radius:4px}
+.m-ico-ok{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:var(--brand);color:#fff;border:none;border-radius:4px;cursor:pointer}
+.m-ico-x{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:var(--s2);color:var(--text3);border:none;border-radius:4px;cursor:pointer}
+.m-empty{font-size:11.5px;color:var(--text3);font-style:italic;padding:4px 8px}
+.m-group-tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px}
+.m-group-tab{padding:8px 16px;border-radius:8px 8px 0 0;border:none;background:transparent;color:var(--text2);font-size:13.5px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s}
+.m-group-tab:hover{color:var(--brand)}
+.m-group-tab.active{color:#1B6B5A;border-bottom-color:#1B6B5A;background:var(--brand-bg)}
+`;
+
 function Masters({masters,setMasters,catalog,setCatalog}) {
   const [tab,setTab]=useState("reference");
+  const [group,setGroup]=useState("sales");
+  const [search,setSearch]=useState("");
+
   const mk=(key,val)=>setMasters(m=>({...m,[key]:val}));
-  const addItem=(key,val)=>mk(key,[...masters[key],{id:`${key.slice(0,2)}${uid()}`,name:val.name,...(val.sub?{probability:+val.sub||0,region:val.sub}:{})}]);
-  const editItem=(key,id,val)=>mk(key,masters[key].map(it=>it.id===id?{...it,name:val.name,...(val.sub?{probability:+val.sub||0,region:val.sub}:{})}:it));
-  const delItem=(key,id)=>mk(key,masters[key].filter(it=>it.id!==id));
+  const addItem=(key,val)=>{
+    const prefix=key.slice(0,3);
+    mk(key,[...(masters[key]||[]),{id:`${prefix}${uid()}`,...val}]);
+  };
+  const editItem=(key,id,val)=>mk(key,(masters[key]||[]).map(it=>it.id===id?{...it,...val}:it));
+  const delItem=(key,id)=>mk(key,(masters[key]||[]).filter(it=>it.id!==id));
+
+  const sections = SECTIONS[group] || [];
+  const visible = search.trim()
+    ? sections.filter(s => s.title.toLowerCase().includes(search.toLowerCase())
+        || (masters[s.key]||[]).some(it => it.name.toLowerCase().includes(search.toLowerCase())))
+    : sections;
+
+  // Total count of items across all masters (for the header hint)
+  const totalItems = Object.values(masters||{}).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
 
   return (
     <div>
+      <style dangerouslySetInnerHTML={{__html:MASTERS_CSS}}/>
       <PageTip
-        id="masters-tip-v1"
+        id="masters-tip-v2"
         title="Masters tip:"
-        text="Changes to reference data (stages, priorities, countries, etc.) apply immediately across all dropdowns in the app. The Product Catalogue tab manages product lines and their module/add-on structure."
+        text="Masters drive every dropdown across the app. Edit a chip to rename, click × to remove, or use + Add to create new values. Switch group tabs to find sales, customer, activity, support, and finance reference data."
       />
       <div className="pg-head">
-        <div><div className="pg-title">Masters</div><div className="pg-sub">Manage reference data and the product catalogue.</div></div>
+        <div><div className="pg-title">Masters</div><div className="pg-sub">Reference data &amp; product catalogue · {totalItems} items across {Object.keys(SECTIONS).reduce((s,k)=>s+SECTIONS[k].length,0)} masters</div></div>
       </div>
-      <div style={{display:"flex",gap:8,marginBottom:20}}>
+
+      <div style={{display:"flex",gap:8,marginBottom:18}}>
         {[{id:"reference",label:"Reference Data"},{id:"products",label:"Product Catalogue"}].map(t=>(
           <button key={t.id} className={`btn btn-sm ${tab===t.id?"btn-primary":"btn-sec"}`} onClick={()=>setTab(t.id)}>{t.label}</button>
         ))}
       </div>
-      {tab==="reference"&&(
-        <div className="masters-grid">
-          <MasterSection title="Activity Types" items={masters.activityTypes} onAdd={v=>addItem("activityTypes",v)} onEdit={(id,v)=>editItem("activityTypes",id,v)} onDelete={id=>delItem("activityTypes",id)}/>
-          <MasterSection title={<span>Deal Stages <HelpTooltip text="Probability % is used in weighted pipeline forecasting. Won = 100, Lost/Suspended = 0. Set values that reflect your average conversion rate at each stage." width={260}/></span>} items={masters.stages} onAdd={v=>addItem("stages",v)} onEdit={(id,v)=>editItem("stages",id,v)} onDelete={id=>delItem("stages",id)} renderSub="Probability %"/>
-          <MasterSection title="Customer Types" items={masters.customerTypes} onAdd={v=>addItem("customerTypes",v)} onEdit={(id,v)=>editItem("customerTypes",id,v)} onDelete={id=>delItem("customerTypes",id)}/>
-          <MasterSection title="Countries" items={masters.countries} onAdd={v=>addItem("countries",v)} onEdit={(id,v)=>editItem("countries",id,v)} onDelete={id=>delItem("countries",id)} renderSub="Region"/>
-          <MasterSection title="Priorities" items={masters.priorities} onAdd={v=>addItem("priorities",v)} onEdit={(id,v)=>editItem("priorities",id,v)} onDelete={id=>delItem("priorities",id)}/>
-          <MasterSection title="Ticket Types" items={masters.ticketTypes} onAdd={v=>addItem("ticketTypes",v)} onEdit={(id,v)=>editItem("ticketTypes",id,v)} onDelete={id=>delItem("ticketTypes",id)}/>
-          <MasterSection title="Call Types" items={masters.callTypes||[]} onAdd={v=>addItem("callTypes",v)} onEdit={(id,v)=>editItem("callTypes",id,v)} onDelete={id=>delItem("callTypes",id)}/>
-          <MasterSection title="Call Subjects / Objectives" items={masters.callSubjects||[]} onAdd={v=>addItem("callSubjects",v)} onEdit={(id,v)=>editItem("callSubjects",id,v)} onDelete={id=>delItem("callSubjects",id)}/>
+
+      {tab==="reference" && (
+        <div>
+          {/* Category group tabs */}
+          <div className="m-group-tabs">
+            {GROUP_TABS.map(g=>(
+              <button key={g.id} className={`m-group-tab ${group===g.id?"active":""}`} onClick={()=>setGroup(g.id)}>
+                {g.label}
+                <span style={{fontSize:10.5,fontWeight:600,color:"var(--text3)",marginLeft:6}}>
+                  {SECTIONS[g.id].reduce((s,c)=>s+((masters[c.key]||[]).length),0)}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Search within current group */}
+          <div className="m-search-wrap">
+            <Search size={14}/>
+            <input className="m-search" placeholder={`Search ${group} masters or items…`}
+              value={search} onChange={e=>setSearch(e.target.value)}/>
+          </div>
+
+          <div className="m-grid">
+            {visible.map(cfg=>(
+              <MasterChipSection key={cfg.key} cfg={cfg} items={masters[cfg.key]||[]}
+                onAdd={v=>addItem(cfg.key,v)}
+                onEdit={(id,v)=>editItem(cfg.key,id,v)}
+                onDelete={id=>delItem(cfg.key,id)}/>
+            ))}
+            {visible.length===0 && (
+              <div style={{gridColumn:"1 / -1",padding:24,textAlign:"center",color:"var(--text3)",fontSize:13}}>
+                No masters match “{search}”.
+              </div>
+            )}
+          </div>
         </div>
       )}
-      {tab==="products"&&<ProductCatalogPage catalog={catalog} setCatalog={setCatalog}/>}
+
+      {tab==="products" && <ProductCatalogPage catalog={catalog} setCatalog={setCatalog}/>}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// PRODUCT CATALOG PAGE (inside Masters or standalone)
+// PRODUCT CATALOG PAGE
 // ═══════════════════════════════════════════════════════════════════
 const MOD_TYPE_CLS={Core:"mod-core","Add-on":"mod-addon",Integration:"mod-integration",Analytics:"mod-analytics",Mobile:"mod-mobile"};
 
 function ProductCatalogPage({catalog,setCatalog}) {
   const [expanded,setExpanded]=useState({});
-  const [modal,setModal]=useState(null); // {mode:"addmod"|"editmod"|"addprod"|"editprod", prodId?, modId?}
+  const [modal,setModal]=useState(null);
   const [form,setForm]=useState({name:"",type:"Core",desc:""});
   const [prodForm,setProdForm]=useState({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF"});
   const [confirm,setConfirm]=useState(null);
 
-  // Preset color/background pairs for product theming
   const COLOR_PRESETS=[
     {color:"#2563EB",bg:"#EFF6FF",label:"Blue"},
     {color:"#16A34A",bg:"#F0FDF4",label:"Green"},
@@ -144,14 +331,12 @@ function ProductCatalogPage({catalog,setCatalog}) {
     setConfirm(null);
   };
 
-  // ── Product (line) CRUD ──
   const openAddProd=()=>{setProdForm({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF"});setModal({mode:"addprod"});};
   const openEditProd=(p)=>{setProdForm({id:p.id,name:p.name,desc:p.desc||"",color:p.color||"#2563EB",bg:p.bg||"#EFF6FF"});setModal({mode:"editprod",prodId:p.id});};
   const saveProd=()=>{
     const name=prodForm.name.trim();
     if(!name) return;
     if(modal.mode==="addprod"){
-      // Auto-generate a stable product id from the name (no spaces, capitalised)
       const baseId=name.replace(/[^A-Za-z0-9]/g,"")||`prod${uid()}`;
       let newId=baseId;
       let n=1;

@@ -1,4 +1,20 @@
-import { ACT_TYPES, CUST_TYPES, COUNTRIES, REGIONS, PRIORITIES, STAGES, STAGE_PROB, TICKET_TYPES, CALL_TYPES, CALL_OBJECTIVES } from './constants.js';
+import {
+  ACT_TYPES, ACT_STATUS, CUST_TYPES, COUNTRIES, REGIONS, PRIORITIES,
+  STAGES, STAGE_PROB, TICKET_TYPES, TICKET_STATUSES, CALL_TYPES, CALL_OBJECTIVES,
+  CALL_OUTCOMES, VERTICALS, LEAD_SOURCES, LEAD_TEMPERATURES, BUSINESS_TYPES,
+  STAFF_SIZES, CURRENT_SOFTWARE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS,
+  DECISION_TIMELINES, OPP_PHASES, OPP_STAGES, FORECAST_CATS, OPP_SIZES,
+  OPP_SOURCES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, LEAD_STAGES,
+  BILL_TERMS, BILL_TYPES, WIN_REASONS, LOSS_REASONS, SUSPEND_REASONS,
+  CONTACT_ROLES, CONTACT_DISPOSITIONS, CONTACT_DEPARTMENTS, CUSTOMER_TYPES,
+  ESCALATION_LEVELS, AGEING_BUCKETS, COLLECTION_STATUSES, PAYMENT_MODES,
+  CONTRACT_STATUSES, APPROVAL_CHAIN, CONTRACT_DOC_TYPES, QUOTE_STATUSES,
+  TAX_TYPES, QUOTE_VALIDITY, COMM_TYPES, COMM_STATUSES, EVENT_TYPES,
+  EVENT_STATUSES, HIERARCHY_LEVELS, UPDATE_CATEGORIES
+} from './constants.js';
+
+// Helper: convert a plain string list into master-item objects with ids
+const mk = (prefix, arr) => (arr||[]).map((t,i)=>({id:`${prefix}${i+1}`,name:typeof t==="string"?t:t.name,...(typeof t==="object"?t:{})}));
 
 // ═══════════════════════════════════════════════════════════════════
 // SEED DATA — All transactional data cleared for production use.
@@ -111,15 +127,74 @@ export const INIT_ORG = {
 export const INIT_TEAMS = [];
 
 // Masters – editable reference data (structural — keep)
+// Grouped into Sales / Customer / Contact / Activity / Support / Finance / Org
+// for a compact, tabbed Masters UI.
 export const INIT_MASTERS = {
-  activityTypes: ACT_TYPES.map((t,i)=>({id:`at${i+1}`,name:t})),
-  customerTypes: CUST_TYPES.map((t,i)=>({id:`ct${i+1}`,name:t})),
-  countries:     COUNTRIES.map((c,i)=>({id:`co${i+1}`,name:c,region:REGIONS[i%REGIONS.length]})),
-  priorities:    PRIORITIES.map((p,i)=>({id:`pr${i+1}`,name:p})),
-  stages:        STAGES.map(s=>({id:`st${s}`,name:s,probability:STAGE_PROB[s]||0})),
-  ticketTypes:   TICKET_TYPES.map((t,i)=>({id:`tt${i+1}`,name:t})),
-  callTypes:     CALL_TYPES.map((t,i)=>({id:`clt${i+1}`,name:t})),
-  callSubjects:  CALL_OBJECTIVES.map((t,i)=>({id:`cls${i+1}`,name:t})),
+  // ── Sales ─────────────────────────────────────────────
+  verticals:        mk("vert", VERTICALS),
+  leadSources:      mk("lsrc", LEAD_SOURCES),
+  leadTemperatures: mk("ltmp", LEAD_TEMPERATURES),
+  leadStages:       (LEAD_STAGES||[]).map(s=>({id:`lst_${s.id}`, name:s.name, stage:s.stage, color:s.color})),
+  oppPhases:        mk("oph", OPP_PHASES),
+  oppStages:        (OPP_STAGES||[]).map(s=>({id:`ost_${s.id}`, name:s.name, phase:s.phase, probability:s.probability, color:s.color})),
+  oppSources:       mk("osrc", OPP_SOURCES),
+  oppSizes:         mk("osz", OPP_SIZES),
+  forecastCats:     mk("fct", FORECAST_CATS),
+  oppContactRoles:  mk("ocr", OPP_CONTACT_ROLES),
+  leadContactRoles: mk("lcr", LEAD_CONTACT_ROLES),
+  winReasons:       mk("wr", WIN_REASONS),
+  lossReasons:      mk("lr", LOSS_REASONS),
+  suspendReasons:   mk("sr", SUSPEND_REASONS),
+  stages:           STAGES.map(s=>({id:`st${s}`,name:s,probability:STAGE_PROB[s]||0})),
+
+  // ── Customer / Account ────────────────────────────────
+  customerTypes:    mk("ct", CUST_TYPES),
+  customerLifecycle:mk("clc", CUSTOMER_TYPES),
+  businessTypes:    mk("bt", BUSINESS_TYPES),
+  staffSizes:       mk("ss", STAFF_SIZES),
+  currentSoftware:  mk("csw", CURRENT_SOFTWARE),
+  painPoints:       mk("pp", PAIN_POINTS),
+  budgetRanges:     mk("br", BUDGET_RANGES),
+  decisionMakers:   mk("dm", DECISION_MAKERS),
+  decisionTimelines:mk("dtl", DECISION_TIMELINES),
+  hierarchyLevels:  mk("hl", HIERARCHY_LEVELS),
+  countries:        COUNTRIES.map((c,i)=>({id:`co${i+1}`,name:c,region:REGIONS[i%REGIONS.length]})),
+
+  // ── Contact ───────────────────────────────────────────
+  contactRoles:       mk("cr", CONTACT_ROLES),
+  contactDispositions:mk("cd", CONTACT_DISPOSITIONS),
+  contactDepartments: mk("cdep", CONTACT_DEPARTMENTS),
+
+  // ── Activity / Calendar / Communication ──────────────
+  activityTypes:    mk("at", ACT_TYPES),
+  activityStatuses: mk("ast", ACT_STATUS),
+  callTypes:        mk("clt", CALL_TYPES),
+  callSubjects:     mk("cls", CALL_OBJECTIVES),
+  callOutcomes:     mk("clo", CALL_OUTCOMES),
+  eventTypes:       mk("evt", EVENT_TYPES),
+  eventStatuses:    mk("evs", EVENT_STATUSES),
+  commTypes:        mk("cm", COMM_TYPES),
+  commStatuses:     mk("cms", COMM_STATUSES),
+  updateCategories: mk("uc", UPDATE_CATEGORIES),
+
+  // ── Support ───────────────────────────────────────────
+  ticketTypes:      mk("tt", TICKET_TYPES),
+  ticketStatuses:   mk("ts", TICKET_STATUSES),
+  priorities:       mk("pr", PRIORITIES),
+  escalationLevels: mk("el", ESCALATION_LEVELS),
+
+  // ── Finance / Contracts / Quotes ─────────────────────
+  billTerms:        mk("blt", BILL_TERMS),
+  billTypes:        mk("btp", BILL_TYPES),
+  paymentModes:     mk("pm", PAYMENT_MODES),
+  collectionStatuses:mk("cs", COLLECTION_STATUSES),
+  ageingBuckets:    mk("ab", AGEING_BUCKETS),
+  taxTypes:         mk("tx", TAX_TYPES),
+  contractStatuses: mk("cst", CONTRACT_STATUSES),
+  contractDocTypes: mk("cdt", CONTRACT_DOC_TYPES),
+  approvalChain:    mk("ac", APPROVAL_CHAIN),
+  quoteStatuses:    mk("qs", QUOTE_STATUSES),
+  quoteValidity:    mk("qv", QUOTE_VALIDITY),
 };
 
 // ── Blank form templates ──

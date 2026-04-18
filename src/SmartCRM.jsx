@@ -78,7 +78,7 @@ const clearSession = () => {
 // Backfills missing fields introduced in later schema versions
 // Bump DATA_VERSION whenever seed/schema changes to force a reset
 // ═══════════════════════════════════════════════════════════════════
-const DATA_VERSION = "v10"; // bumped: clears stale TEAM/TEAM_MAP dummy users from org hierarchy
+const DATA_VERSION = "v11"; // bumped: expanded INIT_MASTERS with 40+ reference data sections
 
 function migrateState(raw) {
   if (!raw) return null;
