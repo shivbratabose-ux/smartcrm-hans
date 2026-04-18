@@ -66,11 +66,11 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
   ), [opps, range, fActivities]);
 
   // ─── ALWAYS-CUMULATIVE KPIs (not date filtered) ───
-  const totalArr = accounts.reduce((s, a) => s + a.arrRevenue, 0);
+  const totalArr = accounts.reduce((s, a) => s + (parseFloat(a.arrRevenue) || 0), 0);
   const activeAccounts = accounts.filter(a => a.status === "Active").length;
   const totalContacts = contacts.length;
   const openDeals = opps.filter(o => !["Won", "Lost"].includes(o.stage));
-  const weighted = openDeals.reduce((s, o) => s + (o.value * (STAGE_PROB[o.stage] || 0) / 100), 0);
+  const weighted = openDeals.reduce((s, o) => s + ((parseFloat(o.value) || 0) * (STAGE_PROB[o.stage] || 0) / 100), 0);
 
   // ─── PERIOD KPIs (date filtered) ───
   const periodActivities = fActivities.length;
@@ -82,7 +82,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
 
   const periodWon = opps.filter(o => o.stage === "Won" && inRange(o.closeDate, range));
   const periodLost = opps.filter(o => o.stage === "Lost" && inRange(o.closeDate, range));
-  const periodWonVal = periodWon.reduce((s, o) => s + o.value, 0);
+  const periodWonVal = periodWon.reduce((s, o) => s + (parseFloat(o.value) || 0), 0);
   const periodTotalClosed = periodWon.length + periodLost.length;
   const periodWinRate = periodTotalClosed > 0 ? Math.round(periodWon.length / periodTotalClosed * 100) : 0;
 
@@ -111,7 +111,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
     return FUNNEL_STAGES.map(stage => ({
       name: stage,
       count: opps.filter(o => o.stage === stage).length,
-      value: opps.filter(o => o.stage === stage).reduce((s, o) => s + o.value, 0),
+      value: opps.filter(o => o.stage === stage).reduce((s, o) => s + (parseFloat(o.value) || 0), 0),
       fill: FUNNEL_COLORS[stage]
     }));
   }, [opps]);
@@ -120,7 +120,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
   const productRevenue = useMemo(() => {
     const byProd = {};
     accounts.forEach(acc => {
-      const share = acc.products.length > 0 ? acc.arrRevenue / acc.products.length : 0;
+      const share = acc.products.length > 0 ? (parseFloat(acc.arrRevenue) || 0) / acc.products.length : 0;
       acc.products.forEach(pid => {
         if (!byProd[pid]) byProd[pid] = 0;
         byProd[pid] += share;
@@ -174,8 +174,8 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
     accounts.forEach(acc => {
       const region = regionMap(acc);
       if (!rMap[region]) rMap[region] = { arr: 0, deals: 0, potential: 0 };
-      rMap[region].arr += acc.arrRevenue;
-      rMap[region].potential += (acc.potential || 0);
+      rMap[region].arr += (parseFloat(acc.arrRevenue) || 0);
+      rMap[region].potential += (parseFloat(acc.potential) || 0);
       rMap[region].deals += opps.filter(o => o.accountId === acc.id && !["Won", "Lost"].includes(o.stage)).length;
     });
     return Object.entries(rMap)
@@ -224,8 +224,8 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
 
   // ─── Target achievement ───
   const currentTargets = (targets || []).filter(t => t.period === "2026-Q1");
-  const totalTarget = currentTargets.reduce((s, t) => s + t.targetValue, 0);
-  const totalAchieved = currentTargets.reduce((s, t) => s + t.achievedValue, 0);
+  const totalTarget = currentTargets.reduce((s, t) => s + (parseFloat(t.targetValue) || 0), 0);
+  const totalAchieved = currentTargets.reduce((s, t) => s + (parseFloat(t.achievedValue) || 0), 0);
   const targetPct = totalTarget > 0 ? Math.round((totalAchieved / totalTarget) * 100) : 0;
   const pipelineSurplus = totalTarget > 0 ? Math.round(((weighted - totalTarget) / totalTarget) * 100) : 0;
 
@@ -239,15 +239,15 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
     .slice(0, 4);
   const teamPerf = _dashTeam.map(t => {
     const memberTargets = currentTargets.filter(ct => ct.owner === t.id);
-    const achieved = memberTargets.reduce((s, ct) => s + ct.achievedValue, 0);
-    const target = memberTargets.reduce((s, ct) => s + ct.targetValue, 0);
+    const achieved = memberTargets.reduce((s, ct) => s + (parseFloat(ct.achievedValue) || 0), 0);
+    const target = memberTargets.reduce((s, ct) => s + (parseFloat(ct.targetValue) || 0), 0);
     const memberDeals = opps.filter(o => o.owner === t.id && !["Won", "Lost"].includes(o.stage)).length;
     const memberActivities = fActivities.filter(a => a.owner === t.id).length;
     return { id: t.id, name: t.name, role: t.role, initials: t.initials, achieved: parseFloat(achieved.toFixed(1)), target, deals: memberDeals, activities: memberActivities };
   });
 
   // ─── Pending collections ───
-  const pendingCollection = (collections || []).reduce((s, c) => s + c.pendingAmount, 0);
+  const pendingCollection = (collections || []).reduce((s, c) => s + (parseFloat(c.pendingAmount) || 0), 0);
   const overdueCollections = (collections || []).filter(c => c.pendingAmount > 0 && c.status === "Overdue").length;
 
   const COLORS = ["#1B6B5A", "#2563EB", "#7C3AED", "#D97706", "#0D9488", "#DC2626"];
@@ -308,7 +308,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
 
       {/* ──── PRIMARY KPI ROW ──── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 16 }}>
-        <KPI label="Total ARR" value={totalArr} unit="Cr" sub={`${activeAccounts} active accounts`} onClick={() => setPage("accounts")} />
+        <KPI label="Total ARR" value={parseFloat(totalArr.toFixed(1))} unit="Cr" sub={`${activeAccounts} active accounts`} onClick={() => setPage("accounts")} />
         <KPI label="Weighted Pipeline" value={parseFloat(weighted.toFixed(1))} unit="Cr" sub={`${openDeals.length} open deals`} onClick={() => setPage("pipeline")} />
         <KPI label="Avg Deal Cycle" value={avgDealCycle} unit="d" sub={`Target: ${Math.round(avgDealCycle * 0.8)}d`} />
         <KPI label="Win Rate" value={periodTotalClosed > 0 ? periodWinRate : Math.round(opps.filter(o => o.stage === "Won").length / Math.max(1, opps.filter(o => ["Won", "Lost"].includes(o.stage)).length) * 100)} unit="%" sub={periodTotalClosed > 0 ? `${periodWon.length}W / ${periodLost.length}L in period` : "All time"} />
