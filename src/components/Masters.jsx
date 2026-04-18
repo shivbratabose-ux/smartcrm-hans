@@ -26,6 +26,8 @@ const SECTIONS = {
     { key:"winReasons",      title:"Win Reasons" },
     { key:"lossReasons",     title:"Loss Reasons" },
     { key:"suspendReasons",  title:"Suspend Reasons" },
+    { key:"evaluationStatus",title:"Evaluation Status (Lead Q)" },
+    { key:"nextSteps",       title:"Lead Next Steps" },
   ],
   // ── Customer ─────────────────────────────────────────
   customer: [
@@ -40,6 +42,8 @@ const SECTIONS = {
     { key:"decisionTimelines",title:"Decision Timelines" },
     { key:"hierarchyLevels",  title:"Hierarchy Levels" },
     { key:"countries",        title:"Countries", subKey:"region", subLabel:"Region", subType:"text" },
+    { key:"regions",          title:"Regions" },
+    { key:"swAge",            title:"Software Age Buckets" },
   ],
   // ── Contact ─────────────────────────────────────────
   contact: [
@@ -61,6 +65,8 @@ const SECTIONS = {
     { key:"commTypes",       title:"Communication Types" },
     { key:"commStatuses",    title:"Communication Statuses" },
     { key:"updateCategories",title:"Internal Update Categories" },
+    { key:"updateAttachmentTypes",title:"Update Attachment Types" },
+    { key:"fileTypes",       title:"File Types" },
   ],
   // ── Support ─────────────────────────────────────────
   support: [
@@ -68,6 +74,8 @@ const SECTIONS = {
     { key:"ticketStatuses",  title:"Ticket Statuses" },
     { key:"priorities",      title:"Priorities" },
     { key:"escalationLevels",title:"Escalation Levels" },
+    { key:"slaHours",        title:"SLA Hours by Priority", subKey:"hours", subLabel:"Hours", subType:"num",
+      help:"Resolution-time target (hours) per priority. Used by SLA-breach reports." },
   ],
   // ── Finance ─────────────────────────────────────────
   finance: [
@@ -82,6 +90,11 @@ const SECTIONS = {
     { key:"approvalChain",     title:"Approval Chain" },
     { key:"quoteStatuses",     title:"Quote Statuses" },
     { key:"quoteValidity",     title:"Quote Validity" },
+    { key:"standardTerms",     title:"Standard T&Cs (Quotation Snippets)" },
+  ],
+  // ── System ─────────────────────────────────────────
+  system: [
+    { key:"uploadTypes",     title:"Bulk Upload Types" },
   ],
 };
 
@@ -92,6 +105,7 @@ const GROUP_TABS = [
   { id:"activity", label:"Activity" },
   { id:"support",  label:"Support" },
   { id:"finance",  label:"Finance" },
+  { id:"system",   label:"System" },
 ];
 
 // ── Compact chip-style master section ────────────────────────────
