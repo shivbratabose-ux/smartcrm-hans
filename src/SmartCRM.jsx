@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 
 // Data & Utils
-import { INIT_USERS, PROD_MAP, STAGE_PROB, registerCatalog } from "./data/constants";
+import { INIT_USERS, PROD_MAP, STAGE_PROB, registerCatalog, registerMasters } from "./data/constants";
 import {
   INIT_ACCOUNTS, INIT_CONTACTS, INIT_OPPS, INIT_ACTIVITIES,
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
@@ -226,6 +226,10 @@ export default function SmartCRM() {
   // Keep PRODUCTS / PROD_MAP (constants.js) in sync with the live Masters catalog
   // so dropdowns app-wide reflect newly added/edited/deleted Product Lines.
   useEffect(() => { registerCatalog(catalog); }, [catalog]);
+  // Keep ALL master-backed constants (CUST_TYPES, COUNTRIES, ACT_TYPES, VERTICALS,
+  // LEAD_SOURCES, OPP_STAGES, BILL_TERMS, PAYMENT_MODES, QUOTE_STATUSES, etc.)
+  // in sync with the live Masters editor so every dropdown/filter reflects edits.
+  useEffect(() => { registerMasters(masters); }, [masters]);
   // New CRM modules
   const [leads,setLeads]             = useState(saved?.leads || INIT_LEADS);
   const [callReports,setCallReports] = useState(saved?.callReports || INIT_CALL_REPORTS);
