@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 
 // Data & Utils
-import { INIT_USERS, PROD_MAP, STAGE_PROB } from "./data/constants";
+import { INIT_USERS, PROD_MAP, STAGE_PROB, registerCatalog } from "./data/constants";
 import {
   INIT_ACCOUNTS, INIT_CONTACTS, INIT_OPPS, INIT_ACTIVITIES,
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
@@ -223,6 +223,9 @@ export default function SmartCRM() {
   const [orgUsers,setOrgUsers]       = useState(saved?.orgUsers || INIT_USERS);
   // Keep UserPill (shared.jsx) in sync with real Supabase users
   useEffect(() => { registerOrgUsers(orgUsers); }, [orgUsers]);
+  // Keep PRODUCTS / PROD_MAP (constants.js) in sync with the live Masters catalog
+  // so dropdowns app-wide reflect newly added/edited/deleted Product Lines.
+  useEffect(() => { registerCatalog(catalog); }, [catalog]);
   // New CRM modules
   const [leads,setLeads]             = useState(saved?.leads || INIT_LEADS);
   const [callReports,setCallReports] = useState(saved?.callReports || INIT_CALL_REPORTS);
