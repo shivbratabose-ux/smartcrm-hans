@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shield, AlertTriangle, Lock, Unlock, ChevronDown, ChevronRight, Users } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { updateUserProfile } from '../lib/db';
 import { uid, fmt, today } from '../utils/helpers';
 import { Modal, Confirm } from './shared';
 
@@ -91,7 +92,7 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
 
   const openAddUser=()=>setModal({mode:"adduser",form:{name:"",email:"",role:"sales_exec",lob:"iCAFFE",branchId:"br1",deptId:"dep1",initials:"",active:true,joinDate:today,password:"",confirmPassword:""}});
   const openEditUser=u=>{setForm({...u});setModal({mode:"edituser"});};
-  const saveUser=()=>{
+  const saveUser=async()=>{
     if(modal.mode==="adduser"){
       const f=modal.form;
       const newId=`u${uid()}`;
@@ -99,10 +100,25 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
       setOrgUsers(p=>[...p,newUser]);
     } else {
       setOrgUsers(p=>p.map(u=>u.id===form.id?{...form}:u));
+      // Persist edits (role/branch/dept/lob/active) to Supabase
+      if(isSupabaseConfigured){
+        await updateUserProfile(form.id, {
+          name: form.name, email: form.email, initials: form.initials,
+          role: form.role, lob: form.lob, branchId: form.branchId, deptId: form.deptId,
+          country: form.country, active: form.active, joinDate: form.joinDate,
+        });
+      }
     }
     setModal(null);
   };
-  const deactivate=id=>setOrgUsers(p=>p.map(u=>u.id===id?{...u,active:!u.active}:u));
+  const deactivate=async(id)=>{
+    const target=orgUsers.find(u=>u.id===id);
+    const newActive=!target?.active;
+    setOrgUsers(p=>p.map(u=>u.id===id?{...u,active:newActive}:u));
+    if(isSupabaseConfigured){
+      await updateUserProfile(id, { active: newActive });
+    }
+  };
 
   const openAddTeam=()=>{setForm({name:"",productId:"",lead:"u1",members:[],desc:""});setModal({mode:"addteam"});};
   const saveTeam=()=>{
@@ -166,9 +182,14 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
     return !mgr || mgr===u.id || !activeUserIds.has(mgr);
   });
 
-  const setManager=(userId,managerId)=>{
+  const setManager=async(userId,managerId)=>{
     setOrgUsers(p=>p.map(u=>u.id===userId?{...u,reportsTo:managerId||undefined}:u));
     setEditingManager(null);
+    // Persist to Supabase so the hierarchy survives reload
+    if(isSupabaseConfigured){
+      const {error}=await updateUserProfile(userId, { reportsTo: managerId || null });
+      if(error) console.error("Failed to save manager:", error);
+    }
   };
 
   const toggleHierarchy=(id)=>setHierarchyExpanded(p=>({...p,[id]:!p[id]}));
