@@ -1,6 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════
+// PRODUCTS / PROD_MAP are LIVE registries — kept in sync with the catalog
+// state managed in SmartCRM.jsx via registerCatalog(). Components import
+// these directly and read their current contents on each render. Mutating
+// in place (instead of reassigning) preserves the binding across all
+// importers so newly added products appear in dropdowns app-wide.
 export const PRODUCTS = [
   { id:"iCAFFE",       name:"iCAFFE",       desc:"e-Sanchit / EDI / CHA Platform",   color:"#2563EB", bg:"#EFF6FF", text:"#1D4ED8" },
   { id:"WiseHandling", name:"WiseHandling", desc:"Ground Handling Ops Management",    color:"#16A34A", bg:"#F0FDF4", text:"#15803D" },
@@ -10,6 +15,24 @@ export const PRODUCTS = [
   { id:"WiseTrax",     name:"WiseTrax",     desc:"Air Cargo Type-B Messaging Hub",   color:"#DC2626", bg:"#FEF2F2", text:"#B91C1C" },
 ];
 export const PROD_MAP = Object.fromEntries(PRODUCTS.map(p=>[p.id,p]));
+
+// Register the live catalog from app state. Mutates PRODUCTS & PROD_MAP
+// in place so existing module-imports keep working unchanged.
+export function registerCatalog(catalog) {
+  if (!Array.isArray(catalog)) return;
+  // Normalise catalog entries → product shape (id/name/desc/color/bg/text)
+  const normalised = catalog.map(p => ({
+    id:    p.id,
+    name:  p.name || p.id,
+    desc:  p.desc || "",
+    color: p.color || "#64748B",
+    bg:    p.bg    || "#F1F5F9",
+    text:  p.text  || p.color || "#334155",
+  }));
+  PRODUCTS.splice(0, PRODUCTS.length, ...normalised);
+  Object.keys(PROD_MAP).forEach(k => { delete PROD_MAP[k]; });
+  normalised.forEach(p => { PROD_MAP[p.id] = p; });
+}
 
 export const CUST_TYPES   = ["Airline","Airport","Government","Ground Handler","Customs Broker","Freight Forwarder","Exporter/Importer"];
 export const STAGES       = ["Prospect","Qualified","Demo","Proposal","Negotiation","Won","Lost"];
