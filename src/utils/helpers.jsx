@@ -120,11 +120,18 @@ export function validateStageGate(lead, targetStage, stageGates) {
 
 // ── Hierarchy-based data scoping ──
 // Returns the Set of user IDs whose records the given user is allowed to see.
-// Rule:
-//   admin / md / director / bd_lead  → all users (global scope)
-//   line_mgr                         → users in the same department (deptId)
-//   country_mgr                      → users in the same branch (branchId)
-//   everyone else                    → only themselves
+// Rules (in order of precedence):
+//   1. Global roles (admin/md/director/bd_lead)         → ALL users
+//   2. Anyone with direct/transitive reports via reportsTo
+//                                                        → self + all descendants
+//   3. line_mgr without explicit reports                 → same department
+//   4. country_mgr without explicit reports              → same branch
+//   5. Everyone else                                     → only self
+//
+// Scoping by Product Line (LOB), Branch, Department is layered ON TOP of the
+// reporting tree: a manager sees their entire downline regardless of LOB,
+// because the org was structured so that LOB-specific teams have their own
+// reporting chain (e.g., iCAFFE Sales Exec → iCAFFE Line Manager → Sales VP → Director → Admin).
 export const getScopedUserIds = (currentUserId, orgUsers) => {
   const allUsers = orgUsers || [];
   const user = allUsers.find(u => u.id === currentUserId);
@@ -132,17 +139,43 @@ export const getScopedUserIds = (currentUserId, orgUsers) => {
 
   const { role, deptId, branchId } = user;
 
+  // Rule 1: Global roles see everything
   if (["admin", "md", "director", "bd_lead"].includes(role)) {
     return new Set(allUsers.map(u => u.id));
   }
+
+  // Rule 2: Walk the reporting tree downward — start with self, add all who
+  // (directly or transitively) report up to me.
+  const scoped = new Set([currentUserId]);
+  let frontier = [currentUserId];
+  while (frontier.length > 0) {
+    const next = [];
+    for (const mgrId of frontier) {
+      for (const u of allUsers) {
+        if (u.active === false) continue;
+        if (u.reportsTo === mgrId && !scoped.has(u.id)) {
+          scoped.add(u.id);
+          next.push(u.id);
+        }
+      }
+    }
+    frontier = next;
+  }
+
+  // If we found at least one direct/indirect report, that IS the scope.
+  if (scoped.size > 1) return scoped;
+
+  // Rule 3 & 4: Fall back to legacy dept/branch scoping for managers
+  // who haven't yet had reportsTo assigned.
   if (role === "line_mgr") {
     return new Set(allUsers.filter(u => u.deptId === deptId).map(u => u.id));
   }
   if (role === "country_mgr") {
     return new Set(allUsers.filter(u => u.branchId === branchId).map(u => u.id));
   }
-  // sales_exec, tech_lead, support, viewer → own data only
-  return new Set([currentUserId]);
+
+  // Rule 5: Everyone else sees only their own data
+  return scoped;
 };
 
 // Returns true if the role has unrestricted global data access

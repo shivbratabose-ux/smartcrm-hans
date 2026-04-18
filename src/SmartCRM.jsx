@@ -376,7 +376,7 @@ export default function SmartCRM() {
           id: u.id, name: u.name, email: u.email, initials: u.initials,
           role: u.role, lob: u.lob, country: u.country, active: u.active,
           branchId: u.branch_id, deptId: u.dept_id, joinDate: u.join_date,
-          authUserId: u.auth_user_id,
+          authUserId: u.auth_user_id, reportsTo: u.reports_to || undefined,
         }));
         setOrgUsers(mapped);
       }

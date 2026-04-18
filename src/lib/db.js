@@ -56,6 +56,7 @@ const toSnake = (obj) => {
     recordId:"record_id", linkedTo:"linked_to", linkedOpps:"linked_opps",
     endTime:"end_time", authUserId:"auth_user_id", branchId:"branch_id",
     deptId:"dept_id", joinDate:"join_date", avatarUrl:"avatar_url",
+    reportsTo:"reports_to",
     // Lead fields
     assignedTo:"assigned_to", contactIds:"contact_ids", contactRoles:"contact_roles",
     additionalProducts:"additional_products", estimatedValue:"estimated_value",
@@ -109,6 +110,7 @@ const toCamel = (obj) => {
     record_id:"recordId", linked_to:"linkedTo", linked_opps:"linkedOpps",
     end_time:"endTime", auth_user_id:"authUserId", branch_id:"branchId",
     dept_id:"deptId", join_date:"joinDate", avatar_url:"avatarUrl",
+    reports_to:"reportsTo",
     // Lead fields
     assigned_to:"assignedTo", contact_ids:"contactIds", contact_roles:"contactRoles",
     additional_products:"additionalProducts", estimated_value:"estimatedValue",
@@ -360,6 +362,24 @@ export async function createUser(email, password, profileData) {
 export async function changePassword(newPassword) {
   if (!isSupabaseConfigured) return { error: "Supabase not configured" };
   const { error } = await supabase.auth.updateUser({ password: newPassword });
+  return { error: error?.message || null };
+}
+
+/**
+ * Update user profile (admin only — used for role, reportsTo, branch/dept changes)
+ * Pass any subset of camelCase fields; they are converted to snake_case for the DB.
+ */
+export async function updateUserProfile(userId, patch) {
+  if (!isSupabaseConfigured) return { error: "Supabase not configured" };
+  if (!userId) return { error: "Missing userId" };
+  // Whitelist of editable columns
+  const allowed = ["name", "email", "initials", "role", "lob", "branchId", "deptId",
+                   "country", "active", "joinDate", "avatarUrl", "reportsTo"];
+  const clean = {};
+  Object.keys(patch || {}).forEach(k => { if (allowed.includes(k)) clean[k] = patch[k]; });
+  if (Object.keys(clean).length === 0) return { error: null };
+  const snake = toSnake({ ...clean, updatedAt: new Date().toISOString() });
+  const { error } = await supabase.from("users").update(snake).eq("id", userId);
   return { error: error?.message || null };
 }
 
