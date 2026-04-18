@@ -16,6 +16,122 @@ export const PRODUCTS = [
 ];
 export const PROD_MAP = Object.fromEntries(PRODUCTS.map(p=>[p.id,p]));
 
+// ── Generic Masters registry ──────────────────────────────────────
+// Mirrors the registerCatalog pattern: components import these constant
+// arrays directly; SmartCRM.jsx calls registerMasters(masters) whenever
+// the live `masters` state changes, and we splice each array in place so
+// every importer (Pipeline filters, Leads form dropdowns, Tickets status
+// pickers, etc.) reflects edits immediately without prop drilling.
+//
+// Bindings map: masters section id → { arr: <const>, str: bool, ... }
+//   str=true  → array of strings; we rewrite from item.name
+//   str=false → array of objects; we copy full shape (id stripped of
+//               the master prefix so component lookups by id still work)
+//   map       → companion id→object map (e.g. LEAD_STAGE_MAP) rebuilt in place
+function getMasterBindings() {
+  return {
+    customerTypes:       { arr: CUST_TYPES,            str: true },
+    countries:           { arr: COUNTRIES,             str: true },
+    activityTypes:       { arr: ACT_TYPES,             str: true },
+    activityStatuses:    { arr: ACT_STATUS,            str: true },
+    ticketTypes:         { arr: TICKET_TYPES,          str: true },
+    ticketStatuses:      { arr: TICKET_STATUSES,       str: true },
+    priorities:          { arr: PRIORITIES,            str: true },
+    callTypes:           { arr: CALL_TYPES,            str: true },
+    callSubjects:        { arr: CALL_OBJECTIVES,       str: true },
+    callOutcomes:        { arr: CALL_OUTCOMES,         str: true },
+    verticals:           { arr: VERTICALS,             str: true },
+    leadSources:         { arr: LEAD_SOURCES,          str: true },
+    leadTemperatures:    { arr: LEAD_TEMPERATURES,     str: true },
+    businessTypes:       { arr: BUSINESS_TYPES,        str: true },
+    staffSizes:          { arr: STAFF_SIZES,           str: true },
+    currentSoftware:     { arr: CURRENT_SOFTWARE,      str: true },
+    painPoints:          { arr: PAIN_POINTS,           str: true },
+    budgetRanges:        { arr: BUDGET_RANGES,         str: true },
+    decisionMakers:      { arr: DECISION_MAKERS,       str: true },
+    decisionTimelines:   { arr: DECISION_TIMELINES,    str: true },
+    oppPhases:           { arr: OPP_PHASES,            str: true },
+    oppSources:          { arr: OPP_SOURCES,           str: true },
+    oppSizes:            { arr: OPP_SIZES,             str: true },
+    forecastCats:        { arr: FORECAST_CATS,         str: true },
+    oppContactRoles:     { arr: OPP_CONTACT_ROLES,     str: true },
+    leadContactRoles:    { arr: LEAD_CONTACT_ROLES,    str: true },
+    winReasons:          { arr: WIN_REASONS,           str: true },
+    lossReasons:         { arr: LOSS_REASONS,          str: true },
+    suspendReasons:      { arr: SUSPEND_REASONS,       str: true },
+    contactRoles:        { arr: CONTACT_ROLES,         str: true },
+    contactDispositions: { arr: CONTACT_DISPOSITIONS,  str: true },
+    contactDepartments:  { arr: CONTACT_DEPARTMENTS,   str: true },
+    customerLifecycle:   { arr: CUSTOMER_TYPES,        str: true },
+    hierarchyLevels:     { arr: HIERARCHY_LEVELS,      str: true },
+    escalationLevels:    { arr: ESCALATION_LEVELS,     str: true },
+    billTerms:           { arr: BILL_TERMS,            str: true },
+    billTypes:           { arr: BILL_TYPES,            str: true },
+    paymentModes:        { arr: PAYMENT_MODES,         str: true },
+    collectionStatuses:  { arr: COLLECTION_STATUSES,   str: true },
+    ageingBuckets:       { arr: AGEING_BUCKETS,        str: true },
+    contractStatuses:    { arr: CONTRACT_STATUSES,     str: true },
+    contractDocTypes:    { arr: CONTRACT_DOC_TYPES,    str: true },
+    approvalChain:       { arr: APPROVAL_CHAIN,        str: true },
+    quoteStatuses:       { arr: QUOTE_STATUSES,        str: true },
+    taxTypes:            { arr: TAX_TYPES,             str: true },
+    quoteValidity:       { arr: QUOTE_VALIDITY,        str: true },
+    commTypes:           { arr: COMM_TYPES,            str: true },
+    commStatuses:        { arr: COMM_STATUSES,         str: true },
+    eventTypes:          { arr: EVENT_TYPES,           str: true },
+    eventStatuses:       { arr: EVENT_STATUSES,        str: true },
+    updateCategories:    { arr: UPDATE_CATEGORIES,     str: true },
+    // Object-shaped masters with id-prefix stripping + companion map
+    leadStages: { arr: LEAD_STAGES, map: LEAD_STAGE_MAP, str: false, stripPrefix: /^lst_/ },
+    oppStages:  { arr: OPP_STAGES,  map: OPP_STAGE_MAP,  str: false, stripPrefix: /^ost_/ },
+  };
+}
+
+export function registerMasters(masters) {
+  if (!masters || typeof masters !== "object") return;
+  const bindings = getMasterBindings();
+  for (const [key, b] of Object.entries(bindings)) {
+    const list = masters[key];
+    if (!Array.isArray(list)) continue;
+    if (b.str) {
+      const names = list.map(it => typeof it === "string" ? it : it?.name).filter(Boolean);
+      b.arr.splice(0, b.arr.length, ...names);
+    } else {
+      const objs = list.map(it => {
+        const o = { ...it };
+        if (b.stripPrefix && typeof o.id === "string") o.id = o.id.replace(b.stripPrefix, "");
+        return o;
+      });
+      b.arr.splice(0, b.arr.length, ...objs);
+      if (b.map) {
+        Object.keys(b.map).forEach(k => { delete b.map[k]; });
+        objs.forEach(o => { b.map[o.id] = o; });
+      }
+    }
+  }
+  // Derived: rebuild TAX_RATES from the (live) tax types — pull % out of names
+  if (Array.isArray(masters.taxTypes)) {
+    Object.keys(TAX_RATES).forEach(k => { delete TAX_RATES[k]; });
+    masters.taxTypes.forEach(t => {
+      const name = typeof t === "string" ? t : t?.name;
+      if (!name) return;
+      const m = String(name).match(/(\d+(?:\.\d+)?)/);
+      TAX_RATES[name] = m ? parseFloat(m[1]) : 0;
+    });
+  }
+  // Derived: rebuild STAGES + STAGE_PROB from the legacy `stages` master
+  if (Array.isArray(masters.stages)) {
+    STAGES.splice(0, STAGES.length);
+    Object.keys(STAGE_PROB).forEach(k => { delete STAGE_PROB[k]; });
+    masters.stages.forEach(s => {
+      const name = typeof s === "string" ? s : s?.name;
+      if (!name) return;
+      STAGES.push(name);
+      STAGE_PROB[name] = (typeof s === "object" && Number(s.probability)) || 0;
+    });
+  }
+}
+
 // Register the live catalog from app state. Mutates PRODUCTS & PROD_MAP
 // in place so existing module-imports keep working unchanged.
 export function registerCatalog(catalog) {
