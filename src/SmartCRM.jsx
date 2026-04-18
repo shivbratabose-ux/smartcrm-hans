@@ -44,6 +44,7 @@ import Profile from "./components/Profile";
 import QuickLogFAB from "./components/QuickLog";
 import Updates from "./components/Updates";
 import Help from "./components/Help";
+import { registerOrgUsers } from "./components/shared";
 
 // ── Session persistence with 30-min idle timeout ──
 const SESSION_KEY = "smartcrm_session";
@@ -220,6 +221,8 @@ export default function SmartCRM() {
   const [org,setOrg]                 = useState(saved?.org || INIT_ORG);
   const [teams,setTeams]             = useState(saved?.teams || INIT_TEAMS);
   const [orgUsers,setOrgUsers]       = useState(saved?.orgUsers || INIT_USERS);
+  // Keep UserPill (shared.jsx) in sync with real Supabase users
+  useEffect(() => { registerOrgUsers(orgUsers); }, [orgUsers]);
   // New CRM modules
   const [leads,setLeads]             = useState(saved?.leads || INIT_LEADS);
   const [callReports,setCallReports] = useState(saved?.callReports || INIT_CALL_REPORTS);

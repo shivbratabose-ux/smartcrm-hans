@@ -3,6 +3,15 @@ import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRigh
 import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
 import { fmt, uid, today, hasErrors } from "../utils/helpers";
 
+// ── Live user registry — updated by SmartCRM whenever orgUsers changes ──
+// Allows UserPill to resolve real Supabase users without prop-drilling.
+let _liveUsers = [];
+export function registerOrgUsers(users) { _liveUsers = users || []; }
+function resolveUser(id) {
+  if (!id) return null;
+  return _liveUsers.find(u => u.id === id) || TEAM_MAP[id] || null;
+}
+
 export function StatusBadge({status}) {
   const s = (status||"").toLowerCase().replace(/\s+/g,"-");
   const cls = {
@@ -26,9 +35,10 @@ export function ProdTag({pid}) {
   return <span className="prod-tag" style={{background:p.bg,color:p.text}}>{p.name}</span>;
 }
 export function UserPill({uid:u}) {
-  const user=TEAM_MAP[u];
-  if(!user) return u ? <span className="u-pill"><span className="u-av" style={{background:"#94A3B8"}}>?</span><span className="u-name">{u}</span></span> : null;
-  return <span className="u-pill"><span className="u-av">{user.initials}</span><span className="u-name">{user.name}</span></span>;
+  const user = resolveUser(u);
+  if (!user) return u ? <span className="u-pill"><span className="u-av" style={{background:"#94A3B8"}}>{String(u).slice(0,2).toUpperCase()}</span><span className="u-name">{u}</span></span> : null;
+  const initials = user.initials || user.name?.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase() || "?";
+  return <span className="u-pill"><span className="u-av">{initials}</span><span className="u-name">{user.name}</span></span>;
 }
 export function Modal({title,onClose,children,footer,lg}) {
   useEffect(() => {
