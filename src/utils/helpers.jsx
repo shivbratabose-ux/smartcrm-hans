@@ -92,6 +92,15 @@ export const softDeleteById = (arr, id, currentUser) =>
     ? { ...r, isDeleted: true, deletedAt: new Date().toISOString(), deletedBy: currentUser || null }
     : r);
 
+// ── Restore helper ──
+// Reverses a soft-delete by clearing the deletion fields. Audit-friendly:
+// stamps restoredAt/restoredBy so the action is traceable.
+export const restoreById = (arr, id, currentUser) =>
+  (arr || []).map(r => r.id === id
+    ? { ...r, isDeleted: false, deletedAt: null, deletedBy: null,
+        restoredAt: new Date().toISOString(), restoredBy: currentUser || null }
+    : r);
+
 // ── Error Boundary ──
 export class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }

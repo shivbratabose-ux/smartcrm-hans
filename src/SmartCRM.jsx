@@ -44,6 +44,7 @@ import Profile from "./components/Profile";
 import QuickLogFAB from "./components/QuickLog";
 import Updates from "./components/Updates";
 import Help from "./components/Help";
+import Trash from "./components/Trash";
 import { registerOrgUsers } from "./components/shared";
 
 // ── Session persistence with 30-min idle timeout ──
@@ -961,7 +962,7 @@ export default function SmartCRM() {
       <style dangerouslySetInnerHTML={{__html:CSS}}/>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={visibleTickets} leads={visibleLeads} collections={visibleCollections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount}/>
+        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={visibleTickets} leads={visibleLeads} collections={visibleCollections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount} canRestore={canRestore}/>
         <div className="main">
           <Header page={page} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={visibleUpdates} myUnreadCount={myUnreadCount}/>
           <div className="content" id="main-content" role="main">
@@ -987,6 +988,23 @@ export default function SmartCRM() {
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
             {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
             {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers}/>}
+            {page==="trash"      && <Trash canRestore={canRestore} currentUser={currentUser} orgUsers={orgUsers} sources={[
+              { key:"leads",       label:"Leads",        items:leads,        setter:setLeads,        getName:r=>r.company||r.contact||r.name, getMeta:r=>[r.contact, r.email].filter(Boolean).join(" · ") },
+              { key:"accounts",    label:"Accounts",     items:accounts,     setter:setAccounts,     getName:r=>r.name,                       getMeta:r=>[r.industry, r.country].filter(Boolean).join(" · ") },
+              { key:"contacts",    label:"Contacts",     items:contacts,     setter:setContacts,     getName:r=>r.name,                       getMeta:r=>[r.designation, r.email].filter(Boolean).join(" · ") },
+              { key:"opps",        label:"Pipeline",     items:opps,         setter:setOpps,         getName:r=>r.name||r.oppNo,              getMeta:r=>[r.stage, r.value!=null?`$${r.value}`:""].filter(Boolean).join(" · ") },
+              { key:"activities",  label:"Activities",   items:activities,   setter:setActivities,   getName:r=>r.title||r.subject,           getMeta:r=>[r.type, r.date].filter(Boolean).join(" · ") },
+              { key:"callReports", label:"Call Reports", items:callReports,  setter:setCallReports,  getName:r=>r.subject||r.title||r.id,     getMeta:r=>[r.callType, r.date].filter(Boolean).join(" · ") },
+              { key:"tickets",     label:"Tickets",      items:tickets,      setter:setTickets,      getName:r=>r.title,                      getMeta:r=>[r.status, r.priority].filter(Boolean).join(" · ") },
+              { key:"contracts",   label:"Contracts",    items:contracts,    setter:setContracts,    getName:r=>r.contractNo||r.title||r.id,  getMeta:r=>[r.status, r.value!=null?`$${r.value}`:""].filter(Boolean).join(" · ") },
+              { key:"collections", label:"Collections",  items:collections,  setter:setCollections,  getName:r=>r.invoiceNo||r.id,            getMeta:r=>[r.status, r.amount!=null?`$${r.amount}`:""].filter(Boolean).join(" · ") },
+              { key:"quotes",      label:"Quotations",   items:quotes,       setter:setQuotes,       getName:r=>r.quoteNo||r.title||r.id,     getMeta:r=>[r.status, r.total!=null?`$${r.total}`:""].filter(Boolean).join(" · ") },
+              { key:"events",      label:"Calendar",     items:events,       setter:setEvents,       getName:r=>r.title,                      getMeta:r=>[r.type, r.date].filter(Boolean).join(" · ") },
+              { key:"commLogs",    label:"Communications",items:commLogs,    setter:setCommLogs,     getName:r=>r.subject||r.channel||r.id,   getMeta:r=>[r.channel, r.date].filter(Boolean).join(" · ") },
+              { key:"targets",     label:"Targets",      items:targets,      setter:setTargets,      getName:r=>r.name||r.period||r.id,       getMeta:r=>[r.period, r.amount!=null?`$${r.amount}`:""].filter(Boolean).join(" · ") },
+              { key:"updates",     label:"Updates",      items:updates,      setter:setUpdates,      getName:r=>r.title||r.id,                getMeta:r=>[r.type, r.date].filter(Boolean).join(" · ") },
+              { key:"invoices",    label:"Invoices",     items:invoices,     setter:setInvoices,     getName:r=>r.invoiceNo||r.id,            getMeta:r=>[r.status, r.amount!=null?`$${r.amount}`:""].filter(Boolean).join(" · ") },
+            ]}/>}
           </div>
         </div>
         <QuickLogFAB accounts={accounts} contacts={contacts} opps={visibleOpps} leads={visibleLeads} orgUsers={orgUsers} currentUser={currentUser} callReports={visibleCallReports} setCallReports={setCallReports} activities={visibleActivities} setActivities={setActivities} masters={masters}/>
