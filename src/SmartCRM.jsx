@@ -505,7 +505,7 @@ export default function SmartCRM() {
       if (o.secondaryContactIds?.includes(conId)) { up.secondaryContactIds = o.secondaryContactIds.filter(id => id !== conId); changed = true; }
       return changed ? up : o;
     }));
-  }, []);
+  }, [currentUser]);
 
   // Deal Won → Customer: auto-create or update account
   const handleDealWon = useCallback((opp) => {

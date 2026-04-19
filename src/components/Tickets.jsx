@@ -80,7 +80,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser}) {
         <select className="filter-select" value={prodF} onChange={e=>setProdF(e.target.value)}><option>All</option>{PRODUCTS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
       </div>
       <BulkActions count={bulk.count} onClear={bulk.clear}
-        onDelete={()=>{ if(confirm("Delete "+bulk.count+" tickets?")){ bulk.selected.forEach(id=>del(id)); bulk.clear(); }}}
+        onDelete={()=>setConfirm({bulk:true,ids:[...bulk.selected]})}
         onExport={()=>exportCSV(tickets.filter(t=>bulk.isSelected(t.id)),CSV_COLS,"tickets")}/>
       <div className="card" style={{padding:0}}>
         <table className="tbl">
@@ -122,7 +122,12 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser}) {
           <div className="form-group"><label>Description *</label><textarea value={form.description} onChange={e=>{setForm(f=>({...f,description:e.target.value}));setFormErrors(e=>({...e,description:undefined}));}} rows={4} placeholder="Detailed description, reproduction steps, impact…" style={formErrors.description?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.description}/></div>
         </Modal>
       )}
-      {confirm&&<Confirm title="Delete Ticket" msg="Remove this ticket permanently?" onConfirm={()=>del(confirm)} onCancel={()=>setConfirm(null)}/>}
+      {confirm&&typeof confirm==="object"&&confirm.bulk&&(
+        <Confirm title="Delete Tickets" msg={`Remove ${confirm.ids.length} ticket${confirm.ids.length>1?"s":""}?`}
+          onConfirm={()=>{ confirm.ids.forEach(id=>setTickets(p=>softDeleteById(p,id,currentUser))); bulk.clear(); setConfirm(null); }}
+          onCancel={()=>setConfirm(null)}/>
+      )}
+      {confirm&&typeof confirm!=="object"&&<Confirm title="Delete Ticket" msg="Remove this ticket permanently?" onConfirm={()=>del(confirm)} onCancel={()=>setConfirm(null)}/>}
     </div>
   );
 }
