@@ -198,9 +198,9 @@ function Targets({ targets, setTargets, currentUser, canDelete }) {
       </div>
 
       {modal && (
-        <Modal title={modal.mode === "add" ? "Add Target" : "Edit Target"} onClose={() => setModal(null)} lg
+        <Modal title={modal.mode === "add" ? "Add Target" : "Edit Target"} onClose={() => { setModal(null); setFormErrors({}); }} lg
           footer={<>
-            <button className="btn btn-sec" onClick={() => setModal(null)}>Cancel</button>
+            <button className="btn btn-sec" onClick={() => { setModal(null); setFormErrors({}); }}>Cancel</button>
             <button className="btn btn-primary" onClick={save}><Check size={14}/>Save</button>
           </>}>
           <div className="form-row">
