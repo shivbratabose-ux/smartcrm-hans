@@ -218,9 +218,9 @@ function Collections({ collections, setCollections, accounts, contracts, current
       </div>
 
       {modal && (
-        <Modal title={modal.mode === "add" ? "Add Invoice" : "Edit Invoice"} onClose={() => { setModal(null); setFormErrors({}); }} lg
+        <Modal title={modal.mode === "add" ? "Add Invoice" : "Edit Invoice"} onClose={() => { setModal(null); setFormErrors({}); setForm(BLANK_COLLECTION); }} lg
           footer={<>
-            <button className="btn btn-sec" onClick={() => { setModal(null); setFormErrors({}); }}>Cancel</button>
+            <button className="btn btn-sec" onClick={() => { setModal(null); setFormErrors({}); setForm(BLANK_COLLECTION); }}>Cancel</button>
             <button className="btn btn-primary" onClick={save}><Check size={14}/>Save</button>
           </>}>
           <div className="form-row">

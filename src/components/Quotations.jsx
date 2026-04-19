@@ -307,7 +307,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
 
       {/* Add/Edit Modal */}
       {modal&&(
-        <Modal title={modal.mode==="add"?"New Quotation":"Edit Quotation"} onClose={()=>{setModal(null);setFormErrors({});}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save Quote</button></>}>
+        <Modal title={modal.mode==="add"?"New Quotation":"Edit Quotation"} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save Quote</button></>}>
           <div className="modal-tabs">
             {["details","items","terms"].map(t=><div key={t} className={`modal-tab${formTab===t?" active":""}`} onClick={()=>setFormTab(t)}>{t==="details"?"Details":t==="items"?`Items (${form.items.length})`:"Terms"}</div>)}
           </div>

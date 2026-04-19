@@ -345,8 +345,8 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
       </div>
 
       {modal&&(
-        <Modal title={modal.mode==="add"?`New Activity`:`Edit Activity`} onClose={()=>{setModal(null);setFormErrors({});}} lg
-          footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>{modal.mode==="add"?"Save Activity":"Update Activity"}</button></>}>
+        <Modal title={modal.mode==="add"?`New Activity`:`Edit Activity`} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_ACT);}} lg
+          footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});setForm(BLANK_ACT);}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>{modal.mode==="add"?"Save Activity":"Update Activity"}</button></>}>
           <div className="modal-tabs">
             {["details","links","files"].map(t=><div key={t} className={`modal-tab${mTab===t?" active":""}`} onClick={()=>setMTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}{t==="files"&&(form.files||[]).length>0?` (${form.files.length})`:""}</div>)}
           </div>
