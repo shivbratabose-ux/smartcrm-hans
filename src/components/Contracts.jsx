@@ -6,6 +6,7 @@ import { BLANK_CONTRACT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge } from './shared';
 import Pagination, { usePagination } from './Pagination';
+import { useSort, SortHeader } from './Sort';
 import { exportCSV } from '../utils/csv';
 
 const validateContract = (f) => {
@@ -110,7 +111,9 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
     return list.sort((a, b) => (b.startDate||"").localeCompare(a.startDate||""));
   }, [enriched, statusF, search, activeTab]);
 
-  const pg = usePagination(filtered);
+  const sort = useSort();
+  const sorted = useMemo(() => sort.key ? sort.apply(filtered) : filtered, [filtered, sort.key, sort.dir]);
+  const pg = usePagination(sorted);
 
   const openAdd = () => {
     setForm({ ...BLANK_CONTRACT, id: `con${uid()}`, owner: currentUser });
@@ -308,14 +311,14 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
           <table className="tbl">
             <thead>
               <tr>
-                <th>Contract ID</th>
-                <th>Account Name</th>
+                <th><SortHeader sort={sort} k="_contractId">Contract ID</SortHeader></th>
+                <th><SortHeader sort={sort} k="_accName">Account Name</SortHeader></th>
                 <th>Vertical Head</th>
-                <th>Timeline</th>
-                <th>Billing Type</th>
-                <th>Status</th>
-                <th>Value</th>
-                <th>Owner</th>
+                <th><SortHeader sort={sort} k="startDate">Timeline</SortHeader></th>
+                <th><SortHeader sort={sort} k="billType">Billing Type</SortHeader></th>
+                <th><SortHeader sort={sort} k="status">Status</SortHeader></th>
+                <th><SortHeader sort={sort} k="value">Value</SortHeader></th>
+                <th><SortHeader sort={sort} k="owner">Owner</SortHeader></th>
                 <th></th>
               </tr>
             </thead>

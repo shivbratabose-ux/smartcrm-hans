@@ -170,7 +170,7 @@ function UpdateDetailPanel({ upd, currentUser, orgUsers, onClose, onEdit, onArch
               <Archive size={11}/>Archive
             </button>
           )}
-          <button className="icon-btn" onClick={onClose}><X size={15}/></button>
+          <button className="icon-btn" onClick={onClose} aria-label="Close update detail"><X size={15}/></button>
         </div>
       </div>
 
@@ -374,7 +374,7 @@ function CreateUpdateModal({ form, setForm, onSave, onClose, orgUsers, editMode 
             <Paperclip size={11} style={{ color:"var(--brand)", flexShrink:0 }}/>
             <span style={{ flex:1 }}>{a.name}</span>
             <span style={{ fontSize:10, color:"var(--text3)", padding:"1px 6px", borderRadius:4, background:"var(--s3)" }}>{a.type}</span>
-            <button className="icon-btn" onClick={() => set("attachments", form.attachments.filter((_,j)=>j!==i))}><X size={11}/></button>
+            <button className="icon-btn" aria-label={`Remove attachment ${a.name}`} onClick={() => set("attachments", form.attachments.filter((_,j)=>j!==i))}><X size={11}/></button>
           </div>
         ))}
         <div style={{ display:"flex", gap:6, marginTop:6 }}>

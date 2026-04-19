@@ -20,15 +20,38 @@ export const isFuture  = d => d && d > today;
 export const isToday   = d => d === today;
 
 // ── localStorage persistence ──
+// Save failures (quota exceeded, private-browsing mode, disk full) used to
+// silently swallow the error — users would think their work was saved, then
+// lose it on next reload. We now surface a toast on the FIRST failure and
+// throttle subsequent ones so we don't spam during a stuck save loop.
+import { notify } from "./toast";
 const STORAGE_KEY = "smartcrm_data";
+let lastStorageErrorAt = 0;
 export const loadState = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  } catch (err) {
+    notify.error(`Couldn't read saved data: ${err?.message || "storage unavailable"}. Some entries may be missing.`);
+    return null;
+  }
 };
 export const saveState = (data) => {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (err) {
+    // Throttle: at most one toast every 30s for storage errors
+    const now = Date.now();
+    if (now - lastStorageErrorAt > 30000) {
+      lastStorageErrorAt = now;
+      const isQuota = err?.name === "QuotaExceededError" || /quota/i.test(err?.message || "");
+      notify.error(
+        isQuota
+          ? "Browser storage is full — recent changes may not persist. Clear old records or export data to free space."
+          : `Couldn't save changes locally: ${err?.message || "storage unavailable"}.`
+      );
+    }
+  }
 };
 
 // ── Input sanitization ──
