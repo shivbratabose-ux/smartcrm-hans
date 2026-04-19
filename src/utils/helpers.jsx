@@ -6,7 +6,8 @@ import { INIT_USERS, PERMISSIONS } from "../data/constants.js";
 // ═══════════════════════════════════════════════════════════════════
 export const fmt = {
   date: d => { if(!d) return "—"; const dt = new Date(d); return dt.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); },
-  inr:  n => `₹${n}L`,
+  // INR with Indian-style thousands grouping; safe for null/NaN
+  inr:  n => `₹${Number(n||0).toLocaleString("en-IN")} L`,
   pct:  n => `${n}%`,
   short:d => { if(!d) return "—"; const dt = new Date(d); return dt.toLocaleDateString("en-IN",{day:"2-digit",month:"short"}); },
   time: t => { if(!t) return ""; const [h,m]=t.split(":"); const hr=parseInt(h); return `${hr>12?hr-12:hr||12}:${m} ${hr>=12?"PM":"AM"}`; },
@@ -53,11 +54,16 @@ export const validateAccount = (f) => {
   if (f.potential < 0) errs.potential = "Potential cannot be negative";
   return errs;
 };
+// Lenient phone matcher: allows +, digits, spaces, dashes, parentheses; 7-20 chars.
+// Empty is allowed at this layer — required-ness is enforced per-form.
+export const isValidPhone = (s) => !s || /^[+\d\s\-()]{7,20}$/.test(String(s).trim());
+
 export const validateContact = (f) => {
   const errs = {};
   if (!f.name?.trim()) errs.name = "Contact name is required";
   if (!f.accountId) errs.accountId = "Account is required";
   if (f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) errs.email = "Invalid email format";
+  if (f.phone && !isValidPhone(f.phone)) errs.phone = "Invalid phone (digits, spaces, +, -, ( ) only)";
   return errs;
 };
 export const validateOpp = (f) => {
@@ -82,6 +88,17 @@ export const validateTicket = (f) => {
   if (!f.description?.trim()) errs.description = "Description is required";
   return errs;
 };
+// Negative-number guards for modules that don't have a dedicated validator yet.
+// Reuse pattern: validateMoney(f, [["amount","Amount"], ["paid","Paid amount"]]).
+export const validateMoney = (f, fields) => {
+  const errs = {};
+  for (const [key, label] of fields) {
+    const v = f?.[key];
+    if (v != null && v !== "" && Number(v) < 0) errs[key] = `${label} cannot be negative`;
+  }
+  return errs;
+};
+
 export const hasErrors = (errs) => Object.keys(errs).length > 0;
 
 // ── Soft-delete helper ──

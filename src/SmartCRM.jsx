@@ -1037,6 +1037,20 @@ export default function SmartCRM() {
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers}/></>
   );
 
+  // Show a lightweight loading screen while the initial cloud hydration runs.
+  // Without this, the app renders an empty UI for several seconds on slow
+  // connections and users see "no data" until loadAllData() resolves.
+  if (!dbReady) return (
+    <>
+      <style dangerouslySetInnerHTML={{__html:CSS}}/>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:14,fontFamily:"'DM Sans',sans-serif"}}>
+        <div style={{width:36,height:36,border:"3px solid #E2E8F0",borderTopColor:"#1B6B5A",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
+        <div style={{color:"#64748B",fontSize:13}}>Loading your data…</div>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    </>
+  );
+
   return (
     <ErrorBoundary>
       <style dangerouslySetInnerHTML={{__html:CSS}}/>
