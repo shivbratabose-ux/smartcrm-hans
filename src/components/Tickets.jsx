@@ -5,6 +5,7 @@ import { BLANK_TKT } from '../data/seed';
 import { uid, fmt, today, isOverdue, sanitizeObj, validateTicket, hasErrors, softDeleteById } from '../utils/helpers';
 import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError } from './shared';
 import Pagination, { usePagination } from './Pagination';
+import { useSort, SortHeader } from './Sort';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 
@@ -43,8 +44,10 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
   };
   const del=id=>{setTickets(p=>softDeleteById(p,id,currentUser));setConfirm(null);setDetail(null);};
   const OPEN=tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
-  const pg = usePagination(filtered);
-  const bulk = useBulkSelect(filtered);
+  const sort = useSort();
+  const sorted = useMemo(() => sort.key ? sort.apply(filtered) : filtered, [filtered, sort.key, sort.dir]);
+  const pg = usePagination(sorted);
+  const bulk = useBulkSelect(sorted);
 
   const CSV_COLS = [
     {label:"ticketNo",       accessor:t=>t.ticketNo||t.id||""},
@@ -84,7 +87,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
         onExport={()=>exportCSV(tickets.filter(t=>bulk.isSelected(t.id)),CSV_COLS,"tickets")}/>
       <div className="card" style={{padding:0}}>
         <table className="tbl">
-          <thead><tr><th style={{width:36}}><input type="checkbox" checked={bulk.allSelected} onChange={bulk.toggleAll}/></th><th>Ticket</th><th>Product</th><th>Type</th><th>Priority</th><th>Status</th><th>Assigned</th><th>SLA</th><th></th></tr></thead>
+          <thead><tr><th style={{width:36}}><input type="checkbox" checked={bulk.allSelected} onChange={bulk.toggleAll}/></th><th><SortHeader sort={sort} k="title">Ticket</SortHeader></th><th><SortHeader sort={sort} k="product">Product</SortHeader></th><th><SortHeader sort={sort} k="type">Type</SortHeader></th><th><SortHeader sort={sort} k="priority">Priority</SortHeader></th><th><SortHeader sort={sort} k="status">Status</SortHeader></th><th><SortHeader sort={sort} k="assigned">Assigned</SortHeader></th><th><SortHeader sort={sort} k="sla">SLA</SortHeader></th><th></th></tr></thead>
           <tbody>{pg.paged.map(t=>{
             const overdue=t.sla&&t.sla<today&&!["Resolved","Closed"].includes(t.status);
             return (

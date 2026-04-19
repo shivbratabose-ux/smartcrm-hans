@@ -11,6 +11,7 @@ import {
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole } from "./utils/helpers";
+import { ToastContainer } from "./utils/toast";
 import { CSS } from "./styles";
 
 // Supabase integration
@@ -1034,7 +1035,7 @@ export default function SmartCRM() {
   }, [accounts, contacts, leads, tickets, contracts, collections, invoices, opps, orgUsers]);
 
   if(!currentUser) return (
-    <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers}/></>
+    <><style dangerouslySetInnerHTML={{__html:CSS}}/><ToastContainer /><Login onLogin={login} orgUsers={orgUsers}/></>
   );
 
   // Show a lightweight loading screen while the initial cloud hydration runs.
@@ -1043,6 +1044,7 @@ export default function SmartCRM() {
   if (!dbReady) return (
     <>
       <style dangerouslySetInnerHTML={{__html:CSS}}/>
+      <ToastContainer />
       <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:14,fontFamily:"'DM Sans',sans-serif"}}>
         <div style={{width:36,height:36,border:"3px solid #E2E8F0",borderTopColor:"#1B6B5A",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
         <div style={{color:"#64748B",fontSize:13}}>Loading your data…</div>
@@ -1054,6 +1056,7 @@ export default function SmartCRM() {
   return (
     <ErrorBoundary>
       <style dangerouslySetInnerHTML={{__html:CSS}}/>
+      <ToastContainer />
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
         <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={visibleTickets} leads={visibleLeads} collections={visibleCollections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount} canRestore={canRestore}/>

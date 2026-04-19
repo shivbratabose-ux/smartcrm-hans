@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
-import { Upload, Download, Check, AlertCircle, RefreshCw, ArrowUpCircle, PlusCircle, Info } from "lucide-react";
+import { Upload, Download, Check, AlertCircle, RefreshCw, ArrowUpCircle, PlusCircle, Info, Loader } from "lucide-react";
 import { UPLOAD_TYPES } from '../data/constants';
 import { uid } from '../utils/helpers';
+import { notify } from '../utils/toast';
 import { Empty, PageTip } from './shared';
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -264,6 +265,8 @@ function BulkUpload({ onUpload, existingData = {} }) {
   const [type, setType]       = useState("Leads");
   const [fileData, setFileData] = useState(null);
   const [results, setResults]   = useState(null);
+  const [parsing, setParsing]   = useState(false);
+  const [processing, setProcessing] = useState(null); // { current, total, label }
 
   const schema = SCHEMAS[type];
 
@@ -305,10 +308,27 @@ function BulkUpload({ onUpload, existingData = {} }) {
   const handleFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setParsing(true);
+    setResults(null);
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setFileData(parseCSV(ev.target.result));
-      setResults(null);
+      try {
+        const parsed = parseCSV(ev.target.result);
+        setFileData(parsed);
+        if (parsed.rows.length === 0) {
+          notify.error("No data rows found in file. Check that row 1 contains headers and data starts on row 2.");
+        } else {
+          notify.info(`Loaded ${parsed.rows.length} rows from ${file.name}. Click Validate Data to check.`);
+        }
+      } catch (err) {
+        notify.error(`Couldn't parse CSV: ${err?.message || "invalid format"}.`);
+      } finally {
+        setParsing(false);
+      }
+    };
+    reader.onerror = () => {
+      notify.error(`Failed to read ${file.name}: ${reader.error?.message || "file unreadable"}.`);
+      setParsing(false);
     };
     reader.readAsText(file);
   };
@@ -345,9 +365,14 @@ function BulkUpload({ onUpload, existingData = {} }) {
     setResults(validated);
   };
 
-  const doUpload = () => {
+  const doUpload = async () => {
     if (!results) return;
     const valid = results.filter(r => r._valid);
+    if (valid.length === 0) return;
+
+    setProcessing({ current: 0, total: valid.length, label: "Preparing records…" });
+    // Yield a frame so the spinner can paint before the heavy map below
+    await new Promise(r => setTimeout(r, 0));
 
     const records = valid.map(r => {
       const clean = { ...r };
@@ -366,9 +391,24 @@ function BulkUpload({ onUpload, existingData = {} }) {
       return clean;
     });
 
-    onUpload(type, records);
-    setResults(null);
-    setFileData(null);
+    setProcessing({ current: valid.length, total: valid.length, label: `Importing ${valid.length} ${type.toLowerCase()}…` });
+    await new Promise(r => setTimeout(r, 0));
+
+    try {
+      onUpload(type, records);
+      const insertN = records.filter(r => r._bulkMode === "insert").length;
+      const updateN = records.filter(r => r._bulkMode === "update").length;
+      const parts = [];
+      if (insertN) parts.push(`${insertN} new`);
+      if (updateN) parts.push(`${updateN} updated`);
+      notify.success(`${type}: ${parts.join(", ") || valid.length + " records"} imported.`);
+      setResults(null);
+      setFileData(null);
+    } catch (err) {
+      notify.error(`Import failed: ${err?.message || "unknown error"}.`);
+    } finally {
+      setProcessing(null);
+    }
   };
 
   const downloadSample = () => {
@@ -457,19 +497,40 @@ function BulkUpload({ onUpload, existingData = {} }) {
 
       {/* File drop zone */}
       <div className="card" style={{ marginBottom: 16, textAlign: "center", padding: 28, border: "2px dashed var(--border)" }}>
-        <Upload size={30} style={{ color: "var(--text3)", marginBottom: 8 }} />
+        {parsing ? (
+          <Loader size={30} style={{ color: "var(--brand)", marginBottom: 8, animation: "spin 0.8s linear infinite" }} />
+        ) : (
+          <Upload size={30} style={{ color: "var(--text3)", marginBottom: 8 }} />
+        )}
         <div style={{ fontSize: 13, marginBottom: 10 }}>
-          {fileData
-            ? <span style={{ color: "var(--green)", fontWeight: 700 }}>{fileData.rows.length} rows loaded · {fileData.headers.length} columns detected</span>
-            : "Drop a CSV file or click to browse"}
+          {parsing
+            ? <span style={{ color: "var(--brand)", fontWeight: 700 }}>Reading file…</span>
+            : fileData
+              ? <span style={{ color: "var(--green)", fontWeight: 700 }}>{fileData.rows.length} rows loaded · {fileData.headers.length} columns detected</span>
+              : "Drop a CSV file or click to browse"}
         </div>
-        <input type="file" accept=".csv,.txt" onChange={handleFile} style={{ marginBottom: 8 }} />
-        {fileData && !results && (
+        <input type="file" accept=".csv,.txt" onChange={handleFile} disabled={parsing || !!processing} style={{ marginBottom: 8 }} />
+        {fileData && !results && !parsing && (
           <div style={{ marginTop: 10 }}>
             <button className="btn btn-primary" onClick={validate}><Check size={14} />Validate Data</button>
           </div>
         )}
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
+
+      {/* Import progress overlay */}
+      {processing && (
+        <div className="card" style={{ marginBottom: 16, padding: 18, display: "flex", alignItems: "center", gap: 14, background: "var(--brand-bg)", border: "1px solid var(--brand)" }}>
+          <Loader size={20} style={{ color: "var(--brand)", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--brand)" }}>{processing.label}</div>
+            <div style={{ marginTop: 6, height: 6, background: "rgba(0,0,0,0.08)", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${Math.round((processing.current / Math.max(processing.total, 1)) * 100)}%`, background: "var(--brand)", transition: "width 200ms ease" }} />
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>{processing.current} of {processing.total}</div>
+          </div>
+        </div>
+      )}
 
       {/* Validation results */}
       {results && (
@@ -498,8 +559,10 @@ function BulkUpload({ onUpload, existingData = {} }) {
                 <RefreshCw size={13} />Reset
               </button>
               {validCount > 0 && (
-                <button className="btn btn-primary btn-sm" onClick={doUpload}>
-                  <Upload size={13} />Apply {validCount} Records
+                <button className="btn btn-primary btn-sm" onClick={doUpload} disabled={!!processing}>
+                  {processing
+                    ? <><Loader size={13} style={{ animation: "spin 0.8s linear infinite" }} />Importing…</>
+                    : <><Upload size={13} />Apply {validCount} Records</>}
                 </button>
               )}
             </div>

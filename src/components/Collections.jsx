@@ -5,6 +5,7 @@ import { BLANK_COLLECTION } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
+import { useSort, SortHeader } from './Sort';
 import { exportCSV } from '../utils/csv';
 
 const validateCollection = (f) => {
@@ -89,7 +90,9 @@ function Collections({ collections, setCollections, accounts, contracts, current
     return list.sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate));
   }, [enriched, statusF, search]);
 
-  const pg = usePagination(filtered);
+  const sort = useSort();
+  const sorted = useMemo(() => sort.key ? sort.apply(filtered) : filtered, [filtered, sort.key, sort.dir]);
+  const pg = usePagination(sorted);
 
   const openAdd = () => {
     setForm({ ...BLANK_COLLECTION, id: `col${uid()}`, invoiceDate: today, owner: currentUser });
@@ -171,16 +174,16 @@ function Collections({ collections, setCollections, accounts, contracts, current
           <table className="tbl">
             <thead>
               <tr>
-                <th>Invoice #</th>
-                <th>Account</th>
-                <th>Invoice Date</th>
-                <th>Due Date</th>
-                <th>Billed</th>
-                <th>Collected</th>
-                <th>Pending</th>
-                <th>Ageing</th>
-                <th>Status</th>
-                <th>Owner</th>
+                <th><SortHeader sort={sort} k="invoiceNo">Invoice #</SortHeader></th>
+                <th><SortHeader sort={sort} k="_accName">Account</SortHeader></th>
+                <th><SortHeader sort={sort} k="invoiceDate">Invoice Date</SortHeader></th>
+                <th><SortHeader sort={sort} k="dueDate">Due Date</SortHeader></th>
+                <th><SortHeader sort={sort} k="billedAmount">Billed</SortHeader></th>
+                <th><SortHeader sort={sort} k="collectedAmount">Collected</SortHeader></th>
+                <th><SortHeader sort={sort} k="pendingAmount">Pending</SortHeader></th>
+                <th><SortHeader sort={sort} k="_ageing">Ageing</SortHeader></th>
+                <th><SortHeader sort={sort} k="status">Status</SortHeader></th>
+                <th><SortHeader sort={sort} k="owner">Owner</SortHeader></th>
                 <th></th>
               </tr>
             </thead>

@@ -113,6 +113,8 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
         {/* Bell – Updates dropdown */}
         <div ref={bellRef} style={{position:"relative"}}>
           <button className="icon-btn" onClick={()=>setShowBell(p=>!p)} title="Internal Updates"
+            aria-label={`Updates${(myUnreadCount||0)>0 ? ` (${myUnreadCount} unread)` : ""}`}
+            aria-expanded={showBell} aria-haspopup="true"
             style={{position:"relative"}}>
             <Bell size={18}/>
             {(myUnreadCount||0)>0&&<span className="notif-dot" style={{position:"absolute",top:4,right:4}}/>}
@@ -145,9 +147,10 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
             </div>
           )}
         </div>
-        <button className="icon-btn" onClick={()=>setPage("reports")} title="Reports"><BarChart3 size={18}/></button>
+        <button className="icon-btn" onClick={()=>setPage("reports")} title="Reports" aria-label="Reports"><BarChart3 size={18}/></button>
         <button className="icon-btn help-btn" onClick={()=>setPage("help")}
           title={`Help: ${PAGE_LABELS[page]||page}`}
+          aria-label={`Help for ${PAGE_LABELS[page]||page}`}
           style={{position:"relative"}}>
           <HelpCircle size={18}/>
           {PAGE_HELP_MAP[page] && (
@@ -156,6 +159,9 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
         </button>
         <div ref={menuRef} style={{position:"relative"}}>
           <div className="avatar-menu-trigger" onClick={()=>setShowMenu(p=>!p)}
+            role="button" tabIndex={0}
+            aria-label={`Account menu for ${user?.name||"user"}`} aria-expanded={showMenu} aria-haspopup="menu"
+            onKeyDown={e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setShowMenu(p=>!p);} }}
             style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",padding:"4px 8px",borderRadius:10,background:showMenu?"var(--brand-bg)":"transparent",transition:"background 0.15s"}}>
             <div className="avatar" title={user?.name}>{user?.initials||"?"}</div>
             <ChevronDown size={12} style={{color:"var(--text3)",transform:showMenu?"rotate(180deg)":"none",transition:"transform 0.2s"}}/>

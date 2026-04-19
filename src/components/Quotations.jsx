@@ -5,6 +5,7 @@ import { BLANK_QUOTE, BLANK_QUOTE_ITEM } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
+import { useSort, SortHeader } from './Sort';
 import { exportCSV } from '../utils/csv';
 
 const SECTORS = ["Manufacturing","Logistics","Technology","Energy","Aviation","Government","Services"];
@@ -120,7 +121,9 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
     return list.sort((a,b)=>(b.createdDate||"").localeCompare(a.createdDate||""));
   },[enriched,statusF,managerF,dateFrom,dateTo,search]);
 
-  const pg=usePagination(filtered);
+  const sort=useSort();
+  const sorted=useMemo(()=>sort.key?sort.apply(filtered):filtered,[filtered,sort.key,sort.dir]);
+  const pg=usePagination(sorted);
 
   /* ── KPI computations ── */
   const nonDraftQuotes=enriched.filter(q=>q.status!=="Draft");
@@ -259,14 +262,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
         {filtered.length===0?<Empty icon={<FileText size={22}/>} title="No quotations" sub="Create your first quote."/>:(
           <table className="tbl">
             <thead><tr>
-              <th>QUOTE ID</th>
-              <th>CUSTOMER NAME</th>
-              <th>SECTOR</th>
-              <th>DATE SENT</th>
+              <th><SortHeader sort={sort} k="_quoteId">QUOTE ID</SortHeader></th>
+              <th><SortHeader sort={sort} k="_accName">CUSTOMER NAME</SortHeader></th>
+              <th><SortHeader sort={sort} k="_sector">SECTOR</SortHeader></th>
+              <th><SortHeader sort={sort} k="sentDate">DATE SENT</SortHeader></th>
               <th>QUOTE MONTH</th>
-              <th style={{textAlign:"right"}}>ORDER VALUE (INR)</th>
-              <th style={{textAlign:"center"}}>PROB (%)</th>
-              <th>STATUS</th>
+              <th style={{textAlign:"right"}}><SortHeader sort={sort} k="total" align="right">ORDER VALUE (INR)</SortHeader></th>
+              <th style={{textAlign:"center"}}><SortHeader sort={sort} k="_prob" align="center">PROB (%)</SortHeader></th>
+              <th><SortHeader sort={sort} k="status">STATUS</SortHeader></th>
               <th></th>
             </tr></thead>
             <tbody>{pg.paged.map(q=>(
