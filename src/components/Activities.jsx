@@ -238,8 +238,8 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
               </div>
               <div className="act-card-actions">
                 {a.status==="Planned"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(a.id)} title="Mark complete"><Check size={12}/></button>}
-                <button className="icon-btn" onClick={()=>openEdit(a)}><Edit2 size={14}/></button>
-                {canDelete&&<button className="icon-btn" onClick={()=>setConfirm(a.id)}><Trash2 size={14}/></button>}
+                <button className="icon-btn" aria-label="Edit" onClick={()=>openEdit(a)}><Edit2 size={14}/></button>
+                {canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(a.id)}><Trash2 size={14}/></button>}
               </div>
             </div>
           );

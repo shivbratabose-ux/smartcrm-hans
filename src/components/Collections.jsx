@@ -207,8 +207,8 @@ function Collections({ collections, setCollections, accounts, contracts, current
                     <td><UserPill uid={c.owner}/></td>
                     <td>
                       <div style={{display:"flex",gap:4}}>
-                        <button className="icon-btn" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
-                        {canDelete && <button className="icon-btn" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
+                        <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
+                        {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
                       </div>
                     </td>
                   </tr>
