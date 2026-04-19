@@ -291,8 +291,8 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
       )}
 
       {confirm === "bulk"
-        ? <Confirm title={`Delete ${bulk.count} Call Reports`} msg="Remove selected call reports permanently?" onConfirm={() => { setCallReports(p=>p.filter(r=>!bulk.isSelected(r.id))); bulk.clear(); setConfirm(null); }} onCancel={() => setConfirm(null)}/>
-        : confirm && <Confirm title="Delete Call Report" msg="Remove this call report permanently?" onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>
+        ? <Confirm title={`Delete ${bulk.count} Call Reports`} msg="Move selected call reports to Trash? Admins can restore them." onConfirm={() => { setCallReports(p => p.map(r => bulk.isSelected(r.id) ? { ...r, isDeleted: true, deletedAt: new Date().toISOString(), deletedBy: currentUser } : r)); bulk.clear(); setConfirm(null); }} onCancel={() => setConfirm(null)}/>
+        : confirm && <Confirm title="Delete Call Report" msg="Move this call report to Trash? Admins can restore it." onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>
       }
     </div>
   );
