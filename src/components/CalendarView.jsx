@@ -300,8 +300,8 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
                 <td style={{fontSize:11,color:"var(--text3)"}}>{ev.location?.substring(0,25)}</td>
                 <td><div style={{display:"flex",gap:4}}>
                   {ev.status==="Scheduled"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(ev)} title="Mark complete"><Check size={12}/></button>}
-                  {ev._source==="event"&&<button className="icon-btn" onClick={()=>openEdit(ev)}><Edit2 size={14}/></button>}
-                  {canDelete&&<button className="icon-btn" onClick={()=>setConfirm(ev)}><Trash2 size={14}/></button>}
+                  {ev._source==="event"&&<button className="icon-btn" aria-label="Edit" onClick={()=>openEdit(ev)}><Edit2 size={14}/></button>}
+                  {canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(ev)}><Trash2 size={14}/></button>}
                 </div></td>
               </tr>;
             })}</tbody>

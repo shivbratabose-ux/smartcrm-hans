@@ -97,7 +97,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
                 <td><StatusBadge status={t.status}/></td>
                 <td><UserPill uid={t.assigned}/></td>
                 <td style={{fontSize:12,color:overdue?"var(--red)":"var(--text3)",fontWeight:overdue?700:400}}>{fmt.date(t.sla)}{overdue&&" ⚠"}</td>
-                <td><div style={{display:"flex",gap:4}}><button className="icon-btn" onClick={()=>{setForm({...t});setModal({mode:"edit"});}}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" onClick={()=>setConfirm(t.id)}><Trash2 size={14}/></button>}</div></td>
+                <td><div style={{display:"flex",gap:4}}><button className="icon-btn" onClick={()=>{setForm({...t});setModal({mode:"edit"});}}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(t.id)}><Trash2 size={14}/></button>}</div></td>
               </tr>
             );
           })}</tbody>

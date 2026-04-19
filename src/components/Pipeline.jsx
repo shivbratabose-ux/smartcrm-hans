@@ -1079,8 +1079,8 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                     <td style={{ fontSize: 11, color: "var(--text3)" }}>{nextAct ? fmt.short(nextAct.date) : "\u2014"}</td>
                     <td>
                       <div style={{ display: "flex", gap: 4 }}>
-                        <button className="icon-btn" onClick={() => openEdit(o)}><Edit2 size={14} /></button>
-                        {canDelete && <button className="icon-btn" onClick={() => setConfirm(o.id)}><Trash2 size={14} /></button>}
+                        <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(o)}><Edit2 size={14} /></button>
+                        {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(o.id)}><Trash2 size={14} /></button>}
                       </div>
                     </td>
                   </tr>

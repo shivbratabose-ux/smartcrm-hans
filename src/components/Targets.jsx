@@ -5,6 +5,7 @@ import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP } from '../data/constants';
 import { BLANK_TARGET } from '../data/seed';
 import { uid, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
+import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
 
 const CSV_COLS = [
@@ -29,6 +30,7 @@ function Targets({ targets, setTargets, currentUser, canDelete }) {
   const [formErrors, setFormErrors] = useState({});
 
   const periods = useMemo(() => [...new Set(targets.map(t => t.period))].sort().reverse(), [targets]);
+  // Defined after `filtered`; placeholder so JSX hooks-order stays stable.
 
   const filtered = useMemo(() => {
     let list = [...targets];
@@ -42,6 +44,8 @@ function Targets({ targets, setTargets, currentUser, canDelete }) {
   const overallPct = totalTarget > 0 ? ((totalAchieved / totalTarget) * 100).toFixed(0) : 0;
   const totalTargetDeals = filtered.reduce((s, t) => s + t.targetDeals, 0);
   const totalAchievedDeals = filtered.reduce((s, t) => s + t.achievedDeals, 0);
+
+  const pg = usePagination(filtered);
 
   // Chart data
   const chartData = useMemo(() => {
@@ -162,7 +166,7 @@ function Targets({ targets, setTargets, currentUser, canDelete }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(t => {
+              {pg.paged.map(t => {
                 const pct = t.targetValue > 0 ? ((t.achievedValue / t.targetValue) * 100).toFixed(0) : 0;
                 const dealPct = t.targetDeals > 0 ? ((t.achievedDeals / t.targetDeals) * 100).toFixed(0) : 0;
                 return (
@@ -185,8 +189,8 @@ function Targets({ targets, setTargets, currentUser, canDelete }) {
                     <td style={{fontSize:12,color:"var(--text3)"}}>{t.targetCalls}/{t.achievedCalls}</td>
                     <td>
                       <div style={{display:"flex",gap:4}}>
-                        <button className="icon-btn" onClick={() => openEdit(t)}><Edit2 size={14}/></button>
-                        {canDelete && <button className="icon-btn" onClick={() => setConfirm(t.id)}><Trash2 size={14}/></button>}
+                        <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(t)}><Edit2 size={14}/></button>
+                        {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(t.id)}><Trash2 size={14}/></button>}
                       </div>
                     </td>
                   </tr>
@@ -195,6 +199,7 @@ function Targets({ targets, setTargets, currentUser, canDelete }) {
             </tbody>
           </table>
         )}
+        {filtered.length > 0 && <Pagination {...pg}/>}
       </div>
 
       {modal && (
