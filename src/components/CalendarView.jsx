@@ -333,7 +333,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
 
       {/* Add/Edit Modal */}
       {modal&&(
-        <Modal title={modal.mode==="add"?"New Event":"Edit Event"} onClose={()=>setModal(null)} lg footer={<><button className="btn btn-sec" onClick={()=>setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save</button></>}>
+        <Modal title={modal.mode==="add"?"New Event":"Edit Event"} onClose={()=>{setModal(null);setFormErrors({});}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save</button></>}>
           <div className="form-row full"><div className="form-group"><label>Title *</label><input value={form.title} onChange={e=>{setForm(f=>({...f,title:e.target.value}));setFormErrors(e=>({...e,title:undefined}));}} placeholder="e.g. Colossal Avia – GTM Presentation" style={formErrors.title?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.title}/></div></div>
           <div className="form-row three">
             <div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{EVENT_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>

@@ -405,9 +405,9 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
       )}
 
       {modal && (
-        <Modal title={modal.mode === "add" ? "New Contract" : "Edit Contract"} onClose={() => setModal(null)} lg
+        <Modal title={modal.mode === "add" ? "New Contract" : "Edit Contract"} onClose={() => { setModal(null); setFormErrors({}); }} lg
           footer={<>
-            <button className="btn btn-sec" onClick={() => setModal(null)}>Cancel</button>
+            <button className="btn btn-sec" onClick={() => { setModal(null); setFormErrors({}); }}>Cancel</button>
             <button className="btn btn-primary" onClick={save}><Check size={14}/>Save</button>
           </>}>
           <div className="form-row full"><div className="form-group"><label>Contract Title *</label>

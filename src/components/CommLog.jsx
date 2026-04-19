@@ -112,7 +112,7 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
       )}
 
       {modal&&(
-        <Modal title={modal.mode==="add"?"Log Communication":"Edit Communication"} onClose={()=>setModal(null)} lg footer={<><button className="btn btn-sec" onClick={()=>setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save</button></>}>
+        <Modal title={modal.mode==="add"?"Log Communication":"Edit Communication"} onClose={()=>{setModal(null);setFormErrors({});}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save</button></>}>
           <div className="form-row">
             <div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{COMM_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
             <div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{COMM_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
