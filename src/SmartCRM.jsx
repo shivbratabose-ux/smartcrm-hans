@@ -75,15 +75,55 @@ const clearSession = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════════
-// DATA MIGRATION — runs on every load, idempotent, never loses user data
-// Backfills missing fields introduced in later schema versions
-// Bump DATA_VERSION whenever seed/schema changes to force a reset
+// DATA MIGRATION — runs on EVERY load, idempotent, NEVER discards user data.
+//
+// History note: previously a DATA_VERSION mismatch wiped localStorage and
+// reseeded INIT_*. That destroyed user-entered records on every schema bump
+// and (because the sync-to-Supabase diff treated the wipe as user deletes)
+// cascaded the loss to the cloud. The version field is now metadata only;
+// migrateState backfills missing arrays and missing fields in place.
 // ═══════════════════════════════════════════════════════════════════
-const DATA_VERSION = "v12"; // bumped: added regions/swAge/evaluationStatus/nextSteps/updateAttachmentTypes/fileTypes/standardTerms/slaHours/uploadTypes masters
+const DATA_VERSION = "v13"; // tracking-only; no longer triggers a reset
 
 function migrateState(raw) {
   if (!raw) return null;
   const s = { ...raw };
+
+  // ── 0. Backfill any missing top-level arrays from INIT seeds ──
+  // Adding a new module previously required bumping DATA_VERSION (which
+  // wiped everything). Now we just fill in what's missing and leave
+  // existing user data alone.
+  if (!Array.isArray(s.accounts))    s.accounts    = INIT_ACCOUNTS;
+  if (!Array.isArray(s.contacts))    s.contacts    = INIT_CONTACTS;
+  if (!Array.isArray(s.opps))        s.opps        = INIT_OPPS;
+  if (!Array.isArray(s.activities))  s.activities  = INIT_ACTIVITIES;
+  if (!Array.isArray(s.tickets))     s.tickets     = INIT_TICKETS;
+  if (!Array.isArray(s.notes))       s.notes       = INIT_NOTES;
+  if (!Array.isArray(s.files))       s.files       = INIT_FILES;
+  if (!s.masters || typeof s.masters !== "object") s.masters = INIT_MASTERS;
+  if (!Array.isArray(s.catalog))     s.catalog     = INIT_PRODUCT_CATALOG;
+  if (!s.org || typeof s.org !== "object") s.org   = INIT_ORG;
+  if (!Array.isArray(s.teams))       s.teams       = INIT_TEAMS;
+  if (!Array.isArray(s.orgUsers))    s.orgUsers    = INIT_USERS;
+  if (!Array.isArray(s.leads))       s.leads       = INIT_LEADS;
+  if (!Array.isArray(s.callReports)) s.callReports = INIT_CALL_REPORTS;
+  if (!Array.isArray(s.contracts))   s.contracts   = INIT_CONTRACTS;
+  if (!Array.isArray(s.collections)) s.collections = INIT_COLLECTIONS;
+  if (!Array.isArray(s.invoices))    s.invoices    = INIT_INVOICES;
+  if (!Array.isArray(s.targets))     s.targets     = INIT_TARGETS;
+  if (!Array.isArray(s.quotes))      s.quotes      = INIT_QUOTES;
+  if (!Array.isArray(s.commLogs))    s.commLogs    = INIT_COMM_LOGS;
+  if (!Array.isArray(s.events))      s.events      = INIT_EVENTS;
+  if (!s.customPermissions || typeof s.customPermissions !== "object") s.customPermissions = {};
+
+  // Backfill any missing master sections without overwriting user edits.
+  // INIT_MASTERS gains new keys over time (regions, slaHours, etc.); copy
+  // only the keys the user hasn't already populated.
+  if (s.masters && INIT_MASTERS) {
+    for (const [k, v] of Object.entries(INIT_MASTERS)) {
+      if (s.masters[k] === undefined) s.masters[k] = v;
+    }
+  }
 
   // ── 1. Contacts: build a lookup by email ──
   let allContacts = Array.isArray(s.contacts) ? [...s.contacts] : [];
@@ -179,9 +219,11 @@ function migrateState(raw) {
 export default function SmartCRM() {
   const saved = useMemo(() => {
     const raw = loadState();
-    // If version is missing or stale, migrate from fresh INIT data so empty
-    // arrays (e.g. opps:[]) never override the seed records
-    const base = (raw?.version === DATA_VERSION) ? raw : {
+    // Always migrate; never discard. migrateState backfills missing arrays
+    // and missing fields from INIT seeds without touching existing records.
+    // For brand-new browsers (raw === null) it returns null, so we hand it
+    // a minimal seed object so first-run gets the demo data.
+    const base = raw || {
       accounts: INIT_ACCOUNTS, contacts: INIT_CONTACTS, opps: INIT_OPPS,
       activities: INIT_ACTIVITIES, tickets: INIT_TICKETS, notes: INIT_NOTES,
       files: INIT_FILES, masters: INIT_MASTERS, catalog: INIT_PRODUCT_CATALOG,
@@ -338,7 +380,12 @@ export default function SmartCRM() {
   }, [currentUser]);
 
   // ── Supabase sync: detect array changes via useEffect and sync to DB ──
+  // SAFETY: this effect must NOT run until the initial cloud load has
+  // resolved. Otherwise a local-state initialisation (or a future state
+  // replacement) is read as "user deleted everything" and the diff
+  // cascades DELETEs to Supabase, wiping the cloud copy too.
   const prevRef = useRef({});
+  const syncReady = useRef(false);
   const syncModules = useMemo(() => ({
     accounts, contacts, opps, activities, tickets, leads, callReports,
     contracts, collections, targets, quotes, commLogs, events, notes, files,
@@ -347,6 +394,13 @@ export default function SmartCRM() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
+    // Until the initial cloud load completes (or Supabase is unconfigured),
+    // just snapshot state and skip the diff. The first real diff fires only
+    // when local state changes AFTER cloud-load has hydrated.
+    if (!syncReady.current) {
+      prevRef.current = { ...syncModules };
+      return;
+    }
     const prev = prevRef.current;
     for (const [module, next] of Object.entries(syncModules)) {
       const old = prev[module];
@@ -391,6 +445,11 @@ export default function SmartCRM() {
         if (data.files?.length)       setFiles(data.files);
       }
       setDbReady(true);
+      // Cloud is now the source of truth — start propagating local changes.
+      // Any state transition that ran before this point (initial mount,
+      // migrateState backfill, cloud hydration) is treated as setup, not
+      // as user-driven inserts/deletes, so it won't cascade to Supabase.
+      syncReady.current = true;
     });
     // Also load users from Supabase to get latest roles/profiles
     supabase.from("users").select("*").then(({data: dbUsers}) => {
