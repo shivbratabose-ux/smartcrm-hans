@@ -488,8 +488,14 @@ export default function SmartCRM() {
     const now = new Date().toISOString();
     const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
     setOpps(p => p.map(o => o.id === oppId ? {...o, ...sd} : o));
+    // Dependent records: clear the broken FK rather than soft-delete so
+    // the user-authored content (activity notes, contract terms, quote
+    // line-items, comm bodies) is preserved and can be re-linked later.
     setActivities(p => p.map(a => a.oppId === oppId ? {...a, oppId: ""} : a));
     setContracts(p => p.map(c => c.oppId === oppId ? {...c, oppId: ""} : c));
+    setQuotes(p => p.map(q => q.oppId === oppId ? {...q, oppId: ""} : q));
+    setCallReports(p => p.map(r => r.oppId === oppId ? {...r, oppId: ""} : r));
+    setCommLogs(p => p.map(c => c.oppId === oppId ? {...c, oppId: ""} : c));
   }, [currentUser]);
 
   const cascadeDeleteContact = useCallback((conId) => {
