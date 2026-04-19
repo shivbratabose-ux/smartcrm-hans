@@ -3,6 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Bug, Clock, AlertCircle, Download }
 import { PRODUCTS, PROD_MAP, TICKET_TYPES, TICKET_STATUSES, PRIORITIES, TEAM, TEAM_MAP } from '../data/constants';
 import { BLANK_TKT } from '../data/seed';
 import { uid, fmt, today, isOverdue, sanitizeObj, validateTicket, hasErrors, softDeleteById } from '../utils/helpers';
+import { notify } from '../utils/toast';
 import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
@@ -42,7 +43,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
     else setTickets(p=>p.map(t=>t.id===clean.id?{...clean}:t));
     setModal(null);setDetail(null);setFormErrors({});
   };
-  const del=id=>{setTickets(p=>softDeleteById(p,id,currentUser));setConfirm(null);setDetail(null);};
+  const del=id=>{setTickets(p=>softDeleteById(p,id,currentUser));setConfirm(null);setDetail(null); notify.success("Ticket moved to Trash. Admins can restore from Trash.");};
   const OPEN=tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const sort = useSort();
   const sorted = useMemo(() => sort.key ? sort.apply(filtered) : filtered, [filtered, sort.key, sort.dir]);
@@ -127,7 +128,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
       )}
       {confirm&&typeof confirm==="object"&&confirm.bulk&&(
         <Confirm title="Delete Tickets" msg={`Remove ${confirm.ids.length} ticket${confirm.ids.length>1?"s":""}?`}
-          onConfirm={()=>{ confirm.ids.forEach(id=>setTickets(p=>softDeleteById(p,id,currentUser))); bulk.clear(); setConfirm(null); }}
+          onConfirm={()=>{ const n=confirm.ids.length; confirm.ids.forEach(id=>setTickets(p=>softDeleteById(p,id,currentUser))); bulk.clear(); setConfirm(null); notify.success(`${n} ticket${n===1?"":"s"} moved to Trash.`); }}
           onCancel={()=>setConfirm(null)}/>
       )}
       {confirm&&typeof confirm!=="object"&&<Confirm title="Delete Ticket" msg="Remove this ticket permanently?" onConfirm={()=>del(confirm)} onCancel={()=>setConfirm(null)}/>}

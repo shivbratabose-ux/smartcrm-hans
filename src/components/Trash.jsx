@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { RotateCcw, Trash2, AlertCircle } from "lucide-react";
 import { restoreById } from "../utils/helpers";
+import { notify } from "../utils/toast";
 
 /**
  * Trash — admin-only review panel for soft-deleted records across all modules.
@@ -46,8 +47,9 @@ function Trash({ canRestore, currentUser, sources, orgUsers }) {
     try { return new Date(iso).toLocaleString(); } catch { return iso; }
   };
 
-  const handleRestore = (group, id) => {
-    group.setter(prev => restoreById(prev, id, currentUser));
+  const handleRestore = (group, item) => {
+    group.setter(prev => restoreById(prev, item.id, currentUser));
+    notify.success(`Restored ${group.label.replace(/s$/, "")}: ${group.getName(item) || item.id}`);
   };
 
   if (totalCount === 0) {
@@ -120,7 +122,7 @@ function Trash({ canRestore, currentUser, sources, orgUsers }) {
                   <td style={{ ...td, textAlign: "right" }}>
                     <button
                       className="btn btn-sec btn-sm"
-                      onClick={() => handleRestore(active, item.id)}
+                      onClick={() => handleRestore(active, item)}
                       title="Restore this record"
                     >
                       <RotateCcw size={13} style={{ marginRight: 4 }} /> Restore

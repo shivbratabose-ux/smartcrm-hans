@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recha
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, BILL_TERMS, BILL_TYPES, CONTRACT_STATUSES, CONTRACT_DOC_TYPES } from '../data/constants';
 import { BLANK_CONTRACT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
+import { notify } from '../utils/toast';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
@@ -129,7 +130,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
     else setContracts(p => p.map(c => c.id === clean.id ? { ...clean } : c));
     setModal(null); setFormErrors({}); setDetail(null);
   };
-  const del = (id) => { setContracts(p => softDeleteById(p, id, currentUser)); setConfirm(null); setDetail(null); };
+  const del = (id) => { setContracts(p => softDeleteById(p, id, currentUser)); setConfirm(null); setDetail(null); notify.success("Contract moved to Trash. Admins can restore from Trash."); };
 
   const statusColor = (s) => ({
     "Draft":"#94A3B8","Pending Approval":"#F59E0B","Active":"#22C55E","Expired":"#EF4444","Terminated":"#DC2626"
