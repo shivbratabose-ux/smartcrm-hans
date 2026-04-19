@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap } from "lucide-react";
 import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES } from '../data/constants';
 import { BLANK_EVENT } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 
 const TYPE_COL={"Call":"var(--brand)","Meeting":"var(--purple)","Demo":"var(--orange)","Follow-up":"var(--blue)","Site Visit":"var(--amber)","Presentation":"var(--teal)","Training":"var(--green)","Review":"#8B5CF6"};
@@ -138,11 +138,11 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
 
   const del=(item)=>{
     if(item._source==="activity"&&setActivities){
-      setActivities(p=>p.filter(a=>a.id!==item.id));
+      setActivities(p=>softDeleteById(p,item.id,currentUser));
     } else if(item._source==="call"&&setCallReports){
-      setCallReports(p=>p.filter(c=>c.id!==item.id));
+      setCallReports(p=>softDeleteById(p,item.id,currentUser));
     } else {
-      setEvents(p=>p.filter(e=>e.id!==item.id));
+      setEvents(p=>softDeleteById(p,item.id,currentUser));
     }
     setConfirm(null);setSelectedEvent(null);
   };

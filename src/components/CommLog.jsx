@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Mail, MessageSquare, Send, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { TEAM, TEAM_MAP, COMM_TYPES, COMM_STATUSES } from '../data/constants';
 import { BLANK_COMM_LOG } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
@@ -53,7 +53,7 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser}) {
     else setCommLogs(p=>p.map(c=>c.id===clean.id?{...clean}:c));
     setModal(null);setFormErrors({});
   };
-  const del=(id)=>{setCommLogs(p=>p.filter(c=>c.id!==id));setConfirm(null);setDetail(null);};
+  const del=(id)=>{setCommLogs(p=>softDeleteById(p,id,currentUser));setConfirm(null);setDetail(null);};
 
   return (
     <div>

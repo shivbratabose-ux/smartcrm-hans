@@ -3,7 +3,7 @@ import { Plus, Edit2, Trash2, Check, Download, Target, TrendingUp, TrendingDown 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP } from '../data/constants';
 import { BLANK_TARGET } from '../data/seed';
-import { uid, sanitizeObj, hasErrors } from '../utils/helpers';
+import { uid, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import { exportCSV } from '../utils/csv';
 
@@ -71,7 +71,7 @@ function Targets({ targets, setTargets, currentUser }) {
     else setTargets(p => p.map(t => t.id === clean.id ? { ...clean } : t));
     setModal(null); setFormErrors({});
   };
-  const del = (id) => { setTargets(p => p.filter(t => t.id !== id)); setConfirm(null); };
+  const del = (id) => { setTargets(p => softDeleteById(p, id, currentUser)); setConfirm(null); };
 
   const pctColor = (pct) => pct >= 100 ? "#22C55E" : pct >= 75 ? "#F59E0B" : pct >= 50 ? "#F97316" : "#EF4444";
 
