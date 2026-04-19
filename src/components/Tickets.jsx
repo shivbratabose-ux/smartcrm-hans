@@ -2,13 +2,13 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Bug, Clock, AlertCircle, Download } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TICKET_TYPES, TICKET_STATUSES, PRIORITIES, TEAM, TEAM_MAP } from '../data/constants';
 import { BLANK_TKT } from '../data/seed';
-import { uid, fmt, today, isOverdue, sanitizeObj, validateTicket, hasErrors } from '../utils/helpers';
+import { uid, fmt, today, isOverdue, sanitizeObj, validateTicket, hasErrors, softDeleteById } from '../utils/helpers';
 import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 
-function Tickets({tickets,setTickets,accounts,orgUsers}) {
+function Tickets({tickets,setTickets,accounts,orgUsers,currentUser}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const [tabS,setTabS]=useState("Open");
   const [search,setSearch]=useState("");
@@ -41,7 +41,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers}) {
     else setTickets(p=>p.map(t=>t.id===clean.id?{...clean}:t));
     setModal(null);setDetail(null);setFormErrors({});
   };
-  const del=id=>{setTickets(p=>p.filter(t=>t.id!==id));setConfirm(null);setDetail(null);};
+  const del=id=>{setTickets(p=>softDeleteById(p,id,currentUser));setConfirm(null);setDetail(null);};
   const OPEN=tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const pg = usePagination(filtered);
   const bulk = useBulkSelect(filtered);

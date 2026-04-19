@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Phone, Mail, Video, MessageSquare, Globe, MapPin, Calendar, Clock, AlertCircle } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, LEAD_STAGES, LEAD_STAGE_MAP } from '../data/constants';
 import { BLANK_CALL_REPORT } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors, getScopedUserIds } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, getScopedUserIds, softDeleteById } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
@@ -91,7 +91,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
     else setCallReports(p => p.map(r => r.id === clean.id ? { ...clean } : r));
     setModal(null); setFormErrors({});
   };
-  const del = (id) => { setCallReports(p => p.filter(r => r.id !== id)); setConfirm(null); };
+  const del = (id) => { setCallReports(p => softDeleteById(p, id, currentUser)); setConfirm(null); };
 
   const TABS = [
     { id: "All", label: "All Calls", count: callReports.length },

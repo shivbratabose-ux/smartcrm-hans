@@ -84,6 +84,14 @@ export const validateTicket = (f) => {
 };
 export const hasErrors = (errs) => Object.keys(errs).length > 0;
 
+// ── Soft-delete helper ──
+// Mark a record as deleted in place (preserves audit trail + Supabase parity).
+// Use as: setX(p => softDeleteById(p, id, currentUser))
+export const softDeleteById = (arr, id, currentUser) =>
+  (arr || []).map(r => r.id === id
+    ? { ...r, isDeleted: true, deletedAt: new Date().toISOString(), deletedBy: currentUser || null }
+    : r);
+
 // ── Error Boundary ──
 export class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }

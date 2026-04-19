@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
@@ -154,7 +154,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
     else setQuotes(p=>p.map(q=>q.id===clean.id?{...clean}:q));
     setModal(null);setFormErrors({});setDetail(null);
   };
-  const del=(id)=>{setQuotes(p=>p.filter(q=>q.id!==id));setConfirm(null);setDetail(null);};
+  const del=(id)=>{setQuotes(p=>softDeleteById(p,id,currentUser));setConfirm(null);setDetail(null);};
 
   const addItem=()=>{setForm(f=>({...f,items:[...f.items,{...BLANK_QUOTE_ITEM}]}));};
   const updateItem=(idx,field,val)=>{

@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, DollarSign, AlertCircle, TrendingUp } from "lucide-react";
 import { TEAM, TEAM_MAP, COLLECTION_STATUSES, PAYMENT_MODES, AGEING_BUCKETS } from '../data/constants';
 import { BLANK_COLLECTION } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
@@ -102,7 +102,7 @@ function Collections({ collections, setCollections, accounts, contracts, current
     else setCollections(p => p.map(c => c.id === clean.id ? { ...clean } : c));
     setModal(null); setFormErrors({});
   };
-  const del = (id) => { setCollections(p => p.filter(c => c.id !== id)); setConfirm(null); };
+  const del = (id) => { setCollections(p => softDeleteById(p, id, currentUser)); setConfirm(null); };
 
   // Ageing summary
   const ageingSummary = useMemo(() => {

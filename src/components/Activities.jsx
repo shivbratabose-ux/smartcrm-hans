@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { ACT_TYPES, ACT_STATUS, TEAM, TEAM_MAP } from '../data/constants';
-import { uid, fmt, today, sanitizeObj, validateActivity, hasErrors } from '../utils/helpers';
+import { uid, fmt, today, sanitizeObj, validateActivity, hasErrors, softDeleteById } from '../utils/helpers';
 import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList, PageTip } from './shared';
 import Pagination, { usePagination } from './Pagination';
 
@@ -59,7 +59,7 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
     else setActivities(p=>p.map(a=>a.id===clean.id?{...clean}:a));
     setModal(null);setFormErrors({});
   };
-  const del=id=>{setActivities(p=>p.filter(a=>a.id!==id));setConfirm(null);};
+  const del=id=>{setActivities(p=>softDeleteById(p,id,currentUser));setConfirm(null);};
   const markComplete=id=>{
     setActivities(p=>p.map(a=>a.id===id?{...a,status:"Completed",outcome:a.outcome||"Positive"}:a));
   };
