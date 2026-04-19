@@ -468,10 +468,31 @@ export default function SmartCRM() {
   // ── Supabase: Realtime subscriptions ──
   useEffect(() => {
     if (!isSupabaseConfigured) return;
+    // Defensive realtime handlers:
+    // - INSERT: skip if id already exists locally (avoids duplicates from
+    //   echo of our own writes during the round-trip).
+    // - UPDATE: shallow-merge instead of full replace, so a partial
+    //   payload (e.g. RLS-filtered columns) cannot clobber local fields
+    //   with undefined.
+    // - DELETE: never hard-remove from local state. Our app uses soft
+    //   delete (isDeleted=true) exclusively; an out-of-band hard DELETE
+    //   from the DB (manual SQL, dashboard, future purge job) should NOT
+    //   silently destroy the user's local copy. We flag it as deleted
+    //   instead so the record stays available in Trash for recovery.
     const makeHandler = (setter) => ({ type, record, oldRecord }) => {
-      if (type === "INSERT") setter(p => [...p, record]);
-      else if (type === "UPDATE") setter(p => p.map(r => r.id === record.id ? record : r));
-      else if (type === "DELETE") setter(p => p.filter(r => r.id !== oldRecord?.id));
+      if (type === "INSERT") {
+        if (!record?.id) return;
+        setter(p => p.some(r => r.id === record.id) ? p : [...p, record]);
+      } else if (type === "UPDATE") {
+        if (!record?.id) return;
+        setter(p => p.map(r => r.id === record.id ? { ...r, ...record } : r));
+      } else if (type === "DELETE") {
+        const id = oldRecord?.id;
+        if (!id) return;
+        setter(p => p.map(r => r.id === id
+          ? { ...r, isDeleted: true, deletedAt: r.deletedAt || new Date().toISOString(), deletedBy: r.deletedBy || "supabase-delete" }
+          : r));
+      }
     };
     const unsub = subscribeToAll({
       accounts: makeHandler(setAccounts),
