@@ -73,7 +73,7 @@ const KpiCard = ({icon,label,value,sub}) => (
   </div>
 );
 
-function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUsers}) {
+function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUsers,canDelete}) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search,setSearch]=useState("");
   const [statusF,setStatusF]=useState("All");
@@ -274,7 +274,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
                   <button className="icon-btn" title="View" onClick={()=>setDetail(q)}><Eye size={14}/></button>
                   <button className="icon-btn" title="Edit" onClick={()=>openEdit(q)}><Edit2 size={14}/></button>
                   <button className="icon-btn" title="Duplicate/Revise" onClick={()=>duplicate(q)}><Copy size={14}/></button>
-                  <button className="icon-btn" title="Delete" onClick={()=>setConfirm(q.id)}><Trash2 size={14}/></button>
+                  {canDelete&&<button className="icon-btn" title="Delete" onClick={()=>setConfirm(q.id)}><Trash2 size={14}/></button>}
                 </div></td>
               </tr>
             ))}</tbody>

@@ -12,7 +12,7 @@ const STATUS_COL={"Scheduled":"#3B82F6","Completed":"#22C55E","Cancelled":"#94A3
 
 const SOURCE_COL = { activity: "var(--purple)", call: "var(--brand)", event: undefined };
 
-function CalendarView({events,setEvents,activities=[],setActivities,callReports=[],setCallReports,leads=[],accounts,contacts,opps,currentUser,orgUsers}) {
+function CalendarView({events,setEvents,activities=[],setActivities,callReports=[],setCallReports,leads=[],accounts,contacts,opps,currentUser,orgUsers,canDelete}) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u=>[u.id,u]));
   const [viewDate,setViewDate]=useState(new Date(today));
@@ -301,7 +301,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
                 <td><div style={{display:"flex",gap:4}}>
                   {ev.status==="Scheduled"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(ev)} title="Mark complete"><Check size={12}/></button>}
                   {ev._source==="event"&&<button className="icon-btn" onClick={()=>openEdit(ev)}><Edit2 size={14}/></button>}
-                  <button className="icon-btn" onClick={()=>setConfirm(ev)}><Trash2 size={14}/></button>
+                  {canDelete&&<button className="icon-btn" onClick={()=>setConfirm(ev)}><Trash2 size={14}/></button>}
                 </div></td>
               </tr>;
             })}</tbody>

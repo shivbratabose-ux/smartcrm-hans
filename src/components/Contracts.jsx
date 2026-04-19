@@ -61,7 +61,7 @@ const timelineData = [
   { month: "Dec", contracts: 15 },
 ];
 
-function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers }) {
+function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, canDelete }) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search, setSearch] = useState("");
   const [statusF, setStatusF] = useState("All");
@@ -358,7 +358,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
                     <td>
                       <div style={{display:"flex",gap:4}}>
                         <button className="icon-btn" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
-                        <button className="icon-btn" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>
+                        {canDelete && <button className="icon-btn" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
                       </div>
                     </td>
                   </tr>

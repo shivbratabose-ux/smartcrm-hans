@@ -15,7 +15,7 @@ const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:
 const TYPE_COL={Call:"var(--brand)",Email:"var(--blue)",Meeting:"var(--purple)",Demo:"var(--orange)",WhatsApp:"var(--green)",LinkedIn:"#0077B5","Site Visit":"var(--amber)",Presentation:"var(--teal)",Conference:"var(--red-t)"};
 const TYPE_ICON={Call:<PhoneCall size={15}/>,Email:<Mail size={15}/>,Meeting:<CalendarDays size={15}/>,Demo:<Zap size={15}/>,WhatsApp:<MessageSquare size={15}/>,LinkedIn:<Globe size={15}/>,"Site Visit":<MapPin size={15}/>,Presentation:<BookOpen size={15}/>,Conference:<Users size={15}/>};
 
-function Activities({activities,setActivities,accounts,contacts,opps,currentUser,files,onAddFile,orgUsers}) {
+function Activities({activities,setActivities,accounts,contacts,opps,currentUser,files,onAddFile,orgUsers,canDelete}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
   const [tabS,setTabS]=useState("All");
@@ -239,7 +239,7 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
               <div className="act-card-actions">
                 {a.status==="Planned"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(a.id)} title="Mark complete"><Check size={12}/></button>}
                 <button className="icon-btn" onClick={()=>openEdit(a)}><Edit2 size={14}/></button>
-                <button className="icon-btn" onClick={()=>setConfirm(a.id)}><Trash2 size={14}/></button>
+                {canDelete&&<button className="icon-btn" onClick={()=>setConfirm(a.id)}><Trash2 size={14}/></button>}
               </div>
             </div>
           );

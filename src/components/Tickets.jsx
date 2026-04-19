@@ -8,7 +8,7 @@ import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 
-function Tickets({tickets,setTickets,accounts,orgUsers,currentUser}) {
+function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const [tabS,setTabS]=useState("Open");
   const [search,setSearch]=useState("");
@@ -80,7 +80,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser}) {
         <select className="filter-select" value={prodF} onChange={e=>setProdF(e.target.value)}><option>All</option>{PRODUCTS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
       </div>
       <BulkActions count={bulk.count} onClear={bulk.clear}
-        onDelete={()=>setConfirm({bulk:true,ids:[...bulk.selected]})}
+        onDelete={canDelete?()=>setConfirm({bulk:true,ids:[...bulk.selected]}):undefined}
         onExport={()=>exportCSV(tickets.filter(t=>bulk.isSelected(t.id)),CSV_COLS,"tickets")}/>
       <div className="card" style={{padding:0}}>
         <table className="tbl">
@@ -97,7 +97,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser}) {
                 <td><StatusBadge status={t.status}/></td>
                 <td><UserPill uid={t.assigned}/></td>
                 <td style={{fontSize:12,color:overdue?"var(--red)":"var(--text3)",fontWeight:overdue?700:400}}>{fmt.date(t.sla)}{overdue&&" ⚠"}</td>
-                <td><div style={{display:"flex",gap:4}}><button className="icon-btn" onClick={()=>{setForm({...t});setModal({mode:"edit"});}}><Edit2 size={14}/></button><button className="icon-btn" onClick={()=>setConfirm(t.id)}><Trash2 size={14}/></button></div></td>
+                <td><div style={{display:"flex",gap:4}}><button className="icon-btn" onClick={()=>{setForm({...t});setModal({mode:"edit"});}}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" onClick={()=>setConfirm(t.id)}><Trash2 size={14}/></button>}</div></td>
               </tr>
             );
           })}</tbody>

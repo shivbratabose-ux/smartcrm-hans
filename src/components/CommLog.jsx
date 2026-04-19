@@ -16,7 +16,7 @@ const CSV_COLS = [
   {label:"Account",accessor:c=>c._accName||""},{label:"Owner",accessor:c=>TEAM_MAP[c.owner]?.name||""},
 ];
 
-function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser}) {
+function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDelete}) {
   const [search,setSearch]=useState("");
   const [typeF,setTypeF]=useState("All");
   const [modal,setModal]=useState(null);
@@ -94,7 +94,7 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser}) {
                 <td style={{fontSize:12,color:"var(--text3)"}}>{c.date}</td>
                 <td><span className={`badge ${c.status==="Delivered"||c.status==="Read"?"bs-active":c.status==="Bounced"||c.status==="Failed"?"bs-lost":"bs-planned"}`}>{c.status}</span></td>
                 <td><UserPill uid={c.owner}/></td>
-                <td><div style={{display:"flex",gap:4}}><button className="icon-btn" onClick={()=>openEdit(c)}><Edit2 size={14}/></button><button className="icon-btn" onClick={()=>setConfirm(c.id)}><Trash2 size={14}/></button></div></td>
+                <td><div style={{display:"flex",gap:4}}><button className="icon-btn" onClick={()=>openEdit(c)}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" onClick={()=>setConfirm(c.id)}><Trash2 size={14}/></button>}</div></td>
               </tr>;
             })}</tbody>
           </table>
