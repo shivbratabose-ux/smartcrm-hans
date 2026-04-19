@@ -31,6 +31,31 @@ export const notify = {
   info:    (msg, opts) => push("info",    msg, opts),
 };
 
+// ── Throttled error notifier for sync failures ──
+// Cloud sync runs on every state diff and can fan out 10+ ops per change.
+// One failure is informative; 50 toasts in a row is hostile. This collapses
+// any errors arriving within 60s into a single toast carrying a count.
+const _syncErrors = { count: 0, lastFlushAt: 0, timer: null, sample: null };
+export const reportSyncError = (label, err) => {
+  if (!err) return;
+  const msg = err?.message || String(err);
+  _syncErrors.count++;
+  if (!_syncErrors.sample) _syncErrors.sample = `${label}: ${msg}`;
+  if (_syncErrors.timer) return;
+  _syncErrors.timer = setTimeout(() => {
+    const n = _syncErrors.count;
+    const sample = _syncErrors.sample;
+    _syncErrors.count = 0;
+    _syncErrors.sample = null;
+    _syncErrors.timer = null;
+    notify.error(
+      n === 1
+        ? `Cloud sync failed — ${sample}. Local changes are saved; will retry on next edit.`
+        : `Cloud sync failed for ${n} operations (e.g. ${sample}). Local changes are saved; will retry on next edit.`
+    );
+  }, 1500); // tight window so user sees feedback near their action
+};
+
 const KIND_STYLE = {
   success: { bg: "#ecfdf5", fg: "#065f46", border: "#10b981", Icon: CheckCircle },
   error:   { bg: "#fef2f2", fg: "#991b1b", border: "#ef4444", Icon: AlertCircle },

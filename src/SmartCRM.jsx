@@ -11,7 +11,7 @@ import {
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole } from "./utils/helpers";
-import { ToastContainer } from "./utils/toast";
+import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
 // Supabase integration
@@ -403,20 +403,27 @@ export default function SmartCRM() {
       return;
     }
     const prev = prevRef.current;
+    // Wrap sync ops so any rejected promise / Supabase error surfaces as a
+    // throttled toast instead of disappearing into the console. Local state
+    // is already saved by the time we get here, so a sync failure means
+    // "cloud out of sync" — important to show, but only once per burst.
+    const track = (op, label) => Promise.resolve(op)
+      .then(res => { if (res?.error) reportSyncError(label, res.error); })
+      .catch(err => reportSyncError(label, err));
     for (const [module, next] of Object.entries(syncModules)) {
       const old = prev[module];
       if (!old || old === next || !Array.isArray(next) || !Array.isArray(old)) continue;
       const prevIds = new Set(old.map(r => r.id));
       const nextIds = new Set(next.map(r => r.id));
       // Inserts
-      next.forEach(r => { if (r.id && !prevIds.has(r.id)) insertRecord(module === "users" ? "users" : module, r); });
+      next.forEach(r => { if (r.id && !prevIds.has(r.id)) track(insertRecord(module === "users" ? "users" : module, r), `${module} insert`); });
       // Deletes (soft — deleteRecord now issues UPDATE is_deleted=true)
-      old.forEach(r => { if (r.id && !nextIds.has(r.id)) deleteRecord(module === "users" ? "users" : module, r.id, currentUser); });
+      old.forEach(r => { if (r.id && !nextIds.has(r.id)) track(deleteRecord(module === "users" ? "users" : module, r.id, currentUser), `${module} delete`); });
       // Updates — only compare records that exist in both
       next.forEach(r => {
         if (r.id && prevIds.has(r.id)) {
           const o = old.find(p => p.id === r.id);
-          if (o && JSON.stringify(o) !== JSON.stringify(r)) updateRecord(module === "users" ? "users" : module, r.id, r);
+          if (o && JSON.stringify(o) !== JSON.stringify(r)) track(updateRecord(module === "users" ? "users" : module, r.id, r), `${module} update`);
         }
       });
     }
@@ -427,7 +434,10 @@ export default function SmartCRM() {
   const [dbReady, setDbReady] = useState(!isSupabaseConfigured);
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    loadAllData().then(data => {
+    loadAllData().catch(err => {
+      notify.error(`Couldn't reach the cloud: ${err?.message || "network error"}. Working in local-only mode — changes won't sync.`);
+      return null;
+    }).then(data => {
       if (data) {
         if (data.accounts?.length)    setAccounts(data.accounts);
         if (data.contacts?.length)    setContacts(data.contacts);

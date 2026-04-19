@@ -3,6 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, DollarSign, AlertCircle, 
 import { TEAM, TEAM_MAP, COLLECTION_STATUSES, PAYMENT_MODES, AGEING_BUCKETS } from '../data/constants';
 import { BLANK_COLLECTION } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
+import { notify } from '../utils/toast';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
@@ -108,7 +109,7 @@ function Collections({ collections, setCollections, accounts, contracts, current
     else setCollections(p => p.map(c => c.id === clean.id ? { ...clean } : c));
     setModal(null); setFormErrors({});
   };
-  const del = (id) => { setCollections(p => softDeleteById(p, id, currentUser)); setConfirm(null); };
+  const del = (id) => { setCollections(p => softDeleteById(p, id, currentUser)); setConfirm(null); notify.success("Invoice moved to Trash. Admins can restore from Trash."); };
 
   // Ageing summary
   const ageingSummary = useMemo(() => {
