@@ -14,6 +14,7 @@ const validateContract = (f) => {
   if (!f.accountId) errs.accountId = "Account is required";
   if (f.status !== "Draft" && !f.startDate) errs.startDate = "Start date is required";
   if (f.value <= 0) errs.value = "Value must be greater than 0";
+  if (f.startDate && f.endDate && f.endDate < f.startDate) errs.endDate = "End date must be on or after start date";
   return errs;
 };
 

@@ -121,17 +121,29 @@ function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accoun
   };
 
   const acc = accounts.find(a => a.id === opp.accountId);
+  const isClosing = toStage === "Won" || toStage === "Lost";
   return (
-    <Modal title="Stage Update Required" onClose={onCancel} lg footer={
+    <Modal title={isClosing ? `Closing Deal as ${toStage}` : "Stage Update Required"} onClose={onCancel} lg footer={
       <>
         <button className="btn btn-sec" onClick={onCancel}>Cancel</button>
-        <button className="btn btn-primary" onClick={submit}><Check size={14} /> Confirm Stage Move</button>
+        <button className={isClosing && toStage === "Lost" ? "btn btn-danger" : "btn btn-primary"} onClick={submit}>
+          <Check size={14} /> {isClosing ? `Confirm Close as ${toStage}` : "Confirm Stage Move"}
+        </button>
       </>
     }>
-      <div style={{ background: "#FEF3C7", border: "1px solid #F59E0B", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#92400E", display: "flex", alignItems: "center", gap: 8 }}>
-        <AlertTriangle size={16} />
-        Stage update requires a call/activity update with notes and next action.
-      </div>
+      {isClosing ? (
+        <div style={{ background: toStage === "Won" ? "#D1FAE5" : "#FEE2E2", border: `1px solid ${toStage === "Won" ? "#10B981" : "#EF4444"}`, borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 12.5, color: toStage === "Won" ? "#065F46" : "#991B1B", display: "flex", alignItems: "flex-start", gap: 8 }}>
+          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <strong>This will close the deal as {toStage}.</strong> The opportunity will be removed from the active pipeline. Capture the reason and outcome in the notes below — this becomes part of the permanent record.
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: "#FEF3C7", border: "1px solid #F59E0B", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#92400E", display: "flex", alignItems: "center", gap: 8 }}>
+          <AlertTriangle size={16} />
+          Stage update requires a call/activity update with notes and next action.
+        </div>
+      )}
       <div style={{ display: "flex", gap: 12, marginBottom: 14, alignItems: "center" }}>
         <span style={{ padding: "4px 12px", borderRadius: 6, background: STAGE_COL[fromStage], color: "white", fontSize: 12, fontWeight: 600 }}>{fromStage}</span>
         <ArrowRight size={16} style={{ color: "var(--text3)" }} />

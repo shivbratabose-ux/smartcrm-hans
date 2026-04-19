@@ -14,6 +14,9 @@ const validateCollection = (f) => {
   if (!f.invoiceDate) errs.invoiceDate = "Invoice date is required";
   if (!f.dueDate) errs.dueDate = "Due date is required";
   if (f.billedAmount <= 0) errs.billedAmount = "Billed amount must be greater than 0";
+  if (f.collectedAmount != null && f.collectedAmount !== "" && Number(f.collectedAmount) < 0) errs.collectedAmount = "Collected amount cannot be negative";
+  if (f.billedAmount != null && f.collectedAmount != null && Number(f.collectedAmount) > Number(f.billedAmount)) errs.collectedAmount = "Collected cannot exceed billed";
+  if (f.invoiceDate && f.dueDate && f.dueDate < f.invoiceDate) errs.dueDate = "Due date must be on or after invoice date";
   return errs;
 };
 

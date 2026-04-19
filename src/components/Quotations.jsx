@@ -20,6 +20,15 @@ const validateQuote = (f) => {
   if (!f.title?.trim()) errs.title = "Quote title is required";
   if (!f.accountId) errs.accountId = "Account is required";
   if (f.items.length === 0) errs.items = "At least one line item is required";
+  // Negative-value guards on totals + per-line numeric fields
+  for (const k of ["subtotal","tax","discount","total"]) {
+    const v = f?.[k];
+    if (v != null && v !== "" && Number(v) < 0) errs[k] = "Cannot be negative";
+  }
+  if (Array.isArray(f.items)) {
+    const bad = f.items.find(it => Number(it.qty) < 0 || Number(it.unitPrice) < 0 || Number(it.discount) < 0);
+    if (bad) errs.items = "Line item quantity / price / discount cannot be negative";
+  }
   return errs;
 };
 
