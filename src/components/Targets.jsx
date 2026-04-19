@@ -21,7 +21,7 @@ const CSV_COLS = [
   { label: "Achieved Calls", accessor: t => t.achievedCalls },
 ];
 
-function Targets({ targets, setTargets, currentUser }) {
+function Targets({ targets, setTargets, currentUser, canDelete }) {
   const [periodF, setPeriodF] = useState("All");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_TARGET);
@@ -186,7 +186,7 @@ function Targets({ targets, setTargets, currentUser }) {
                     <td>
                       <div style={{display:"flex",gap:4}}>
                         <button className="icon-btn" onClick={() => openEdit(t)}><Edit2 size={14}/></button>
-                        <button className="icon-btn" onClick={() => setConfirm(t.id)}><Trash2 size={14}/></button>
+                        {canDelete && <button className="icon-btn" onClick={() => setConfirm(t.id)}><Trash2 size={14}/></button>}
                       </div>
                     </td>
                   </tr>

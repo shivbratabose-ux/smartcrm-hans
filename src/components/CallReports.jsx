@@ -41,7 +41,7 @@ const CSV_COLS = [
   { label: "Duration (min)", accessor: r => r.duration },
 ];
 
-function CallReports({ callReports, setCallReports, accounts, contacts, opps, currentUser, orgUsers }) {
+function CallReports({ callReports, setCallReports, accounts, contacts, opps, currentUser, orgUsers, canDelete }) {
   const _crScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const team = useMemo(() => {
     const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
@@ -194,7 +194,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
                     <td>
                       <div style={{display:"flex",gap:4}}>
                         <button className="icon-btn" onClick={() => openEdit(r)}><Edit2 size={14}/></button>
-                        <button className="icon-btn" onClick={() => setConfirm(r.id)}><Trash2 size={14}/></button>
+                        {canDelete && <button className="icon-btn" onClick={() => setConfirm(r.id)}><Trash2 size={14}/></button>}
                       </div>
                     </td>
                   </tr>

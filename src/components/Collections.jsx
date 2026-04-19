@@ -59,7 +59,7 @@ const ageingColor = (a) => ({
   "Current":"#22C55E","0-30":"#F59E0B","30-60":"#F97316","60-90":"#EF4444","90-120":"#DC2626","120-180":"#991B1B","180+":"#450A0A"
 }[a] || "#94A3B8");
 
-function Collections({ collections, setCollections, accounts, contracts, currentUser, orgUsers }) {
+function Collections({ collections, setCollections, accounts, contracts, currentUser, orgUsers, canDelete }) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search, setSearch] = useState("");
   const [statusF, setStatusF] = useState("All");
@@ -205,7 +205,7 @@ function Collections({ collections, setCollections, accounts, contracts, current
                     <td>
                       <div style={{display:"flex",gap:4}}>
                         <button className="icon-btn" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
-                        <button className="icon-btn" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>
+                        {canDelete && <button className="icon-btn" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
                       </div>
                     </td>
                   </tr>
