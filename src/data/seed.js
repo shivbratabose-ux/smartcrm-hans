@@ -10,7 +10,9 @@ import {
   ESCALATION_LEVELS, AGEING_BUCKETS, COLLECTION_STATUSES, PAYMENT_MODES,
   CONTRACT_STATUSES, APPROVAL_CHAIN, CONTRACT_DOC_TYPES, QUOTE_STATUSES,
   TAX_TYPES, QUOTE_VALIDITY, COMM_TYPES, COMM_STATUSES, EVENT_TYPES,
-  EVENT_STATUSES, HIERARCHY_LEVELS, UPDATE_CATEGORIES
+  EVENT_STATUSES, HIERARCHY_LEVELS, UPDATE_CATEGORIES,
+  SW_AGE, EVALUATION_STATUS, NEXT_STEPS, UPDATE_ATTACHMENT_TYPES,
+  FILE_TYPES, STANDARD_TERMS, SLA_HOURS, UPLOAD_TYPES
 } from './constants.js';
 
 // Helper: convert a plain string list into master-item objects with ids
@@ -146,6 +148,8 @@ export const INIT_MASTERS = {
   lossReasons:      mk("lr", LOSS_REASONS),
   suspendReasons:   mk("sr", SUSPEND_REASONS),
   stages:           STAGES.map(s=>({id:`st${s}`,name:s,probability:STAGE_PROB[s]||0})),
+  evaluationStatus: mk("evs2", EVALUATION_STATUS),
+  nextSteps:        mk("ns", NEXT_STEPS),
 
   // ── Customer / Account ────────────────────────────────
   customerTypes:    mk("ct", CUST_TYPES),
@@ -159,6 +163,8 @@ export const INIT_MASTERS = {
   decisionTimelines:mk("dtl", DECISION_TIMELINES),
   hierarchyLevels:  mk("hl", HIERARCHY_LEVELS),
   countries:        COUNTRIES.map((c,i)=>({id:`co${i+1}`,name:c,region:REGIONS[i%REGIONS.length]})),
+  regions:          mk("rg", REGIONS),
+  swAge:            mk("swa", SW_AGE),
 
   // ── Contact ───────────────────────────────────────────
   contactRoles:       mk("cr", CONTACT_ROLES),
@@ -176,12 +182,16 @@ export const INIT_MASTERS = {
   commTypes:        mk("cm", COMM_TYPES),
   commStatuses:     mk("cms", COMM_STATUSES),
   updateCategories: mk("uc", UPDATE_CATEGORIES),
+  updateAttachmentTypes: mk("uat", UPDATE_ATTACHMENT_TYPES),
+  fileTypes:        mk("ft", FILE_TYPES),
 
   // ── Support ───────────────────────────────────────────
   ticketTypes:      mk("tt", TICKET_TYPES),
   ticketStatuses:   mk("ts", TICKET_STATUSES),
   priorities:       mk("pr", PRIORITIES),
   escalationLevels: mk("el", ESCALATION_LEVELS),
+  // SLA hours are paired with priority names; "hours" is the resolution target
+  slaHours:         Object.entries(SLA_HOURS).map(([name,hours],i)=>({id:`sla${i+1}`,name,hours})),
 
   // ── Finance / Contracts / Quotes ─────────────────────
   billTerms:        mk("blt", BILL_TERMS),
@@ -195,6 +205,10 @@ export const INIT_MASTERS = {
   approvalChain:    mk("ac", APPROVAL_CHAIN),
   quoteStatuses:    mk("qs", QUOTE_STATUSES),
   quoteValidity:    mk("qv", QUOTE_VALIDITY),
+  standardTerms:    mk("stt", STANDARD_TERMS),
+
+  // ── System / Bulk Upload ─────────────────────────────
+  uploadTypes:      mk("upt", UPLOAD_TYPES),
 };
 
 // ── Blank form templates ──

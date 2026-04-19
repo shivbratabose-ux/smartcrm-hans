@@ -81,6 +81,15 @@ function getMasterBindings() {
     eventTypes:          { arr: EVENT_TYPES,           str: true },
     eventStatuses:       { arr: EVENT_STATUSES,        str: true },
     updateCategories:    { arr: UPDATE_CATEGORIES,     str: true },
+    // Newly registered string-array masters
+    regions:               { arr: REGIONS,                  str: true },
+    swAge:                 { arr: SW_AGE,                   str: true },
+    evaluationStatus:      { arr: EVALUATION_STATUS,        str: true },
+    nextSteps:             { arr: NEXT_STEPS,               str: true },
+    updateAttachmentTypes: { arr: UPDATE_ATTACHMENT_TYPES,  str: true },
+    fileTypes:             { arr: FILE_TYPES,               str: true },
+    standardTerms:         { arr: STANDARD_TERMS,           str: true },
+    uploadTypes:           { arr: UPLOAD_TYPES,             str: true },
     // Object-shaped masters with id-prefix stripping + companion map
     leadStages: { arr: LEAD_STAGES, map: LEAD_STAGE_MAP, str: false, stripPrefix: /^lst_/ },
     oppStages:  { arr: OPP_STAGES,  map: OPP_STAGE_MAP,  str: false, stripPrefix: /^ost_/ },
@@ -117,6 +126,15 @@ export function registerMasters(masters) {
       if (!name) return;
       const m = String(name).match(/(\d+(?:\.\d+)?)/);
       TAX_RATES[name] = m ? parseFloat(m[1]) : 0;
+    });
+  }
+  // Derived: rebuild SLA_HOURS object map from the slaHours master
+  if (Array.isArray(masters.slaHours)) {
+    Object.keys(SLA_HOURS).forEach(k => { delete SLA_HOURS[k]; });
+    masters.slaHours.forEach(s => {
+      const name = typeof s === "string" ? s : s?.name;
+      const hrs  = (typeof s === "object" && Number(s.hours)) || 0;
+      if (name) SLA_HOURS[name] = hrs;
     });
   }
   // Derived: rebuild STAGES + STAGE_PROB from the legacy `stages` master
