@@ -207,9 +207,9 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
       </div>
 
       {modal && (
-        <Modal title={modal.mode === "add" ? "Log Call Report" : "Edit Call Report"} onClose={() => { setModal(null); setFormErrors({}); }} lg
+        <Modal title={modal.mode === "add" ? "Log Call Report" : "Edit Call Report"} onClose={() => { setModal(null); setFormErrors({}); setForm(BLANK_CALL_REPORT); }} lg
           footer={<>
-            <button className="btn btn-sec" onClick={() => { setModal(null); setFormErrors({}); }}>Cancel</button>
+            <button className="btn btn-sec" onClick={() => { setModal(null); setFormErrors({}); setForm(BLANK_CALL_REPORT); }}>Cancel</button>
             <button className="btn btn-primary" onClick={save}><Check size={14}/>Save</button>
           </>}>
           <div className="form-row">
