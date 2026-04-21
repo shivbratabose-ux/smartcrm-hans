@@ -3,7 +3,7 @@ import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shiel
 import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { updateUserProfile } from '../lib/db';
-import { uid, fmt, today } from '../utils/helpers';
+import { uid, fmt, today, normalizeRole } from '../utils/helpers';
 import { Modal, Confirm } from './shared';
 
 function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPermissions,setCustomPermissions}) {
@@ -131,7 +131,7 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
     setForm(f=>({...f,members:mm.includes(id)?mm.filter(x=>x!==id):[...mm,id]}));
   };
 
-  const currentUserRole=orgUsers.find(u=>u.id===currentUser)?.role||INIT_USERS.find(u=>u.id===currentUser)?.role||"viewer";
+  const currentUserRole=normalizeRole(orgUsers.find(u=>u.id===currentUser)?.role||INIT_USERS.find(u=>u.id===currentUser)?.role||"viewer");
   const canManage=["admin","md","director","line_mgr"].includes(currentUserRole);
 
   const PERM_MODULES=["accounts","contacts","pipeline","activities","tickets","reports","masters","org","team"];
