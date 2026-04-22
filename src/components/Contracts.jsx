@@ -6,6 +6,7 @@ import { BLANK_CONTRACT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { notify } from '../utils/toast';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge } from './shared';
+import ProductModulePicker from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
 import { exportCSV } from '../utils/csv';
@@ -64,7 +65,7 @@ const timelineData = [
   { month: "Dec", contracts: 15 },
 ];
 
-function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, canDelete }) {
+function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete }) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search, setSearch] = useState("");
   const [statusF, setStatusF] = useState("All");
@@ -121,7 +122,15 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
     setFormErrors({});
     setModal({ mode: "add" });
   };
-  const openEdit = (c) => { setForm({ ...c }); setFormErrors({}); setModal({ mode: "edit" }); };
+  const openEdit = (c) => {
+    // Backfill productSelection from legacy single `product` field on existing contracts
+    const seeded = (Array.isArray(c.productSelection) && c.productSelection.length > 0)
+      ? c.productSelection
+      : (c.product ? [{ productId: c.product, moduleIds: [], noAddons: false }] : []);
+    setForm({ ...c, productSelection: seeded });
+    setFormErrors({});
+    setModal({ mode: "edit" });
+  };
   const save = () => {
     const errs = validateContract(form);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
@@ -448,12 +457,20 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
               </select>
             </div>
           </div>
+          <div className="form-group" style={{marginBottom:12}}>
+            <label>Products & Modules</label>
+            <ProductModulePicker
+              catalog={catalog || []}
+              value={form.productSelection || []}
+              onChange={(next) => setForm(f => ({
+                ...f,
+                productSelection: next,
+                // keep legacy single `product` in sync for filters/CSV
+                product: next[0]?.productId || f.product,
+              }))}
+            />
+          </div>
           <div className="form-row three">
-            <div className="form-group"><label>Product</label>
-              <select value={form.product} onChange={e => setForm(f => ({...f, product: e.target.value}))}>
-                {PRODUCTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
             <div className="form-group"><label>Status</label>
               <select value={form.status} onChange={e => setForm(f => ({...f, status: e.target.value}))}>
                 {CONTRACT_STATUSES.map(s => <option key={s}>{s}</option>)}

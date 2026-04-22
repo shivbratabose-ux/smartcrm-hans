@@ -5,6 +5,7 @@ import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LE
 import { BLANK_ACC } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal } from './shared';
+import ProductModulePicker from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -488,7 +489,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNTS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, setActivities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers, callReports, setCallReports, masters, canDelete}) {
+function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, setActivities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers, callReports, setCallReports, masters, catalog, canDelete}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
   const [typeF, setTypeF] = useState("All");
@@ -621,7 +622,15 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     return `ACC-${year}-${String(next).padStart(3, '0')}`;
   };
   const openAdd = () => { setForm({...BLANK_ACC, id:`a${uid()}`, accountNo: nextAccountNo()}); setFormErrors({}); setModal({mode:"add"}); };
-  const openEdit = a => { setForm({...a, products:[...a.products]}); setFormErrors({}); setModal({mode:"edit"}); };
+  const openEdit = a => {
+    // Backfill productSelection from legacy `products` array so existing accounts open in the picker
+    const seeded = (Array.isArray(a.productSelection) && a.productSelection.length > 0)
+      ? a.productSelection
+      : (a.products || []).filter(Boolean).map(productId => ({ productId, moduleIds: [], noAddons: false }));
+    setForm({...a, products:[...(a.products||[])], productSelection: seeded});
+    setFormErrors({});
+    setModal({mode:"edit"});
+  };
   const save = () => {
     const errs = validateAccount(form);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
@@ -899,7 +908,13 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           <div className="form-row"><div className="form-group"><label>Status</label><select value={form.status} onChange={e => setForm(f => ({...f,status:e.target.value}))}><option>Active</option><option>Prospect</option><option>Inactive</option></select></div><div className="form-group"><label>Segment</label><select value={form.segment} onChange={e => setForm(f => ({...f,segment:e.target.value}))}>{["Enterprise","Mid-Market","SMB","Government","Association"].map(s => <option key={s}>{s}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>ARR (₹L)</label><input type="number" min="0" value={form.arrRevenue} onChange={e => setForm(f => ({...f,arrRevenue:+e.target.value}))}/><FormError error={formErrors.arrRevenue}/></div><div className="form-group"><label>Potential (₹L)</label><input type="number" min="0" value={form.potential} onChange={e => setForm(f => ({...f,potential:+e.target.value}))}/><FormError error={formErrors.potential}/></div></div>
           <div className="form-row"><div className="form-group"><label>Website</label><input value={form.website} onChange={e => setForm(f => ({...f,website:e.target.value}))} placeholder="website.com"/></div><div className="form-group"><label>Owner</label><select value={form.owner} onChange={e => setForm(f => ({...f,owner:e.target.value}))}>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
-          <div className="form-group"><label>Products</label><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>{PRODUCTS.map(p => <button key={p.id} className="btn btn-xs" style={{background:form.products.includes(p.id)?p.color:"var(--s3)",color:form.products.includes(p.id)?"white":"var(--text2)",border:"none",cursor:"pointer"}} onClick={() => toggleProd(p.id)}>{p.name}</button>)}</div></div>
+          <div className="form-group"><label>Products & Modules</label>
+            <ProductModulePicker
+              catalog={catalog || []}
+              value={form.productSelection || []}
+              onChange={(next) => setForm(f => ({ ...f, productSelection: next, products: next.map(e => e.productId) }))}
+            />
+          </div>
 
           {/* ── Legal & Tax ── */}
           <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:16,marginBottom:8,borderTop:"1px solid var(--border)",paddingTop:14}}>Legal &amp; Tax</div>
