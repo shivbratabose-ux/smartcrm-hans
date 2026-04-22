@@ -6,7 +6,7 @@ import { BLANK_CONTRACT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { notify } from '../utils/toast';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge } from './shared';
-import ProductModulePicker from './ProductModulePicker';
+import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
 import { exportCSV } from '../utils/csv';
@@ -26,6 +26,7 @@ const CSV_COLS = [
   { label: "title",           accessor: c => c.title },
   { label: "accountId",       accessor: c => c.accountId || "" },
   { label: "product",         accessor: c => c.product },
+  { label: "productSelection",accessor: c => productSelectionToString(c.productSelection) },
   { label: "status",          accessor: c => c.status },
   { label: "value",           accessor: c => c.value },
   { label: "startDate",       accessor: c => c.startDate },
@@ -394,7 +395,6 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
             {[
               ["Contract ID", detail._contractId],
               ["Account", detail._accName],
-              ["Product", PROD_MAP[detail.product]?.name || detail.product],
               ["Status", detail.status],
               ["Value", `₹${detail.value}L`],
               ["Bill Term", detail.billTerm],
@@ -409,6 +409,10 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
             ].map(([k, v]) => (
               <div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>
             ))}
+          </div>
+          <div style={{marginTop:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginBottom:8}}>PRODUCTS & MODULES</div>
+            <ProductSelectionDisplay value={detail.productSelection} catalog={catalog} fallbackProducts={detail.product?[detail.product]:[]}/>
           </div>
           {detail.terms && (
             <div style={{marginTop:14,background:"var(--s2)",padding:"10px 12px",borderRadius:8,borderLeft:"3px solid var(--brand)",fontSize:13,color:"var(--text2)"}}>

@@ -5,7 +5,7 @@ import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LE
 import { BLANK_ACC } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal } from './shared';
-import ProductModulePicker from './ProductModulePicker';
+import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -22,7 +22,7 @@ const infoRow = (label, value) => (
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNT PROFILE — Full Customer Profile Sheet
 // ═══════════════════════════════════════════════════════════════════
-function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets, contracts, collections, notes, files, onAddNote, onAddFile, currentUser, allAccounts, leads=[], orgUsers, onLogCall, onNavigate}) {
+function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets, contracts, collections, notes, files, onAddNote, onAddFile, currentUser, allAccounts, leads=[], orgUsers, catalog, onLogCall, onNavigate}) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [tab, setTab] = useState("overview");
@@ -212,9 +212,12 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                   <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
                     <Package size={15} style={{color:"var(--brand)"}}/> Products & Revenue
                   </div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-                    {currentProducts.map(p => <ProdTag key={p} pid={p}/>)}
-                    {currentProducts.length === 0 && <span style={{fontSize:12,color:"var(--text3)"}}>No products assigned</span>}
+                  <div style={{marginBottom:12}}>
+                    <ProductSelectionDisplay
+                      value={a.productSelection}
+                      catalog={catalog}
+                      fallbackProducts={currentProducts}
+                    />
                   </div>
                   {infoRow("ARR (Annual Recurring Revenue)", totalARR ? `₹${totalARR} L` : "—")}
                   {infoRow("Potential Value", a.potential ? `₹${a.potential} L` : "—")}
@@ -387,7 +390,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                     onClick={() => onNavigate?.("pipeline")}
                     onMouseEnter={e=>e.currentTarget.style.background="var(--s2)"} onMouseLeave={e=>e.currentTarget.style.background=o.stage==="Won"?"#F0FDF4":o.stage==="Lost"?"#FEF2F2":""}>
                     <td style={{fontWeight:600,fontSize:12.5}}>{o.title}</td>
-                    <td><div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{(o.products||[]).map(p => <ProdTag key={p} pid={p}/>)}</div></td>
+                    <td><ProductSelectionDisplay value={o.productSelection} catalog={catalog} fallbackProducts={o.products||[]} compact/></td>
                     <td><StatusBadge status={o.stage}/></td>
                     <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{o.value}L</td>
                     <td style={{fontSize:12}}>{o.probability}%</td>
@@ -661,6 +664,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     {label:"hierarchyLevel",     accessor:a=>a.hierarchyLevel||"Parent Company"},
     {label:"parentId",           accessor:a=>a.parentId||""},
     {label:"products",           accessor:a=>(a.products||[]).join(";")},
+    {label:"productSelection",   accessor:a=>productSelectionToString(a.productSelection, catalog)},
     {label:"arrRevenue",         accessor:a=>a.arrRevenue||0},
     {label:"potential",          accessor:a=>a.potential||0},
     {label:"owner",              accessor:a=>teamMap[a.owner]?.name||a.owner||""},
@@ -869,7 +873,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
       </div>
 
       {/* Account Profile */}
-      {detail && <AccountProfile a={detail} onClose={() => setDetail(null)} onEdit={() => { openEdit(detail); setDetail(null); }} opps={opps} activities={activities} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} notes={notes} files={files} onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser} allAccounts={accounts} leads={leads} orgUsers={orgUsers} onLogCall={(prefill) => { setDetail(null); setLogCallPrefill(prefill); }} onNavigate={(page) => { setDetail(null); window.location.hash = `#/${page}`; }}/>}
+      {detail && <AccountProfile a={detail} onClose={() => setDetail(null)} onEdit={() => { openEdit(detail); setDetail(null); }} opps={opps} activities={activities} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} notes={notes} files={files} onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser} allAccounts={accounts} leads={leads} orgUsers={orgUsers} catalog={catalog} onLogCall={(prefill) => { setDetail(null); setLogCallPrefill(prefill); }} onNavigate={(page) => { setDetail(null); window.location.hash = `#/${page}`; }}/>}
 
       {/* Add / Edit Modal */}
       {modal && (
