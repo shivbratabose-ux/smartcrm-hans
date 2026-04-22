@@ -4,6 +4,7 @@ import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, I
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { updateUserProfile } from '../lib/db';
 import { uid, fmt, today, normalizeRole } from '../utils/helpers';
+import { notify } from '../utils/toast';
 import { Modal, Confirm } from './shared';
 
 function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPermissions,setCustomPermissions}) {
@@ -79,31 +80,82 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
     setTimeout(()=>{setPwModal(null);setPwSuccess("");setPwForm({password:"",confirm:"",current:""});setShowPw({pw:false,confirm:false,current:false});setGeneratedPw("");},1500);
   };
 
+  // Build a one-click sign-up URL the admin can share via WhatsApp/email/etc.
+  // Login.jsx parses ?invite=<email> on mount, switches to Sign Up mode and
+  // pre-fills the email — the user just picks a name + password.
+  const buildInviteLink=(email)=>{
+    const base=window.location.origin+window.location.pathname.replace(/\/$/, "");
+    return `${base}/?invite=${encodeURIComponent(email)}`;
+  };
+
   // Admin reset — sends a password reset email AND marks the user as
-  // must-change-on-next-login with a 24h expiry. The RPC is admin-only
-  // (server-side check via get_crm_role) so we can call it straight from
-  // the browser without leaking service-role privileges.
+  // must-change-on-next-login with a 24h expiry. Two pre-flight checks first:
+  //   1. Supabase configured? (sanity)
+  //   2. Does the user have a Supabase auth account?
+  //      Without one, resetPasswordForEmail() returns silent success but no
+  //      mail is ever sent (Supabase deliberately doesn't expose whether an
+  //      email is registered, to prevent enumeration attacks). For users
+  //      created via admin "Add User" who never signed up themselves, we
+  //      pivot to an invite-link flow instead.
   const sendResetEmail=async(userId)=>{
     const user=orgUsers.find(u=>u.id===userId);
-    if(!user?.email){setPwErr("No email on file for this user.");return;}
-    if(!isSupabaseConfigured){setPwErr("Authentication not configured.");return;}
+    if(!user?.email){notify.error("No email on file for this user.");return;}
+    if(!isSupabaseConfigured){notify.error("Authentication not configured.");return;}
+
+    // Pre-flight: no auth account yet → show invite modal instead of silently
+    // firing a reset email that will never arrive.
+    if(!user.authUserId){
+      setPwModal({mode:"invite",userId,userName:user.name,email:user.email,link:buildInviteLink(user.email)});
+      setPwErr("");setPwSuccess("");setCopied(false);
+      return;
+    }
+
     const {error:emailErr}=await supabase.auth.resetPasswordForEmail(user.email);
-    if(emailErr){setPwErr(emailErr.message);return;}
+    if(emailErr){
+      // Surface the real error (rate limit, invalid, etc.) instead of swallowing.
+      notify.error(`Reset email failed: ${emailErr.message}`);
+      return;
+    }
+
     // Flag the user as needing a password change within 24h. If the RPC
     // fails (e.g. migration not applied yet) we still consider the email
     // step a success — the worst case is the user just isn't force-gated.
     const {error:rpcErr}=await supabase.rpc("request_admin_password_reset",{target_user_id:userId});
     if(rpcErr){
       console.warn("request_admin_password_reset RPC failed:",rpcErr.message);
-      setPwSuccess(`Reset link sent to ${user.email} (24h gate not applied — run admin_password_reset_v1.sql)`);
+      notify.success(`Reset link sent to ${user.email} (24h gate not applied — run admin_password_reset_v1.sql)`);
     } else {
-      // Update local state so the row reflects the new flag immediately
       setOrgUsers(us=>us.map(u=>u.id===userId
         ? {...u,mustChangePassword:true,tempPasswordExpiresAt:new Date(Date.now()+24*60*60*1000).toISOString()}
         : u));
-      setPwSuccess(`Reset link sent to ${user.email}. Valid for 24 hours — they'll be required to change it on next sign-in.`);
+      notify.success(`Reset link sent to ${user.email}. Valid 24h — must change on next sign-in.`);
     }
-    setTimeout(()=>{setPwModal(null);setPwSuccess("");},2500);
+  };
+
+  // Copy the sign-up invite link to the clipboard so the admin can paste it
+  // into WhatsApp/Slack/email of their choice.
+  const copyInviteLink=async(link)=>{
+    try{
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(()=>setCopied(false),2000);
+    } catch(e){
+      notify.error("Couldn't copy — please select and copy the link manually.");
+    }
+  };
+
+  // Open the mailto: handler with a friendly pre-filled invite. Falls back to
+  // copy when the user has no default mail client.
+  const emailInviteLink=(name,email,link)=>{
+    const subject=encodeURIComponent("Your SmartCRM account is ready");
+    const body=encodeURIComponent(
+      `Hi ${name?.split(" ")[0]||"there"},\n\n`+
+      `Your SmartCRM account has been created. Click the link below to set your password and sign in:\n\n`+
+      `${link}\n\n`+
+      `If the link doesn't open the sign-up page automatically, just visit SmartCRM and choose "Sign Up" with this email.\n\n`+
+      `— Hans Infomatic`
+    );
+    window.location.href=`mailto:${email}?subject=${subject}&body=${body}`;
   };
 
   const openAddUser=()=>setModal({mode:"adduser",form:{name:"",email:"",role:"sales_exec",lob:"iCAFFE",branchId:"br1",deptId:"dep1",initials:"",active:true,joinDate:today,password:"",confirmPassword:""}});
@@ -604,8 +656,64 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
         </Modal>
       )}
 
+      {/* Invite-link modal — shown when admin tries to reset a user that has
+          never signed up (no auth account exists yet). */}
+      {pwModal?.mode==="invite"&&(
+        <Modal title={`Invite ${pwModal.userName} to sign up`} onClose={()=>setPwModal(null)}
+          footer={<>
+            <button className="btn btn-sec" onClick={()=>setPwModal(null)}>Done</button>
+          </>}>
+          <div style={{marginBottom:16}}>
+            <div style={{padding:"10px 12px",background:"#FEF3C7",border:"1px solid #FCD34D",borderRadius:8,fontSize:12,color:"#92400E",marginBottom:14,display:"flex",gap:8,alignItems:"flex-start"}}>
+              <AlertTriangle size={14} style={{flexShrink:0,marginTop:1}}/>
+              <span>
+                <strong>{pwModal.userName} has never signed up,</strong> so a password-reset email
+                won't reach them yet (Supabase has no auth account for{" "}
+                <code style={{fontSize:11}}>{pwModal.email}</code>).
+                Share this one-click sign-up link with them via WhatsApp, Slack or email —
+                it pre-fills their email so they only need to set a name and password.
+              </span>
+            </div>
+
+            <div className="form-group" style={{marginBottom:14}}>
+              <label>Sign-up link</label>
+              <div style={{display:"flex",gap:6}}>
+                <input
+                  readOnly
+                  value={pwModal.link}
+                  onClick={(e)=>e.target.select()}
+                  style={{flex:1,padding:"8px 10px",fontSize:11,fontFamily:"monospace",border:"1px solid var(--border)",borderRadius:6,background:"var(--s2)"}}
+                />
+                <button className="btn btn-sec btn-sm" onClick={()=>copyInviteLink(pwModal.link)}>
+                  <Copy size={13}/>{copied?"Copied!":"Copy"}
+                </button>
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button className="btn btn-primary btn-sm" onClick={()=>emailInviteLink(pwModal.userName,pwModal.email,pwModal.link)}>
+                <Key size={13}/>Open Email Draft
+              </button>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(`Hi ${pwModal.userName?.split(" ")[0]||"there"}, your SmartCRM account is ready. Sign up here: ${pwModal.link}`)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="btn btn-sec btn-sm" style={{textDecoration:"none"}}>
+                Share via WhatsApp
+              </a>
+            </div>
+
+            <div style={{marginTop:14,fontSize:11,color:"var(--text3)",lineHeight:1.6}}>
+              <strong>What happens next:</strong> the user clicks the link → SmartCRM
+              opens with the sign-up form pre-filled with their email → they choose a
+              password → on first sign-in they're linked to this CRM profile automatically.
+              You can use the 🔑 reset button as normal once they've signed up.
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Password Reset / Change Modal */}
-      {pwModal&&(
+      {pwModal&&pwModal.mode!=="invite"&&(
         <Modal title="Change Your Password" onClose={()=>{setPwModal(null);setPwErr("");setPwSuccess("");}}
           footer={<>
             <button className="btn btn-sec" onClick={()=>{setPwModal(null);setPwErr("");setPwSuccess("");}}>Cancel</button>

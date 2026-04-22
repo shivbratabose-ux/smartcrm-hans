@@ -1,10 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Mail, Lock, Eye, EyeOff, Shield, UserPlus, LogIn, User, ArrowLeft } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 
 function Login({onLogin, orgUsers}) {
   const [mode,setMode] = useState("login"); // login | signup | forgot
   const [email,setEmail] = useState("");
+  const [invitedFromAdmin,setInvitedFromAdmin] = useState(false);
+
+  // ── Admin invite flow ──
+  // When admin clicks "Invite to sign up" in Team & Users they share a link
+  // like https://crm.example/?invite=user@example.com — we detect that here
+  // and switch the form into Sign Up mode with the email pre-filled, so the
+  // user just picks a name + password.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const invitedEmail = params.get("invite");
+    if (invitedEmail) {
+      setEmail(invitedEmail.toLowerCase().trim());
+      setMode("signup");
+      setInvitedFromAdmin(true);
+      // Clean the URL so a refresh doesn't re-trigger this each time
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, "", cleanUrl);
+    }
+  }, []);
   const [pass,setPass]   = useState("");
   const [confirmPass,setConfirmPass] = useState("");
   const [name,setName]   = useState("");
@@ -285,6 +304,11 @@ function Login({onLogin, orgUsers}) {
           </>
         )}
 
+        {invitedFromAdmin && mode==="signup" && (
+          <div style={{...s.successText,background:"#EFF6FF",color:"#1E40AF"}}>
+            🎉 Welcome! Your admin set up an account for <strong>{email}</strong>. Just pick a password to get started.
+          </div>
+        )}
         {err && <div style={s.errText}>{err}</div>}
         {success && <div style={s.successText}>{success}</div>}
 
