@@ -6,6 +6,7 @@ import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip } from './shared';
 import Pagination, { usePagination } from './Pagination';
+import ProductModulePicker, { validateProductSelection, primaryProductId } from './ProductModulePicker';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 
@@ -45,6 +46,9 @@ const validateLead = (f) => {
   if (f.stage !== "NA" && !f.nextCall) errs.nextCall = "Next call date is required for active leads";
   if (!f.source?.trim()) errs.source = "Lead source is required";
   if (f.score < 0 || f.score > 100) errs.score = "Score must be between 0 and 100";
+  // Required: at least one product line + module-or-None per line
+  const psErr = validateProductSelection(f.productSelection);
+  if (psErr) errs.productSelection = psErr;
   return errs;
 };
 
@@ -1388,7 +1392,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 // ═══════════════════════════════════════════════════════════════════
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, canDelete }) {
+function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete }) {
   // Scope the team list to only users this logged-in user has visibility over.
   // This keeps owner filter and assignment dropdowns consistent with the scoped data.
   const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
@@ -1500,7 +1504,16 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   };
 
   const openEdit = (l) => {
-    setForm({ ...l });
+    // Backfill productSelection for legacy leads (created before the picker existed):
+    // seed it from the single `product` field + any `additionalProducts`. User must
+    // still confirm modules-or-None per line on next save (validation will prompt).
+    const seeded = (Array.isArray(l.productSelection) && l.productSelection.length > 0)
+      ? l.productSelection
+      : [l.product, ...(l.additionalProducts || [])]
+          .filter(Boolean)
+          .filter((id, i, arr) => arr.indexOf(id) === i)
+          .map(productId => ({ productId, moduleIds: [], noAddons: false }));
+    setForm({ ...l, productSelection: seeded });
     setFormErrors({});
     setModal({ mode: "edit" });
   };
@@ -2135,7 +2148,26 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           </div>
           <div className="form-row">
             <div className="form-group"><label>Branches</label><input type="number" min="0" value={form.branches||0} onChange={e => setForm(f => ({...f, branches:+e.target.value}))}/></div>
-            <div className="form-group"><label>Product</label><select value={form.product} onChange={e => setForm(f => ({...f, product:e.target.value}))}>{PRODUCTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+            <div className="form-group"></div>
+          </div>
+          <div className="form-group">
+            <label>Products & Modules <span style={{color:"#DC2626"}}>*</span></label>
+            <ProductModulePicker
+              catalog={catalog || []}
+              value={form.productSelection || []}
+              error={formErrors.productSelection}
+              onChange={(next) => {
+                setForm(f => ({
+                  ...f,
+                  productSelection: next,
+                  // Keep legacy single-product field in sync for lists/filters/reports
+                  product: primaryProductId(next) || f.product,
+                  // Mirror remaining selected product lines into additionalProducts
+                  additionalProducts: next.slice(1).map(e => e.productId),
+                }));
+                setFormErrors(e => ({ ...e, productSelection: undefined }));
+              }}
+            />
           </div>
           <div className="form-row">
             <div className="form-group"><label>Vertical</label><select value={form.vertical} onChange={e => setForm(f => ({...f, vertical:e.target.value}))}>{VERTICALS.map(v => <option key={v}>{v}</option>)}</select></div>

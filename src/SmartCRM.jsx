@@ -671,6 +671,9 @@ export default function SmartCRM() {
       title: data.title || `${PROD_MAP[lead.product]?.name || lead.product} – ${lead.company}`,
       accountId: data.accountId || lead.accountId || "",
       products: data.selectedProducts?.length ? data.selectedProducts : [lead.product],
+      // Carry the lead's full product+module selection through to the opportunity
+      // so downstream conversions (opp → quote/contract) inherit the same picks.
+      productSelection: Array.isArray(lead.productSelection) ? lead.productSelection : [],
       stage: "Prospect",
       value: data.value || 0,
       probability: 10,
@@ -701,6 +704,7 @@ export default function SmartCRM() {
         owner: newOpp.owner,
         source: "Lead Conversion",
         products: newOpp.products || [],
+        productSelection: newOpp.productSelection || [],
         hierarchyLevel: "Parent Company",
         hierarchyPath: lead.company,
         accountNo: "",
@@ -1074,7 +1078,7 @@ export default function SmartCRM() {
           <Header page={page} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={visibleUpdates} myUnreadCount={myUnreadCount}/>
           <div className="content" id="main-content" role="main">
             {page==="dashboard"  && <Dashboard accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} setPage={setPage} orgUsers={orgUsers}/>}
-            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} canDelete={canDelete}/>}
+            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete}/>}
             {page==="accounts"   && <Accounts accounts={visibleAccounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={visibleContacts} setContacts={setContacts} tickets={visibleTickets} contracts={visibleContracts} collections={visibleCollections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} canDelete={canDelete}/>}
             {page==="contacts"   && <Contacts contacts={visibleContacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={visibleAccounts} opps={visibleOpps} activities={visibleActivities} canDelete={canDelete}/>}
             {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} onDealWon={handleDealWon} canDelete={canDelete}/>}
