@@ -5,6 +5,40 @@ import { uid } from '../utils/helpers';
 import { notify } from '../utils/toast';
 import { Empty, PageTip } from './shared';
 
+// ─── Fuzzy match helper ─────────────────────────────────────────────────────
+// Normalises a string for forgiving comparison: lowercases and strips every
+// character that isn't a letter/digit. So "E sanchit", "e-Sanchit",
+// "eSanchit Filing" all collapse to a comparable form.
+const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// Try increasingly forgiving matches: exact id/name → normalised equals →
+// normalised "contains" (either direction). Returns the matched item or null.
+function fuzzyFind(items, raw, getKeys) {
+  if (!raw) return null;
+  const n = norm(raw);
+  if (!n) return null;
+  // Pass 1: case-insensitive exact on any key
+  let hit = items.find(it => getKeys(it).some(k => k && String(k).toLowerCase() === String(raw).toLowerCase()));
+  if (hit) return hit;
+  // Pass 2: normalised equals
+  hit = items.find(it => getKeys(it).some(k => norm(k) === n));
+  if (hit) return hit;
+  // Pass 3: normalised "starts with" (input is a prefix of a key OR vice versa)
+  const prefixHits = items.filter(it => getKeys(it).some(k => {
+    const nk = norm(k);
+    return nk && (nk.startsWith(n) || n.startsWith(nk));
+  }));
+  if (prefixHits.length === 1) return prefixHits[0];
+  // Pass 4: normalised contains — only accept when exactly one item matches,
+  // otherwise it's ambiguous and we prefer a clear error to the wrong guess.
+  const containsHits = items.filter(it => getKeys(it).some(k => {
+    const nk = norm(k);
+    return nk && (nk.includes(n) || n.includes(nk));
+  }));
+  if (containsHits.length === 1) return containsHits[0];
+  return null;
+}
+
 // ─── Product + Module CSV format ─────────────────────────────────────────────
 // Encoding accepted in the `productSelection` column:
 //   "iCAFFE[eSanchit Filing|OCR Engine]; WiseCargo[None]; WiseDox"
@@ -14,17 +48,17 @@ import { Empty, PageTip } from './shared';
 //   - Modules per product wrapped in [ ... ], pipe-separated
 //   - "[None]" → noAddons:true (explicit no-modules acknowledgement)
 //   - Bare product name (no brackets) → all modules unset & noAddons false
-//     (caller will need to pick at least one module before saving — but for
-//     bulk import we accept it and treat as a soft selection)
-//   - Both product names AND product IDs accepted (case-insensitive)
-//   - Both module names AND module IDs accepted (case-insensitive)
+//   - Product/module names AND IDs matched case- and punctuation-insensitively
+//   - If the cell holds only a MODULE name (no brackets, no matching product)
+//     and exactly one product in the catalog owns that module, we infer the
+//     parent product. So "E sanchit" resolves to iCAFFE → eSanchit Filing.
 //
-// Returns { value: [...], errors: [...] }. value is the parsed productSelection
-// array; errors is a list of unmatched product/module names so the row can be
-// rejected with an actionable message.
+// Returns { value, errors, warnings }. Warnings are non-fatal (the row still
+// passes validation) and surface in the grid so the user knows we auto-fixed.
 export function parseProductSelectionCSV(raw, catalog) {
-  if (!raw || !String(raw).trim()) return { value: [], errors: [] };
+  if (!raw || !String(raw).trim()) return { value: [], errors: [], warnings: [] };
   const errors = [];
+  const warnings = [];
   const value = [];
   const seenProducts = new Set();
   const segments = String(raw).split(/;|\n/).map(s => s.trim()).filter(Boolean);
@@ -34,29 +68,76 @@ export function parseProductSelectionCSV(raw, catalog) {
     if (!m) { errors.push(`Unparseable product segment: "${seg}"`); continue; }
     const prodName = m[1].trim();
     const modBlock = (m[2] || "").trim();
-    const product = (catalog || []).find(p =>
-      p.id?.toLowerCase() === prodName.toLowerCase() ||
-      p.name?.toLowerCase() === prodName.toLowerCase()
-    );
+
+    let product = fuzzyFind(catalog || [], prodName, p => [p.id, p.name]);
+
+    // Module-name fallback: when no brackets were given AND we couldn't find a
+    // product, the cell might be a bare module name (e.g. "E sanchit"). Search
+    // every product's module list — if exactly one product owns it, use that.
+    let inferredModuleId = null;
+    if (!product && !modBlock) {
+      const candidates = [];
+      for (const p of (catalog || [])) {
+        for (const mm of (p.modules || [])) {
+          const nk = norm(mm.id) + " " + norm(mm.name);
+          const nq = norm(prodName);
+          if (norm(mm.name) === nq || norm(mm.id) === nq ||
+              (nq && (nk.includes(nq) || nq.includes(norm(mm.name))))) {
+            candidates.push({ product: p, module: mm });
+          }
+        }
+      }
+      if (candidates.length === 1) {
+        product = candidates[0].product;
+        inferredModuleId = candidates[0].module.id;
+        warnings.push(`Auto-mapped "${prodName}" → ${product.name} > ${candidates[0].module.name}`);
+      }
+    }
+
     if (!product) { errors.push(`Unknown product "${prodName}" — not in Masters > Product Catalogue`); continue; }
     if (seenProducts.has(product.id)) { errors.push(`Duplicate product line for "${product.name}"`); continue; }
     seenProducts.add(product.id);
+
+    // Inferred via module-name fallback
+    if (inferredModuleId) {
+      value.push({ productId: product.id, moduleIds: [inferredModuleId], noAddons: false });
+      continue;
+    }
     // Empty bracket "[]" → soft selection (no modules picked, noAddons false)
     if (!modBlock) { value.push({ productId: product.id, moduleIds: [], noAddons: false }); continue; }
     if (modBlock.toLowerCase() === "none") { value.push({ productId: product.id, moduleIds: [], noAddons: true }); continue; }
     const tokens = modBlock.split("|").map(s => s.trim()).filter(Boolean);
     const moduleIds = [];
     for (const tok of tokens) {
-      const mod = (product.modules || []).find(mm =>
-        mm.id?.toLowerCase() === tok.toLowerCase() ||
-        mm.name?.toLowerCase() === tok.toLowerCase()
-      );
+      const mod = fuzzyFind(product.modules || [], tok, mm => [mm.id, mm.name]);
       if (!mod) { errors.push(`Unknown module "${tok}" for product "${product.name}"`); continue; }
       if (!moduleIds.includes(mod.id)) moduleIds.push(mod.id);
     }
     value.push({ productId: product.id, moduleIds, noAddons: false });
   }
-  return { value, errors };
+  return { value, errors, warnings };
+}
+
+// ─── User fuzzy match ───────────────────────────────────────────────────────
+// CSVs from sales reps often carry a person's first name, full name, email,
+// or even just their internal id in the assignedTo / owner / marketingPerson
+// columns. Normalise to a user.id when we can, otherwise keep the raw value
+// and surface a warning so the row still imports.
+export function resolveUserRef(raw, orgUsers) {
+  if (!raw || !String(raw).trim()) return { id: null, warning: null };
+  const trimmed = String(raw).trim();
+  const users = orgUsers || [];
+  const hit = fuzzyFind(users, trimmed, u => [
+    u.id, u.email, u.name,
+    // First name and last name as separate keys so "Vineesh" matches
+    // "Vineesh Kumar" without colliding with another "Vineesh Sharma".
+    ...(u.name ? u.name.split(/\s+/) : []),
+  ]);
+  if (hit) return { id: hit.id, warning: null };
+  return {
+    id: null,
+    warning: `Couldn't match user "${trimmed}" to anyone in the org — left unassigned`,
+  };
 }
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -316,7 +397,16 @@ function parseCSV(text) {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
-function BulkUpload({ onUpload, existingData = {}, catalog = [] }) {
+// ─── Per-type defaults applied when a mandatory cell is blank ──────────────
+// Auto-fill the most common value so a CSV missing trivially-fillable columns
+// (e.g. brand-new leads where every row is MQL) imports cleanly. Anything we
+// auto-fill emits a row warning so the user knows.
+const AUTO_DEFAULTS = {
+  Leads:    { stage: "MQL", source: "MAIL" },
+  Pipeline: { stage: "Prospect" },
+};
+
+function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }) {
   const [type, setType]       = useState("Leads");
   const [fileData, setFileData] = useState(null);
   const [results, setResults]   = useState(null);
@@ -388,44 +478,98 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [] }) {
     reader.readAsText(file);
   };
 
-  const validate = () => {
-    if (!fileData?.rows.length) return;
+  // Validate a single row in isolation. Returns the row with _errors,
+  // _warnings, _valid, _mode, _matchedId, _productSelection populated.
+  // Pulled out so inline edits in the grid can re-run validation cheaply.
+  const validateRow = (row, seenInFile) => {
+    const work = { ...row };
+    const warnings = [];
 
-    const seenInFile = new Set();
-    const validated = fileData.rows.map(row => {
-      const errs = [...schema.validate(row)];
-
-      // Mandatory check
-      schema.mandatory.forEach(f => {
-        if (!row[f]?.trim()) {
-          if (!errs.find(e => e.toLowerCase().includes(f.toLowerCase()))) {
-            errs.push(`${f} is required`);
-          }
-        }
-      });
-
-      // Within-file duplicate on uniqueKey
-      const uKey = row[schema.uniqueKey]?.toLowerCase().trim();
-      if (uKey && seenInFile.has(uKey)) errs.push(`Duplicate ${schema.uniqueKey} in file: "${row[schema.uniqueKey]}"`);
-      if (uKey) seenInFile.add(uKey);
-
-      // Match against existing records via refKey
-      const refVal = row[schema.refKey]?.trim();
-      const matched = refVal ? existingByRef[refVal.toLowerCase()] : null;
-      const mode = matched ? "update" : "insert";
-
-      // Validate productSelection (if present) against live Masters catalog
-      let parsedSelection = null;
-      if (row.productSelection?.trim()) {
-        const parsed = parseProductSelectionCSV(row.productSelection, catalog);
-        if (parsed.errors.length > 0) errs.push(...parsed.errors);
-        parsedSelection = parsed.value;
+    // Auto-fill blank mandatory fields with sensible per-type defaults BEFORE
+    // running the validator — turns "Stage required" errors into a yellow
+    // "filled with default" warning the user can override inline.
+    const defaults = AUTO_DEFAULTS[type] || {};
+    for (const [field, value] of Object.entries(defaults)) {
+      if (schema.mandatory.includes(field) && !work[field]?.trim()) {
+        work[field] = value;
+        warnings.push(`Auto-filled ${field} = "${value}" (was blank)`);
       }
+    }
 
-      return { ...row, _errors: errs, _valid: errs.length === 0, _mode: mode, _matchedId: matched?.id || null, _productSelection: parsedSelection };
+    const errs = [...schema.validate(work)];
+
+    // Mandatory check (after auto-fill)
+    schema.mandatory.forEach(f => {
+      if (!work[f]?.trim()) {
+        if (!errs.find(e => e.toLowerCase().includes(f.toLowerCase()))) {
+          errs.push(`${f} is required`);
+        }
+      }
     });
 
+    // Within-file duplicate on uniqueKey
+    const uKey = work[schema.uniqueKey]?.toLowerCase().trim();
+    if (uKey && seenInFile.has(uKey)) errs.push(`Duplicate ${schema.uniqueKey} in file: "${work[schema.uniqueKey]}"`);
+    if (uKey) seenInFile.add(uKey);
+
+    // Match against existing records via refKey
+    const refVal = work[schema.refKey]?.trim();
+    const matched = refVal ? existingByRef[refVal.toLowerCase()] : null;
+    const mode = matched ? "update" : "insert";
+
+    // Fuzzy-resolve user references (assignedTo / owner / marketingPerson /
+    // assigned). If the cell already holds a known user id, this is a no-op.
+    // Unmatched names produce a warning, not an error — the row still imports.
+    const userFields = ["assignedTo", "owner", "marketingPerson", "assigned"];
+    for (const uf of userFields) {
+      if (work[uf]?.trim()) {
+        const { id, warning } = resolveUserRef(work[uf], orgUsers);
+        if (id && id !== work[uf]) {
+          warnings.push(`Resolved ${uf} "${work[uf]}" → ${id}`);
+          work[uf] = id;
+        } else if (warning) {
+          warnings.push(warning);
+          work[uf] = ""; // strip so we don't import a garbage owner string
+        }
+      }
+    }
+
+    // Validate productSelection (if present) against live Masters catalog
+    let parsedSelection = null;
+    if (work.productSelection?.trim()) {
+      const parsed = parseProductSelectionCSV(work.productSelection, catalog);
+      if (parsed.errors.length > 0) errs.push(...parsed.errors);
+      if (parsed.warnings?.length > 0) warnings.push(...parsed.warnings);
+      parsedSelection = parsed.value;
+    }
+
+    return {
+      ...work,
+      _errors: errs,
+      _warnings: warnings,
+      _valid: errs.length === 0,
+      _mode: mode,
+      _matchedId: matched?.id || null,
+      _productSelection: parsedSelection,
+    };
+  };
+
+  const validate = () => {
+    if (!fileData?.rows.length) return;
+    const seenInFile = new Set();
+    const validated = fileData.rows.map(row => validateRow(row, seenInFile));
     setResults(validated);
+  };
+
+  // Inline-edit handler: update a single cell, then re-run validation across
+  // all rows so within-file duplicate checks stay accurate.
+  const editCell = (rowIdx, header, newValue) => {
+    setResults(prev => {
+      if (!prev) return prev;
+      const next = prev.map((r, i) => i === rowIdx ? { ...r, [header]: newValue } : r);
+      const seen = new Set();
+      return next.map(r => validateRow(r, seen));
+    });
   };
 
   const doUpload = async () => {
@@ -673,39 +817,71 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [] }) {
             </div>
           </div>
 
-          <div style={{ maxHeight: 420, overflow: "auto" }}>
-            <table className="tbl">
-              <thead>
+          <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 8, display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <span>💡 <strong>Tip:</strong> Click any cell to fix it inline — validation re-runs as you type.</span>
+            <span style={{ color: "#D97706" }}>● Yellow rows have warnings (auto-fixed) but will still import.</span>
+          </div>
+          <div style={{ maxHeight: 480, overflow: "auto", border: "1px solid var(--border)", borderRadius: 6 }}>
+            <table className="tbl" style={{ minWidth: "100%" }}>
+              <thead style={{ position: "sticky", top: 0, background: "var(--s2)", zIndex: 1 }}>
                 <tr>
                   <th style={{ width: 40 }}>Row</th>
                   <th style={{ width: 80 }}>Action</th>
-                  {fileData.headers.slice(0, 5).map(h => <th key={h}>{h}</th>)}
-                  <th>Errors</th>
+                  {fileData.headers.map(h => (
+                    <th key={h} style={{ minWidth: 120, whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                  <th style={{ minWidth: 240 }}>Issues</th>
                 </tr>
               </thead>
               <tbody>
-                {results.map((r, i) => (
-                  <tr key={i} style={{ background: r._valid ? "transparent" : "var(--red-bg)" }}>
-                    <td style={{ fontSize: 11, color: "var(--text3)" }}>{r._row}</td>
-                    <td>
-                      {r._valid ? (
-                        r._mode === "update"
-                          ? <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "var(--brand-bg)", color: "var(--brand)" }}>UPDATE</span>
-                          : <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a" }}>NEW</span>
-                      ) : (
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "var(--red-bg)", color: "var(--red-t)" }}>ERROR</span>
-                      )}
-                    </td>
-                    {fileData.headers.slice(0, 5).map(h => (
-                      <td key={h} style={{ fontSize: 11, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {r[h]?.substring(0, 40)}
+                {results.map((r, i) => {
+                  const hasWarn = (r._warnings?.length || 0) > 0;
+                  const bg = !r._valid ? "var(--red-bg)" : hasWarn ? "#FEF9C3" : "transparent";
+                  return (
+                    <tr key={i} style={{ background: bg }}>
+                      <td style={{ fontSize: 11, color: "var(--text3)" }}>{r._row}</td>
+                      <td>
+                        {r._valid ? (
+                          r._mode === "update"
+                            ? <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "var(--brand-bg)", color: "var(--brand)" }}>UPDATE</span>
+                            : <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a" }}>NEW</span>
+                        ) : (
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "var(--red-bg)", color: "var(--red-t)" }}>ERROR</span>
+                        )}
                       </td>
-                    ))}
-                    <td style={{ fontSize: 11, color: "var(--red)" }}>
-                      {r._errors.join("; ")}
-                    </td>
-                  </tr>
-                ))}
+                      {fileData.headers.map(h => (
+                        <td key={h} style={{ padding: 2 }}>
+                          <input
+                            value={r[h] ?? ""}
+                            onChange={(e) => editCell(i, h, e.target.value)}
+                            style={{
+                              width: "100%",
+                              minWidth: 100,
+                              padding: "4px 6px",
+                              fontSize: 11,
+                              border: "1px solid transparent",
+                              background: "transparent",
+                              borderRadius: 3,
+                              outline: "none",
+                            }}
+                            onFocus={(e) => e.target.style.border = "1px solid var(--brand)"}
+                            onBlur={(e) => e.target.style.border = "1px solid transparent"}
+                          />
+                        </td>
+                      ))}
+                      <td style={{ fontSize: 11 }}>
+                        {r._errors.length > 0 && (
+                          <div style={{ color: "var(--red)" }}>{r._errors.join("; ")}</div>
+                        )}
+                        {hasWarn && (
+                          <div style={{ color: "#A16207", marginTop: r._errors.length ? 3 : 0 }}>
+                            {r._warnings.join("; ")}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
