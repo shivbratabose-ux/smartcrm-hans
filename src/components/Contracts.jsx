@@ -430,7 +430,19 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
               <FormError error={formErrors.accountId}/>
             </div>
             <div className="form-group"><label>Linked Opportunity</label>
-              <select value={form.oppId} onChange={e => setForm(f => ({...f, oppId: e.target.value}))}>
+              <select value={form.oppId} onChange={e => {
+                const oppId = e.target.value;
+                const opp = opps.find(o => o.id === oppId);
+                setForm(f => ({
+                  ...f,
+                  oppId,
+                  // Inherit picker selection from the linked opportunity (if any)
+                  // so contract carries through the exact module/sub-product picks.
+                  productSelection: (opp && Array.isArray(opp.productSelection) && opp.productSelection.length > 0)
+                    ? opp.productSelection
+                    : (f.productSelection || []),
+                }));
+              }}>
                 <option value="">None</option>
                 {opps.filter(o => !form.accountId || o.accountId === form.accountId).map(o => <option key={o.id} value={o.id}>{o.title}</option>)}
               </select>

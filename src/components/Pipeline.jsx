@@ -20,6 +20,7 @@ import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds } from "../utils/helpers";
 import { exportCSV } from "../utils/csv";
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip } from "./shared";
+import ProductModulePicker, { validateProductSelection, primaryProductId } from "./ProductModulePicker";
 
 /* ───────── constants ───────── */
 const HEALTH_CFG = {
@@ -504,7 +505,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
 /* ═══════════════════════════════════════════════════════
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
-function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, onDealWon, canDelete }) {
+function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete }) {
   const _pipelineScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const team = useMemo(() => {
     const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
@@ -639,10 +640,21 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   const stalledCount = openDeals.filter(o => getDealHealth(o.id, activities) === "stalled").length;
 
   /* form handlers */
-  const openAdd = () => { setForm({ ...BLANK_OPP, id: `o${uid()}` }); setFormErrors({}); setModal({ mode: "add" }); };
-  const openEdit = o => { setForm({ ...o, products: [...o.products] }); setFormErrors({}); setModal({ mode: "edit" }); };
+  const openAdd = () => { setForm({ ...BLANK_OPP, id: `o${uid()}`, productSelection: [] }); setFormErrors({}); setModal({ mode: "add" }); };
+  const openEdit = o => {
+    // Backfill productSelection from legacy `products` array if missing,
+    // so deals created before the picker shipped still load editable.
+    const seeded = (Array.isArray(o.productSelection) && o.productSelection.length > 0)
+      ? o.productSelection
+      : (o.products || []).filter(Boolean).map(productId => ({ productId, moduleIds: [], noAddons: false }));
+    setForm({ ...o, products: [...(o.products || [])], productSelection: seeded });
+    setFormErrors({});
+    setModal({ mode: "edit" });
+  };
   const save = () => {
     const errs = validateOpp(form);
+    const psErr = validateProductSelection(form.productSelection);
+    if (psErr) errs.productSelection = psErr;
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const clean = sanitizeObj(form);
     /* duplicate check */
@@ -1332,15 +1344,21 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
             </div>
           )}
           <div className="form-group" style={{ marginBottom: 12 }}>
-            <label>Products</label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-              {PRODUCTS.map(p => (
-                <button key={p.id} className="btn btn-xs" onClick={() => toggleProd(p.id)} style={{
-                  background: form.products.includes(p.id) ? p.color : "var(--s3)",
-                  color: form.products.includes(p.id) ? "white" : "var(--text2)", border: "none", cursor: "pointer",
-                }}>{p.name}</button>
-              ))}
-            </div>
+            <label>Products & Modules <span style={{color:"#DC2626"}}>*</span></label>
+            <ProductModulePicker
+              catalog={catalog || []}
+              value={form.productSelection || []}
+              error={formErrors.productSelection}
+              onChange={(next) => {
+                setForm(f => ({
+                  ...f,
+                  productSelection: next,
+                  // Keep legacy `products` array in sync so filters/CSV/duplicate-check keep working
+                  products: next.map(e => e.productId),
+                }));
+                setFormErrors(e => ({ ...e, productSelection: undefined }));
+              }}
+            />
           </div>
           <div className="form-group">
             <label>Notes</label>
