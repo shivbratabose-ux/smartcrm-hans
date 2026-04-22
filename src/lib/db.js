@@ -70,6 +70,7 @@ const toSnake = (obj, module) => {
     endTime:"end_time", authUserId:"auth_user_id", branchId:"branch_id",
     deptId:"dept_id", joinDate:"join_date", avatarUrl:"avatar_url",
     reportsTo:"reports_to", dottedTo:"dotted_to",
+    mustChangePassword:"must_change_password", tempPasswordExpiresAt:"temp_password_expires_at",
     // Lead fields
     assignedTo:"assigned_to", contactIds:"contact_ids", contactRoles:"contact_roles",
     additionalProducts:"additional_products", estimatedValue:"estimated_value",
@@ -125,6 +126,7 @@ const toCamel = (obj, module) => {
     end_time:"endTime", auth_user_id:"authUserId", branch_id:"branchId",
     dept_id:"deptId", join_date:"joinDate", avatar_url:"avatarUrl",
     reports_to:"reportsTo", dotted_to:"dottedTo",
+    must_change_password:"mustChangePassword", temp_password_expires_at:"tempPasswordExpiresAt",
     // Lead fields
     assigned_to:"assignedTo", contact_ids:"contactIds", contact_roles:"contactRoles",
     additional_products:"additionalProducts", estimated_value:"estimatedValue",
