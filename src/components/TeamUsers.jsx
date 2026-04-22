@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shield, AlertTriangle, Lock, Unlock, ChevronDown, ChevronRight, Users } from "lucide-react";
+import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shield, AlertTriangle, Lock, Unlock, ChevronDown, ChevronRight, Users, GitBranch } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { updateUserProfile } from '../lib/db';
@@ -143,7 +143,8 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
     orgUsers.forEach(u=>ids[u.id]=true);
     return ids;
   });
-  const [editingManager,setEditingManager]=useState(null); // userId being edited
+  const [editingManager,setEditingManager]=useState(null); // userId being edited (solid line)
+  const [editingDotted,setEditingDotted]=useState(null);   // userId being edited (dotted line)
 
   // Build reportsTo from org hierarchy: dept heads → division heads → company/market heads
   const reportsToMap=useMemo(()=>{
@@ -191,6 +192,23 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
       if(error) console.error("Failed to save manager:", error);
     }
   };
+  // Toggle a single dotted-line manager for the given user. Dotted-line is
+  // additive — a person can have 0..N dotted managers in addition to their
+  // single solid-line `reportsTo`. Used for matrix orgs (e.g. PMs dotted to
+  // both Sales & Marketing and Product Development).
+  const toggleDottedManager=async(userId,managerId)=>{
+    let nextDotted = [];
+    setOrgUsers(p=>p.map(u=>{
+      if(u.id!==userId) return u;
+      const cur = Array.isArray(u.dottedTo)?u.dottedTo:[];
+      nextDotted = cur.includes(managerId) ? cur.filter(x=>x!==managerId) : [...cur, managerId];
+      return {...u, dottedTo: nextDotted};
+    }));
+    if(isSupabaseConfigured){
+      const {error}=await updateUserProfile(userId, { dottedTo: nextDotted });
+      if(error) console.error("Failed to save dotted-line managers:", error);
+    }
+  };
 
   const toggleHierarchy=(id)=>setHierarchyExpanded(p=>({...p,[id]:!p[id]}));
 
@@ -209,8 +227,17 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
           </div>
           {roleInfo&&<span className="th-role" style={{background:roleInfo.color+"18",color:roleInfo.color}}>{roleInfo.name}</span>}
           {reports.length>0&&<span className="th-direct">{reports.length} report{reports.length>1?"s":""}</span>}
+          {(() => {
+            const dotted = Array.isArray(user.dottedTo) ? user.dottedTo : [];
+            return dotted.length > 0 && (
+              <span title={`Dotted-line to: ${dotted.map(id => orgUsers.find(u => u.id === id)?.name || id).join(", ")}`}
+                style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#FEF3C7",color:"#B45309",display:"inline-flex",alignItems:"center",gap:3,border:"1px dashed #F59E0B"}}>
+                <GitBranch size={10}/> {dotted.length} dotted
+              </span>
+            );
+          })()}
           {canManage&&(
-            <div className="th-actions">
+            <div className="th-actions" style={{display:"flex",gap:4,alignItems:"center"}}>
               {editingManager===user.id?(
                 <select
                   value={user.reportsTo||reportsToMap[user.id]||""}
@@ -224,11 +251,32 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
                   {orgUsers.filter(u=>u.id!==user.id&&u.active!==false).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               ):(
-                <button className="ht-btn" onClick={e=>{e.stopPropagation();setEditingManager(user.id);}} title="Change manager"><Edit2 size={11}/></button>
+                <button className="ht-btn" onClick={e=>{e.stopPropagation();setEditingManager(user.id);}} title="Change solid-line manager"><Edit2 size={11}/></button>
               )}
+              <button className="ht-btn" onClick={e=>{e.stopPropagation();setEditingDotted(editingDotted===user.id?null:user.id);}} title="Edit dotted-line managers (matrix)"><GitBranch size={11}/></button>
             </div>
           )}
         </div>
+        {canManage && editingDotted===user.id && (
+          <div onClick={e=>e.stopPropagation()} style={{margin:"6px 0 6px 36px",padding:"8px 10px",border:"1px dashed #F59E0B",borderRadius:6,background:"#FFFBEB"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#92400E",marginBottom:6,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+              <span><GitBranch size={11} style={{verticalAlign:"text-bottom"}}/> Dotted-line managers (in addition to solid line)</span>
+              <button className="ht-btn" onClick={()=>setEditingDotted(null)} title="Done"><Check size={11}/></button>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,maxHeight:160,overflowY:"auto"}}>
+              {orgUsers.filter(u=>u.id!==user.id && u.active!==false && u.id!==(user.reportsTo||reportsToMap[user.id])).map(mgr => {
+                const checked = (user.dottedTo||[]).includes(mgr.id);
+                return (
+                  <label key={mgr.id} style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,padding:"3px 8px",border:"1px solid var(--border)",borderRadius:4,background:checked?"#FEF3C7":"#FFF",cursor:"pointer",fontWeight:checked?600:400}}>
+                    <input type="checkbox" checked={checked} onChange={()=>toggleDottedManager(user.id, mgr.id)} style={{margin:0}}/>
+                    {mgr.name}
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{fontSize:10,color:"#92400E",marginTop:6}}>Anyone listed here will also see this person's leads, opportunities, activities, and call reports — useful for matrix orgs (e.g. PMs split between Sales & Marketing and Product Development).</div>
+          </div>
+        )}
         {isOpen&&reports.length>0&&(
           <div className="th-children">
             {reports.map(r=><HierarchyNode key={r.id} user={r} depth={depth+1}/>)}
