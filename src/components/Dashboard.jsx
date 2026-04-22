@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from 'recharts';
 import { Activity, TrendingUp, TrendingDown, AlertCircle, Plus, Calendar, ChevronDown, Users, Target, Phone, FileText, IndianRupee, Filter } from 'lucide-react';
 import { PRODUCTS, PROD_MAP, STAGES, STAGE_PROB, TEAM, TEAM_MAP } from '../data/constants';
-import { fmt, isFuture, isOverdue, today } from '../utils/helpers';
+import { fmt, isFuture, isOverdue, today, getScopedUserIds, isGlobalRole } from '../utils/helpers';
 import { StatusBadge, ProdTag, PriorityBadge, UserPill, PageTip } from './shared';
 
 /* ── Date range helpers ── */
@@ -48,7 +48,13 @@ const FUNNEL_STAGES = ["Prospect", "Qualification", "Proposal", "Negotiation", "
 const FUNNEL_COLORS = { Prospect: "#94A3B8", Qualification: "#3B82F6", Proposal: "#F59E0B", Negotiation: "#7C3AED", Won: "#22C55E" };
 
 /* ── Component ── */
-function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callReports, collections, targets, setPage, orgUsers }) {
+function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callReports, collections, targets, setPage, orgUsers, currentUser }) {
+  // Same hierarchy walker used everywhere else: global roles see the whole
+  // org in rollups; managers see themselves + downline (solid + dotted line);
+  // sales execs only see themselves. Without this, the team-performance
+  // leaderboard would leak co-workers' names + numbers to non-global roles.
+  const _dashScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
+  const _dashIsGlobal = useMemo(() => isGlobalRole(currentUser, orgUsers), [currentUser, orgUsers]);
   const [rangeKey, setRangeKey] = useState("30d");
   const [showRangeMenu, setShowRangeMenu] = useState(false);
 
@@ -234,8 +240,11 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
 
   // ─── Team performance ───
   // Use live orgUsers (falling back to static TEAM constant) so dynamically added users appear.
+  // Non-global roles only see their own downline (solid + dotted) so a sales exec
+  // doesn't see a leaderboard of peers, and a line manager only sees their reports.
   const _dashTeam = (orgUsers?.length ? orgUsers.filter(u => u.active !== false) : TEAM)
     .filter(t => !["tech_lead", "Tech Lead", "support", "Support Engr"].includes(t.role))
+    .filter(t => _dashIsGlobal || _dashScopedIds.has(t.id))
     .slice(0, 4);
   const teamPerf = _dashTeam.map(t => {
     const memberTargets = currentTargets.filter(ct => ct.owner === t.id);
