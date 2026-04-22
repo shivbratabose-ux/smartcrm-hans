@@ -1237,7 +1237,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
               <label>Account *</label>
               <select value={form.accountId} onChange={e => { const a = accounts.find(x => x.id === e.target.value); setForm(f => ({ ...f, accountId: e.target.value, country: a?.country || f.country })); setFormErrors(p => ({ ...p, accountId: undefined })); }}
                 style={formErrors.accountId ? { borderColor: "#DC2626" } : {}}>
-                <option value="">Select account\u2026</option>
+                <option value="">Select account…</option>
                 {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
               <FormError error={formErrors.accountId} />
@@ -1308,7 +1308,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
             <div className="form-group">
               <label>Primary Contact</label>
               <select value={form.primaryContactId || ""} onChange={e => setForm(f => ({ ...f, primaryContactId: e.target.value }))}>
-                <option value="">Select contact\u2026</option>
+                <option value="">Select contact…</option>
                 {(contacts || []).filter(c => !form.accountId || c.accountId === form.accountId).map(c => <option key={c.id} value={c.id}>{c.name}{c.designation ? " \u2013 " + c.designation : ""}</option>)}
               </select>
             </div>
@@ -1326,7 +1326,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
               <div className="form-group">
                 <label>Win Reason</label>
                 <select value={form.winReason || ""} onChange={e => setForm(f => ({ ...f, winReason: e.target.value }))}>
-                  <option value="">Select reason\u2026</option>
+                  <option value="">Select reason…</option>
                   {WIN_REASONS.map(r => <option key={r}>{r}</option>)}
                 </select>
               </div>
@@ -1337,7 +1337,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
               <div className="form-group">
                 <label>Loss Reason</label>
                 <select value={form.lossReason || ""} onChange={e => setForm(f => ({ ...f, lossReason: e.target.value }))}>
-                  <option value="">Select reason\u2026</option>
+                  <option value="">Select reason…</option>
                   {LOSS_REASONS.map(r => <option key={r}>{r}</option>)}
                 </select>
               </div>
@@ -1362,7 +1362,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           </div>
           <div className="form-group">
             <label>Notes</label>
-            <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Deal context, strategy notes\u2026" />
+            <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Deal context, strategy notes…" />
           </div>
         </Modal>
       )}
