@@ -189,15 +189,25 @@ export function validateStageGate(lead, targetStage, stageGates) {
 // reporting tree: a manager sees their entire downline regardless of LOB,
 // because the org was structured so that LOB-specific teams have their own
 // reporting chain (e.g., iCAFFE Sales Exec → iCAFFE Line Manager → Sales VP → Director → Admin).
+// Roles with unrestricted (global) data visibility. Single source of truth
+// shared by getScopedUserIds + isGlobalRole.
+export const GLOBAL_ROLES = ["admin", "md", "director", "bd_lead"];
+
+// Normalize a role value before any comparison. Live data has been observed
+// with mixed casing / whitespace ("Admin", " director"), which silently
+// dropped managers into self-only scope. Lowercase + trim guards every check.
+export const normalizeRole = (r) => String(r ?? "").trim().toLowerCase();
+
 export const getScopedUserIds = (currentUserId, orgUsers) => {
   const allUsers = orgUsers || [];
   const user = allUsers.find(u => u.id === currentUserId);
   if (!user) return new Set([currentUserId]);
 
-  const { role, deptId, branchId } = user;
+  const { deptId, branchId } = user;
+  const role = normalizeRole(user.role);
 
   // Rule 1: Global roles see everything
-  if (["admin", "md", "director", "bd_lead"].includes(role)) {
+  if (GLOBAL_ROLES.includes(role)) {
     return new Set(allUsers.map(u => u.id));
   }
 
@@ -238,31 +248,33 @@ export const getScopedUserIds = (currentUserId, orgUsers) => {
 // Returns true if the role has unrestricted global data access
 export const isGlobalRole = (userId, orgUsers) => {
   const user = (orgUsers || []).find(u => u.id === userId);
-  return !user || ["admin", "md", "director", "bd_lead"].includes(user.role);
+  return !user || GLOBAL_ROLES.includes(normalizeRole(user.role));
 };
 
 export const canAccess = (userId, module, orgUsers, customPermissions) => {
   const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
   if(!u) return false;
+  const role = normalizeRole(u.role);
   // Check user-level override first
   const userOverride = customPermissions?.__users?.[userId]?.[module];
   if(userOverride!==undefined) return userOverride && userOverride!==false;
   // Then role-level custom override
-  const roleOverride = customPermissions?.[u.role]?.[module];
+  const roleOverride = customPermissions?.[role]?.[module];
   if(roleOverride!==undefined) return roleOverride && roleOverride!==false;
   // Fall back to default
-  const perm = PERMISSIONS[u.role];
+  const perm = PERMISSIONS[role];
   if(!perm) return false;
   return perm[module] && perm[module]!==false;
 };
 export const canWrite = (userId, module, orgUsers, customPermissions) => {
   const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
   if(!u) return false;
+  const role = normalizeRole(u.role);
   // Check user-level override first
   const userOverride = customPermissions?.__users?.[userId]?.[module];
   if(userOverride!==undefined) return userOverride==="rw";
   // Then role-level custom override
-  const roleOverride = customPermissions?.[u.role]?.[module];
+  const roleOverride = customPermissions?.[role]?.[module];
   if(roleOverride!==undefined) return roleOverride==="rw";
-  return PERMISSIONS[u.role]?.[module]==="rw";
+  return PERMISSIONS[role]?.[module]==="rw";
 };

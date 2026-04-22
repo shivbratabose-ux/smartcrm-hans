@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -310,13 +310,13 @@ export default function SmartCRM() {
 
   // Roles allowed to soft-delete records; all others can only archive (same action, UI label differs)
   const canDelete = useMemo(() => {
-    const role = orgUsers.find(u => u.id === currentUser)?.role;
+    const role = normalizeRole(orgUsers.find(u => u.id === currentUser)?.role);
     return ["admin","md","director","line_mgr"].includes(role);
   }, [currentUser, orgUsers]);
 
   // Only admins can restore soft-deleted records
   const canRestore = useMemo(() => {
-    const role = orgUsers.find(u => u.id === currentUser)?.role;
+    const role = normalizeRole(orgUsers.find(u => u.id === currentUser)?.role);
     return ["admin","md","director"].includes(role);
   }, [currentUser, orgUsers]);
 
