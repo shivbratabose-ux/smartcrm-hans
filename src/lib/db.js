@@ -94,6 +94,10 @@ const toSnake = (obj, module) => {
   const alias = MODULE_ALIASES[module]?.toSnake || {};
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
+    // Skip transient app-only fields (e.g. _warnings, _valid, _mode, _matchedId
+    // from BulkUpload) — they don't exist in the DB schema and would cause
+    // "Could not find the 'X' column" errors on upsert.
+    if (k.startsWith("_")) continue;
     const key = alias[k] || map[k] || k;
     out[key] = v;
   }
