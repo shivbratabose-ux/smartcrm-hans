@@ -30,8 +30,21 @@ const TABLE_MAP = {
   users:       "users",
 };
 
+// ── Per-module field aliases ──
+// Some app fields map to differently-named DB columns on a single table.
+// The `leads` table only has an `owner` column (not `assigned_to`), and the
+// RLS policy keys off `owner`. Without this alias, every lead.assignedTo
+// write either fails (column not found) or saves owner=null, making rows
+// invisible to non-global roles via RLS — i.e. "I can't see my team's leads".
+const MODULE_ALIASES = {
+  leads: {
+    toSnake: { assignedTo: "owner" },
+    toCamel: { owner: "assignedTo" },
+  },
+};
+
 // ── Field mapping: JS camelCase ↔ DB snake_case ──
-const toSnake = (obj) => {
+const toSnake = (obj, module) => {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
   const map = {
     accountId:"account_id", accountNo:"account_no", contactId:"contact_id",
@@ -77,15 +90,16 @@ const toSnake = (obj) => {
     // soft delete
     isDeleted:"is_deleted", deletedAt:"deleted_at", deletedBy:"deleted_by",
   };
+  const alias = MODULE_ALIASES[module]?.toSnake || {};
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    const key = map[k] || k;
+    const key = alias[k] || map[k] || k;
     out[key] = v;
   }
   return out;
 };
 
-const toCamel = (obj) => {
+const toCamel = (obj, module) => {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
   const map = {
     account_id:"accountId", account_no:"accountNo", contact_id:"contactId",
@@ -131,9 +145,10 @@ const toCamel = (obj) => {
     // soft delete
     is_deleted:"isDeleted", deleted_at:"deletedAt", deleted_by:"deletedBy",
   };
+  const alias = MODULE_ALIASES[module]?.toCamel || {};
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    const key = map[k] || k;
+    const key = alias[k] || map[k] || k;
     out[key] = v;
   }
   return out;
@@ -156,7 +171,7 @@ export async function loadAll(module) {
   const orderCol = table === "files" ? "uploaded_at" : "created_at";
   const { data, error } = await supabase.from(table).select("*").eq("is_deleted", false).order(orderCol, { ascending: false });
   if (error) { dbLog('error', `[DB] loadAll ${module}:`, error); return null; }
-  return (data || []).map(toCamel);
+  return (data || []).map(r => toCamel(r, module));
 }
 
 /**
@@ -184,13 +199,13 @@ export async function insertRecord(module, record) {
   const table = TABLE_MAP[module];
   if (!table) return { data: null, error: "Unknown module" };
 
-  const snaked = toSnake(record);
+  const snaked = toSnake(record, module);
   // Remove undefined/null keys
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
   const { data, error } = await supabase.from(table).insert(snaked).select().single();
   if (error) dbLog('error', `[DB] insert ${module}:`, error);
-  return { data: data ? toCamel(data) : record, error };
+  return { data: data ? toCamel(data, module) : record, error };
 }
 
 /**
@@ -202,12 +217,12 @@ export async function updateRecord(module, id, updates) {
   const table = TABLE_MAP[module];
   if (!table) return { data: null, error: "Unknown module" };
 
-  const snaked = toSnake(updates);
+  const snaked = toSnake(updates, module);
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
   const { data, error } = await supabase.from(table).update(snaked).eq("id", id).select().single();
   if (error) dbLog('error', `[DB] update ${module}:`, error);
-  return { data: data ? toCamel(data) : updates, error };
+  return { data: data ? toCamel(data, module) : updates, error };
 }
 
 /**
@@ -254,7 +269,7 @@ export async function loadDeleted(module) {
   if (!table) return [];
   const { data, error } = await supabase.from(table).select("*").eq("is_deleted", true).order("deleted_at", { ascending: false });
   if (error) { dbLog('error', `[DB] loadDeleted ${module}:`, error); return []; }
-  return (data || []).map(toCamel);
+  return (data || []).map(r => toCamel(r, module));
 }
 
 /**
@@ -266,7 +281,7 @@ export async function batchUpsert(module, records) {
   const table = TABLE_MAP[module];
   if (!table) return { error: "Unknown module" };
 
-  const snaked = records.map(toSnake);
+  const snaked = records.map(r => toSnake(r, module));
   const { error } = await supabase.from(table).upsert(snaked, { onConflict: "id" });
   if (error) dbLog('error', `[DB] batchUpsert ${module}:`, error);
   return { error };
@@ -403,8 +418,8 @@ export function subscribeToChanges(module, callback) {
       const { eventType, new: newRow, old: oldRow } = payload;
       callback({
         type: eventType, // INSERT, UPDATE, DELETE
-        record: newRow ? toCamel(newRow) : null,
-        oldRecord: oldRow ? toCamel(oldRow) : null,
+        record: newRow ? toCamel(newRow, module) : null,
+        oldRecord: oldRow ? toCamel(oldRow, module) : null,
       });
     })
     .subscribe();
