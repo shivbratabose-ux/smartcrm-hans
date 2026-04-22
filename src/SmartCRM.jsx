@@ -470,6 +470,7 @@ export default function SmartCRM() {
           role: u.role, lob: u.lob, country: u.country, active: u.active,
           branchId: u.branch_id, deptId: u.dept_id, joinDate: u.join_date,
           authUserId: u.auth_user_id, reportsTo: u.reports_to || undefined,
+          dottedTo: Array.isArray(u.dotted_to) ? u.dotted_to : [],
         }));
         setOrgUsers(mapped);
       }

@@ -212,7 +212,15 @@ export const getScopedUserIds = (currentUserId, orgUsers) => {
   }
 
   // Rule 2: Walk the reporting tree downward — start with self, add all who
-  // (directly or transitively) report up to me.
+  // (directly or transitively) report up to me. Follows BOTH the solid line
+  // (reportsTo, single parent) AND every dotted line (dottedTo[], 0..N extra
+  // parents). This is what lets a PM whose primary line is Product Dev but
+  // who's dotted into Sales & Marketing show up in BOTH managers' scopes.
+  const reportsToMe = (u, mgrId) => {
+    if (u.reportsTo === mgrId) return true;
+    const dotted = Array.isArray(u.dottedTo) ? u.dottedTo : [];
+    return dotted.includes(mgrId);
+  };
   const scoped = new Set([currentUserId]);
   let frontier = [currentUserId];
   while (frontier.length > 0) {
@@ -220,7 +228,7 @@ export const getScopedUserIds = (currentUserId, orgUsers) => {
     for (const mgrId of frontier) {
       for (const u of allUsers) {
         if (u.active === false) continue;
-        if (u.reportsTo === mgrId && !scoped.has(u.id)) {
+        if (reportsToMe(u, mgrId) && !scoped.has(u.id)) {
           scoped.add(u.id);
           next.push(u.id);
         }

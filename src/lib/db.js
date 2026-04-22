@@ -69,7 +69,7 @@ const toSnake = (obj, module) => {
     recordId:"record_id", linkedTo:"linked_to", linkedOpps:"linked_opps",
     endTime:"end_time", authUserId:"auth_user_id", branchId:"branch_id",
     deptId:"dept_id", joinDate:"join_date", avatarUrl:"avatar_url",
-    reportsTo:"reports_to",
+    reportsTo:"reports_to", dottedTo:"dotted_to",
     // Lead fields
     assignedTo:"assigned_to", contactIds:"contact_ids", contactRoles:"contact_roles",
     additionalProducts:"additional_products", estimatedValue:"estimated_value",
@@ -124,7 +124,7 @@ const toCamel = (obj, module) => {
     record_id:"recordId", linked_to:"linkedTo", linked_opps:"linkedOpps",
     end_time:"endTime", auth_user_id:"authUserId", branch_id:"branchId",
     dept_id:"deptId", join_date:"joinDate", avatar_url:"avatarUrl",
-    reports_to:"reportsTo",
+    reports_to:"reportsTo", dotted_to:"dottedTo",
     // Lead fields
     assigned_to:"assignedTo", contact_ids:"contactIds", contact_roles:"contactRoles",
     additional_products:"additionalProducts", estimated_value:"estimatedValue",
@@ -389,7 +389,7 @@ export async function updateUserProfile(userId, patch) {
   if (!userId) return { error: "Missing userId" };
   // Whitelist of editable columns
   const allowed = ["name", "email", "initials", "role", "lob", "branchId", "deptId",
-                   "country", "active", "joinDate", "avatarUrl", "reportsTo"];
+                   "country", "active", "joinDate", "avatarUrl", "reportsTo", "dottedTo"];
   const clean = {};
   Object.keys(patch || {}).forEach(k => { if (allowed.includes(k)) clean[k] = patch[k]; });
   if (Object.keys(clean).length === 0) return { error: null };
