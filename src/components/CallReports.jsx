@@ -8,6 +8,7 @@ import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
+import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString, primaryProductId } from './ProductModulePicker';
 
 const TYPE_ICON = {
   "Telephone Call": <Phone size={14}/>, "Visit": <MapPin size={14}/>, "Web Call": <Video size={14}/>,
@@ -42,7 +43,7 @@ const CSV_COLS = [
   { label: "Duration (min)", accessor: r => r.duration },
 ];
 
-function CallReports({ callReports, setCallReports, accounts, contacts, opps, currentUser, orgUsers, canDelete }) {
+function CallReports({ callReports, setCallReports, accounts, contacts, opps, currentUser, orgUsers, canDelete, catalog = [] }) {
   const _crScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const team = useMemo(() => {
     const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
@@ -55,6 +56,11 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
   const [form, setForm] = useState(BLANK_CALL_REPORT);
   const [confirm, setConfirm] = useState(null);
   const [formErrors, setFormErrors] = useState({});
+
+  const CSV_COLS_LIVE = useMemo(() => ([
+    ...CSV_COLS,
+    { label: "Products & Modules", accessor: r => productSelectionToString(r.productSelection, catalog) },
+  ]), [catalog]);
 
   const todaysCalls = callReports.filter(r => r.nextCallDate === today).length;
   const overdueCalls = callReports.filter(r => r.nextCallDate && r.nextCallDate < today && r.outcome !== "Completed").length;
@@ -83,11 +89,24 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
     setFormErrors({});
     setModal({ mode: "add" });
   };
-  const openEdit = (r) => { setForm({ ...r }); setFormErrors({}); setModal({ mode: "edit" }); };
+  const openEdit = (r) => {
+    const ps = Array.isArray(r.productSelection) && r.productSelection.length > 0
+      ? r.productSelection
+      : (r.product ? [{ productId: r.product, moduleIds: [], noAddons: true }] : []);
+    setForm({ ...r, productSelection: ps });
+    setFormErrors({});
+    setModal({ mode: "edit" });
+  };
+  // Keep legacy `product` synced with first picker entry so list filters/CSV stay correct
+  const syncLegacy = (f) => {
+    const sel = Array.isArray(f.productSelection) ? f.productSelection : [];
+    if (sel.length === 0) return f;
+    return { ...f, product: primaryProductId(sel) || f.product };
+  };
   const save = () => {
     const errs = validateCallReport(form);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
-    const clean = sanitizeObj(form);
+    const clean = sanitizeObj(syncLegacy(form));
     if (modal.mode === "add") setCallReports(p => [...p, { ...clean }]);
     else setCallReports(p => p.map(r => r.id === clean.id ? { ...clean } : r));
     setModal(null); setFormErrors({});
@@ -113,7 +132,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
           </div>
         </div>
         <div className="pg-actions">
-          <button className="btn btn-sec" onClick={() => exportCSV(filtered, CSV_COLS, "call_reports")}><Download size={14}/>Export</button>
+          <button className="btn btn-sec" onClick={() => exportCSV(filtered, CSV_COLS_LIVE, "call_reports")}><Download size={14}/>Export</button>
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>Log Call</button>
         </div>
       </div>
@@ -139,7 +158,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
 
       <BulkActions count={bulk.count} onClear={bulk.clear}
         onDelete={() => setConfirm("bulk")}
-        onExport={() => exportCSV(callReports.filter(r=>bulk.isSelected(r.id)), CSV_COLS, "call_reports")}
+        onExport={() => exportCSV(callReports.filter(r=>bulk.isSelected(r.id)), CSV_COLS_LIVE, "call_reports")}
       />
 
       <div className="card" style={{padding:0}}>
@@ -235,21 +254,22 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
               </select>
             </div>
           </div>
-          <div className="form-row three">
+          <div className="form-row">
             <div className="form-group"><label>Call Type</label>
               <select value={form.callType} onChange={e => setForm(f => ({...f, callType: e.target.value}))}>
                 {CALL_TYPES.map(t => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-            <div className="form-group"><label>Product</label>
-              <select value={form.product} onChange={e => setForm(f => ({...f, product: e.target.value}))}>
-                {PRODUCTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
             <div className="form-group"><label>Objective</label>
               <select value={form.objective} onChange={e => setForm(f => ({...f, objective: e.target.value}))}>
                 {CALL_OBJECTIVES.map(o => <option key={o}>{o}</option>)}
               </select>
+            </div>
+          </div>
+          <div className="form-row full">
+            <div className="form-group"><label>Products & Modules Discussed</label>
+              <ProductModulePicker value={form.productSelection || []} onChange={(v) => setForm(f => ({...f, productSelection: v}))} catalog={catalog}/>
+              <div style={{fontSize:11,color:"var(--text3)",marginTop:4}}>Pick the product(s) and specific module(s) discussed on this call. Choose "None" if the call was generic.</div>
             </div>
           </div>
           <div className="form-row three">
