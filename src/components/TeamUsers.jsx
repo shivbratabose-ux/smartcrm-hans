@@ -79,15 +79,31 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
     setTimeout(()=>{setPwModal(null);setPwSuccess("");setPwForm({password:"",confirm:"",current:""});setShowPw({pw:false,confirm:false,current:false});setGeneratedPw("");},1500);
   };
 
-  // Admin reset — sends a password reset email via Supabase Auth
+  // Admin reset — sends a password reset email AND marks the user as
+  // must-change-on-next-login with a 24h expiry. The RPC is admin-only
+  // (server-side check via get_crm_role) so we can call it straight from
+  // the browser without leaking service-role privileges.
   const sendResetEmail=async(userId)=>{
     const user=orgUsers.find(u=>u.id===userId);
     if(!user?.email){setPwErr("No email on file for this user.");return;}
     if(!isSupabaseConfigured){setPwErr("Authentication not configured.");return;}
-    const {error}=await supabase.auth.resetPasswordForEmail(user.email);
-    if(error){setPwErr(error.message);return;}
-    setPwSuccess(`Reset link sent to ${user.email}`);
-    setTimeout(()=>{setPwModal(null);setPwSuccess("");},2000);
+    const {error:emailErr}=await supabase.auth.resetPasswordForEmail(user.email);
+    if(emailErr){setPwErr(emailErr.message);return;}
+    // Flag the user as needing a password change within 24h. If the RPC
+    // fails (e.g. migration not applied yet) we still consider the email
+    // step a success — the worst case is the user just isn't force-gated.
+    const {error:rpcErr}=await supabase.rpc("request_admin_password_reset",{target_user_id:userId});
+    if(rpcErr){
+      console.warn("request_admin_password_reset RPC failed:",rpcErr.message);
+      setPwSuccess(`Reset link sent to ${user.email} (24h gate not applied — run admin_password_reset_v1.sql)`);
+    } else {
+      // Update local state so the row reflects the new flag immediately
+      setOrgUsers(us=>us.map(u=>u.id===userId
+        ? {...u,mustChangePassword:true,tempPasswordExpiresAt:new Date(Date.now()+24*60*60*1000).toISOString()}
+        : u));
+      setPwSuccess(`Reset link sent to ${user.email}. Valid for 24 hours — they'll be required to change it on next sign-in.`);
+    }
+    setTimeout(()=>{setPwModal(null);setPwSuccess("");},2500);
   };
 
   const openAddUser=()=>setModal({mode:"adduser",form:{name:"",email:"",role:"sales_exec",lob:"iCAFFE",branchId:"br1",deptId:"dep1",initials:"",active:true,joinDate:today,password:"",confirmPassword:""}});

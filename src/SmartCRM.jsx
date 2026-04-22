@@ -20,6 +20,7 @@ import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, 
 
 // Components
 import Login from "./components/Login";
+import ForcedPasswordChange from "./components/ForcedPasswordChange";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import Dashboard from "./components/Dashboard";
@@ -1093,6 +1094,32 @@ export default function SmartCRM() {
       </div>
     </>
   );
+
+  // ── Forced password change gate ──
+  // If the admin reset this user's password, the users row carries
+  // mustChangePassword=true and a 24h expiry. Block the entire app and
+  // force a new password (or sign-out if the window has lapsed).
+  const _meRow = orgUsers.find(u => u.id === currentUser);
+  if (_meRow?.mustChangePassword) {
+    return (
+      <>
+        <style dangerouslySetInnerHTML={{__html:CSS}}/>
+        <ToastContainer />
+        <ForcedPasswordChange
+          userName={_meRow.name?.split(" ")[0] || "there"}
+          expiresAt={_meRow.tempPasswordExpiresAt}
+          onDone={() => {
+            // Optimistically clear the local flag; the next data refresh
+            // will reconcile from the DB. Avoids a full reload.
+            setOrgUsers(us => us.map(u => u.id === currentUser
+              ? { ...u, mustChangePassword: false, tempPasswordExpiresAt: null }
+              : u));
+          }}
+          onSignOut={logout}
+        />
+      </>
+    );
+  }
 
   return (
     <ErrorBoundary>
