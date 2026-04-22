@@ -9,8 +9,9 @@ import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
+import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString, primaryProductId } from './ProductModulePicker';
 
-function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
+function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,catalog=[]}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const [tabS,setTabS]=useState("Open");
   const [search,setSearch]=useState("");
@@ -35,10 +36,30 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
   }),[tickets,tabS,prodF,search]);
 
   const openAdd=()=>{setForm({...BLANK_TKT,id:`TK-${String(tickets.length+1).padStart(3,"0")}`});setFormErrors({});setModal({mode:"add"});};
+  // Backfill productSelection from legacy product+affectedModule when editing older rows
+  const openEdit=(t)=>{
+    const ps = Array.isArray(t.productSelection) && t.productSelection.length > 0
+      ? t.productSelection
+      : (t.product ? [{ productId: t.product, moduleIds: [], noAddons: !t.affectedModule }] : []);
+    setForm({...t, productSelection: ps});
+    setFormErrors({});
+    setModal({mode:"edit"});
+  };
+  // Sync legacy product + affectedModule from picker so list/filter/CSV stay consistent
+  const syncLegacy=(f)=>{
+    const sel = Array.isArray(f.productSelection) ? f.productSelection : [];
+    if (sel.length === 0) return f;
+    const first = sel[0];
+    const product = primaryProductId(sel) || f.product;
+    const prodCat = (catalog||[]).find(p => p.id === first.productId);
+    const modNames = (prodCat?.modules || []).filter(m => (first.moduleIds||[]).includes(m.id)).map(m => m.name);
+    const affectedModule = first.noAddons ? "" : modNames.join(", ");
+    return { ...f, product, affectedModule };
+  };
   const save=()=>{
     const errs = validateTicket(form);
     if(hasErrors(errs)){ setFormErrors(errs); return; }
-    const clean = sanitizeObj(form);
+    const clean = sanitizeObj(syncLegacy(form));
     if(modal.mode==="add") setTickets(p=>[...p,{...clean,created:today}]);
     else setTickets(p=>p.map(t=>t.id===clean.id?{...clean}:t));
     setModal(null);setDetail(null);setFormErrors({});
@@ -65,6 +86,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
     {label:"reportedDate",   accessor:t=>t.reportedDate||""},
     {label:"environment",    accessor:t=>t.environment||""},
     {label:"affectedModule", accessor:t=>t.affectedModule||""},
+    {label:"productSelection", accessor:t=>productSelectionToString(t.productSelection, catalog)},
     {label:"assigned",       accessor:t=>t.assigned||""},
     {label:"sla",            accessor:t=>t.sla||""},
     {label:"resolvedDate",   accessor:t=>t.resolvedDate||""},
@@ -101,7 +123,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
                 <td><StatusBadge status={t.status}/></td>
                 <td><UserPill uid={t.assigned}/></td>
                 <td style={{fontSize:12,color:overdue?"var(--red)":"var(--text3)",fontWeight:overdue?700:400}}>{fmt.date(t.sla)}{overdue&&" ⚠"}</td>
-                <td><div style={{display:"flex",gap:4}}><button className="icon-btn" onClick={()=>{setForm({...t});setModal({mode:"edit"});}}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(t.id)}><Trash2 size={14}/></button>}</div></td>
+                <td><div style={{display:"flex",gap:4}}><button className="icon-btn" onClick={()=>openEdit(t)}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(t.id)}><Trash2 size={14}/></button>}</div></td>
               </tr>
             );
           })}</tbody>
@@ -109,17 +131,24 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete}) {
         <Pagination {...pg} />
       </div>
       {detail&&(
-        <Modal title={`${detail.id} – ${detail.title}`} onClose={()=>setDetail(null)} lg footer={<><button className="btn btn-sec btn-sm" onClick={()=>setDetail(null)}>Close</button><button className="btn btn-primary btn-sm" onClick={()=>{setForm({...detail});setModal({mode:"edit"});setDetail(null);}}><Edit2 size={13}/>Edit</button></>}>
+        <Modal title={`${detail.id} – ${detail.title}`} onClose={()=>setDetail(null)} lg footer={<><button className="btn btn-sec btn-sm" onClick={()=>setDetail(null)}>Close</button><button className="btn btn-primary btn-sm" onClick={()=>{openEdit(detail);setDetail(null);}}><Edit2 size={13}/>Edit</button></>}>
           <div className="dp-grid">
             {[["Product",<ProdTag pid={detail.product}/>],["Priority",<PriorityBadge priority={detail.priority}/>],["Status",<StatusBadge status={detail.status}/>],["Type",detail.type],["Assigned",TEAM_MAP[detail.assigned]?.name||"—"],["SLA",fmt.date(detail.sla)],["Created",fmt.date(detail.created)],["Account",accounts.find(a=>a.id===detail.accountId)?.name||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>
+          {((detail.productSelection&&detail.productSelection.length>0)||detail.product)&&(
+            <div style={{marginTop:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:0.5,marginBottom:6,textTransform:"uppercase"}}>Products & Affected Modules</div>
+              <ProductSelectionDisplay value={detail.productSelection} catalog={catalog} fallbackProducts={detail.product?[detail.product]:[]}/>
+            </div>
+          )}
           {detail.description&&<div style={{marginTop:14,background:"var(--s2)",padding:"12px 14px",borderRadius:8,fontSize:13,color:"var(--text2)",lineHeight:1.6}}>{detail.description}</div>}
         </Modal>
       )}
       {modal&&(
         <Modal title={modal.mode==="add"?"New Ticket":"Edit Ticket"} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_TKT);}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});setForm(BLANK_TKT);}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save Ticket</button></>}>
           <div className="form-row full"><div className="form-group"><label>Title *</label><input value={form.title} onChange={e=>{setForm(f=>({...f,title:e.target.value}));setFormErrors(e=>({...e,title:undefined}));}} placeholder="Brief description of the issue or request" style={formErrors.title?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.title}/></div></div>
-          <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{setForm(f=>({...f,accountId:e.target.value}));setFormErrors(e=>({...e,accountId:undefined}));}} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select account…</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div><div className="form-group"><label>Product</label><select value={form.product} onChange={e=>setForm(f=>({...f,product:e.target.value}))}>{PRODUCTS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div>
+          <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{setForm(f=>({...f,accountId:e.target.value}));setFormErrors(e=>({...e,accountId:undefined}));}} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select account…</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div></div>
+          <div className="form-row full"><div className="form-group"><label>Product & Affected Module(s)</label><ProductModulePicker value={form.productSelection || []} onChange={(v)=>setForm(f=>({...f,productSelection:v}))} catalog={catalog}/><div style={{fontSize:11,color:"var(--text3)",marginTop:4}}>Pick the product and the specific module(s) impacted by this ticket. Choose "None" if the ticket is product-wide.</div></div></div>
           <div className="form-row"><div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{TICKET_TYPES.map(t=><option key={t}>{t}</option>)}</select></div><div className="form-group"><label>Priority</label><select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))}>{PRIORITIES.map(p=><option key={p}>{p}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{TICKET_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div><div className="form-group"><label>Assigned To</label><select value={form.assigned} onChange={e=>setForm(f=>({...f,assigned:e.target.value}))}>{team.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>SLA Date</label><input type="date" value={form.sla} onChange={e=>setForm(f=>({...f,sla:e.target.value}))}/></div></div>
