@@ -5,6 +5,60 @@ import { uid } from '../utils/helpers';
 import { notify } from '../utils/toast';
 import { Empty, PageTip } from './shared';
 
+// ─── Product + Module CSV format ─────────────────────────────────────────────
+// Encoding accepted in the `productSelection` column:
+//   "iCAFFE[eSanchit Filing|OCR Engine]; WiseCargo[None]; WiseDox"
+//
+// Rules:
+//   - Multiple product lines separated by ";"
+//   - Modules per product wrapped in [ ... ], pipe-separated
+//   - "[None]" → noAddons:true (explicit no-modules acknowledgement)
+//   - Bare product name (no brackets) → all modules unset & noAddons false
+//     (caller will need to pick at least one module before saving — but for
+//     bulk import we accept it and treat as a soft selection)
+//   - Both product names AND product IDs accepted (case-insensitive)
+//   - Both module names AND module IDs accepted (case-insensitive)
+//
+// Returns { value: [...], errors: [...] }. value is the parsed productSelection
+// array; errors is a list of unmatched product/module names so the row can be
+// rejected with an actionable message.
+export function parseProductSelectionCSV(raw, catalog) {
+  if (!raw || !String(raw).trim()) return { value: [], errors: [] };
+  const errors = [];
+  const value = [];
+  const seenProducts = new Set();
+  const segments = String(raw).split(/;|\n/).map(s => s.trim()).filter(Boolean);
+  for (const seg of segments) {
+    // Match "Product[Mod1|Mod2]" or just "Product"
+    const m = seg.match(/^([^[]+?)(?:\[([^\]]*)\])?$/);
+    if (!m) { errors.push(`Unparseable product segment: "${seg}"`); continue; }
+    const prodName = m[1].trim();
+    const modBlock = (m[2] || "").trim();
+    const product = (catalog || []).find(p =>
+      p.id?.toLowerCase() === prodName.toLowerCase() ||
+      p.name?.toLowerCase() === prodName.toLowerCase()
+    );
+    if (!product) { errors.push(`Unknown product "${prodName}" — not in Masters > Product Catalogue`); continue; }
+    if (seenProducts.has(product.id)) { errors.push(`Duplicate product line for "${product.name}"`); continue; }
+    seenProducts.add(product.id);
+    // Empty bracket "[]" → soft selection (no modules picked, noAddons false)
+    if (!modBlock) { value.push({ productId: product.id, moduleIds: [], noAddons: false }); continue; }
+    if (modBlock.toLowerCase() === "none") { value.push({ productId: product.id, moduleIds: [], noAddons: true }); continue; }
+    const tokens = modBlock.split("|").map(s => s.trim()).filter(Boolean);
+    const moduleIds = [];
+    for (const tok of tokens) {
+      const mod = (product.modules || []).find(mm =>
+        mm.id?.toLowerCase() === tok.toLowerCase() ||
+        mm.name?.toLowerCase() === tok.toLowerCase()
+      );
+      if (!mod) { errors.push(`Unknown module "${tok}" for product "${product.name}"`); continue; }
+      if (!moduleIds.includes(mod.id)) moduleIds.push(mod.id);
+    }
+    value.push({ productId: product.id, moduleIds, noAddons: false });
+  }
+  return { value, errors };
+}
+
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 // refKey   → field used to match an EXISTING record (UPDATE path)
 // uniqueKey→ field used for within-file duplicate detection
@@ -23,11 +77,12 @@ const SCHEMAS = {
       "country","state","city","companyWebsite","alternatePhone","alternateEmail",
       "linkedInUrl","annualRevenue","campaignName","referredBy","expectedCloseDate",
       "proposalSent","demoScheduled","competitorName","lastContactDate",
+      "productSelection",
     ],
     sample: [
-      "leadId,company,contactName,email,phone,product,vertical,region,source,stage,country,state,score,expectedCloseDate,estimatedValue,campaignName,assignedTo",
-      "#FL-2026-001,Acme Corp,John Doe,john@acme.com,+91-98765-00001,iCAFFE,CHA,South Asia,Inside Sales,MQL,India,Maharashtra,50,2026-06-30,500000,,",
-      ",Beta Logistics,Jane Roe,jane@beta.com,+91-98765-00002,WiseCargo,Forwarder,South Asia,Referral,MQL,India,Delhi,60,2026-07-15,200000,Q1 Campaign,",
+      "leadId,company,contactName,email,phone,product,productSelection,vertical,region,source,stage,country,state,score,expectedCloseDate,estimatedValue,campaignName,assignedTo",
+      "#FL-2026-001,Acme Corp,John Doe,john@acme.com,+91-98765-00001,iCAFFE,iCAFFE[eSanchit Filing|OCR Engine]; WiseCargo[None],CHA,South Asia,Inside Sales,MQL,India,Maharashtra,50,2026-06-30,500000,,",
+      ",Beta Logistics,Jane Roe,jane@beta.com,+91-98765-00002,WiseCargo,WiseCargo[AWB Management],Forwarder,South Asia,Referral,MQL,India,Delhi,60,2026-07-15,200000,Q1 Campaign,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
@@ -46,7 +101,7 @@ const SCHEMAS = {
     mandatory: ["name","type","country"],
     optional:  [
       "accountNo","city","address","website","segment","status",
-      "hierarchyLevel","parentId","products","arrRevenue","potential","owner",
+      "hierarchyLevel","parentId","products","productSelection","arrRevenue","potential","owner",
       "state","pincode","legalName","pan","gstin","cin","taxTreatment","tdsApplicable","poMandatory",
       "billingAddress","billingCity","billingState","billingPincode","billingCountry",
       "primaryContact","primaryEmail","primaryPhone",
@@ -56,10 +111,10 @@ const SCHEMAS = {
     ],
     // Headers match Accounts export exactly — export CSV → edit in Excel → re-upload to UPDATE
     sample: [
-      "accountNo,name,type,country,city,state,pincode,address,legalName,pan,gstin,taxTreatment,website,segment,status,entityType,groupCode,paymentTerms,currency,billingFrequency,products,arrRevenue,potential,owner",
-      "ACC-2026-001,Acme Airlines,Airline,India,Mumbai,Maharashtra,400069,Andheri East Mumbai 400069,Acme Airlines Pvt Ltd,AAAAA1234A,27AAAAA1234A1Z5,Domestic,acme.com,Enterprise,Active,Head Office,GRP-ACM,Net 30,INR,Annual,iCAFFE;WiseCargo,10,50,",
-      "ACC-2026-002,Delta Freight,Freight Forwarder,UAE,Dubai,,,,,,,Export,betafreight.ae,Mid-Market,Active,Head Office,,Net 45,AED,Quarterly,WiseTrax,5,20,",
-      ",Beta Logistics,Customs Broker,India,Delhi,Delhi,110001,,Beta Logistics Pvt Ltd,BBBBB5678B,,Domestic,beta.in,SMB,Prospect,Head Office,,Net 30,INR,Annual,iCAFFE,0,15,",
+      "accountNo,name,type,country,city,state,pincode,address,legalName,pan,gstin,taxTreatment,website,segment,status,entityType,groupCode,paymentTerms,currency,billingFrequency,products,productSelection,arrRevenue,potential,owner",
+      "ACC-2026-001,Acme Airlines,Airline,India,Mumbai,Maharashtra,400069,Andheri East Mumbai 400069,Acme Airlines Pvt Ltd,AAAAA1234A,27AAAAA1234A1Z5,Domestic,acme.com,Enterprise,Active,Head Office,GRP-ACM,Net 30,INR,Annual,iCAFFE;WiseCargo,iCAFFE[eSanchit Filing|OCR Engine]; WiseCargo[AWB Management|DG Handling],10,50,",
+      "ACC-2026-002,Delta Freight,Freight Forwarder,UAE,Dubai,,,,,,,Export,betafreight.ae,Mid-Market,Active,Head Office,,Net 45,AED,Quarterly,WiseTrax,WiseTrax[None],5,20,",
+      ",Beta Logistics,Customs Broker,India,Delhi,Delhi,110001,,Beta Logistics Pvt Ltd,BBBBB5678B,,Domestic,beta.in,SMB,Prospect,Head Office,,Net 30,INR,Annual,iCAFFE,iCAFFE[eSanchit Filing],0,15,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
@@ -150,16 +205,16 @@ const SCHEMAS = {
     uniqueKey: "title",
     mandatory: ["title","accountId","product","status","value"],
     optional:  [
-      "contractNo","startDate","endDate","billTerm","billType",
+      "contractNo","productSelection","startDate","endDate","billTerm","billType",
       "poNumber","owner","terms","notes","oppId",
       "renewalType","paymentTerms","currency","billingFrequency","invoiceGenBasis",
       "griApplicable","griPercentage","noOfUsers","noOfBranches","serviceStartDate",
       "commercialModel","autoRenewal","warrantyMonths","goLiveDate","territory",
     ],
     sample: [
-      "contractNo,title,accountId,product,status,value,startDate,endDate,serviceStartDate,commercialModel,billingFrequency,paymentTerms,currency,noOfUsers,noOfBranches,renewalType,autoRenewal,griApplicable,griPercentage,goLiveDate,territory",
-      "CTR-2026-001,WiseCargo License — Acme,ACC-2026-001,WiseCargo,Active,200000,2026-01-01,2026-12-31,2026-02-01,Annual SaaS,Annual,Net 30,INR,50,3,Manual,No,No,0,2026-02-15,South Asia",
-      ",iCAFFE Starter — Beta,ACC-2026-002,iCAFFE,Draft,50000,2026-06-01,2027-05-31,,,Annual,Net 30,INR,10,1,Manual,No,No,0,,",
+      "contractNo,title,accountId,product,productSelection,status,value,startDate,endDate,serviceStartDate,commercialModel,billingFrequency,paymentTerms,currency,noOfUsers,noOfBranches,renewalType,autoRenewal,griApplicable,griPercentage,goLiveDate,territory",
+      "CTR-2026-001,WiseCargo License — Acme,ACC-2026-001,WiseCargo,WiseCargo[AWB Management|DG Handling|Cargo Terminal Ops],Active,200000,2026-01-01,2026-12-31,2026-02-01,Annual SaaS,Annual,Net 30,INR,50,3,Manual,No,No,0,2026-02-15,South Asia",
+      ",iCAFFE Starter — Beta,ACC-2026-002,iCAFFE,iCAFFE[eSanchit Filing],Draft,50000,2026-06-01,2027-05-31,,,Annual,Net 30,INR,10,1,Manual,No,No,0,,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
@@ -204,16 +259,16 @@ const SCHEMAS = {
     uniqueKey: "title",
     mandatory: ["title","accountId","stage","value","closeDate"],
     optional:  [
-      "oppNo","products","probability","source","country","lob","owner",
+      "oppNo","products","productSelection","probability","source","country","lob","owner",
       "hierarchyLevel","dealSize","forecastCat","currency","competitors",
       "lossReason","nextStep","decisionDate","budget","territory",
       "campaignSource","notes","createdDate",
     ],
     sample: [
-      "oppNo,title,accountId,stage,value,probability,closeDate,source,country,lob,products,dealSize,forecastCat,currency,nextStep,decisionDate,owner",
-      "OPP-2026-001,iCAFFE License — Acme,ACC-2026-001,Proposal,15,60,2026-06-30,Inside Sales,India,CHA,iCAFFE,Medium,Commit,INR,Send proposal,2026-05-15,",
-      "OPP-2026-002,WiseCargo — Delta Freight,ACC-2026-002,Demo,25,45,2026-07-31,Referral,UAE,Freight Forwarder,WiseCargo,Large,Pipeline,USD,Schedule demo,2026-06-01,",
-      ",WiseTrax Messaging — Beta,ACC-2026-003,Qualified,8,25,2026-08-31,Inside Sales,India,Airline,WiseTrax,Small,Pipeline,INR,Initial call done,,",
+      "oppNo,title,accountId,stage,value,probability,closeDate,source,country,lob,products,productSelection,dealSize,forecastCat,currency,nextStep,decisionDate,owner",
+      "OPP-2026-001,iCAFFE License — Acme,ACC-2026-001,Proposal,15,60,2026-06-30,Inside Sales,India,CHA,iCAFFE,iCAFFE[eSanchit Filing|OCR Engine],Medium,Commit,INR,Send proposal,2026-05-15,",
+      "OPP-2026-002,WiseCargo — Delta Freight,ACC-2026-002,Demo,25,45,2026-07-31,Referral,UAE,Freight Forwarder,WiseCargo,WiseCargo[AWB Management|DG Handling],Large,Pipeline,USD,Schedule demo,2026-06-01,",
+      ",WiseTrax Messaging — Beta,ACC-2026-003,Qualified,8,25,2026-08-31,Inside Sales,India,Airline,WiseTrax,WiseTrax[Type-B Gateway],Small,Pipeline,INR,Initial call done,,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
@@ -261,7 +316,7 @@ function parseCSV(text) {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
-function BulkUpload({ onUpload, existingData = {} }) {
+function BulkUpload({ onUpload, existingData = {}, catalog = [] }) {
   const [type, setType]       = useState("Leads");
   const [fileData, setFileData] = useState(null);
   const [results, setResults]   = useState(null);
@@ -359,7 +414,15 @@ function BulkUpload({ onUpload, existingData = {} }) {
       const matched = refVal ? existingByRef[refVal.toLowerCase()] : null;
       const mode = matched ? "update" : "insert";
 
-      return { ...row, _errors: errs, _valid: errs.length === 0, _mode: mode, _matchedId: matched?.id || null };
+      // Validate productSelection (if present) against live Masters catalog
+      let parsedSelection = null;
+      if (row.productSelection?.trim()) {
+        const parsed = parseProductSelectionCSV(row.productSelection, catalog);
+        if (parsed.errors.length > 0) errs.push(...parsed.errors);
+        parsedSelection = parsed.value;
+      }
+
+      return { ...row, _errors: errs, _valid: errs.length === 0, _mode: mode, _matchedId: matched?.id || null, _productSelection: parsedSelection };
     });
 
     setResults(validated);
@@ -376,9 +439,20 @@ function BulkUpload({ onUpload, existingData = {} }) {
 
     const records = valid.map(r => {
       const clean = { ...r };
+      // Replace the raw productSelection STRING with the parsed ARRAY so the
+      // handler stores it in the same shape as the live picker produces.
+      // Also keep the legacy `products` field synced for filters/exports.
+      if (r._productSelection) {
+        clean.productSelection = r._productSelection;
+        const productIds = r._productSelection.map(e => e.productId);
+        if (productIds.length > 0) clean.products = productIds;
+      } else if (clean.productSelection !== undefined) {
+        // Empty cell — strip it so we don't overwrite an existing array with ""
+        delete clean.productSelection;
+      }
       // Remove internal tracking fields
       delete clean._row; delete clean._errors; delete clean._valid;
-      delete clean._mode; delete clean._matchedId;
+      delete clean._mode; delete clean._matchedId; delete clean._productSelection;
 
       if (r._mode === "update") {
         // Preserve the existing internal id so SmartCRM can match and merge
@@ -491,6 +565,37 @@ function BulkUpload({ onUpload, existingData = {} }) {
         {existing.length > 0 && (
           <div style={{ fontSize: 11, marginTop: 6, color: "var(--text3)" }}>
             {existing.length} existing {type.toLowerCase()} records loaded — ref IDs matched against these.
+          </div>
+        )}
+
+        {schema.optional.includes("productSelection") && (
+          <div style={{ fontSize: 11, marginTop: 8, padding: "8px 12px", borderRadius: 6, background: "#F0F9FF", color: "#075985", border: "1px solid #BAE6FD" }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>productSelection format (validated against Masters &gt; Product Catalogue):</div>
+            <div style={{ fontFamily: "monospace", fontSize: 11, marginBottom: 4 }}>
+              iCAFFE[eSanchit Filing|OCR Engine]; WiseCargo[None]; WiseDox[Doc Repository]
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.9 }}>
+              · Multiple products separated by <code>;</code> &nbsp;·&nbsp; Modules per product wrapped in <code>[ ]</code>, pipe-separated
+              &nbsp;·&nbsp; Use <code>[None]</code> when no add-ons apply &nbsp;·&nbsp; Product/module names matched case-insensitively
+              against current Masters. Unknown names are rejected with a row error.
+            </div>
+            {catalog.length > 0 && (
+              <details style={{ marginTop: 6 }}>
+                <summary style={{ cursor: "pointer", fontWeight: 600 }}>Available products ({catalog.length})</summary>
+                <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {catalog.map(p => (
+                    <div key={p.id} style={{ fontSize: 11 }}>
+                      <strong>{p.name}</strong>
+                      {p.modules?.length > 0 && (
+                        <span style={{ color: "var(--text3)" }}>
+                          {" — "}{p.modules.map(m => m.name).join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
         )}
       </div>
