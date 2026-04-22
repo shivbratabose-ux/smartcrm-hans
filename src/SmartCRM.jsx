@@ -609,12 +609,29 @@ export default function SmartCRM() {
   const handleDealWon = useCallback((opp) => {
     if (opp.accountId) {
       // Update existing account: mark Active, add products
-      setAccounts(p => p.map(a => a.id === opp.accountId ? {
-        ...a,
-        status: "Active",
-        products: [...new Set([...(a.products || []), ...(opp.products || [])])],
-        arrRevenue: (a.arrRevenue || 0) + (opp.value || 0),
-      } : a));
+      setAccounts(p => p.map(a => {
+        if (a.id !== opp.accountId) return a;
+        // Merge productSelection: union by productId, union moduleIds within
+        const existingSel = Array.isArray(a.productSelection) ? a.productSelection : [];
+        const incoming = Array.isArray(opp.productSelection) ? opp.productSelection : [];
+        const mergedSel = [...existingSel];
+        for (const inc of incoming) {
+          const idx = mergedSel.findIndex(x => x.productId === inc.productId);
+          if (idx === -1) mergedSel.push({ ...inc });
+          else mergedSel[idx] = {
+            productId: inc.productId,
+            moduleIds: [...new Set([...(mergedSel[idx].moduleIds||[]), ...(inc.moduleIds||[])])],
+            noAddons: mergedSel[idx].noAddons && inc.noAddons,
+          };
+        }
+        return {
+          ...a,
+          status: "Active",
+          products: [...new Set([...(a.products || []), ...(opp.products || [])])],
+          productSelection: mergedSel,
+          arrRevenue: (a.arrRevenue || 0) + (opp.value || 0),
+        };
+      }));
     } else {
       // Auto-create account from deal
       const year = new Date().getFullYear();
@@ -632,6 +649,7 @@ export default function SmartCRM() {
         country: opp.country || "",
         region: "",
         products: opp.products || [],
+        productSelection: Array.isArray(opp.productSelection) ? opp.productSelection : [],
         source: "Deal Won",
         arrRevenue: opp.value || 0,
       };
@@ -1081,7 +1099,7 @@ export default function SmartCRM() {
             {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete}/>}
             {page==="accounts"   && <Accounts accounts={visibleAccounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={visibleContacts} setContacts={setContacts} tickets={visibleTickets} contracts={visibleContracts} collections={visibleCollections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} canDelete={canDelete}/>}
             {page==="contacts"   && <Contacts contacts={visibleContacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={visibleAccounts} opps={visibleOpps} activities={visibleActivities} canDelete={canDelete}/>}
-            {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} onDealWon={handleDealWon} canDelete={canDelete}/>}
+            {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} catalog={catalog} onDealWon={handleDealWon} canDelete={canDelete}/>}
             {page==="activities" && <Activities activities={visibleActivities} setActivities={setActivities} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers} canDelete={canDelete}/>}
             {page==="callreports"&& <CallReports callReports={visibleCallReports} setCallReports={setCallReports} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete}/>}
             {page==="tickets"    && <Tickets tickets={visibleTickets} setTickets={setTickets} accounts={visibleAccounts} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete}/>}
