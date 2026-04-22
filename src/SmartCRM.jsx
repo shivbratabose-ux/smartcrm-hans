@@ -352,7 +352,15 @@ export default function SmartCRM() {
   const visibleContacts    = useMemo(() => contacts.filter(c => !c.isDeleted), [contacts]);
   const visibleTickets     = useMemo(() => tickets.filter(t => !t.isDeleted), [tickets]);
   const visibleContracts   = useMemo(() => contracts.filter(c => !c.isDeleted), [contracts]);
-  const visibleCollections = useMemo(() => collections.filter(c => !c.isDeleted), [collections]);
+  // Collections respect the same hierarchy walker as leads/opps: global roles
+  // see everything; managers see their full downline (solid + dotted line);
+  // sales execs see only what they own. Unowned rows stay visible to everyone
+  // so finance-uploaded invoices that haven't been routed yet aren't hidden.
+  const visibleCollections = useMemo(() => {
+    const live = collections.filter(c => !c.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(c => !c.owner || _scopedIds.has(c.owner));
+  }, [collections, _scopedIds, _globalRole]);
   const visibleQuotes      = useMemo(() => quotes.filter(q => !q.isDeleted), [quotes]);
   const visibleCommLogs    = useMemo(() => commLogs.filter(c => !c.isDeleted), [commLogs]);
   const visibleEvents      = useMemo(() => events.filter(e => !e.isDeleted), [events]);
