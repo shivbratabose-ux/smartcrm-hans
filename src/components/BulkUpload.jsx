@@ -450,6 +450,28 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
     return m;
   }, [existing, type]);
 
+  // Fallback identity lookups for rows whose primary refKey (e.g. leadId) is
+  // blank in the upload — common when re-uploading a CSV that pre-dates the
+  // system's auto-generated ids. We try email first, then (company + contact)
+  // pair, both case/whitespace-normalized. Hits become UPDATE, not INSERT,
+  // so the user can recover from a partial-sync without creating duplicates.
+  const norm = (s) => String(s ?? "").toLowerCase().trim();
+  const existingByFallback = useMemo(() => {
+    const byEmail = {};
+    const byCompanyContact = {};
+    if (type !== "Leads" && type !== "Contacts" && type !== "Customers") {
+      return { byEmail, byCompanyContact };
+    }
+    existing.forEach(r => {
+      const email = norm(r.email);
+      if (email) byEmail[email] = r;
+      const company = norm(r.company || r.name); // accounts use `name`
+      const contact = norm(r.contact || r.contactName || r.name);
+      if (company && contact) byCompanyContact[`${company}||${contact}`] = r;
+    });
+    return { byEmail, byCompanyContact };
+  }, [existing, type]);
+
   const handleFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -512,10 +534,32 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
     if (uKey && seenInFile.has(uKey)) errs.push(`Duplicate ${schema.uniqueKey} in file: "${work[schema.uniqueKey]}"`);
     if (uKey) seenInFile.add(uKey);
 
-    // Match against existing records via refKey
+    // Match against existing records via refKey (e.g. leadId). When the
+    // primary key is blank/no-match, try email, then (company + contact) as
+    // fallbacks so a re-upload of legacy CSVs without ids still resolves to
+    // UPDATE and doesn't create duplicates.
     const refVal = work[schema.refKey]?.trim();
-    const matched = refVal ? existingByRef[refVal.toLowerCase()] : null;
+    let matched = refVal ? existingByRef[refVal.toLowerCase()] : null;
+    let matchedBy = matched ? schema.refKey : null;
+    if (!matched) {
+      const emailKey = norm(work.email);
+      if (emailKey && existingByFallback.byEmail[emailKey]) {
+        matched = existingByFallback.byEmail[emailKey];
+        matchedBy = "email";
+      }
+    }
+    if (!matched) {
+      const ck = norm(work.company || work.name);
+      const nk = norm(work.contact || work.contactName);
+      if (ck && nk) {
+        const hit = existingByFallback.byCompanyContact[`${ck}||${nk}`];
+        if (hit) { matched = hit; matchedBy = "company+contact"; }
+      }
+    }
     const mode = matched ? "update" : "insert";
+    if (matched && matchedBy && matchedBy !== schema.refKey) {
+      warnings.push(`Matched existing record by ${matchedBy} → will update instead of insert`);
+    }
 
     // Fuzzy-resolve user references (assignedTo / owner / marketingPerson /
     // assigned). If the cell already holds a known user id, this is a no-op.
