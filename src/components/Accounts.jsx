@@ -5,6 +5,7 @@ import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LE
 import { BLANK_ACC } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal } from './shared';
+import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -21,7 +22,7 @@ const infoRow = (label, value) => (
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNT PROFILE — Full Customer Profile Sheet
 // ═══════════════════════════════════════════════════════════════════
-function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets, contracts, collections, notes, files, onAddNote, onAddFile, currentUser, allAccounts, leads=[], orgUsers, onLogCall, onNavigate}) {
+function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets, contracts, collections, notes, files, onAddNote, onAddFile, currentUser, allAccounts, leads=[], orgUsers, catalog, onLogCall, onNavigate}) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [tab, setTab] = useState("overview");
@@ -211,9 +212,12 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                   <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
                     <Package size={15} style={{color:"var(--brand)"}}/> Products & Revenue
                   </div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-                    {currentProducts.map(p => <ProdTag key={p} pid={p}/>)}
-                    {currentProducts.length === 0 && <span style={{fontSize:12,color:"var(--text3)"}}>No products assigned</span>}
+                  <div style={{marginBottom:12}}>
+                    <ProductSelectionDisplay
+                      value={a.productSelection}
+                      catalog={catalog}
+                      fallbackProducts={currentProducts}
+                    />
                   </div>
                   {infoRow("ARR (Annual Recurring Revenue)", totalARR ? `₹${totalARR} L` : "—")}
                   {infoRow("Potential Value", a.potential ? `₹${a.potential} L` : "—")}
@@ -386,7 +390,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                     onClick={() => onNavigate?.("pipeline")}
                     onMouseEnter={e=>e.currentTarget.style.background="var(--s2)"} onMouseLeave={e=>e.currentTarget.style.background=o.stage==="Won"?"#F0FDF4":o.stage==="Lost"?"#FEF2F2":""}>
                     <td style={{fontWeight:600,fontSize:12.5}}>{o.title}</td>
-                    <td><div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{(o.products||[]).map(p => <ProdTag key={p} pid={p}/>)}</div></td>
+                    <td><ProductSelectionDisplay value={o.productSelection} catalog={catalog} fallbackProducts={o.products||[]} compact/></td>
                     <td><StatusBadge status={o.stage}/></td>
                     <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{o.value}L</td>
                     <td style={{fontSize:12}}>{o.probability}%</td>
@@ -488,7 +492,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNTS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, setActivities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers, callReports, setCallReports, masters, canDelete}) {
+function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, setActivities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers, callReports, setCallReports, masters, catalog, canDelete}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
   const [typeF, setTypeF] = useState("All");
@@ -621,7 +625,15 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     return `ACC-${year}-${String(next).padStart(3, '0')}`;
   };
   const openAdd = () => { setForm({...BLANK_ACC, id:`a${uid()}`, accountNo: nextAccountNo()}); setFormErrors({}); setModal({mode:"add"}); };
-  const openEdit = a => { setForm({...a, products:[...a.products]}); setFormErrors({}); setModal({mode:"edit"}); };
+  const openEdit = a => {
+    // Backfill productSelection from legacy `products` array so existing accounts open in the picker
+    const seeded = (Array.isArray(a.productSelection) && a.productSelection.length > 0)
+      ? a.productSelection
+      : (a.products || []).filter(Boolean).map(productId => ({ productId, moduleIds: [], noAddons: false }));
+    setForm({...a, products:[...(a.products||[])], productSelection: seeded});
+    setFormErrors({});
+    setModal({mode:"edit"});
+  };
   const save = () => {
     const errs = validateAccount(form);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
@@ -652,6 +664,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     {label:"hierarchyLevel",     accessor:a=>a.hierarchyLevel||"Parent Company"},
     {label:"parentId",           accessor:a=>a.parentId||""},
     {label:"products",           accessor:a=>(a.products||[]).join(";")},
+    {label:"productSelection",   accessor:a=>productSelectionToString(a.productSelection, catalog)},
     {label:"arrRevenue",         accessor:a=>a.arrRevenue||0},
     {label:"potential",          accessor:a=>a.potential||0},
     {label:"owner",              accessor:a=>teamMap[a.owner]?.name||a.owner||""},
@@ -860,7 +873,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
       </div>
 
       {/* Account Profile */}
-      {detail && <AccountProfile a={detail} onClose={() => setDetail(null)} onEdit={() => { openEdit(detail); setDetail(null); }} opps={opps} activities={activities} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} notes={notes} files={files} onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser} allAccounts={accounts} leads={leads} orgUsers={orgUsers} onLogCall={(prefill) => { setDetail(null); setLogCallPrefill(prefill); }} onNavigate={(page) => { setDetail(null); window.location.hash = `#/${page}`; }}/>}
+      {detail && <AccountProfile a={detail} onClose={() => setDetail(null)} onEdit={() => { openEdit(detail); setDetail(null); }} opps={opps} activities={activities} contacts={contacts} tickets={tickets} contracts={contracts} collections={collections} notes={notes} files={files} onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser} allAccounts={accounts} leads={leads} orgUsers={orgUsers} catalog={catalog} onLogCall={(prefill) => { setDetail(null); setLogCallPrefill(prefill); }} onNavigate={(page) => { setDetail(null); window.location.hash = `#/${page}`; }}/>}
 
       {/* Add / Edit Modal */}
       {modal && (
@@ -899,7 +912,13 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           <div className="form-row"><div className="form-group"><label>Status</label><select value={form.status} onChange={e => setForm(f => ({...f,status:e.target.value}))}><option>Active</option><option>Prospect</option><option>Inactive</option></select></div><div className="form-group"><label>Segment</label><select value={form.segment} onChange={e => setForm(f => ({...f,segment:e.target.value}))}>{["Enterprise","Mid-Market","SMB","Government","Association"].map(s => <option key={s}>{s}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>ARR (₹L)</label><input type="number" min="0" value={form.arrRevenue} onChange={e => setForm(f => ({...f,arrRevenue:+e.target.value}))}/><FormError error={formErrors.arrRevenue}/></div><div className="form-group"><label>Potential (₹L)</label><input type="number" min="0" value={form.potential} onChange={e => setForm(f => ({...f,potential:+e.target.value}))}/><FormError error={formErrors.potential}/></div></div>
           <div className="form-row"><div className="form-group"><label>Website</label><input value={form.website} onChange={e => setForm(f => ({...f,website:e.target.value}))} placeholder="website.com"/></div><div className="form-group"><label>Owner</label><select value={form.owner} onChange={e => setForm(f => ({...f,owner:e.target.value}))}>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
-          <div className="form-group"><label>Products</label><div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>{PRODUCTS.map(p => <button key={p.id} className="btn btn-xs" style={{background:form.products.includes(p.id)?p.color:"var(--s3)",color:form.products.includes(p.id)?"white":"var(--text2)",border:"none",cursor:"pointer"}} onClick={() => toggleProd(p.id)}>{p.name}</button>)}</div></div>
+          <div className="form-group"><label>Products & Modules</label>
+            <ProductModulePicker
+              catalog={catalog || []}
+              value={form.productSelection || []}
+              onChange={(next) => setForm(f => ({ ...f, productSelection: next, products: next.map(e => e.productId) }))}
+            />
+          </div>
 
           {/* ── Legal & Tax ── */}
           <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:16,marginBottom:8,borderTop:"1px solid var(--border)",paddingTop:14}}>Legal &amp; Tax</div>

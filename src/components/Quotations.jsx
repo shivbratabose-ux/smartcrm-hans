@@ -4,6 +4,7 @@ import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATE
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
+import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
 import { exportCSV } from '../utils/csv';
@@ -65,7 +66,9 @@ const getMonthName = (dateStr) => {
 
 const CSV_COLS = [
   {label:"Quote #",accessor:q=>q._quoteId||q.id},{label:"Title",accessor:q=>q.title},{label:"Customer",accessor:q=>q._accName||""},
-  {label:"Sector",accessor:q=>q._sector||""},{label:"Product",accessor:q=>PROD_MAP[q.product]?.name||q.product},
+  {label:"Sector",accessor:q=>q._sector||""},
+  {label:"Product",accessor:q=>PROD_MAP[q.product]?.name||q.product},
+  {label:"Products & Modules",accessor:q=>productSelectionToString(q.productSelection)},
   {label:"Date Sent",accessor:q=>q.sentDate},{label:"Quote Month",accessor:q=>getMonthName(q.sentDate||q.createdDate)},
   {label:"Order Value (INR)",accessor:q=>formatINR(q.total)},{label:"Prob %",accessor:q=>q._prob||0},
   {label:"Status",accessor:q=>q.status},{label:"Version",accessor:q=>`v${q.version}`},
@@ -83,7 +86,7 @@ const KpiCard = ({icon,label,value,sub}) => (
   </div>
 );
 
-function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUsers,canDelete}) {
+function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUsers,catalog,canDelete}) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search,setSearch]=useState("");
   const [statusF,setStatusF]=useState("All");
@@ -151,7 +154,11 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
     setForm({...BLANK_QUOTE,id,owner:currentUser,createdDate:today,items:[]});
     setFormErrors({});setFormTab("details");setModal({mode:"add"});
   };
-  const openEdit=(q)=>{setForm({...q,items:[...q.items.map(i=>({...i}))]});setFormErrors({});setFormTab("details");setModal({mode:"edit"});};
+  const openEdit=(q)=>{
+    const seeded=(Array.isArray(q.productSelection)&&q.productSelection.length>0)?q.productSelection:(q.product?[{productId:q.product,moduleIds:[],noAddons:false}]:[]);
+    setForm({...q,items:[...q.items.map(i=>({...i}))],productSelection:seeded});
+    setFormErrors({});setFormTab("details");setModal({mode:"edit"});
+  };
   const duplicate=(q)=>{
     const id=`QT-${String(quotes.length+1).padStart(3,"0")}`;
     setQuotes(p=>[...p,{...q,id,status:"Draft",version:q.version+1,createdDate:today,sentDate:"",expiryDate:"",notes:`Revised from ${q.id}. `+q.notes}]);
@@ -299,7 +306,11 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
       {detail&&(
         <Modal title={`${detail._quoteId} – ${detail.title}`} onClose={()=>setDetail(null)} lg footer={<><button className="btn btn-sec btn-sm" onClick={()=>setDetail(null)}>Close</button><button className="btn btn-primary btn-sm" onClick={()=>{openEdit(detail);setDetail(null);}}><Edit2 size={13}/>Edit</button></>}>
           <div className="dp-grid">
-            {[["Quote ID",detail._quoteId],["Account",detail._accName],["Sector",detail._sector],["Product",PROD_MAP[detail.product]?.name||detail.product],["Status",detail.status],["Probability",`${detail._prob}%`],["Version",`v${detail.version}`],["Created",fmt.date(detail.createdDate)],["Sent",detail.sentDate?fmt.date(detail.sentDate):"—"],["Expiry",detail.expiryDate?fmt.date(detail.expiryDate):"—"],["Validity",detail.validity],["Owner",TEAM_MAP[detail.owner]?.name||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
+            {[["Quote ID",detail._quoteId],["Account",detail._accName],["Sector",detail._sector],["Status",detail.status],["Probability",`${detail._prob}%`],["Version",`v${detail.version}`],["Created",fmt.date(detail.createdDate)],["Sent",detail.sentDate?fmt.date(detail.sentDate):"—"],["Expiry",detail.expiryDate?fmt.date(detail.expiryDate):"—"],["Validity",detail.validity],["Owner",TEAM_MAP[detail.owner]?.name||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
+          </div>
+          <div style={{marginTop:16}}>
+            <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginBottom:8}}>PRODUCTS & MODULES</div>
+            <ProductSelectionDisplay value={detail.productSelection} catalog={catalog} fallbackProducts={detail.product?[detail.product]:[]}/>
           </div>
           <div style={{marginTop:16}}><div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginBottom:8}}>LINE ITEMS</div>
             <table className="tbl"><thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
@@ -330,7 +341,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
               <div className="form-group"><label>Contact</label><select value={form.contactId} onChange={e=>setForm(f=>({...f,contactId:e.target.value}))}><option value="">Select...</option>{contacts.filter(c=>!form.accountId||c.accountId===form.accountId).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
             </div>
             <div className="form-row"><div className="form-group"><label>Opportunity</label><select value={form.oppId} onChange={e=>{const oppId=e.target.value;const opp=opps.find(o=>o.id===oppId);setForm(f=>({...f,oppId,productSelection:(opp&&Array.isArray(opp.productSelection)&&opp.productSelection.length>0)?opp.productSelection:(f.productSelection||[])}));}}><option value="">None</option>{opps.filter(o=>!form.accountId||o.accountId===form.accountId).map(o=><option key={o.id} value={o.id}>{o.title}</option>)}</select></div>
-              <div className="form-group"><label>Product</label><select value={form.product} onChange={e=>setForm(f=>({...f,product:e.target.value}))}>{PRODUCTS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+            </div>
+            <div className="form-group" style={{marginBottom:12}}>
+              <label>Products & Modules</label>
+              <ProductModulePicker
+                catalog={catalog || []}
+                value={form.productSelection || []}
+                onChange={(next) => setForm(f => ({ ...f, productSelection: next, product: next[0]?.productId || f.product }))}
+              />
             </div>
             <div className="form-row three"><div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{QUOTE_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
               <div className="form-group"><label>Validity</label><select value={form.validity} onChange={e=>setForm(f=>({...f,validity:e.target.value}))}>{QUOTE_VALIDITY.map(v=><option key={v}>{v}</option>)}</select></div>

@@ -42,6 +42,67 @@ export function primaryProductId(value) {
   return (Array.isArray(value) && value[0]?.productId) || "";
 }
 
+// Read-only display of a productSelection — used in detail panes / list rows
+// across Accounts, Quotations, Contracts so the data stays consistent with
+// what was picked in the form. Falls back gracefully when only legacy
+// `products` array is available.
+export function ProductSelectionDisplay({ value, catalog, fallbackProducts, compact = false }) {
+  const list = Array.isArray(value) && value.length > 0
+    ? value
+    : (fallbackProducts || []).filter(Boolean).map(productId => ({ productId, moduleIds: [], noAddons: false }));
+  if (list.length === 0) return <span style={{ fontSize: 12, color: "var(--text3)" }}>No products selected</span>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: compact ? 4 : 8 }}>
+      {list.map(entry => {
+        const product = (catalog || []).find(p => p.id === entry.productId);
+        const name = product?.name || entry.productId;
+        const color = product?.color || "var(--text2)";
+        const bg = product?.bg || "#F8FAFC";
+        const modules = product?.modules || [];
+        const picked = entry.moduleIds || [];
+        const pickedMods = modules.filter(m => picked.includes(m.id));
+        return (
+          <div key={entry.productId} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: compact ? 11 : 12, fontWeight: 700, color, background: bg, padding: "2px 8px", borderRadius: 4, alignSelf: "flex-start" }}>
+              {name}
+              {entry.noAddons && <span style={{ fontSize: 10, color: "var(--text3)", fontWeight: 500 }}>· no add-ons</span>}
+              {!entry.noAddons && pickedMods.length > 0 && <span style={{ fontSize: 10, color: "var(--text3)", fontWeight: 500 }}>· {pickedMods.length} module{pickedMods.length === 1 ? "" : "s"}</span>}
+            </span>
+            {!entry.noAddons && pickedMods.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, paddingLeft: 6 }}>
+                {pickedMods.map(m => {
+                  const ts = TYPE_STYLE[m.type] || { bg: "#E2E8F0", fg: "#475569" };
+                  return (
+                    <span key={m.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, padding: "1px 6px", borderRadius: 3, background: ts.bg, color: ts.fg, fontWeight: 600 }}>
+                      <span style={{ fontWeight: 700, opacity: 0.7 }}>{m.type}</span>
+                      <span>{m.name}</span>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Flatten productSelection into a CSV-friendly string:
+//   "iCAFFE[eSanchit Filing|OCR Engine]; WiseCargo[None]"
+export function productSelectionToString(value, catalog) {
+  const list = Array.isArray(value) ? value : [];
+  if (list.length === 0) return "";
+  return list.map(entry => {
+    const product = (catalog || []).find(p => p.id === entry.productId);
+    const name = product?.name || entry.productId;
+    if (entry.noAddons) return `${name}[None]`;
+    const mods = (product?.modules || []).filter(m => (entry.moduleIds || []).includes(m.id));
+    if (mods.length === 0) return name;
+    return `${name}[${mods.map(m => m.name).join("|")}]`;
+  }).join("; ");
+}
+
 export default function ProductModulePicker({ value, onChange, catalog, error }) {
   const selection = Array.isArray(value) ? value : [];
   const [expanded, setExpanded] = useState(() => {
