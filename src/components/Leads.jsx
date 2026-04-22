@@ -1392,6 +1392,143 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 // ═══════════════════════════════════════════════════════════════════
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// EDITABLE GRID (Excel-like)
+// Inline edit cells commit on blur (text/number/date) or onChange (select).
+// Keeps the same sort headers + bulk-select column as the read-only table.
+// ═══════════════════════════════════════════════════════════════════
+function GridCell({ value, onCommit, type = "text", placeholder = "", style = {} }) {
+  const [v, setV] = useState(value ?? "");
+  // Keep local state in sync if parent value changes (e.g. another edit)
+  useEffect(() => { setV(value ?? ""); }, [value]);
+  return (
+    <input
+      type={type}
+      value={v}
+      placeholder={placeholder}
+      onChange={e => setV(e.target.value)}
+      onBlur={() => { if ((v ?? "") !== (value ?? "")) onCommit(v); }}
+      onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setV(value ?? ""); e.currentTarget.blur(); } }}
+      style={{
+        width: "100%",
+        border: "1px solid transparent",
+        borderRadius: 3,
+        padding: "3px 5px",
+        fontSize: 12,
+        background: "transparent",
+        outline: "none",
+        ...style,
+      }}
+      onFocus={e => { e.target.style.border = "1px solid #1B6B5A"; e.target.style.background = "#F0FDF4"; }}
+      onBlurCapture={e => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }}
+    />
+  );
+}
+
+function GridSelect({ value, onCommit, options, style = {} }) {
+  return (
+    <select
+      value={value ?? ""}
+      onChange={e => onCommit(e.target.value)}
+      style={{
+        width: "100%",
+        border: "1px solid transparent",
+        borderRadius: 3,
+        padding: "3px 4px",
+        fontSize: 12,
+        background: "transparent",
+        outline: "none",
+        cursor: "pointer",
+        ...style,
+      }}>
+      <option value="">—</option>
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
+function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, SortIcon, openEdit, onOpenDetail }) {
+  const stageOpts = LEAD_STAGES.map(s => ({ value: s.id, label: s.name }));
+  const sourceOpts = LEAD_SOURCES.map(s => ({ value: s, label: s }));
+  const regionOpts = REGIONS.map(r => ({ value: r, label: r }));
+  const ownerOpts = team.map(u => ({ value: u.id, label: u.name }));
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table className="tbl" style={{ minWidth: 1400 }}>
+        <thead>
+          <tr style={{ background: "#F8FAFC" }}>
+            <th style={{ width: 32 }}><input type="checkbox" checked={bulk.allSelected} onChange={bulk.toggleAll}/></th>
+            <th style={{cursor:"pointer",userSelect:"none",width:110}} onClick={() => toggleSort("leadId")}>Lead ID<SortIcon col="leadId"/></th>
+            <th style={{cursor:"pointer",userSelect:"none",minWidth:160}} onClick={() => toggleSort("company")}>Company<SortIcon col="company"/></th>
+            <th style={{cursor:"pointer",userSelect:"none",minWidth:140}} onClick={() => toggleSort("contact")}>Contact<SortIcon col="contact"/></th>
+            <th style={{minWidth:180}}>Email</th>
+            <th style={{minWidth:120}}>Phone</th>
+            <th style={{cursor:"pointer",userSelect:"none",minWidth:120}} onClick={() => toggleSort("stage")}>Stage<SortIcon col="stage"/></th>
+            <th style={{cursor:"pointer",userSelect:"none",width:80}} onClick={() => toggleSort("score")}>Score<SortIcon col="score"/></th>
+            <th style={{minWidth:130}}>Source</th>
+            <th style={{minWidth:120}}>Region</th>
+            <th style={{cursor:"pointer",userSelect:"none",minWidth:130}} onClick={() => toggleSort("assignedTo")}>Assigned<SortIcon col="assignedTo"/></th>
+            <th style={{cursor:"pointer",userSelect:"none",width:130}} onClick={() => toggleSort("nextCall")}>Next Call<SortIcon col="nextCall"/></th>
+            <th style={{width:60}}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(l => {
+            const isOverdue = l.nextCall && l.nextCall < today && l.stage !== "NA";
+            return (
+              <tr key={l.id} style={isOverdue ? { background: "#FEF2F2" } : undefined}>
+                <td><input type="checkbox" checked={bulk.isSelected(l.id)} onChange={() => bulk.toggle(l.id)}/></td>
+                <td>
+                  <span
+                    onClick={() => onOpenDetail(l)}
+                    style={{fontFamily:"'Courier New',monospace",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"var(--s2)",color:"var(--brand)",cursor:"pointer"}}
+                    title="Open detail view">{l.leadId}</span>
+                </td>
+                <td><GridCell value={l.company} onCommit={v => updateLeadField(l.id, "company", v)} style={{ fontWeight: 600 }}/></td>
+                <td><GridCell value={l.contact} onCommit={v => updateLeadField(l.id, "contact", v)}/></td>
+                <td><GridCell type="email" value={l.email} onCommit={v => updateLeadField(l.id, "email", v)}/></td>
+                <td><GridCell value={l.phone} onCommit={v => updateLeadField(l.id, "phone", v)}/></td>
+                <td><GridSelect value={l.stage} options={stageOpts} onCommit={v => updateLeadField(l.id, "stage", v)}/></td>
+                <td>
+                  <GridCell
+                    type="number"
+                    value={l.score}
+                    onCommit={v => {
+                      const n = Math.max(0, Math.min(100, Number(v) || 0));
+                      updateLeadField(l.id, "score", n);
+                    }}
+                    style={{ textAlign: "right" }}
+                  />
+                </td>
+                <td><GridSelect value={l.source} options={sourceOpts} onCommit={v => updateLeadField(l.id, "source", v)}/></td>
+                <td><GridSelect value={l.region} options={regionOpts} onCommit={v => updateLeadField(l.id, "region", v)}/></td>
+                <td><GridSelect value={l.assignedTo} options={ownerOpts} onCommit={v => updateLeadField(l.id, "assignedTo", v)}/></td>
+                <td>
+                  <GridCell
+                    type="date"
+                    value={l.nextCall}
+                    onCommit={v => updateLeadField(l.id, "nextCall", v)}
+                    style={isOverdue ? { color: "#DC2626", fontWeight: 700 } : undefined}
+                  />
+                </td>
+                <td>
+                  <button className="icon-btn" aria-label="Open full editor" title="Open full editor" onClick={() => openEdit(l)}>
+                    <Edit2 size={13}/>
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div style={{padding:"8px 14px",fontSize:11,color:"var(--text3)",borderTop:"1px solid #E2E8F0",background:"#F8FAFC"}}>
+        Tip: Edits save automatically on blur · Press <kbd style={{background:"#fff",padding:"1px 5px",border:"1px solid #CBD5E1",borderRadius:3,fontSize:10}}>Enter</kbd> to commit, <kbd style={{background:"#fff",padding:"1px 5px",border:"1px solid #CBD5E1",borderRadius:3,fontSize:10}}>Esc</kbd> to cancel · Click the lead ID to open the full detail panel.
+      </div>
+    </div>
+  );
+}
+
 function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete }) {
   // Scope the team list to only users this logged-in user has visibility over.
   // This keeps owner filter and assignment dropdowns consistent with the scoped data.
@@ -1452,6 +1589,12 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [overdueOnly, setOverdueOnly] = useState(false); // true → show only overdue follow-up leads
   const [callLogModal, setCallLogModal] = useState(null); // prefill object when open
   const [showFormInlineContact, setShowFormInlineContact] = useState(null); // null=hidden, false=show existing dropdown, true=show new form
+  const [viewMode, setViewMode] = useState("table"); // "table" | "grid" (Excel-like editable)
+
+  // Inline field updater for the editable grid. Saves immediately to leads state.
+  const updateLeadField = (id, field, value) => {
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l));
+  };
 
   const range = useMemo(() => rangeKey === "custom" && customFrom ? { from: customFrom, to: customTo || today } : getDateRange(rangeKey), [rangeKey, customFrom, customTo]);
   const rangeLabel = RANGE_PRESETS.find(p => p.key === rangeKey)?.label || "Custom";
@@ -1776,6 +1919,22 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
               <option value="All">All Owners</option>
               {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
+
+            {/* View toggle: Table (read-only) vs. Grid (Excel-like editable) */}
+            <div style={{display:"flex",gap:0,marginLeft:"auto",border:"1.5px solid #CBD5E1",borderRadius:6,overflow:"hidden"}}>
+              <button
+                onClick={() => setViewMode("table")}
+                style={{fontSize:11,padding:"5px 12px",fontWeight:600,cursor:"pointer",border:"none",background:viewMode==="table"?"#1B6B5A":"#fff",color:viewMode==="table"?"#fff":"#334155"}}
+                title="Table view">
+                Table
+              </button>
+              <button
+                onClick={() => setViewMode("grid")}
+                style={{fontSize:11,padding:"5px 12px",fontWeight:600,cursor:"pointer",border:"none",background:viewMode==="grid"?"#1B6B5A":"#fff",color:viewMode==="grid"?"#fff":"#334155"}}
+                title="Excel-like editable grid">
+                Grid
+              </button>
+            </div>
           </div>
 
           {/* Bulk Actions */}
@@ -1788,10 +1947,21 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             )}
           />
 
-          {/* Table */}
+          {/* Table / Grid */}
           <div className="card" style={{ padding: 0 }}>
             {filtered.length === 0 ? (
               <Empty icon={<Users size={22}/>} title="No leads found" sub="Try adjusting filters or add a new lead."/>
+            ) : viewMode === "grid" ? (
+              <EditableLeadsGrid
+                rows={pg.paged}
+                team={team}
+                updateLeadField={updateLeadField}
+                bulk={bulk}
+                toggleSort={toggleSort}
+                SortIcon={SortIcon}
+                openEdit={openEdit}
+                onOpenDetail={setDetail}
+              />
             ) : (
               <table className="tbl">
                 <thead>
