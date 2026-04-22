@@ -10,7 +10,7 @@ import {
   COUNTRIES, REGIONS, ACT_TYPES, CUST_TYPES, AGEING_BUCKETS,
   SLA_HOURS, TICKET_TYPES
 } from "../data/constants";
-import { today, fmt, isOverdue } from "../utils/helpers";
+import { today, fmt, isOverdue, getScopedUserIds, isGlobalRole } from "../utils/helpers";
 import { PageTip } from "./shared";
 import {
   TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle, Clock,
@@ -90,6 +90,16 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   const [periodFilter,setPeriodFilter]=useState("all");
   const [ownerFilter,setOwnerFilter]=useState("all");
   const [expandedSection,setExpandedSection]=useState(null);
+
+  // Hierarchy scope: global roles see the whole org; everyone else sees
+  // themselves + their downline (solid + dotted line). All TEAM-derived
+  // rollups, dropdowns, and KPIs below should respect this.
+  const _reportScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
+  const _reportIsGlobal = useMemo(() => isGlobalRole(currentUser, orgUsers), [currentUser, orgUsers]);
+  const _scopedTeamSrc = useMemo(() => {
+    const src = orgUsers?.length ? orgUsers.filter(u => u.active !== false) : TEAM;
+    return _reportIsGlobal ? src : src.filter(u => _reportScopedIds.has(u.id));
+  }, [orgUsers, _reportIsGlobal, _reportScopedIds]);
 
   // ── Filtered opps based on period ──
   const filteredOpps = useMemo(()=>{
@@ -212,7 +222,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
 
   // ── Team Performance ──
   // Use orgUsers (live) instead of the static TEAM constant so dynamically added users appear.
-  const _reportTeam = useMemo(() => (orgUsers?.length ? orgUsers.filter(u => u.active !== false) : TEAM), [orgUsers]);
+  const _reportTeam = _scopedTeamSrc;
   const teamPerf = useMemo(()=>_reportTeam.map(u=>{
     const userOpps = opps.filter(o=>o.owner===u.id);
     const active = userOpps.filter(o=>!["Won","Lost"].includes(o.stage));
@@ -257,11 +267,11 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   const callData = useMemo(()=>{
     if(!callReports?.length) return {byType:[],byPerson:[],byOutcome:[],byObjective:[],trend:[]};
     const byType = CALL_TYPES.map(t=>({type:t,count:callReports.filter(r=>r.callType===t).length})).filter(c=>c.count>0);
-    const byPerson = TEAM.map(u=>({name:u.name.split(" ")[0],calls:callReports.filter(r=>r.marketingPerson===u.id).length})).filter(c=>c.calls>0).sort((a,b)=>b.calls-a.calls);
+    const byPerson = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],calls:callReports.filter(r=>r.marketingPerson===u.id).length})).filter(c=>c.calls>0).sort((a,b)=>b.calls-a.calls);
     const byOutcome = [...new Set(callReports.map(r=>r.outcome))].map(o=>({outcome:o||"N/A",count:callReports.filter(r=>(r.outcome||"N/A")===o).length})).sort((a,b)=>b.count-a.count);
     const byObjective = [...new Set(callReports.map(r=>r.objective))].filter(Boolean).map(o=>({objective:o.length>20?o.slice(0,20)+"...":o,full:o,count:callReports.filter(r=>r.objective===o).length})).sort((a,b)=>b.count-a.count).slice(0,8);
     return {byType,byPerson,byOutcome,byObjective};
-  },[callReports]);
+  },[callReports,_scopedTeamSrc]);
 
   // ── Collection Analytics ──
   const collData = useMemo(()=>{
@@ -296,9 +306,9 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
       const hrs = daysBetween(t.created, today)*24;
       return hrs > (SLA_HOURS[t.priority]||48);
     });
-    const byAssignee = TEAM.map(u=>({name:u.name.split(" ")[0],open:tickets.filter(t=>t.assigned===u.id&&!["Resolved","Closed"].includes(t.status)).length,resolved:tickets.filter(t=>t.assigned===u.id&&["Resolved","Closed"].includes(t.status)).length})).filter(u=>u.open+u.resolved>0);
+    const byAssignee = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],open:tickets.filter(t=>t.assigned===u.id&&!["Resolved","Closed"].includes(t.status)).length,resolved:tickets.filter(t=>t.assigned===u.id&&["Resolved","Closed"].includes(t.status)).length})).filter(u=>u.open+u.resolved>0);
     return {byProduct,byPriority,byType,slaBreaches,byAssignee};
-  },[tickets]);
+  },[tickets,_scopedTeamSrc]);
 
   // ── Forecast Data ──
   const forecastData = useMemo(()=>{
@@ -322,7 +332,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     }
 
     // Target vs achievement
-    const targetVsAchieved = TEAM.map(u=>{
+    const targetVsAchieved = _scopedTeamSrc.map(u=>{
       const ut = (targets||[]).filter(t=>t.userId===u.id&&t.period==="2026-Q1");
       const target = ut.reduce((s,t)=>s+t.targetValue,0);
       const achieved = ut.reduce((s,t)=>s+t.achievedValue,0);
@@ -330,18 +340,18 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     }).filter(d=>d.target>0);
 
     return {weighted,bestCase,likelyCase,committed,months,targetVsAchieved};
-  },[opps,targets]);
+  },[opps,targets,_scopedTeamSrc]);
 
   // ── Activity Analytics ──
   const actData = useMemo(()=>{
     const byType = ACT_TYPES.map(t=>({type:t,count:activities.filter(a=>a.type===t).length})).filter(a=>a.count>0).sort((a,b)=>b.count-a.count);
-    const byOwner = TEAM.map(u=>({name:u.name.split(" ")[0],count:activities.filter(a=>a.owner===u.id).length,completed:activities.filter(a=>a.owner===u.id&&a.status==="Completed").length})).filter(u=>u.count>0).sort((a,b)=>b.count-a.count);
+    const byOwner = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],count:activities.filter(a=>a.owner===u.id).length,completed:activities.filter(a=>a.owner===u.id&&a.status==="Completed").length})).filter(u=>u.count>0).sort((a,b)=>b.count-a.count);
     const byStatus = ["Planned","Completed","Cancelled"].map(s=>({status:s,count:activities.filter(a=>a.status===s).length}));
     const completionRate = pct(activities.filter(a=>a.status==="Completed").length, activities.length);
     // Overdue activities
     const overdue = activities.filter(a=>a.status==="Planned"&&a.date<today);
     return {byType,byOwner,byStatus,completionRate,overdue};
-  },[activities]);
+  },[activities,_scopedTeamSrc]);
 
   // ═══════════════════════════════════════════════════════════════
   // ACTIONABLE INSIGHTS ENGINE
@@ -410,7 +420,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
           </select>
           <select value={ownerFilter} onChange={e=>setOwnerFilter(e.target.value)} style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:12,background:"#fff"}}>
             <option value="all">All Owners</option>
-            {TEAM.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+            {_scopedTeamSrc.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         </div>
       </div>
@@ -764,7 +774,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
             <K label="Total Calls" value={metrics.totalCalls} color="#1B6B5A" icon={Phone}/>
             <K label="Visits" value={(callReports||[]).filter(r=>r.callType==="Visit").length} color="#2563EB" icon={MapPin}/>
             <K label="Web Calls" value={(callReports||[]).filter(r=>r.callType==="Web Call").length} color="#7C3AED" icon={Globe}/>
-            <K label="Avg/Person" value={TEAM.length?(metrics.totalCalls/TEAM.filter(u=>(callReports||[]).some(r=>r.marketingPerson===u.id)).length||0).toFixed(1):"0"} color="#D97706" icon={Users}/>
+            <K label="Avg/Person" value={_scopedTeamSrc.length?(metrics.totalCalls/_scopedTeamSrc.filter(u=>(callReports||[]).some(r=>r.marketingPerson===u.id)).length||0).toFixed(1):"0"} color="#D97706" icon={Users}/>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
