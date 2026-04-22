@@ -196,6 +196,43 @@ export async function loadAllData() {
   return Object.keys(results).length > 0 ? results : null;
 }
 
+// In-memory cache of "column X does not exist on table Y" results, learned at
+// runtime from PostgREST schema-cache errors. We use this to pre-strip those
+// columns on subsequent writes so we don't re-trigger the same error every
+// time. Resets on page reload (which is fine — schema can have changed).
+const UNKNOWN_COLUMNS = {}; // { [tableName]: Set<columnName> }
+
+const COLUMN_NOT_FOUND_RE = /Could not find the '([^']+)' column/i;
+
+function pruneKnownUnknowns(table, snaked) {
+  const set = UNKNOWN_COLUMNS[table];
+  if (!set || set.size === 0) return snaked;
+  const out = {};
+  for (const [k, v] of Object.entries(snaked)) if (!set.has(k)) out[k] = v;
+  return out;
+}
+
+// Try a write; if PostgREST rejects with "column X not found", remember it,
+// strip it, and retry. Caps at MAX_RETRIES so a truly broken schema can't
+// loop forever.
+async function writeWithSchemaHeal(table, snaked, runOp) {
+  const MAX_RETRIES = 5;
+  let payload = pruneKnownUnknowns(table, snaked);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const { data, error } = await runOp(payload);
+    if (!error) return { data, error: null };
+    const m = COLUMN_NOT_FOUND_RE.exec(error.message || "");
+    if (!m || attempt === MAX_RETRIES) return { data: null, error };
+    const badCol = m[1];
+    if (!(table in UNKNOWN_COLUMNS)) UNKNOWN_COLUMNS[table] = new Set();
+    UNKNOWN_COLUMNS[table].add(badCol);
+    if (!(badCol in payload)) return { data: null, error }; // can't strip; bail
+    const { [badCol]: _drop, ...rest } = payload;
+    payload = rest;
+  }
+  return { data: null, error: { message: "writeWithSchemaHeal: unreachable" } };
+}
+
 /**
  * Insert a record
  */
@@ -209,7 +246,8 @@ export async function insertRecord(module, record) {
   // Remove undefined/null keys
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
-  const { data, error } = await supabase.from(table).insert(snaked).select().single();
+  const { data, error } = await writeWithSchemaHeal(table, snaked,
+    payload => supabase.from(table).insert(payload).select().single());
   if (error) dbLog('error', `[DB] insert ${module}:`, error);
   return { data: data ? toCamel(data, module) : record, error };
 }
@@ -226,7 +264,8 @@ export async function updateRecord(module, id, updates) {
   const snaked = toSnake(updates, module);
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
-  const { data, error } = await supabase.from(table).update(snaked).eq("id", id).select().single();
+  const { data, error } = await writeWithSchemaHeal(table, snaked,
+    payload => supabase.from(table).update(payload).eq("id", id).select().single());
   if (error) dbLog('error', `[DB] update ${module}:`, error);
   return { data: data ? toCamel(data, module) : updates, error };
 }
