@@ -321,29 +321,37 @@ export default function SmartCRM() {
     return ["admin","md","director"].includes(role);
   }, [currentUser, orgUsers]);
 
-  // Exclude soft-deleted records from all visible arrays
+  // Exclude soft-deleted records from all visible arrays.
+  //
+  // Ownership gate: for non-global roles, only records owned by someone in
+  // my scope are visible. Previously unowned records leaked to every user
+  // because of a `!ownerField ||` escape hatch — fine when bd_lead was a
+  // global role, but now that bd_leads and below are scoped, it meant
+  // bulk-uploaded leads/opps with no assignedTo showed up in every rep's
+  // list. Unassigned records now stay invisible to scoped users and only
+  // appear to admins/MDs/directors (who can then route them).
   const visibleLeads = useMemo(() => {
     const live = leads.filter(l => !l.isDeleted);
     if (_globalRole) return live;
-    return live.filter(l => !l.assignedTo || _scopedIds.has(l.assignedTo));
+    return live.filter(l => l.assignedTo && _scopedIds.has(l.assignedTo));
   }, [leads, _scopedIds, _globalRole]);
 
   const visibleOpps = useMemo(() => {
     const live = opps.filter(o => !o.isDeleted);
     if (_globalRole) return live;
-    return live.filter(o => !o.owner || _scopedIds.has(o.owner));
+    return live.filter(o => o.owner && _scopedIds.has(o.owner));
   }, [opps, _scopedIds, _globalRole]);
 
   const visibleActivities = useMemo(() => {
     const live = activities.filter(a => !a.isDeleted);
     if (_globalRole) return live;
-    return live.filter(a => !a.owner || _scopedIds.has(a.owner));
+    return live.filter(a => a.owner && _scopedIds.has(a.owner));
   }, [activities, _scopedIds, _globalRole]);
 
   const visibleCallReports = useMemo(() => {
     const live = callReports.filter(cr => !cr.isDeleted);
     if (_globalRole) return live;
-    return live.filter(cr => !cr.marketingPerson || _scopedIds.has(cr.marketingPerson));
+    return live.filter(cr => cr.marketingPerson && _scopedIds.has(cr.marketingPerson));
   }, [callReports, _scopedIds, _globalRole]);
 
   // Generic !isDeleted filters for entities without owner-based scoping. These
