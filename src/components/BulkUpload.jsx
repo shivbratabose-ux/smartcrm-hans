@@ -538,7 +538,19 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
     // primary key is blank/no-match, try email, then (company + contact) as
     // fallbacks so a re-upload of legacy CSVs without ids still resolves to
     // UPDATE and doesn't create duplicates.
-    const refVal = work[schema.refKey]?.trim();
+    //
+    // Users frequently type placeholder tokens like "x", "-", "new", "n/a"
+    // in the id column instead of leaving it blank. Treat those as empty so
+    // we don't store literal "x" as a leadId AND so fallback dedup runs.
+    const PLACEHOLDER_IDS = new Set(["x", "xx", "xxx", "-", "–", "—", "n/a", "na", "none", "new", "tbd", "?", "null", "undefined"]);
+    const rawRef = work[schema.refKey]?.trim() || "";
+    const isPlaceholder = PLACEHOLDER_IDS.has(rawRef.toLowerCase());
+    if (isPlaceholder) {
+      // Strip the placeholder so downstream (and the auto-leadId effect in
+      // Leads.jsx) generates a real id post-import.
+      work[schema.refKey] = "";
+    }
+    const refVal = isPlaceholder ? "" : rawRef;
     let matched = refVal ? existingByRef[refVal.toLowerCase()] : null;
     let matchedBy = matched ? schema.refKey : null;
     if (!matched) {
