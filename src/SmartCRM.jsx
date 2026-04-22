@@ -448,21 +448,60 @@ export default function SmartCRM() {
       return null;
     }).then(data => {
       if (data) {
-        if (data.accounts?.length)    setAccounts(data.accounts);
-        if (data.contacts?.length)    setContacts(data.contacts);
-        if (data.opps?.length)        setOpps(data.opps);
-        if (data.activities?.length)  setActivities(data.activities);
-        if (data.tickets?.length)     setTickets(data.tickets);
-        if (data.leads?.length)       setLeads(data.leads);
-        if (data.callReports?.length) setCallReports(data.callReports);
-        if (data.contracts?.length)   setContracts(data.contracts);
-        if (data.collections?.length) setCollections(data.collections);
-        if (data.targets?.length)     setTargets(data.targets);
-        if (data.quotes?.length)      setQuotes(data.quotes);
-        if (data.commLogs?.length)    setCommLogs(data.commLogs);
-        if (data.events?.length)      setEvents(data.events);
-        if (data.notes?.length)       setNotes(data.notes);
-        if (data.files?.length)       setFiles(data.files);
+        // ── Merge-on-load guard (anti data-loss) ──
+        // Previously: blindly replaced local state with cloud payload. If a
+        // record existed locally but never made it to the cloud (e.g., an
+        // insert that rejected because of a schema-cache error), the next
+        // refresh would load only the cloud's subset and silently drop the
+        // local-only records. Now we union by id: cloud is authoritative for
+        // records that exist in both; local-only records are kept in state
+        // and queued for a background retry-insert, with a warning toast so
+        // the user knows something didn't sync.
+        const mergeOnLoad = (module, cloud, localArr, setter, retryInsert = true) => {
+          const cloudArr = Array.isArray(cloud) ? cloud : [];
+          const local = Array.isArray(localArr) ? localArr : [];
+          const cloudIds = new Set(cloudArr.map(r => r?.id).filter(Boolean));
+          const localOnly = local.filter(r => r?.id && !cloudIds.has(r.id));
+          if (cloudArr.length === 0 && local.length === 0) return;
+          // If cloud is empty but local has data, don't wipe it — just keep local.
+          if (cloudArr.length === 0) { setter(local); return; }
+          const merged = [...cloudArr, ...localOnly];
+          setter(merged);
+          if (localOnly.length > 0) {
+            notify.error(
+              `${localOnly.length} ${module} record(s) never reached the cloud — retrying sync in the background. Do not refresh until this clears.`,
+            );
+            if (retryInsert) {
+              localOnly.forEach(rec => {
+                insertRecord(module === "users" ? "users" : module, rec)
+                  .then(res => {
+                    if (res?.error) {
+                      // eslint-disable-next-line no-console
+                      console.error(`[recovery] ${module}/${rec.id} retry failed:`, res.error);
+                    } else {
+                      // eslint-disable-next-line no-console
+                      console.log(`[recovery] ${module}/${rec.id} re-inserted to cloud`);
+                    }
+                  });
+              });
+            }
+          }
+        };
+        mergeOnLoad("accounts",     data.accounts,    accounts,    setAccounts);
+        mergeOnLoad("contacts",     data.contacts,    contacts,    setContacts);
+        mergeOnLoad("opps",         data.opps,        opps,        setOpps);
+        mergeOnLoad("activities",   data.activities,  activities,  setActivities);
+        mergeOnLoad("tickets",      data.tickets,     tickets,     setTickets);
+        mergeOnLoad("leads",        data.leads,       leads,       setLeads);
+        mergeOnLoad("callReports",  data.callReports, callReports, setCallReports);
+        mergeOnLoad("contracts",    data.contracts,   contracts,   setContracts);
+        mergeOnLoad("collections",  data.collections, collections, setCollections);
+        mergeOnLoad("targets",      data.targets,     targets,     setTargets);
+        mergeOnLoad("quotes",       data.quotes,      quotes,      setQuotes);
+        mergeOnLoad("commLogs",     data.commLogs,    commLogs,    setCommLogs);
+        mergeOnLoad("events",       data.events,      events,      setEvents);
+        mergeOnLoad("notes",        data.notes,       notes,       setNotes);
+        mergeOnLoad("files",        data.files,       files,       setFiles);
       }
       setDbReady(true);
       // Cloud is now the source of truth — start propagating local changes.
