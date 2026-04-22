@@ -191,7 +191,11 @@ export function validateStageGate(lead, targetStage, stageGates) {
 // reporting chain (e.g., iCAFFE Sales Exec → iCAFFE Line Manager → Sales VP → Director → Admin).
 // Roles with unrestricted (global) data visibility. Single source of truth
 // shared by getScopedUserIds + isGlobalRole.
-export const GLOBAL_ROLES = ["admin", "md", "director", "bd_lead"];
+//
+// NOTE: bd_lead was previously global but was downgraded — a BD Lead now
+// only sees their own assigned records plus anyone reporting (solid or
+// dotted) to them. BD Leads with no reports see only themselves.
+export const GLOBAL_ROLES = ["admin", "md", "director"];
 
 // Normalize a role value before any comparison. Live data has been observed
 // with mixed casing / whitespace ("Admin", " director"), which silently
