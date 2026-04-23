@@ -446,8 +446,24 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
 
             <div className="form-row full"><div className="form-group"><label>Quote Title *</label><input value={form.title} onChange={e=>{setForm(f=>({...f,title:e.target.value}));setFormErrors(e=>({...e,title:undefined}));}} placeholder="e.g. WiseHandling Deploy – Colossal Avia" style={formErrors.title?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.title}/></div></div>
             <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{setForm(f=>({...f,accountId:e.target.value,contactId:""}));setFormErrors(e=>({...e,accountId:undefined}));}} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select...</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div>
-              <div className="form-group"><label>Contact</label><select value={form.contactId} onChange={e=>setForm(f=>({...f,contactId:e.target.value}))}><option value="">Select...</option>{contacts.filter(c=>!form.accountId||c.accountId===form.accountId).map(c=><option key={c.id} value={c.id}>{c.name}{c.designation?` — ${c.designation}`:""}</option>)}</select></div>
+              <div className="form-group"><label>Contact</label><select value={form.contactId} onChange={e=>setForm(f=>({...f,contactId:e.target.value}))}><option value="">Select...</option>{contacts.filter(c=>!form.accountId||c.accountId===form.accountId).map(c=><option key={c.id} value={c.id}>{c.name}{c.designation?` — ${c.designation}`:""}</option>)}</select>
+                {form.accountId && contacts.filter(c=>c.accountId===form.accountId).length===0 && (
+                  <div style={{marginTop:6,padding:"6px 10px",background:"#FEF3C7",border:"1px solid #FDE68A",borderRadius:6,fontSize:11.5,color:"#92400E",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                    <span>⚠ This account has no contacts yet.</span>
+                    <a href="#/contacts" style={{color:"#1D4ED8",fontWeight:600,textDecoration:"none",whiteSpace:"nowrap"}}>+ Add Contact</a>
+                  </div>
+                )}
+              </div>
             </div>
+            {form.accountId && (() => {
+              const acc=accounts.find(a=>a.id===form.accountId);
+              return acc && (acc.addresses||[]).length===0 ? (
+                <div style={{marginBottom:12,padding:"6px 10px",background:"#FEF3C7",border:"1px solid #FDE68A",borderRadius:6,fontSize:11.5,color:"#92400E",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                  <span>⚠ This account has no office addresses — billing context will be blank on the quote.</span>
+                  <a href="#/accounts" style={{color:"#1D4ED8",fontWeight:600,textDecoration:"none",whiteSpace:"nowrap"}}>+ Add Address</a>
+                </div>
+              ) : null;
+            })()}
 
             {/* ── Auto-populated context panel ── */}
             {(() => {
