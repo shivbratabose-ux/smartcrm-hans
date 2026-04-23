@@ -288,7 +288,11 @@ export const BILL_TYPES = ["Renewals","Installation","Deployment","Development",
 
 // ── Win/Loss/Suspend Reasons ──
 export const WIN_REASONS = ["Strong Product Fit","Competitive Pricing","Relationship & Trust","Fast & Effective Follow-up","Customer References","Payment Flexibility"];
-export const LOSS_REASONS = ["Price Sensitivity","Competitor Win","Lack of Urgency","Feature Gaps","Budget Issues"];
+export const LOSS_REASONS = ["Price Sensitivity","Competitor Win","Lack of Urgency","Feature Gaps","Budget Issues","Timing","Internal Delay","Decision-Maker Change","Service Concern","Marketing Source Quality","No Decision"];
+// Multi-select impact tags captured at deal-Lost time. Lets the team slice
+// post-mortem reports by where the breakdown happened (vs the single primary
+// reason which only tells half the story).
+export const LOSS_IMPACT_AREAS = ["Pricing","Product Gap","Service Concern","Timing","Internal Delay","Decision-Maker Change","Marketing Source Quality","Inside Sales Impact","Front Sales Impact","Management Feedback"];
 export const SUSPEND_REASONS = ["Budget Constraint","Internal Priority Shift","Change in Decision Maker","Evaluating Competition","Not Ready but Interested"];
 
 // ── Contact Roles & Dispositions ──

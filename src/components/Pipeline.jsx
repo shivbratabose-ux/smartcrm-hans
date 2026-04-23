@@ -13,7 +13,7 @@ import {
 import {
   PRODUCTS, PROD_MAP, STAGES, STAGE_PROB, STAGE_COL, TEAM, TEAM_MAP,
   COUNTRIES, OPP_SOURCES, HIERARCHY_LEVELS, FORECAST_CATS, OPP_SIZES,
-  WIN_REASONS, LOSS_REASONS, SUSPEND_REASONS, ACT_TYPES, INIT_USERS,
+  WIN_REASONS, LOSS_REASONS, LOSS_IMPACT_AREAS, SUSPEND_REASONS, ACT_TYPES, INIT_USERS,
   CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
@@ -105,20 +105,54 @@ function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accoun
   const [outcome, setOutcome] = useState("");
   const [errors, setErrors] = useState({});
 
+  // ── Loss-analysis fields (only used when toStage === "Lost") ──
+  // Pre-seeded from the opp so re-opening the modal preserves prior input.
+  // These map 1:1 to the BLANK_OPP loss-* fields in seed.js — keeping the
+  // shape identical lets confirmAdvance just spread them onto the opp.
+  const [lossPrimary,   setLossPrimary]   = useState(opp.lossReason || "");
+  const [lossSecondary, setLossSecondary] = useState(opp.lossReasonSecondary || "");
+  const [lostTo,        setLostTo]        = useState(opp.lostToCompetitor || opp.competitors || "");
+  const [lossImpacts,   setLossImpacts]   = useState(Array.isArray(opp.lossImpactAreas) ? opp.lossImpactAreas : []);
+  const [lossMgmt,      setLossMgmt]      = useState(opp.lossMgmtFeedback || "");
+  const [lossImprove,   setLossImprove]   = useState(opp.lossImprovementNotes || "");
+  const toggleImpact = (tag) => setLossImpacts(prev => prev.includes(tag) ? prev.filter(x=>x!==tag) : [...prev, tag]);
+
   const validate = () => {
     const e = {};
     if (!actType) e.actType = "Activity type is required";
     if (!notes.trim() || notes.trim().length < 20) e.notes = "Notes must be at least 20 characters — describe what was discussed, client response, objections, next steps";
-    if (!nextDate) e.nextDate = "Next action date is required";
-    else if (nextDate <= today) e.nextDate = "Next action date must be in the future";
+    // Next action date is meaningless for closed deals — only require it for active stages.
+    const isClosingNow = toStage === "Won" || toStage === "Lost";
+    if (!isClosingNow) {
+      if (!nextDate) e.nextDate = "Next action date is required";
+      else if (nextDate <= today) e.nextDate = "Next action date must be in the future";
+    }
     if (!outcome) e.outcome = "Outcome is required";
+    // Mandatory loss-analysis when closing as Lost — turns the post-mortem
+    // into a forced learning loop instead of an afterthought.
+    if (toStage === "Lost") {
+      if (!lossPrimary) e.lossPrimary = "Primary loss reason is required";
+      if (!lossImprove.trim() || lossImprove.trim().length < 15) e.lossImprove = "Improvement notes (min 15 chars) — what would we do differently?";
+    }
     return e;
   };
 
   const submit = () => {
     const e = validate();
     if (hasErrors(e)) { setErrors(e); return; }
-    onConfirm({ actType, notes: notes.trim(), nextDate, outcome });
+    const payload = { actType, notes: notes.trim(), nextDate, outcome };
+    if (toStage === "Lost") {
+      payload.lossFields = {
+        lossReason: lossPrimary,
+        lossReasonSecondary: lossSecondary,
+        lostToCompetitor: lostTo.trim(),
+        lossImpactAreas: lossImpacts,
+        lossMgmtFeedback: lossMgmt.trim(),
+        lossImprovementNotes: lossImprove.trim(),
+        lossClosedAt: today,
+      };
+    }
+    onConfirm(payload);
   };
 
   const acc = accounts.find(a => a.id === opp.accountId);
@@ -183,15 +217,82 @@ function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accoun
           <span style={{ fontSize: 10, color: notes.length >= 20 ? "#22C55E" : "var(--text3)" }}>{notes.length}/20+</span>
         </div>
       </div>
-      <div className="form-row">
-        <div className="form-group">
-          <label>Next Action Date *</label>
-          <input type="date" value={nextDate} min={today}
-            onChange={e => { setNextDate(e.target.value); setErrors(p => ({ ...p, nextDate: undefined })); }}
-            style={errors.nextDate ? { borderColor: "#DC2626" } : {}} />
-          <FormError error={errors.nextDate} />
+      {!(toStage === "Won" || toStage === "Lost") && (
+        <div className="form-row">
+          <div className="form-group">
+            <label>Next Action Date *</label>
+            <input type="date" value={nextDate} min={today}
+              onChange={e => { setNextDate(e.target.value); setErrors(p => ({ ...p, nextDate: undefined })); }}
+              style={errors.nextDate ? { borderColor: "#DC2626" } : {}} />
+            <FormError error={errors.nextDate} />
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* ── Loss-analysis post-mortem (only on Lost) ────────────────
+          Forced learning loop: every lost deal must capture primary
+          reason + improvement notes before the system accepts the close.
+          Secondary reason, competitor name, impact tags, and management
+          feedback are optional but encouraged for the deep dive. */}
+      {toStage === "Lost" && (
+        <div style={{ marginTop:18, paddingTop:16, borderTop:"1px dashed var(--border)" }}>
+          <div style={{ fontSize:13, fontWeight:700, color:"#991B1B", marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
+            <AlertTriangle size={14} /> Loss Analysis — Post-Mortem
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Primary Loss Reason *</label>
+              <select value={lossPrimary} onChange={e => { setLossPrimary(e.target.value); setErrors(p => ({ ...p, lossPrimary: undefined })); }}
+                style={errors.lossPrimary ? { borderColor:"#DC2626" } : {}}>
+                <option value="">Select primary reason...</option>
+                {LOSS_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <FormError error={errors.lossPrimary} />
+            </div>
+            <div className="form-group">
+              <label>Secondary Loss Reason</label>
+              <select value={lossSecondary} onChange={e => setLossSecondary(e.target.value)}>
+                <option value="">— None —</option>
+                {LOSS_REASONS.filter(r => r !== lossPrimary).map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Lost To Competitor</label>
+              <input value={lostTo} onChange={e => setLostTo(e.target.value)} placeholder="Competitor name (if known)" />
+            </div>
+          </div>
+          <div className="form-group" style={{ marginBottom:12 }}>
+            <label>Impact Areas <span style={{ fontWeight:400, color:"var(--text3)" }}>(tap all that apply)</span></label>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:6 }}>
+              {LOSS_IMPACT_AREAS.map(tag => {
+                const active = lossImpacts.includes(tag);
+                return (
+                  <button key={tag} type="button" onClick={() => toggleImpact(tag)}
+                    style={{ padding:"4px 10px", borderRadius:14, border:`1px solid ${active?"#DC2626":"var(--border)"}`,
+                             background: active ? "#FEE2E2" : "white", color: active ? "#991B1B" : "var(--text2)",
+                             fontSize:11, fontWeight:600, cursor:"pointer" }}>
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="form-group" style={{ marginBottom:12 }}>
+            <label>Management Feedback <span style={{ fontWeight:400, color:"var(--text3)" }}>(optional)</span></label>
+            <textarea value={lossMgmt} onChange={e => setLossMgmt(e.target.value)} rows={2}
+              placeholder="Anything leadership flagged about this deal..." />
+          </div>
+          <div className="form-group">
+            <label>Improvement Notes * <span style={{ fontWeight:400, color:"var(--text3)" }}>(min 15 chars — what would we do differently next time?)</span></label>
+            <textarea value={lossImprove} onChange={e => { setLossImprove(e.target.value); setErrors(p => ({ ...p, lossImprove: undefined })); }}
+              rows={2} placeholder="What we'd change in qualification, pricing, follow-up, demo, etc."
+              style={errors.lossImprove ? { borderColor:"#DC2626" } : {}} />
+            <FormError error={errors.lossImprove} />
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -433,6 +534,48 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
                 <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Products</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{detail.products.map(p => <ProdTag key={p} pid={p} />)}</div>
               </div>
+              {/* Upsell / Cross-sell visibility */}
+              {(() => {
+                const currentProducts = detail.products || [];
+                const crossSellProducts = PRODUCTS.filter(p => !currentProducts.includes(p.id));
+                return (
+                  <div style={{ marginTop: 14, background: "#FFFBEB", border: "1px solid #FDE68A", padding: "10px 12px", borderRadius: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#92400E", letterSpacing: "0.06em" }}>UPSELL / CROSS-SELL OPPORTUNITY</div>
+                      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#92400E", cursor: "pointer" }}>
+                        <input type="checkbox" checked={!!detail.upsellFlag}
+                          onChange={e => setOpps && setOpps(prev => prev.map(o => o.id === detail.id ? { ...o, upsellFlag: e.target.checked } : o))} />
+                        Flag for Upsell
+                      </label>
+                    </div>
+                    {crossSellProducts.length > 0 ? (
+                      <div>
+                        <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6 }}>Products this account doesn't have yet:</div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {crossSellProducts.map(p => <ProdTag key={p.id} pid={p.id} />)}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: "var(--text3)", fontStyle: "italic" }}>This account already owns the full product suite.</div>
+                    )}
+                    <div style={{ marginTop: 8 }}>
+                      {editingField === "crossSellNotes" ? (
+                        <textarea autoFocus rows={2} value={fieldVal}
+                          onChange={e => setFieldVal(e.target.value)}
+                          onBlur={() => saveEdit("crossSellNotes")}
+                          style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--brand)", outline: "none", resize: "vertical" }}
+                          placeholder="Cross-sell strategy / customer interest..." />
+                      ) : (
+                        <div onClick={() => startEdit("crossSellNotes")}
+                          style={{ fontSize: 12, color: detail.crossSellNotes ? "var(--text2)" : "var(--text3)", cursor: "pointer", padding: "4px 0", fontStyle: detail.crossSellNotes ? "normal" : "italic" }}
+                          title="Click to edit">
+                          {detail.crossSellNotes || "+ Add cross-sell notes..."}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               {detail.leadId && <div style={{ marginTop: 10, fontSize: 12, color: "var(--text3)" }}>Lead Reference: <span style={{ fontFamily: "'Courier New',monospace", fontWeight: 600 }}>{detail.leadId}</span></div>}
               {detail.notes && <div style={{ marginTop: 14, background: "var(--s2)", padding: "10px 12px", borderRadius: 8, borderLeft: "3px solid var(--brand)", fontSize: 13, color: "var(--text2)" }}>{detail.notes}</div>}
               {detail.winReason && <div style={{ marginTop: 10, fontSize: 12 }}><strong>Win Reason:</strong> {detail.winReason}</div>}
@@ -688,7 +831,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     }
   };
 
-  const confirmAdvance = ({ actType, notes: actNotes, nextDate, outcome }) => {
+  const confirmAdvance = ({ actType, notes: actNotes, nextDate, outcome, lossFields }) => {
     const { opp, toStage } = stageModal;
     /* create activity */
     const newAct = {
@@ -706,8 +849,15 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       };
       setActivities(p => [...p, followUp]);
     }
-    /* move stage */
-    const updated = { ...opp, stage: toStage, probability: STAGE_PROB[toStage] };
+    /* move stage — merge loss-analysis fields when closing as Lost so the
+       post-mortem becomes part of the permanent record (used by Reports
+       to slice loss patterns by reason / competitor / impact area). */
+    const updated = {
+      ...opp,
+      stage: toStage,
+      probability: STAGE_PROB[toStage],
+      ...(lossFields || {}),
+    };
     setOpps(p => p.map(o => o.id === opp.id ? updated : o));
     if (toStage === "Won" && onDealWon) onDealWon(updated);
     setStageModal(null);

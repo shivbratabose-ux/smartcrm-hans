@@ -8,7 +8,7 @@ import {
   INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
-  BLANK_INVOICE, INIT_INVOICES, BLANK_OPP
+  BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
@@ -404,6 +404,125 @@ export default function SmartCRM() {
     });
     if (dirty) setOpps(next);
   }, [opps, productOwnerById]);
+
+  // ── 45-DAY DORMANCY ALERT ─────────────────────────────────────────────
+  // Scans every account in the user's scope for the most recent touch
+  // (activity, call report, comm log, calendar event). Anything that
+  // hasn't been touched in 45+ days surfaces as a single summary toast
+  // PER LOGIN SESSION — repeating it on every render would be hostile.
+  // Sales VP / managers see their full downline's accounts; sales execs
+  // see only their own. Account ownership comes via account.owner.
+  const _dormancyAlertedRef = useRef(false);
+  useEffect(() => {
+    if (!currentUser) return;
+    if (_dormancyAlertedRef.current) return;
+    if (!Array.isArray(accounts) || accounts.length === 0) return;
+
+    const DORMANCY_DAYS = 45;
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - DORMANCY_DAYS);
+    const cutoffMs = cutoff.getTime();
+
+    // Build accountId → latest-touch-timestamp map across every activity
+    // surface. Falls back to account.lastContactDate / updatedAt / createdAt
+    // so a brand-new account isn't flagged on day 1.
+    const latestByAcc = {};
+    const bump = (accId, dateStr) => {
+      if (!accId || !dateStr) return;
+      const t = new Date(dateStr).getTime();
+      if (Number.isNaN(t)) return;
+      if (!latestByAcc[accId] || t > latestByAcc[accId]) latestByAcc[accId] = t;
+    };
+    (activities  || []).forEach(a => bump(a.accountId, a.date));
+    (callReports || []).forEach(c => bump(c.accountId, c.callDate));
+    (commLogs    || []).forEach(c => bump(c.accountId, c.date));
+    (events      || []).forEach(e => bump(e.accountId, e.date));
+
+    const dormant = (accounts || []).filter(a => {
+      if (a.isDeleted) return false;
+      if (a.status === "Inactive" || a.status === "Closed") return false;
+      // Only alert for accounts the current user actually owns / sees
+      if (!_globalRole && !(a.owner && _scopedIds.has(a.owner))) return false;
+      const last = latestByAcc[a.id]
+        || (a.lastContactDate ? new Date(a.lastContactDate).getTime() : 0)
+        || (a.updatedAt       ? new Date(a.updatedAt).getTime()       : 0)
+        || (a.createdAt       ? new Date(a.createdAt).getTime()       : 0);
+      // No timestamp at all → don't alert (avoids false positive for seeded demo rows)
+      if (!last) return false;
+      return last < cutoffMs;
+    });
+
+    if (dormant.length > 0) {
+      _dormancyAlertedRef.current = true;
+      const sample = dormant.slice(0, 3).map(a => a.name).join(", ");
+      const more   = dormant.length > 3 ? ` +${dormant.length - 3} more` : "";
+      notify.info(`${dormant.length} account${dormant.length>1?"s":""} dormant 45+ days — ${sample}${more}. Reach out to keep relationships warm.`);
+    }
+  }, [currentUser, accounts, activities, callReports, commLogs, events, _scopedIds, _globalRole]);
+
+  // ── RENEWAL PRE-EXPIRY ALERT ──────────────────────────────────────────
+  // Scans active contracts for endDate within the next 60 days. Same
+  // session-once pattern as dormancy — managers / VP S&M / admins see
+  // every contract in scope, sales execs see their own. The contract
+  // detail view exposes a "Generate Renewal Quote" button that drops a
+  // pre-filled draft into Quotations linked back to the original contract.
+  const _renewalAlertedRef = useRef(false);
+  useEffect(() => {
+    if (!currentUser) return;
+    if (_renewalAlertedRef.current) return;
+    if (!Array.isArray(contracts) || contracts.length === 0) return;
+
+    const RENEWAL_WINDOW_DAYS = 60;
+    const today  = new Date(); today.setHours(0,0,0,0);
+    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + RENEWAL_WINDOW_DAYS);
+
+    const due = (contracts || []).filter(c => {
+      if (c.isDeleted) return false;
+      if (c.status !== "Active" && c.status !== "Live") return false;
+      if (!c.endDate) return false;
+      if (!_globalRole && !(c.owner && _scopedIds.has(c.owner))) return false;
+      const end = new Date(c.endDate);
+      return end >= today && end <= cutoff;
+    });
+
+    if (due.length > 0) {
+      _renewalAlertedRef.current = true;
+      const sample = due.slice(0, 3).map(c => c.title || c.contractNo || "Untitled").join(", ");
+      const more   = due.length > 3 ? ` +${due.length - 3} more` : "";
+      notify.info(`${due.length} contract${due.length>1?"s":""} expiring within 60 days — ${sample}${more}. Open Contracts to generate renewal quotes.`);
+    }
+  }, [currentUser, contracts, _scopedIds, _globalRole]);
+
+  // ── HELPER: Generate a renewal quote from an existing contract ────────
+  // Wired into Contracts.jsx as the "Generate Renewal Quote" action. Drops
+  // a Draft quote pre-filled with the contract's account, opp, product,
+  // and value. Links back via supersedesQuoteId/contractId so reporting
+  // can trace the renewal chain. Pushes the user to Quotations to finish.
+  const generateRenewalQuote = useCallback((contract) => {
+    if (!contract) return;
+    const newQuote = {
+      ...BLANK_QUOTE,
+      id: `quo${uid()}`,
+      title: `Renewal: ${contract.title || contract.contractNo || "Contract"}`,
+      accountId: contract.accountId || "",
+      oppId: contract.oppId || "",
+      product: contract.product || "iCAFFE",
+      productSelection: contract.productSelection || [],
+      total: contract.value || 0,
+      subtotal: contract.value || 0,
+      version: 1,
+      isFinal: false,
+      status: "Draft",
+      validity: "30 Days",
+      terms: contract.terms || "",
+      contractId: contract.id || "",
+      owner: contract.owner || currentUser,
+      createdDate: today,
+      notes: `Auto-generated renewal draft from contract ${contract.contractNo || contract.id}. Review pricing before sending.`,
+    };
+    setQuotes(prev => [...prev, newQuote]);
+    notify.success(`Renewal quote drafted for "${contract.title || contract.contractNo}". Open Quotations to finalise.`);
+    setPage("quotations");
+  }, [currentUser]);
 
   // Roles allowed to soft-delete records; all others can only archive (same action, UI label differs)
   const canDelete = useMemo(() => {
@@ -1323,7 +1442,7 @@ export default function SmartCRM() {
             {page==="activities" && <Activities activities={visibleActivities} setActivities={setActivities} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers} canDelete={canDelete}/>}
             {page==="callreports"&& <CallReports callReports={visibleCallReports} setCallReports={setCallReports} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
             {page==="tickets"    && <Tickets tickets={visibleTickets} setTickets={setTickets} accounts={visibleAccounts} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete} catalog={catalog}/>}
-            {page==="contracts"  && <Contracts contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete}/>}
+            {page==="contracts"  && <Contracts contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote}/>}
             {page==="collections"&& <Collections collections={visibleCollections} setCollections={setCollections} accounts={visibleAccounts} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete}/>}
             {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete}/>}
             {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete}/>}
