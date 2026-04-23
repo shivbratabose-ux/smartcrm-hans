@@ -221,7 +221,7 @@ const MASTERS_CSS = `
 .m-group-tab.active{color:#1B6B5A;border-bottom-color:#1B6B5A;background:var(--brand-bg)}
 `;
 
-function Masters({masters,setMasters,catalog,setCatalog}) {
+function Masters({masters,setMasters,catalog,setCatalog,orgUsers=[],currentUser=null}) {
   const [tab,setTab]=useState("reference");
   const [group,setGroup]=useState("sales");
   const [search,setSearch]=useState("");
@@ -298,7 +298,7 @@ function Masters({masters,setMasters,catalog,setCatalog}) {
         </div>
       )}
 
-      {tab==="products" && <ProductCatalogPage catalog={catalog} setCatalog={setCatalog}/>}
+      {tab==="products" && <ProductCatalogPage catalog={catalog} setCatalog={setCatalog} orgUsers={orgUsers} currentUser={currentUser}/>}
     </div>
   );
 }
@@ -308,12 +308,29 @@ function Masters({masters,setMasters,catalog,setCatalog}) {
 // ═══════════════════════════════════════════════════════════════════
 const MOD_TYPE_CLS={Core:"mod-core","Add-on":"mod-addon",Integration:"mod-integration",Analytics:"mod-analytics",Mobile:"mod-mobile"};
 
-function ProductCatalogPage({catalog,setCatalog}) {
+function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
+  // Admin/MD/Director can re-assign a product's Line Manager directly from
+  // this page (inline dropdown on each card) without opening the edit modal.
+  // Everyone else sees a read-only label. Same allow-list as other admin
+  // operations across the app.
+  const _myRole = (orgUsers.find(u => u.id === currentUser)?.role || "").toLowerCase();
+  // VP Sales & Marketing also gets inline-edit rights here — they're the
+  // operational owner of the routing table for their org.
+  const isAdmin = ["admin","md","director","vp_sales_mkt"].includes(_myRole);
   const [expanded,setExpanded]=useState({});
   const [modal,setModal]=useState(null);
   const [form,setForm]=useState({name:"",type:"Core",desc:""});
-  const [prodForm,setProdForm]=useState({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF"});
+  const [prodForm,setProdForm]=useState({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF",lineManagerId:""});
   const [confirm,setConfirm]=useState(null);
+
+  // Eligible "line managers" for product ownership: anyone except plain viewers.
+  // We don't gate on role label because real-world Hans Infomatic has the COO
+  // (Shivbrata) acting as PM for several products — restricting to role==line_mgr
+  // would exclude valid owners. Sorted by name for usability.
+  const managerCandidates = (orgUsers||[])
+    .filter(u => u.active !== false && u.role !== "viewer")
+    .sort((a,b) => (a.name||"").localeCompare(b.name||""));
+  const userById = Object.fromEntries((orgUsers||[]).map(u=>[u.id,u]));
 
   const COLOR_PRESETS=[
     {color:"#2563EB",bg:"#EFF6FF",label:"Blue"},
@@ -345,19 +362,20 @@ function ProductCatalogPage({catalog,setCatalog}) {
     setConfirm(null);
   };
 
-  const openAddProd=()=>{setProdForm({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF"});setModal({mode:"addprod"});};
-  const openEditProd=(p)=>{setProdForm({id:p.id,name:p.name,desc:p.desc||"",color:p.color||"#2563EB",bg:p.bg||"#EFF6FF"});setModal({mode:"editprod",prodId:p.id});};
+  const openAddProd=()=>{setProdForm({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF",lineManagerId:""});setModal({mode:"addprod"});};
+  const openEditProd=(p)=>{setProdForm({id:p.id,name:p.name,desc:p.desc||"",color:p.color||"#2563EB",bg:p.bg||"#EFF6FF",lineManagerId:p.lineManagerId||""});setModal({mode:"editprod",prodId:p.id});};
   const saveProd=()=>{
     const name=prodForm.name.trim();
     if(!name) return;
+    const lineManagerId=prodForm.lineManagerId||"";
     if(modal.mode==="addprod"){
       const baseId=name.replace(/[^A-Za-z0-9]/g,"")||`prod${uid()}`;
       let newId=baseId;
       let n=1;
       while(catalog.some(p=>p.id===newId)) newId=`${baseId}${++n}`;
-      setCatalog(c=>[...c,{id:newId,name,desc:prodForm.desc,color:prodForm.color,bg:prodForm.bg,modules:[]}]);
+      setCatalog(c=>[...c,{id:newId,name,desc:prodForm.desc,color:prodForm.color,bg:prodForm.bg,lineManagerId,modules:[]}]);
     } else {
-      setCatalog(c=>c.map(p=>p.id===modal.prodId?{...p,name,desc:prodForm.desc,color:prodForm.color,bg:prodForm.bg}:p));
+      setCatalog(c=>c.map(p=>p.id===modal.prodId?{...p,name,desc:prodForm.desc,color:prodForm.color,bg:prodForm.bg,lineManagerId}:p));
     }
     setModal(null);
   };
@@ -385,6 +403,30 @@ function ProductCatalogPage({catalog,setCatalog}) {
                   <div>
                     <div className="prod-catalog-name">{p.name}</div>
                     <div className="prod-catalog-desc">{p.desc}</div>
+                    <div style={{fontSize:11,color:"var(--text3)",marginTop:4,display:"flex",alignItems:"center",gap:6}}
+                         onClick={e=>e.stopPropagation()}>
+                      <span>Line Manager:</span>
+                      {isAdmin ? (
+                        <select
+                          value={p.lineManagerId||""}
+                          onChange={e=>{
+                            const v=e.target.value;
+                            setCatalog(c=>c.map(x=>x.id===p.id?{...x,lineManagerId:v}:x));
+                          }}
+                          style={{fontSize:11,padding:"2px 6px",border:"1px solid var(--border)",borderRadius:4,background:"#fff",fontWeight:600,color:p.lineManagerId?"var(--text1)":"#DC2626",minWidth:160}}
+                          title="Reassign this product's Line Manager (admin only)"
+                        >
+                          <option value="">— Unassigned —</option>
+                          {managerCandidates.map(u=>(
+                            <option key={u.id} value={u.id}>{u.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span style={{fontWeight:600,color:p.lineManagerId?"var(--text1)":"#DC2626"}}>
+                          {p.lineManagerId ? (userById[p.lineManagerId]?.name || "Unknown") : "Unassigned"}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="prod-catalog-stats">
@@ -442,6 +484,17 @@ function ProductCatalogPage({catalog,setCatalog}) {
           footer={<><button className="btn btn-sec" onClick={()=>setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={saveProd}><Check size={14}/>Save Product</button></>}>
           <div className="form-row full"><div className="form-group"><label>Product Name *</label><input autoFocus value={prodForm.name} onChange={e=>setProdForm(f=>({...f,name:e.target.value}))} placeholder="e.g. WiseFleet, iLogistics, CargoOne"/></div></div>
           <div className="form-row full"><div className="form-group"><label>Description</label><input value={prodForm.desc} onChange={e=>setProdForm(f=>({...f,desc:e.target.value}))} placeholder="Brief tagline (e.g. Fleet Management Suite)"/></div></div>
+          <div className="form-row full"><div className="form-group">
+            <label>Line Manager (Product Owner)
+              <HelpTooltip text="Owns this product line. Any lead/opportunity uploaded for this product without an assignee is auto-routed to this person — they then re-assign to a sales rep."/>
+            </label>
+            <select value={prodForm.lineManagerId} onChange={e=>setProdForm(f=>({...f,lineManagerId:e.target.value}))}>
+              <option value="">— Unassigned —</option>
+              {managerCandidates.map(u=>(
+                <option key={u.id} value={u.id}>{u.name}{u.role?` · ${u.role}`:""}</option>
+              ))}
+            </select>
+          </div></div>
           <div className="form-group" style={{marginBottom:14}}>
             <label>Theme Colour</label>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:6}}>

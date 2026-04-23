@@ -162,6 +162,11 @@ export function registerCatalog(catalog) {
     color: p.color || "#64748B",
     bg:    p.bg    || "#F1F5F9",
     text:  p.text  || p.color || "#334155",
+    // Owning user-id for this product. Used by SmartCRM to auto-route any
+    // lead/opp uploaded for the product when the row arrives unassigned —
+    // see autoRouteUnownedLeadsByProduct effect in SmartCRM.jsx. Empty
+    // string means "no owner; unassigned rows stay visible to admins only."
+    lineManagerId: p.lineManagerId || "",
   }));
   PRODUCTS.splice(0, PRODUCTS.length, ...normalised);
   Object.keys(PROD_MAP).forEach(k => { delete PROD_MAP[k]; });
@@ -190,6 +195,7 @@ export const ROLES_HIERARCHY = [
   {id:"admin",       name:"Admin",            level:1, color:"#DC2626", desc:"Full system access, user management"},
   {id:"md",          name:"Managing Director", level:2, color:"#7C3AED", desc:"All data visibility, strategy-level access"},
   {id:"director",    name:"Director",          level:3, color:"#2563EB", desc:"Full read/write on all modules"},
+  {id:"vp_sales_mkt",name:"VP Sales & Marketing", level:3, color:"#9333EA", desc:"Org-wide visibility & action across sales, support, marketing teams"},
   {id:"line_mgr",    name:"Line Manager",      level:4, color:"#D97706", desc:"Team oversight, reports, deals management"},
   {id:"country_mgr", name:"Country Manager",   level:5, color:"#16A34A", desc:"Country-scoped accounts, pipeline, activities"},
   {id:"bd_lead",     name:"BD Lead",           level:5, color:"#0D9488", desc:"Cross-LOB BD, full sales access"},
@@ -204,6 +210,7 @@ export const PERMISSIONS = {
   admin:       {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:"rw",org:"rw",team:"rw"},
   md:          {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:"r", org:"rw",team:"rw"},
   director:    {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:"r", org:"r", team:"r"},
+  vp_sales_mkt:{accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:"r", org:"r", team:"r"},
   line_mgr:    {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:"r", org:"r", team:"r"},
   country_mgr: {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:false,org:"r", team:"r"},
   bd_lead:     {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:false,org:"r", team:"r"},
@@ -365,6 +372,7 @@ export const PERMISSIONS_EXT = {
   admin:       {leads:"rw",callReports:"rw",contracts:"rw",collections:"rw",targets:"rw"},
   md:          {leads:"rw",callReports:"rw",contracts:"rw",collections:"rw",targets:"rw"},
   director:    {leads:"rw",callReports:"rw",contracts:"rw",collections:"rw",targets:"r"},
+  vp_sales_mkt:{leads:"rw",callReports:"rw",contracts:"rw",collections:"rw",targets:"rw"},
   line_mgr:    {leads:"rw",callReports:"rw",contracts:"rw",collections:"rw",targets:"r"},
   country_mgr: {leads:"rw",callReports:"rw",contracts:"r", collections:"r", targets:"r"},
   bd_lead:     {leads:"rw",callReports:"rw",contracts:"rw",collections:"r", targets:"r"},
@@ -427,6 +435,6 @@ export const UPDATE_CATEGORIES = [
 export const UPDATE_RECIPIENT_MODES = ["org","team","specific"];
 export const UPDATE_ATTACHMENT_TYPES = ["PDF","Excel","Word","PPT","Image","Link","Other"];
 export const PERMISSIONS_UPDATES = {
-  canPost:      ["admin","md","director","line_mgr","country_mgr","bd_lead","tech_lead"],
-  canManageAll: ["admin","md","director"],
+  canPost:      ["admin","md","director","vp_sales_mkt","line_mgr","country_mgr","bd_lead","tech_lead"],
+  canManageAll: ["admin","md","director","vp_sales_mkt"],
 };

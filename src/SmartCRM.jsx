@@ -271,6 +271,51 @@ export default function SmartCRM() {
   // Keep PRODUCTS / PROD_MAP (constants.js) in sync with the live Masters catalog
   // so dropdowns app-wide reflect newly added/edited/deleted Product Lines.
   useEffect(() => { registerCatalog(catalog); }, [catalog]);
+
+  // ── One-time seed: product → line manager (PM) mapping ──────────────
+  // Real Hans Infomatic ownership snapshot supplied by the COO:
+  //   iCAFFE       → Amit Mopari
+  //   E-ANNEX      → Amit Mopari
+  //   WiseHandling → Shivbrata Bose
+  //   WiseCargo    → Shivbrata Bose
+  //   WiseCCS      → Shivbrata Bose
+  //   WiseDox      → Ritesh Srivastava
+  //   WiseTrax     → Lotak Mohapatra
+  // Resolved by email (portable across environments where user IDs differ),
+  // and only applied to products that don't already carry a lineManagerId so
+  // an admin override in the Masters UI is never clobbered.
+  useEffect(() => {
+    if (!Array.isArray(orgUsers) || orgUsers.length === 0) return;
+    if (!Array.isArray(catalog) || catalog.length === 0) return;
+    const byEmail = {};
+    orgUsers.forEach(u => { if (u.email) byEmail[u.email.trim().toLowerCase()] = u.id; });
+    const lookup = (...emails) => {
+      for (const e of emails) { const id = byEmail[e]; if (id) return id; }
+      return "";
+    };
+    const SEED = {
+      "iCAFFE":       lookup("amit@hansinfomatic.com","amit.mopari@hansinfomatic.com"),
+      "E-ANNEX":      lookup("amit@hansinfomatic.com","amit.mopari@hansinfomatic.com"),
+      "EANNEX":       lookup("amit@hansinfomatic.com","amit.mopari@hansinfomatic.com"),
+      "WiseHandling": lookup("shivbrata.bose@hansinfomatic.com","shivbrata@hansinfomatic.com"),
+      "WiseCargo":    lookup("shivbrata.bose@hansinfomatic.com","shivbrata@hansinfomatic.com"),
+      "WiseCCS":      lookup("shivbrata.bose@hansinfomatic.com","shivbrata@hansinfomatic.com"),
+      "WiseDox":      lookup("ritesh@hansinfomatic.com","ritesh.srivastava@hansinfomatic.com"),
+      "WiseTrax":     lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
+      "AMS":          lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
+    };
+    let dirty = false;
+    const next = catalog.map(p => {
+      if (p.lineManagerId) return p;
+      const seedId = SEED[p.id] || SEED[p.name];
+      if (!seedId) return p;
+      dirty = true;
+      return { ...p, lineManagerId: seedId };
+    });
+    if (dirty) setCatalog(next);
+    // Re-run if user list grows (e.g. Amit added after first paint) so the
+    // mapping eventually fills in once the matching user appears.
+  }, [orgUsers, catalog]);
   // Keep ALL master-backed constants (CUST_TYPES, COUNTRIES, ACT_TYPES, VERTICALS,
   // LEAD_SOURCES, OPP_STAGES, BILL_TERMS, PAYMENT_MODES, QUOTE_STATUSES, etc.)
   // in sync with the live Masters editor so every dropdown/filter reflects edits.
@@ -309,16 +354,68 @@ export default function SmartCRM() {
   const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const _globalRole = useMemo(() => isGlobalRole(currentUser, orgUsers), [currentUser, orgUsers]);
 
+  // ── Auto-route unowned leads to their product's line manager ──────────
+  // Bulk uploads regularly arrive with assignedTo blank. Without routing
+  // they sit invisible to every scoped user (since visibleLeads now requires
+  // ownership) and only admins see them — which means real follow-up never
+  // happens. We close the gap on every load by patching any blank-owner
+  // lead with its product's lineManagerId. The PM can then re-assign down
+  // to a sales rep from their own dashboard.
+  //
+  // Idempotent: only patches rows where assignedTo is currently empty AND
+  // a non-empty lineManagerId exists for that product. Re-running has no
+  // effect once everything is routed. We do NOT touch leads whose product
+  // is unmapped — those remain admin-only until a PM is set in Masters.
+  const productOwnerById = useMemo(() => {
+    const m = {};
+    (catalog || []).forEach(p => { if (p.lineManagerId) { m[p.id] = p.lineManagerId; m[p.name] = p.lineManagerId; } });
+    return m;
+  }, [catalog]);
+
+  useEffect(() => {
+    if (!Array.isArray(leads) || leads.length === 0) return;
+    if (Object.keys(productOwnerById).length === 0) return;
+    let dirty = false;
+    const next = leads.map(l => {
+      if (l.isDeleted) return l;
+      if (l.assignedTo) return l;
+      const ownerId = productOwnerById[l.product];
+      if (!ownerId) return l;
+      dirty = true;
+      return { ...l, assignedTo: ownerId };
+    });
+    if (dirty) setLeads(next);
+  }, [leads, productOwnerById]);
+
+  // Mirror routing for opportunities — same rationale: a deal with no owner
+  // needs a PM to triage it, otherwise it's invisible to everyone but admins.
+  useEffect(() => {
+    if (!Array.isArray(opps) || opps.length === 0) return;
+    if (Object.keys(productOwnerById).length === 0) return;
+    let dirty = false;
+    const next = opps.map(o => {
+      if (o.isDeleted) return o;
+      if (o.owner) return o;
+      const firstProd = (o.products && o.products[0]) || (o.productSelection && o.productSelection[0]);
+      const ownerId = productOwnerById[firstProd];
+      if (!ownerId) return o;
+      dirty = true;
+      return { ...o, owner: ownerId };
+    });
+    if (dirty) setOpps(next);
+  }, [opps, productOwnerById]);
+
   // Roles allowed to soft-delete records; all others can only archive (same action, UI label differs)
   const canDelete = useMemo(() => {
     const role = normalizeRole(orgUsers.find(u => u.id === currentUser)?.role);
-    return ["admin","md","director","line_mgr"].includes(role);
+    return ["admin","md","director","vp_sales_mkt","line_mgr"].includes(role);
   }, [currentUser, orgUsers]);
 
-  // Only admins can restore soft-deleted records
+  // Only admins can restore soft-deleted records (VP S&M too — needed to
+  // recover from accidental deletes by their downline)
   const canRestore = useMemo(() => {
     const role = normalizeRole(orgUsers.find(u => u.id === currentUser)?.role);
-    return ["admin","md","director"].includes(role);
+    return ["admin","md","director","vp_sales_mkt"].includes(role);
   }, [currentUser, orgUsers]);
 
   // Exclude soft-deleted records from all visible arrays.
@@ -354,13 +451,32 @@ export default function SmartCRM() {
     return live.filter(cr => cr.marketingPerson && _scopedIds.has(cr.marketingPerson));
   }, [callReports, _scopedIds, _globalRole]);
 
-  // Generic !isDeleted filters for entities without owner-based scoping. These
-  // hide soft-deleted records from every list/dropdown app-wide while keeping
-  // the underlying state arrays intact for restore/audit.
-  const visibleAccounts    = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
+  // Per-module visibility rules (per Hans Infomatic policy, Apr 2026):
+  //   Accounts, Tickets, Invoices, Quotes, Contracts, Comm Logs, Events →
+  //     STRICT — only the owner (and their downline / global roles) see the row.
+  //   Contacts → SHARED — everyone sees every contact (intentional: helps the
+  //     team cross-reference decision-makers across deals).
+  // Soft-deleted rows are always hidden from these lists (Trash module reads
+  // the raw state arrays separately).
+  const visibleAccounts    = useMemo(() => {
+    const live = accounts.filter(a => !a.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(a => a.owner && _scopedIds.has(a.owner));
+  }, [accounts, _scopedIds, _globalRole]);
+  // Contacts are intentionally org-wide — supports cross-team handoffs.
   const visibleContacts    = useMemo(() => contacts.filter(c => !c.isDeleted), [contacts]);
-  const visibleTickets     = useMemo(() => tickets.filter(t => !t.isDeleted), [tickets]);
-  const visibleContracts   = useMemo(() => contracts.filter(c => !c.isDeleted), [contracts]);
+  // Tickets use `assigned` (not `owner`); support reps assigned by PM still
+  // see their own queue, and the PM/manager up the chain sees everything.
+  const visibleTickets     = useMemo(() => {
+    const live = tickets.filter(t => !t.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(t => t.assigned && _scopedIds.has(t.assigned));
+  }, [tickets, _scopedIds, _globalRole]);
+  const visibleContracts   = useMemo(() => {
+    const live = contracts.filter(c => !c.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(c => c.owner && _scopedIds.has(c.owner));
+  }, [contracts, _scopedIds, _globalRole]);
   // Collections respect the same hierarchy walker as leads/opps: global roles
   // see everything; managers see their full downline (solid + dotted line);
   // sales execs see only what they own. Unowned rows stay visible to everyone
@@ -370,11 +486,32 @@ export default function SmartCRM() {
     if (_globalRole) return live;
     return live.filter(c => !c.owner || _scopedIds.has(c.owner));
   }, [collections, _scopedIds, _globalRole]);
-  const visibleQuotes      = useMemo(() => quotes.filter(q => !q.isDeleted), [quotes]);
-  const visibleCommLogs    = useMemo(() => commLogs.filter(c => !c.isDeleted), [commLogs]);
-  const visibleEvents      = useMemo(() => events.filter(e => !e.isDeleted), [events]);
-  const visibleTargets     = useMemo(() => targets.filter(t => !t.isDeleted), [targets]);
-  const visibleInvoices    = useMemo(() => invoices.filter(i => !i.isDeleted), [invoices]);
+  const visibleQuotes      = useMemo(() => {
+    const live = quotes.filter(q => !q.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(q => q.owner && _scopedIds.has(q.owner));
+  }, [quotes, _scopedIds, _globalRole]);
+  const visibleCommLogs    = useMemo(() => {
+    const live = commLogs.filter(c => !c.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(c => c.owner && _scopedIds.has(c.owner));
+  }, [commLogs, _scopedIds, _globalRole]);
+  const visibleEvents      = useMemo(() => {
+    const live = events.filter(e => !e.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(e => e.owner && _scopedIds.has(e.owner));
+  }, [events, _scopedIds, _globalRole]);
+  const visibleTargets     = useMemo(() => {
+    const live = targets.filter(t => !t.isDeleted);
+    if (_globalRole) return live;
+    // Targets are user-scoped via userId; reps see their own + downline.
+    return live.filter(t => t.userId && _scopedIds.has(t.userId));
+  }, [targets, _scopedIds, _globalRole]);
+  const visibleInvoices    = useMemo(() => {
+    const live = invoices.filter(i => !i.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(i => i.owner && _scopedIds.has(i.owner));
+  }, [invoices, _scopedIds, _globalRole]);
   const visibleUpdates     = useMemo(() => updates.filter(u => !u.isDeleted), [updates]);
 
   // ── Session: persist login & track idle timeout ──
@@ -1196,7 +1333,7 @@ export default function SmartCRM() {
             {page==="updates"    && <Updates updates={visibleUpdates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} catalog={catalog} orgUsers={orgUsers} existingData={{ leads: visibleLeads, accounts: visibleAccounts, contacts: visibleContacts, collections: visibleCollections, tickets: visibleTickets, contracts: visibleContracts, invoices: visibleInvoices, opps: visibleOpps }}/>}
-            {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
+            {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog} orgUsers={orgUsers} currentUser={currentUser}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
             {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
             {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers}/>}
