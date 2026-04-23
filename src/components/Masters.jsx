@@ -221,7 +221,7 @@ const MASTERS_CSS = `
 .m-group-tab.active{color:#1B6B5A;border-bottom-color:#1B6B5A;background:var(--brand-bg)}
 `;
 
-function Masters({masters,setMasters,catalog,setCatalog,orgUsers=[]}) {
+function Masters({masters,setMasters,catalog,setCatalog,orgUsers=[],currentUser=null}) {
   const [tab,setTab]=useState("reference");
   const [group,setGroup]=useState("sales");
   const [search,setSearch]=useState("");
@@ -298,7 +298,7 @@ function Masters({masters,setMasters,catalog,setCatalog,orgUsers=[]}) {
         </div>
       )}
 
-      {tab==="products" && <ProductCatalogPage catalog={catalog} setCatalog={setCatalog} orgUsers={orgUsers}/>}
+      {tab==="products" && <ProductCatalogPage catalog={catalog} setCatalog={setCatalog} orgUsers={orgUsers} currentUser={currentUser}/>}
     </div>
   );
 }
@@ -308,7 +308,13 @@ function Masters({masters,setMasters,catalog,setCatalog,orgUsers=[]}) {
 // ═══════════════════════════════════════════════════════════════════
 const MOD_TYPE_CLS={Core:"mod-core","Add-on":"mod-addon",Integration:"mod-integration",Analytics:"mod-analytics",Mobile:"mod-mobile"};
 
-function ProductCatalogPage({catalog,setCatalog,orgUsers=[]}) {
+function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
+  // Admin/MD/Director can re-assign a product's Line Manager directly from
+  // this page (inline dropdown on each card) without opening the edit modal.
+  // Everyone else sees a read-only label. Same allow-list as other admin
+  // operations across the app.
+  const _myRole = (orgUsers.find(u => u.id === currentUser)?.role || "").toLowerCase();
+  const isAdmin = ["admin","md","director"].includes(_myRole);
   const [expanded,setExpanded]=useState({});
   const [modal,setModal]=useState(null);
   const [form,setForm]=useState({name:"",type:"Core",desc:""});
@@ -395,10 +401,29 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[]}) {
                   <div>
                     <div className="prod-catalog-name">{p.name}</div>
                     <div className="prod-catalog-desc">{p.desc}</div>
-                    <div style={{fontSize:11,color:"var(--text3)",marginTop:2}}>
-                      Line Manager: <span style={{fontWeight:600,color:p.lineManagerId?"var(--text1)":"#DC2626"}}>
-                        {p.lineManagerId ? (userById[p.lineManagerId]?.name || "Unknown") : "Unassigned"}
-                      </span>
+                    <div style={{fontSize:11,color:"var(--text3)",marginTop:4,display:"flex",alignItems:"center",gap:6}}
+                         onClick={e=>e.stopPropagation()}>
+                      <span>Line Manager:</span>
+                      {isAdmin ? (
+                        <select
+                          value={p.lineManagerId||""}
+                          onChange={e=>{
+                            const v=e.target.value;
+                            setCatalog(c=>c.map(x=>x.id===p.id?{...x,lineManagerId:v}:x));
+                          }}
+                          style={{fontSize:11,padding:"2px 6px",border:"1px solid var(--border)",borderRadius:4,background:"#fff",fontWeight:600,color:p.lineManagerId?"var(--text1)":"#DC2626",minWidth:160}}
+                          title="Reassign this product's Line Manager (admin only)"
+                        >
+                          <option value="">— Unassigned —</option>
+                          {managerCandidates.map(u=>(
+                            <option key={u.id} value={u.id}>{u.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span style={{fontWeight:600,color:p.lineManagerId?"var(--text1)":"#DC2626"}}>
+                          {p.lineManagerId ? (userById[p.lineManagerId]?.name || "Unknown") : "Unassigned"}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
