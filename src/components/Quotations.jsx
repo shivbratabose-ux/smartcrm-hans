@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS } from '../data/constants';
-import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS } from '../data/seed';
+import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
@@ -253,7 +253,18 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const days=parseInt(String(q.validity||"30"),10)||30;
     const exp=new Date(sentDate);exp.setDate(exp.getDate()+days);
     const expiryDate=exp.toISOString().slice(0,10);
-    setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Sent",sentDate,expiryDate:r.expiryDate||expiryDate}:r));
+    const con=contacts.find(c=>c.id===q.contactId);
+    const acc=accounts.find(a=>a.id===q.accountId);
+    const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:"",subject:`Quote ${q.id} – ${q.title||acc?.name||""}`.trim(),kind:"initial"};
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Sent",sentDate,expiryDate:r.expiryDate||expiryDate,emailLog:[...(r.emailLog||[]),logEntry]}:r));
+  };
+
+  /* ── Manual resend / send reminder action ── */
+  const logReminder=(q,kind="manual")=>{
+    const con=contacts.find(c=>c.id===q.contactId);
+    const acc=accounts.find(a=>a.id===q.accountId);
+    const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:"",subject:`Reminder: Quote ${q.id} – ${q.title||acc?.name||""}`.trim(),kind};
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,emailLog:[...(r.emailLog||[]),logEntry],lastReminderAt:logEntry.sentAt}:r));
   };
 
   /* ── Approval actions (manager only) ── */
@@ -299,6 +310,32 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     }
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Accepted",acceptedDate,signedQuoteUrl:url,contractId,isFinal:true}:r));
     if(contractId) alert(`Quote accepted. Contract draft ${contractId} created — open Contracts to finalise terms.`);
+  };
+
+  /* ── Reminder cadence: queue follow-up nudges at QUOTE_REMINDER_OFFSETS days after sentDate ── */
+  const _reminderRanRef=useRef(false);
+  const [pendingReminders,setPendingReminders]=useState([]);
+  useEffect(()=>{
+    if(_reminderRanRef.current) return;
+    const now=new Date(today);
+    const due=[];
+    quotes.forEach(q=>{
+      if(!["Sent","Under Review"].includes(q.status)) return;
+      if(!q.sentDate) return;
+      const sentMs=new Date(q.sentDate).getTime();
+      const ageDays=Math.floor((now-sentMs)/86400000);
+      // Find the highest offset whose threshold has been crossed since the last reminder
+      const lastMs=q.lastReminderAt?new Date(q.lastReminderAt).getTime():sentMs;
+      const lastAgeDays=Math.floor((now-lastMs)/86400000);
+      const crossedOffset=QUOTE_REMINDER_OFFSETS.find(d=>ageDays>=d && lastAgeDays>=7);
+      if(crossedOffset) due.push({quote:q,ageDays,offset:crossedOffset});
+    });
+    if(due.length>0) setPendingReminders(due);
+    _reminderRanRef.current=true;
+  },[quotes]);
+  const dispatchReminders=()=>{
+    pendingReminders.forEach(({quote})=>logReminder(quote,"reminder"));
+    setPendingReminders([]);
   };
 
   /* ── Auto-expire: flip Sent / Under Review to Expired when expiryDate < today ── */
@@ -421,6 +458,20 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         </div>
       </div>
 
+      {/* ── Reminder cadence banner ── */}
+      {pendingReminders.length>0 && (
+        <div style={{marginBottom:12,padding:"10px 14px",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,fontSize:12.5,color:"#92400E"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <Bell size={14}/>
+            <span><strong>{pendingReminders.length} quote{pendingReminders.length>1?"s":""}</strong> {pendingReminders.length>1?"need":"needs"} a follow-up nudge — sent {pendingReminders.map(r=>r.ageDays).join(", ")} day(s) ago.</span>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <button className="btn btn-sm" style={{background:"#F59E0B",color:"#fff",border:"none"}} onClick={dispatchReminders}>Send all reminders</button>
+            <button className="btn btn-sm btn-sec" onClick={()=>setPendingReminders([])}>Dismiss</button>
+          </div>
+        </div>
+      )}
+
       {/* ── Filters Row ── */}
       <div className="filter-bar" style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
         <div style={{display:"flex",flexDirection:"column",gap:2}}>
@@ -497,6 +548,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                     <button className="icon-btn" title={`Approve (${approvalReason(q)})`} onClick={()=>approveQuote(q)} style={{color:"#22C55E"}}><ThumbsUp size={14}/></button>
                     <button className="icon-btn" title="Reject" onClick={()=>rejectQuote(q)} style={{color:"#EF4444"}}><ThumbsDown size={14}/></button>
                   </>)}
+                  {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title={`Send reminder${q.lastReminderAt?` (last: ${fmt.date(q.lastReminderAt.slice(0,10))})`:""}`} onClick={()=>logReminder(q,"manual")} style={{color:"#F59E0B"}}><Mail size={14}/></button>}
                   {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title="Mark as Accepted by customer" onClick={()=>acceptQuote(q)} style={{color:"#22C55E"}}><FileSignature size={14}/></button>}
                   <button className="icon-btn" title="Duplicate/Revise" onClick={()=>duplicate(q)}><Copy size={14}/></button>
                   {canDelete&&<button className="icon-btn" title="Delete" onClick={()=>setConfirm(q.id)}><Trash2 size={14}/></button>}
@@ -549,6 +601,24 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               </div>
             );
           })()}
+          {Array.isArray(detail.emailLog)&&detail.emailLog.length>0&&(
+            <div style={{marginTop:10,background:"#F0F9FF",border:"1px solid #BAE6FD",padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#0369A1",marginBottom:6,letterSpacing:"0.5px",display:"flex",alignItems:"center",gap:6}}><Mail size={12}/>EMAIL LOG ({detail.emailLog.length})</div>
+              <table style={{width:"100%",fontSize:11.5}}>
+                <thead><tr style={{textAlign:"left",color:"var(--text3)"}}><th style={{padding:"2px 4px"}}>Sent</th><th style={{padding:"2px 4px"}}>By</th><th style={{padding:"2px 4px"}}>To</th><th style={{padding:"2px 4px"}}>Kind</th></tr></thead>
+                <tbody>
+                  {detail.emailLog.slice().reverse().map(e=>(
+                    <tr key={e.id}>
+                      <td style={{padding:"2px 4px"}}>{e.sentAt?fmt.date(e.sentAt.slice(0,10)):"—"}</td>
+                      <td style={{padding:"2px 4px"}}>{TEAM_MAP[e.sentBy]?.name||e.sentBy||"—"}</td>
+                      <td style={{padding:"2px 4px"}}>{e.to||"—"}</td>
+                      <td style={{padding:"2px 4px"}}><span style={{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:3,background:e.kind==="initial"?"#3B82F618":e.kind==="reminder"?"#F59E0B18":"#94A3B818",color:e.kind==="initial"?"#3B82F6":e.kind==="reminder"?"#F59E0B":"#64748B"}}>{e.kind.toUpperCase()}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {(detail.approvalStatus&&detail.approvalStatus!=="Not Required")&&(
             <div style={{marginTop:10,background:detail.approvalStatus==="Approved"?"#ECFDF5":detail.approvalStatus==="Rejected"?"#FEF2F2":"#FFFBEB",border:`1px solid ${detail.approvalStatus==="Approved"?"#A7F3D0":detail.approvalStatus==="Rejected"?"#FECACA":"#FDE68A"}`,padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
               <div style={{fontSize:11,fontWeight:700,color:detail.approvalStatus==="Approved"?"#047857":detail.approvalStatus==="Rejected"?"#B91C1C":"#92400E",marginBottom:6,letterSpacing:"0.5px",display:"flex",alignItems:"center",gap:6}}><ShieldCheck size={12}/>APPROVAL · {detail.approvalStatus.toUpperCase()}</div>

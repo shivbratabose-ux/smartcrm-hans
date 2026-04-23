@@ -230,12 +230,20 @@ export const INIT_CONTRACTS = [];
 export const INIT_COLLECTIONS = [];
 export const INIT_TARGETS = [];
 
-export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:""};
+export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:"",emailLog:[],lastReminderAt:""};
 
 // Approval thresholds: a quote needs manager approval before Send if either
 // the discount % exceeds DISCOUNT_PCT_THRESHOLD or the total exceeds VALUE_THRESHOLD.
 // Both numbers are intentionally generous defaults; tune per business.
 export const QUOTE_APPROVAL_THRESHOLDS={discountPct:20,totalValue:500}; // total in same units as quote.total (Lakh / Cr / etc.)
+
+// Email send-log entry: pushed onto quote.emailLog[] every time the quote is mailed.
+// kind = "initial" | "reminder" | "manual" — used to drive the reminder cadence.
+export const BLANK_EMAIL_LOG={id:"",sentAt:"",sentBy:"",to:"",cc:"",subject:"",kind:"initial"};
+
+// Reminder cadence after a quote is Sent (and not yet Accepted / Rejected / Expired):
+// fire follow-up nudges at these day offsets relative to sentDate.
+export const QUOTE_REMINDER_OFFSETS=[7,14];
 export const BLANK_QUOTE_ITEM={description:"",qty:1,unitPrice:0,amount:0};
 export const BLANK_COMM_LOG={type:"Email Sent",subject:"",body:"",from:"",to:"",accountId:"",contactId:"",oppId:"",date:"",status:"Sent",owner:"u1"};
 export const BLANK_EVENT={title:"",type:"Call",status:"Scheduled",date:"",time:"09:00",endTime:"09:30",accountId:"",contactId:"",oppId:"",owner:"u1",attendees:[],location:"",notes:"",reminderMin:15};
