@@ -324,6 +324,15 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
             <div style={{fontSize:16,fontWeight:700,color:"var(--brand)",marginTop:4}}>Total: ₹{detail.total}L ({formatINR(detail.total)} INR)</div>
           </div>
           {detail.terms&&<div style={{marginTop:14,background:"var(--s2)",padding:"10px 12px",borderRadius:8,borderLeft:"3px solid var(--brand)",fontSize:12,color:"var(--text2)",whiteSpace:"pre-line"}}><strong>Terms:</strong><br/>{detail.terms}</div>}
+          {(detail.quoteFileUrl||detail.isFinal||detail.supersedesQuoteId)&&(
+            <div style={{marginTop:10,background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#1E40AF",marginBottom:6,letterSpacing:"0.5px"}}>QUOTE DOCUMENT</div>
+              {detail.isFinal&&<div style={{marginBottom:4}}><span style={{background:"#22C55E",color:"#fff",fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,letterSpacing:"0.5px"}}>FINAL</span></div>}
+              {detail.quoteFileUrl&&<div style={{marginBottom:4}}><strong>File:</strong> <a href={detail.quoteFileUrl} target="_blank" rel="noopener noreferrer" style={{color:"var(--brand)"}}>{detail.quoteFileUrl}</a></div>}
+              {detail.supersedesQuoteId&&<div style={{marginBottom:4}}><strong>Supersedes:</strong> {detail.supersedesQuoteId}</div>}
+              {detail.approvalNotes&&<div><strong>Approval:</strong> {detail.approvalNotes}</div>}
+            </div>
+          )}
           {detail.notes&&<div style={{marginTop:8,fontSize:12,color:"var(--text3)"}}><strong>Notes:</strong> {detail.notes}</div>}
         </Modal>
       )}
@@ -388,6 +397,19 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
           {formTab==="terms"&&(<div>
             <div className="form-group"><label>Terms & Conditions</label>
               <textarea rows={8} value={form.terms} onChange={e=>setForm(f=>({...f,terms:e.target.value}))} placeholder="Enter terms..." style={{width:"100%",resize:"vertical",fontFamily:"monospace",fontSize:12}}/>
+            </div>
+            <div className="form-row">
+              <div className="form-group"><label>Quote Document URL</label><input value={form.quoteFileUrl||""} onChange={e=>setForm(f=>({...f,quoteFileUrl:e.target.value}))} placeholder="https://drive/sharepoint link to the quote PDF"/></div>
+              <div className="form-group"><label>Approval Notes</label><input value={form.approvalNotes||""} onChange={e=>setForm(f=>({...f,approvalNotes:e.target.value}))} placeholder="Internal approval notes"/></div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
+                  <input type="checkbox" checked={!!form.isFinal} onChange={e=>setForm(f=>({...f,isFinal:e.target.checked}))}/>
+                  Mark as Final Quote (locked for contract)
+                </label>
+              </div>
+              <div className="form-group"><label>Supersedes Quote ID</label><input value={form.supersedesQuoteId||""} onChange={e=>setForm(f=>({...f,supersedesQuoteId:e.target.value}))} placeholder="e.g. QT-007"/></div>
             </div>
             <div style={{marginTop:8}}>
               <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",marginBottom:6}}>STANDARD TERMS (click to add)</div>

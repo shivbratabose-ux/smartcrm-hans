@@ -66,7 +66,7 @@ const timelineData = [
   { month: "Dec", contracts: 15 },
 ];
 
-function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete }) {
+function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete, onGenerateRenewal }) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search, setSearch] = useState("");
   const [statusF, setStatusF] = useState("All");
@@ -389,6 +389,12 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
         <Modal title={detail.title} onClose={() => setDetail(null)} lg
           footer={<>
             <button className="btn btn-sec btn-sm" onClick={() => setDetail(null)}>Close</button>
+            {onGenerateRenewal && (
+              <button className="btn btn-sec btn-sm" title="Create a new draft quote pre-filled from this contract"
+                onClick={() => { onGenerateRenewal(detail); setDetail(null); }}>
+                <FileText size={13}/>Generate Renewal Quote
+              </button>
+            )}
             <button className="btn btn-primary btn-sm" onClick={() => { openEdit(detail); setDetail(null); }}><Edit2 size={13}/>Edit</button>
           </>}>
           <div className="dp-grid">
@@ -417,6 +423,16 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
           {detail.terms && (
             <div style={{marginTop:14,background:"var(--s2)",padding:"10px 12px",borderRadius:8,borderLeft:"3px solid var(--brand)",fontSize:13,color:"var(--text2)"}}>
               <strong>Terms:</strong> {detail.terms}
+            </div>
+          )}
+          {(detail.signedDocUrl || detail.eulaUrl || detail.onboardingNotes) && (
+            <div style={{marginTop:14,background:"#F0FDF4",border:"1px solid #BBF7D0",padding:"10px 12px",borderRadius:8,fontSize:12.5,color:"var(--text2)"}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#15803D",marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                <ShieldCheck size={13}/> Won-Handover Record
+              </div>
+              {detail.signedDocUrl && <div style={{marginBottom:4}}><strong>Signed Contract:</strong> <a href={detail.signedDocUrl} target="_blank" rel="noopener noreferrer" style={{color:"var(--brand)"}}>{detail.signedDocUrl}</a></div>}
+              {detail.eulaUrl && <div style={{marginBottom:4}}><strong>EULA / Agreement:</strong> <a href={detail.eulaUrl} target="_blank" rel="noopener noreferrer" style={{color:"var(--brand)"}}>{detail.eulaUrl}</a></div>}
+              {detail.onboardingNotes && <div style={{marginTop:4}}><strong>Onboarding:</strong> {detail.onboardingNotes}</div>}
             </div>
           )}
         </Modal>
@@ -528,6 +544,26 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
           <div className="form-group"><label>Terms & Conditions</label>
             <textarea rows={3} value={form.terms} onChange={e => setForm(f => ({...f, terms: e.target.value}))}
               placeholder="Payment terms, SLA guarantees, penalty clauses..." style={{width:"100%",resize:"vertical"}}/>
+          </div>
+
+          {/* ── Document links + onboarding (Won-handover record) ──
+              Plain URL fields (not file uploads) so users can paste links to
+              SharePoint / Drive / DocuSign without needing the app to host
+              the files. Schema-only fields: signedDocUrl, eulaUrl,
+              agreementUrl, onboardingNotes from BLANK_CONTRACT. */}
+          <div className="form-row">
+            <div className="form-group"><label>Signed Contract URL</label>
+              <input type="url" value={form.signedDocUrl||""} onChange={e => setForm(f => ({...f, signedDocUrl: e.target.value}))}
+                placeholder="https://drive.google.com/... or SharePoint link"/>
+            </div>
+            <div className="form-group"><label>EULA / Agreement URL</label>
+              <input type="url" value={form.eulaUrl||""} onChange={e => setForm(f => ({...f, eulaUrl: e.target.value}))}
+                placeholder="Link to EULA or master agreement"/>
+            </div>
+          </div>
+          <div className="form-group"><label>Onboarding Notes</label>
+            <textarea rows={2} value={form.onboardingNotes||""} onChange={e => setForm(f => ({...f, onboardingNotes: e.target.value}))}
+              placeholder="Handover scope, transition owner, kickoff plan, training requests..." style={{width:"100%",resize:"vertical"}}/>
           </div>
         </Modal>
       )}
