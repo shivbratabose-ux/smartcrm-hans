@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS } from '../data/constants';
-import { BLANK_QUOTE, BLANK_QUOTE_ITEM } from '../data/seed';
+import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
@@ -86,7 +86,25 @@ const KpiCard = ({icon,label,value,sub}) => (
   </div>
 );
 
-function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUser,orgUsers,catalog,canDelete}) {
+/* ── Approval helpers ── */
+const computeDiscountPct = (q) => {
+  const sub = Number(q.subtotal)||0;
+  const disc = Number(q.discount)||0;
+  return sub>0 ? +((disc/sub)*100).toFixed(1) : 0;
+};
+const needsApproval = (q) => {
+  const pct = computeDiscountPct(q);
+  return pct > QUOTE_APPROVAL_THRESHOLDS.discountPct || (Number(q.total)||0) > QUOTE_APPROVAL_THRESHOLDS.totalValue;
+};
+const approvalReason = (q) => {
+  const pct = computeDiscountPct(q);
+  const reasons = [];
+  if (pct > QUOTE_APPROVAL_THRESHOLDS.discountPct) reasons.push(`discount ${pct}% > ${QUOTE_APPROVAL_THRESHOLDS.discountPct}%`);
+  if ((Number(q.total)||0) > QUOTE_APPROVAL_THRESHOLDS.totalValue) reasons.push(`total ₹${q.total} > ₹${QUOTE_APPROVAL_THRESHOLDS.totalValue}L`);
+  return reasons.join(" + ");
+};
+
+function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,currentUser,orgUsers,catalog,canDelete,isManager=false}) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search,setSearch]=useState("");
   const [statusF,setStatusF]=useState("All");
@@ -223,14 +241,64 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
     });
   };
 
-  /* ── Send action: Draft → Sent + stamp sentDate ── */
+  /* ── Send action: Draft → Sent + stamp sentDate (gated by approval matrix) ── */
   const sendQuote=(q)=>{
+    if(needsApproval(q) && q.approvalStatus!=="Approved"){
+      // Request approval instead of sending
+      setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Pending",approvalRequestedAt:new Date().toISOString()}:r));
+      alert(`This quote needs manager approval before sending — ${approvalReason(q)}.\nApproval has been requested.`);
+      return;
+    }
     const sentDate=today;
-    // Default expiry = sentDate + validity days (parse "30 Days" → 30)
     const days=parseInt(String(q.validity||"30"),10)||30;
     const exp=new Date(sentDate);exp.setDate(exp.getDate()+days);
     const expiryDate=exp.toISOString().slice(0,10);
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Sent",sentDate,expiryDate:r.expiryDate||expiryDate}:r));
+  };
+
+  /* ── Approval actions (manager only) ── */
+  const approveQuote=(q)=>{
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Approved",approvedBy:currentUser,approvedAt:new Date().toISOString(),rejectedReason:""}:r));
+  };
+  const rejectQuote=(q)=>{
+    const reason=window.prompt("Reason for rejection (visible to quote owner):","");
+    if(reason==null) return;
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Rejected",approvedBy:currentUser,approvedAt:new Date().toISOString(),rejectedReason:reason||"No reason given"}:r));
+  };
+
+  /* ── Customer Accept: Sent/Under Review → Accepted + stamp + auto-create Contract draft ── */
+  const acceptQuote=(q)=>{
+    const url=window.prompt("Optional: paste signed quote URL (Drive/SharePoint link). Leave blank to skip.","")||"";
+    const acceptedDate=today;
+    // Auto-create a Contract draft linking back to this quote
+    let contractId="";
+    if(setContracts && BLANK_CONTRACT){
+      const existing=contracts.length;
+      contractId=`CT-${String(existing+1).padStart(3,"0")}`;
+      const acc=accounts.find(a=>a.id===q.accountId);
+      const newContract={
+        ...BLANK_CONTRACT,
+        id:contractId,
+        contractNo:contractId,
+        title:q.title,
+        accountId:q.accountId,
+        oppId:q.oppId||"",
+        contactId:q.contactId||"",
+        product:q.product,
+        productSelection:q.productSelection,
+        value:q.total,
+        currency:"INR",
+        status:"Draft",
+        startDate:acceptedDate,
+        owner:q.owner||currentUser,
+        createdDate:acceptedDate,
+        signedDocUrl:url,
+        notes:`Auto-created from accepted quote ${q.id}${acc?` for ${acc.name}`:""}.`,
+      };
+      setContracts(p=>[...p,newContract]);
+    }
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Accepted",acceptedDate,signedQuoteUrl:url,contractId,isFinal:true}:r));
+    if(contractId) alert(`Quote accepted. Contract draft ${contractId} created — open Contracts to finalise terms.`);
   };
 
   /* ── Auto-expire: flip Sent / Under Review to Expired when expiryDate < today ── */
@@ -415,11 +483,21 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
                 <td style={{fontSize:12,color:"var(--text2)"}}>{getMonthName(q.sentDate||q.createdDate)}</td>
                 <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700,textAlign:"right",fontSize:13}}>{formatINR(q.total)}</td>
                 <td style={{textAlign:"center"}}><span style={{fontWeight:600,fontSize:12,color:q._prob>=70?"#22C55E":q._prob>=40?"#F59E0B":"#EF4444"}}>{q._prob}%</span></td>
-                <td><span style={statusBadgeStyle(q.status)}>{statusLabel(q.status)}</span></td>
+                <td>
+                  <span style={statusBadgeStyle(q.status)}>{statusLabel(q.status)}</span>
+                  {q.approvalStatus==="Pending"&&<span title="Awaiting manager approval" style={{marginLeft:4,display:"inline-flex",alignItems:"center",gap:2,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#F59E0B18",color:"#F59E0B",letterSpacing:"0.5px"}}><ShieldCheck size={9}/>APPR PEND</span>}
+                  {q.approvalStatus==="Approved"&&<span title="Manager approved" style={{marginLeft:4,display:"inline-flex",alignItems:"center",gap:2,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#22C55E18",color:"#22C55E",letterSpacing:"0.5px"}}><ShieldCheck size={9}/>APPROVED</span>}
+                  {q.approvalStatus==="Rejected"&&<span title={q.rejectedReason} style={{marginLeft:4,display:"inline-flex",alignItems:"center",gap:2,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#EF444418",color:"#EF4444",letterSpacing:"0.5px"}}><ShieldCheck size={9}/>APPR REJ</span>}
+                </td>
                 <td><div style={{display:"flex",gap:4}}>
                   <button className="icon-btn" title="View" onClick={()=>setDetail(q)}><Eye size={14}/></button>
                   <button className="icon-btn" title="Edit" onClick={()=>openEdit(q)}><Edit2 size={14}/></button>
-                  {q.status==="Draft"&&<button className="icon-btn" title="Send to customer" onClick={()=>sendQuote(q)} style={{color:"#3B82F6"}}><Send size={14}/></button>}
+                  {q.status==="Draft"&&<button className="icon-btn" title={needsApproval(q)&&q.approvalStatus!=="Approved"?`Request approval (${approvalReason(q)})`:"Send to customer"} onClick={()=>sendQuote(q)} style={{color:needsApproval(q)&&q.approvalStatus!=="Approved"?"#F59E0B":"#3B82F6"}}><Send size={14}/></button>}
+                  {isManager && q.approvalStatus==="Pending" && (<>
+                    <button className="icon-btn" title={`Approve (${approvalReason(q)})`} onClick={()=>approveQuote(q)} style={{color:"#22C55E"}}><ThumbsUp size={14}/></button>
+                    <button className="icon-btn" title="Reject" onClick={()=>rejectQuote(q)} style={{color:"#EF4444"}}><ThumbsDown size={14}/></button>
+                  </>)}
+                  {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title="Mark as Accepted by customer" onClick={()=>acceptQuote(q)} style={{color:"#22C55E"}}><FileSignature size={14}/></button>}
                   <button className="icon-btn" title="Duplicate/Revise" onClick={()=>duplicate(q)}><Copy size={14}/></button>
                   {canDelete&&<button className="icon-btn" title="Delete" onClick={()=>setConfirm(q.id)}><Trash2 size={14}/></button>}
                 </div></td>
@@ -471,6 +549,23 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
               </div>
             );
           })()}
+          {(detail.approvalStatus&&detail.approvalStatus!=="Not Required")&&(
+            <div style={{marginTop:10,background:detail.approvalStatus==="Approved"?"#ECFDF5":detail.approvalStatus==="Rejected"?"#FEF2F2":"#FFFBEB",border:`1px solid ${detail.approvalStatus==="Approved"?"#A7F3D0":detail.approvalStatus==="Rejected"?"#FECACA":"#FDE68A"}`,padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
+              <div style={{fontSize:11,fontWeight:700,color:detail.approvalStatus==="Approved"?"#047857":detail.approvalStatus==="Rejected"?"#B91C1C":"#92400E",marginBottom:6,letterSpacing:"0.5px",display:"flex",alignItems:"center",gap:6}}><ShieldCheck size={12}/>APPROVAL · {detail.approvalStatus.toUpperCase()}</div>
+              <div>Reason needed: <strong>{approvalReason(detail)||"—"}</strong></div>
+              {detail.approvalRequestedAt&&<div>Requested: {fmt.date(detail.approvalRequestedAt.slice(0,10))}</div>}
+              {detail.approvedAt&&<div>{detail.approvalStatus==="Rejected"?"Rejected":"Approved"} by: {TEAM_MAP[detail.approvedBy]?.name||detail.approvedBy} on {fmt.date(detail.approvedAt.slice(0,10))}</div>}
+              {detail.rejectedReason&&<div style={{marginTop:4}}>Reason: <em>{detail.rejectedReason}</em></div>}
+            </div>
+          )}
+          {detail.acceptedDate&&(
+            <div style={{marginTop:10,background:"#ECFDF5",border:"1px solid #A7F3D0",padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#047857",marginBottom:6,letterSpacing:"0.5px",display:"flex",alignItems:"center",gap:6}}><FileSignature size={12}/>CUSTOMER ACCEPTED</div>
+              <div>Accepted on: <strong>{fmt.date(detail.acceptedDate)}</strong></div>
+              {detail.signedQuoteUrl&&<div>Signed copy: <a href={detail.signedQuoteUrl} target="_blank" rel="noreferrer" style={{color:"#1D4ED8"}}>{detail.signedQuoteUrl}</a></div>}
+              {detail.contractId&&<div>Linked contract: <strong>{detail.contractId}</strong> (open Contracts to finalise)</div>}
+            </div>
+          )}
           {(detail.quoteFileUrl||detail.isFinal||detail.supersedesQuoteId)&&(
             <div style={{marginTop:10,background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
               <div style={{fontSize:11,fontWeight:700,color:"#1E40AF",marginBottom:6,letterSpacing:"0.5px"}}>QUOTE DOCUMENT</div>
