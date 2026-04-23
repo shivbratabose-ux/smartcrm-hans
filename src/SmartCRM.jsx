@@ -302,6 +302,7 @@ export default function SmartCRM() {
       "WiseCCS":      lookup("shivbrata.bose@hansinfomatic.com","shivbrata@hansinfomatic.com"),
       "WiseDox":      lookup("ritesh@hansinfomatic.com","ritesh.srivastava@hansinfomatic.com"),
       "WiseTrax":     lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
+      "AMS":          lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
     };
     let dirty = false;
     const next = catalog.map(p => {
