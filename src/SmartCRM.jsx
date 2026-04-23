@@ -39,6 +39,7 @@ import Contracts from "./components/Contracts";
 import Collections from "./components/Collections";
 import Targets from "./components/Targets";
 import Quotations from "./components/Quotations";
+import QuoteAcceptLanding from "./components/QuoteAcceptLanding";
 import CalendarView from "./components/CalendarView";
 import CommLog from "./components/CommLog";
 import BulkUpload from "./components/BulkUpload";
@@ -1452,6 +1453,7 @@ export default function SmartCRM() {
             {page==="contracts"  && <Contracts contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote}/>}
             {page==="collections"&& <Collections collections={visibleCollections} setCollections={setCollections} accounts={visibleAccounts} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete}/>}
             {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} isManager={_globalRole}/>}
+            {page.startsWith("quote-accept/") && <QuoteAcceptLanding quoteId={page.replace(/^quote-accept\//,"")} quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} contracts={contracts} setContracts={setContracts} setActivities={setActivities} currentUser={currentUser} onBack={()=>setPage("quotations")}/>}
             {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete}/>}
             {page==="communications"&& <CommLog commLogs={visibleCommLogs} setCommLogs={setCommLogs} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} canDelete={canDelete}/>}
             {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} currentUser={currentUser} canDelete={canDelete}/>}
