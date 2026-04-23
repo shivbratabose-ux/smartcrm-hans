@@ -351,6 +351,20 @@ export const STANDARD_TERMS = [
   "Price escalation: Max 10% on annual renewal.",
 ];
 
+// T&C template library — pick a template at quote creation, then edit inline.
+export const TC_TEMPLATES = [
+  { id:"saas-standard", name:"Standard SaaS",
+    body:"1. Payment: Annual license fee payable in advance, net 30 days.\n2. Implementation: 8-12 weeks from PO receipt.\n3. Support: 24/7 for Critical, Business hours otherwise.\n4. SLA: 99.5% uptime guarantee.\n5. Renewal: Auto-renewal with 60-day prior notice for termination.\n6. Price escalation: Max 10% on annual renewal." },
+  { id:"amc", name:"AMC / Maintenance",
+    body:"1. AMC term: 12 months from start date.\n2. Payment: Quarterly in advance, net 15 days.\n3. Coverage: All bug fixes and minor enhancements.\n4. Response: 4 business hours for Critical, 1 business day for High.\n5. Exclusions: Major version upgrades, data recovery, hardware.\n6. Renewal: Mutual written agreement 30 days prior to expiry." },
+  { id:"onetime", name:"One-time License",
+    body:"1. Payment: 100% advance against PO.\n2. Delivery: License keys + installer within 5 business days of payment.\n3. Warranty: 90 days post go-live bug fixes at no cost.\n4. Support beyond warranty: Per separate AMC agreement.\n5. License is perpetual, non-transferable, single-tenant." },
+  { id:"government", name:"Government / PSU",
+    body:"1. Payment: As per PO terms (typically 80% on delivery, 20% on acceptance).\n2. Performance Bank Guarantee: 10% of order value, valid till warranty end.\n3. Liquidated damages: 0.5% per week of delay, capped at 10%.\n4. Acceptance: Within 30 days of installation; deemed accepted if no rejection.\n5. Compliance: GeM / CPPP / department-specific requirements as listed in PO.\n6. Confidentiality: All data classified per Govt of India guidelines." },
+  { id:"poc", name:"PoC / Pilot",
+    body:"1. PoC duration: 30 days from kickoff.\n2. No fees during PoC; conversion to paid contract upon mutual sign-off.\n3. Scope: As detailed in attached Statement of Work.\n4. IP: All customer data remains property of customer; PoC code not licensed.\n5. Termination: Either party with 7 days written notice." },
+];
+
 // ── Communication Types ──
 export const COMM_TYPES = ["Email Sent","Email Received","WhatsApp Sent","WhatsApp Received","SMS Sent","SMS Received","Letter Sent"];
 export const COMM_STATUSES = ["Sent","Delivered","Read","Replied","Bounced","Failed"];
