@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity } from "lucide-react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
@@ -216,7 +216,66 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
   };
   const duplicate=(q)=>{
     const id=`QT-${String(quotes.length+1).padStart(3,"0")}`;
-    setQuotes(p=>[...p,{...q,id,status:"Draft",version:q.version+1,createdDate:today,sentDate:"",expiryDate:"",notes:`Revised from ${q.id}. `+q.notes}]);
+    // Create new revision linked to parent + flip parent → Revised (terminal/superseded)
+    setQuotes(p=>{
+      const next=[...p,{...q,id,status:"Draft",version:(q.version||1)+1,createdDate:today,sentDate:"",expiryDate:"",isFinal:false,supersedesQuoteId:q.id,notes:`Revised from ${q.id}. `+(q.notes||"")}];
+      return next.map(r=>r.id===q.id&&!["Accepted","Rejected","Revised"].includes(r.status)?{...r,status:"Revised"}:r);
+    });
+  };
+
+  /* ── Send action: Draft → Sent + stamp sentDate ── */
+  const sendQuote=(q)=>{
+    const sentDate=today;
+    // Default expiry = sentDate + validity days (parse "30 Days" → 30)
+    const days=parseInt(String(q.validity||"30"),10)||30;
+    const exp=new Date(sentDate);exp.setDate(exp.getDate()+days);
+    const expiryDate=exp.toISOString().slice(0,10);
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Sent",sentDate,expiryDate:r.expiryDate||expiryDate}:r));
+  };
+
+  /* ── Auto-expire: flip Sent / Under Review to Expired when expiryDate < today ── */
+  const _expireRanRef=useRef(false);
+  useEffect(()=>{
+    if(_expireRanRef.current) return;
+    const now=today;
+    const stale=quotes.filter(q=>["Sent","Under Review"].includes(q.status)&&q.expiryDate&&q.expiryDate<now);
+    if(stale.length===0){_expireRanRef.current=true;return;}
+    const ids=new Set(stale.map(q=>q.id));
+    setQuotes(p=>p.map(q=>ids.has(q.id)?{...q,status:"Expired"}:q));
+    _expireRanRef.current=true;
+  },[quotes,setQuotes]);
+
+  /* ── Build a quick lookup for chain rendering ── */
+  const quoteChainMap=useMemo(()=>{
+    const m={};
+    quotes.forEach(q=>{ if(q.supersedesQuoteId) m[q.supersedesQuoteId]=q.id; });
+    return m;
+  },[quotes]);
+  const buildChain=(q)=>{
+    // Walk supersedesQuoteId backwards to root
+    const chain=[q];
+    const seen=new Set([q.id]);
+    let cur=q;
+    while(cur?.supersedesQuoteId){
+      if(seen.has(cur.supersedesQuoteId)) break;
+      const parent=quotes.find(x=>x.id===cur.supersedesQuoteId);
+      if(!parent) break;
+      seen.add(parent.id);
+      chain.unshift(parent);
+      cur=parent;
+    }
+    // Walk forward via quoteChainMap
+    cur=q;
+    while(quoteChainMap[cur.id]){
+      const childId=quoteChainMap[cur.id];
+      if(seen.has(childId)) break;
+      const child=quotes.find(x=>x.id===childId);
+      if(!child) break;
+      seen.add(child.id);
+      chain.push(child);
+      cur=child;
+    }
+    return chain;
   };
 
   const save=()=>{
@@ -340,7 +399,16 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
             </tr></thead>
             <tbody>{pg.paged.map(q=>(
               <tr key={q.id}>
-                <td style={{fontWeight:600,fontSize:13,color:"var(--brand)"}}>{q._quoteId}</td>
+                <td style={{fontWeight:600,fontSize:13,color:"var(--brand)"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <span>{q._quoteId}</span>
+                    {(q.supersedesQuoteId||quoteChainMap[q.id])&&(
+                      <span title={q.supersedesQuoteId?`Revision of ${q.supersedesQuoteId}`:`Superseded by ${quoteChainMap[q.id]}`} style={{display:"inline-flex",alignItems:"center",gap:2,fontSize:10,color:"#8B5CF6",background:"#8B5CF615",padding:"1px 5px",borderRadius:4,fontWeight:600}}>
+                        <GitBranch size={10}/>v{q.version||1}
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td><span className="tbl-link" onClick={()=>setDetail(q)}>{q._accName}</span></td>
                 <td style={{fontSize:12}}><span style={{background:"var(--s2)",padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:500}}>{q._sector}</span></td>
                 <td style={{fontSize:12,color:"var(--text2)"}}>{q.sentDate?fmt.date(q.sentDate):"—"}</td>
@@ -351,6 +419,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
                 <td><div style={{display:"flex",gap:4}}>
                   <button className="icon-btn" title="View" onClick={()=>setDetail(q)}><Eye size={14}/></button>
                   <button className="icon-btn" title="Edit" onClick={()=>openEdit(q)}><Edit2 size={14}/></button>
+                  {q.status==="Draft"&&<button className="icon-btn" title="Send to customer" onClick={()=>sendQuote(q)} style={{color:"#3B82F6"}}><Send size={14}/></button>}
                   <button className="icon-btn" title="Duplicate/Revise" onClick={()=>duplicate(q)}><Copy size={14}/></button>
                   {canDelete&&<button className="icon-btn" title="Delete" onClick={()=>setConfirm(q.id)}><Trash2 size={14}/></button>}
                 </div></td>
@@ -383,6 +452,25 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
             <div style={{fontSize:16,fontWeight:700,color:"var(--brand)",marginTop:4}}>Total: ₹{detail.total}L ({formatINR(detail.total)} INR)</div>
           </div>
           {detail.terms&&<div style={{marginTop:14,background:"var(--s2)",padding:"10px 12px",borderRadius:8,borderLeft:"3px solid var(--brand)",fontSize:12,color:"var(--text2)",whiteSpace:"pre-line"}}><strong>Terms:</strong><br/>{detail.terms}</div>}
+          {(() => {
+            const chain=buildChain(detail);
+            if(chain.length<=1) return null;
+            return (
+              <div style={{marginTop:10,background:"#F5F3FF",border:"1px solid #DDD6FE",padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#6D28D9",marginBottom:6,letterSpacing:"0.5px",display:"flex",alignItems:"center",gap:6}}><GitBranch size={12}/>REVISION CHAIN ({chain.length} versions)</div>
+                <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6}}>
+                  {chain.map((c,i)=>(
+                    <span key={c.id} style={{display:"inline-flex",alignItems:"center",gap:4}}>
+                      {i>0&&<span style={{color:"#8B5CF6"}}>→</span>}
+                      <span onClick={()=>c.id!==detail.id&&setDetail({...c,_quoteId:genQuoteId(quotes.findIndex(q=>q.id===c.id)+1,c.createdDate?new Date(c.createdDate).getFullYear():2024),_accName:accounts.find(a=>a.id===c.accountId)?.name||"—",_sector:detail._sector,_prob:detail._prob})} style={{cursor:c.id===detail.id?"default":"pointer",fontWeight:c.id===detail.id?700:500,padding:"2px 8px",borderRadius:4,background:c.id===detail.id?"#8B5CF6":"#fff",color:c.id===detail.id?"#fff":"#6D28D9",border:"1px solid #DDD6FE",fontSize:11}}>
+                        v{c.version||1} · {c.status}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           {(detail.quoteFileUrl||detail.isFinal||detail.supersedesQuoteId)&&(
             <div style={{marginTop:10,background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
               <div style={{fontSize:11,fontWeight:700,color:"#1E40AF",marginBottom:6,letterSpacing:"0.5px"}}>QUOTE DOCUMENT</div>
