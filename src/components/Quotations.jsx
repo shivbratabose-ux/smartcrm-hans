@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip } from "lucide-react";
-import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS } from '../data/constants';
+import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
@@ -428,6 +428,104 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     setModal(null);setFormErrors({});setDetail(null);
   };
 
+  /* ── Multi-template PDF: opens a print-ready window the user can save as PDF ── */
+  const printQuote=(q,template="customer")=>{
+    const acc=accounts.find(a=>a.id===q.accountId);
+    const con=contacts.find(c=>c.id===q.contactId);
+    const billingAddr=(acc?.addresses||[]).find(a=>a.isBilling)||(acc?.addresses||[])[0];
+    const isInternal=template==="internal";
+    const isProforma=template==="proforma";
+    const isGovt=template==="government";
+    const showCost=isInternal && isManager;
+    const showTax=!isProforma;
+    const acceptUrl=`${window.location.origin}${window.location.pathname}#/quote-accept/${q.id}`;
+    const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(acceptUrl)}`;
+    const totalCost=q.items.reduce((s,i)=>s+(Number(i.unitCost||0)*Number(i.qty||0)),0);
+    const margin=q.subtotal-totalCost;
+    const marginPct=q.subtotal>0?((margin/q.subtotal)*100).toFixed(1):0;
+    const css=`body{font-family:Arial,sans-serif;color:#1f2937;font-size:11pt;margin:32px;}
+      h1{margin:0 0 4px;color:#1B6B5A;font-size:22pt;}
+      .meta{display:flex;justify-content:space-between;margin-bottom:16px;border-bottom:2px solid #1B6B5A;padding-bottom:10px;}
+      .meta .right{text-align:right;font-size:10pt;color:#475569;}
+      table{width:100%;border-collapse:collapse;margin:14px 0;font-size:10pt;}
+      th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;}
+      th{background:#1B6B5A;color:#fff;font-size:9pt;letter-spacing:0.5px;}
+      .totals{margin-left:auto;width:300px;border:1px solid #cbd5e1;padding:8px 12px;font-size:10pt;}
+      .totals .grand{border-top:2px solid #1B6B5A;margin-top:6px;padding-top:6px;font-size:13pt;font-weight:700;color:#1B6B5A;}
+      .terms{margin-top:18px;background:#f8fafc;padding:10px 14px;border-left:3px solid #1B6B5A;font-size:10pt;white-space:pre-line;}
+      .badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:9pt;font-weight:700;letter-spacing:1px;color:#fff;}
+      .footer{margin-top:30px;display:flex;justify-content:space-between;align-items:flex-end;font-size:9pt;color:#475569;border-top:1px solid #cbd5e1;padding-top:14px;}
+      .stamp{font-size:8pt;color:#94a3b8;}
+      ${isGovt?".meta{border-bottom-color:#1f2937;}h1{color:#1f2937;}th{background:#1f2937;}.totals .grand{color:#1f2937;border-top-color:#1f2937;}.terms{border-left-color:#1f2937;}":""}
+      ${isProforma?".watermark{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:80pt;color:rgba(245,158,11,0.12);font-weight:900;pointer-events:none;}":""}
+      ${isInternal?".internal{background:#fef3c7;padding:10px 14px;border:1px solid #fbbf24;border-radius:4px;margin:10px 0;font-size:10pt;}":""}
+      @media print{ .no-print{display:none !important;} }`;
+    const lineRows=q.items.map(it=>`<tr>
+      <td>${it.description||""}</td>
+      <td style="text-align:right">${it.qty}</td>
+      <td style="text-align:right">₹${(it.unitPrice||0).toFixed(2)}L</td>
+      ${showCost?`<td style="text-align:right;background:#fef3c7">₹${(it.unitCost||0).toFixed(2)}L</td>`:""}
+      <td style="text-align:right">₹${(it.amount||0).toFixed(2)}L</td>
+    </tr>`).join("");
+    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${q.id} – ${q.title}</title><style>${css}</style></head>
+    <body>
+      ${isProforma?'<div class="watermark">PROFORMA</div>':""}
+      <button class="no-print" onclick="window.print()" style="position:fixed;top:10px;right:10px;padding:8px 16px;background:#1B6B5A;color:#fff;border:none;border-radius:4px;cursor:pointer">Print / Save as PDF</button>
+      <div class="meta">
+        <div>
+          <h1>${isProforma?"Proforma Invoice":isGovt?"Quotation (Government)":"Quotation"}</h1>
+          <div style="font-size:10pt;color:#475569">Quote ID: <strong>${q.id}</strong> · Version: v${q.version||1}${q.supersedesQuoteId?` (revises ${q.supersedesQuoteId})`:""}</div>
+          ${isInternal?'<span class="badge" style="background:#dc2626">INTERNAL COPY</span>':""}
+        </div>
+        <div class="right">
+          <div><strong>${acc?.name||"—"}</strong></div>
+          ${billingAddr?`<div>${formatAddress(billingAddr)}</div>`:""}
+          ${acc?.gstin?`<div>GSTIN: ${acc.gstin}</div>`:""}
+          ${con?`<div>Attn: ${con.name}${con.email?` · ${con.email}`:""}</div>`:""}
+          <div style="margin-top:6px">Date: ${q.sentDate||q.createdDate||today}${q.expiryDate?` · Valid till: ${q.expiryDate}`:""}</div>
+        </div>
+      </div>
+      ${isInternal?`<div class="internal"><strong>Internal copy — DO NOT SHARE</strong> · Total Cost: ₹${totalCost.toFixed(2)}L · Margin: ₹${margin.toFixed(2)}L (${marginPct}%) · Owner: ${TEAM_MAP[q.owner]?.name||q.owner}</div>`:""}
+      <div style="font-size:11pt;font-weight:600;margin:6px 0">${q.title||""}</div>
+      <table>
+        <thead><tr>
+          <th>Description</th>
+          <th style="text-align:right">Qty</th>
+          <th style="text-align:right">Rate (₹L)</th>
+          ${showCost?'<th style="text-align:right;background:#92400e">Cost (₹L)</th>':""}
+          <th style="text-align:right">Amount (₹L)</th>
+        </tr></thead>
+        <tbody>${lineRows||'<tr><td colspan="'+(showCost?5:4)+'" style="text-align:center;color:#94a3b8">No line items</td></tr>'}</tbody>
+      </table>
+      <div class="totals">
+        <div style="display:flex;justify-content:space-between"><span>Subtotal:</span><strong>₹${q.subtotal}L</strong></div>
+        ${q.discount>0?`<div style="display:flex;justify-content:space-between"><span>Discount:</span><strong>-₹${q.discount}L</strong></div>`:""}
+        ${showTax?`<div style="display:flex;justify-content:space-between"><span>Tax (${q.taxType}):</span><strong>₹${q.taxAmount}L</strong></div>`:""}
+        <div class="grand" style="display:flex;justify-content:space-between"><span>Grand Total:</span><span>₹${q.total}L</span></div>
+      </div>
+      ${q.terms?`<div class="terms"><strong>Terms & Conditions</strong>\n${q.terms}</div>`:""}
+      <div class="footer">
+        <div>
+          <div><strong>For ${acc?.name||"the customer"}:</strong></div>
+          <div style="margin-top:30px;border-top:1px solid #1f2937;padding-top:4px;width:200px">Authorised Signatory</div>
+        </div>
+        ${!isInternal?`<div style="text-align:center">
+          <img src="${qrUrl}" width="100" height="100" alt="Accept QR"/>
+          <div style="font-size:8pt;margin-top:4px">Scan to accept this quote</div>
+        </div>`:""}
+        <div class="stamp" style="text-align:right">
+          Generated ${new Date().toLocaleString("en-IN")}<br/>
+          Owner: ${TEAM_MAP[q.owner]?.name||q.owner}<br/>
+          Template: ${template.toUpperCase()}
+        </div>
+      </div>
+    </body></html>`;
+    const w=window.open("","_blank");
+    if(!w){alert("Popup blocked — please allow popups for this site to print quotes.");return;}
+    w.document.write(html);
+    w.document.close();
+  };
+
   /* ── Attachment helpers (manage from detail modal) ── */
   const addAttachment=(quoteId)=>{
     const name=window.prompt("Attachment label (e.g. 'Customer RFP', 'Signed Quote'):","");
@@ -469,6 +567,41 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     return ids.map(id=>({id,name:TEAM_MAP[id]?.name||id}));
   },[quotes]);
 
+  /* ── Conversion analytics (manager-only) ── */
+  const [showAnalytics,setShowAnalytics]=useState(false);
+  const analytics=useMemo(()=>{
+    const sentLike=quotes.filter(q=>["Sent","Under Review","Accepted","Rejected","Expired"].includes(q.status));
+    const won=quotes.filter(q=>q.status==="Accepted");
+    const lost=quotes.filter(q=>q.status==="Rejected");
+    const winRate=sentLike.length>0?+((won.length/sentLike.length)*100).toFixed(1):0;
+    const avgDiscountPct=quotes.length>0?+((quotes.reduce((s,q)=>s+computeDiscountPct(q),0)/quotes.length).toFixed(1)):0;
+    // Avg time-to-close (sent → accepted/rejected)
+    const closed=quotes.filter(q=>q.sentDate && (q.acceptedDate || q.status==="Rejected"));
+    const avgDays=closed.length>0?Math.round(closed.reduce((s,q)=>{
+      const end=q.acceptedDate||q.approvedAt?.slice(0,10)||today;
+      return s+Math.max(0,(new Date(end)-new Date(q.sentDate))/86400000);
+    },0)/closed.length):0;
+    // By owner
+    const byOwner={};
+    quotes.forEach(q=>{
+      if(!byOwner[q.owner]) byOwner[q.owner]={sent:0,won:0,total:0};
+      byOwner[q.owner].total++;
+      if(["Sent","Under Review","Accepted","Rejected","Expired"].includes(q.status)) byOwner[q.owner].sent++;
+      if(q.status==="Accepted") byOwner[q.owner].won++;
+    });
+    const ownerRows=Object.entries(byOwner).map(([id,s])=>({id,name:TEAM_MAP[id]?.name||id,...s,winRate:s.sent>0?+((s.won/s.sent)*100).toFixed(1):0})).sort((a,b)=>b.winRate-a.winRate);
+    // By product
+    const byProduct={};
+    quotes.forEach(q=>{
+      const p=q.product||"—";
+      if(!byProduct[p]) byProduct[p]={sent:0,won:0};
+      if(["Sent","Under Review","Accepted","Rejected","Expired"].includes(q.status)) byProduct[p].sent++;
+      if(q.status==="Accepted") byProduct[p].won++;
+    });
+    const productRows=Object.entries(byProduct).map(([p,s])=>({product:p,...s,winRate:s.sent>0?+((s.won/s.sent)*100).toFixed(1):0})).sort((a,b)=>b.winRate-a.winRate);
+    return {winRate,won:won.length,lost:lost.length,sentLike:sentLike.length,avgDiscountPct,avgDays,ownerRows,productRows};
+  },[quotes]);
+
   return (
     <div>
       {/* ── KPI Summary Cards ── */}
@@ -504,6 +637,38 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>New Quote</button>
         </div>
       </div>
+
+      {/* ── Analytics panel (manager-only) ── */}
+      {isManager && (
+        <div style={{marginBottom:12,background:"#fff",border:"1px solid var(--border)",borderRadius:10,overflow:"hidden"}}>
+          <button onClick={()=>setShowAnalytics(s=>!s)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"transparent",border:"none",cursor:"pointer",fontSize:12.5,fontWeight:700,color:"var(--text)",letterSpacing:"0.3px"}}>
+            <span style={{display:"flex",alignItems:"center",gap:8}}><BarChart3 size={14}/>QUOTE → WIN ANALYTICS · Win {analytics.winRate}% · Avg discount {analytics.avgDiscountPct}% · Avg close {analytics.avgDays}d</span>
+            <span style={{fontSize:11,color:"var(--text3)",fontWeight:500}}>{showAnalytics?"▲ collapse":"▼ expand"}</span>
+          </button>
+          {showAnalytics && (
+            <div style={{padding:"6px 14px 14px",borderTop:"1px solid var(--border)",display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6}}>BY OWNER</div>
+                <table style={{width:"100%",fontSize:12}}>
+                  <thead><tr style={{textAlign:"left",color:"var(--text3)"}}><th style={{padding:"3px 4px"}}>Owner</th><th style={{padding:"3px 4px",textAlign:"right"}}>Sent</th><th style={{padding:"3px 4px",textAlign:"right"}}>Won</th><th style={{padding:"3px 4px",textAlign:"right"}}>Win %</th></tr></thead>
+                  <tbody>{analytics.ownerRows.map(r=>(
+                    <tr key={r.id}><td style={{padding:"3px 4px"}}>{r.name}</td><td style={{padding:"3px 4px",textAlign:"right"}}>{r.sent}</td><td style={{padding:"3px 4px",textAlign:"right"}}>{r.won}</td><td style={{padding:"3px 4px",textAlign:"right",fontWeight:600,color:r.winRate>=50?"#22C55E":r.winRate>=25?"#F59E0B":"#EF4444"}}>{r.winRate}%</td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6}}>BY PRODUCT</div>
+                <table style={{width:"100%",fontSize:12}}>
+                  <thead><tr style={{textAlign:"left",color:"var(--text3)"}}><th style={{padding:"3px 4px"}}>Product</th><th style={{padding:"3px 4px",textAlign:"right"}}>Sent</th><th style={{padding:"3px 4px",textAlign:"right"}}>Won</th><th style={{padding:"3px 4px",textAlign:"right"}}>Win %</th></tr></thead>
+                  <tbody>{analytics.productRows.map(r=>(
+                    <tr key={r.product}><td style={{padding:"3px 4px"}}>{PROD_MAP[r.product]?.name||r.product}</td><td style={{padding:"3px 4px",textAlign:"right"}}>{r.sent}</td><td style={{padding:"3px 4px",textAlign:"right"}}>{r.won}</td><td style={{padding:"3px 4px",textAlign:"right",fontWeight:600,color:r.winRate>=50?"#22C55E":r.winRate>=25?"#F59E0B":"#EF4444"}}>{r.winRate}%</td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Reminder cadence banner ── */}
       {pendingReminders.length>0 && (
@@ -609,7 +774,16 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
       {/* Detail Modal */}
       {detail&&(
-        <Modal title={`${detail._quoteId} – ${detail.title}`} onClose={()=>setDetail(null)} lg footer={<><button className="btn btn-sec btn-sm" onClick={()=>setDetail(null)}>Close</button><button className="btn btn-primary btn-sm" onClick={()=>{openEdit(detail);setDetail(null);}}><Edit2 size={13}/>Edit</button></>}>
+        <Modal title={`${detail._quoteId} – ${detail.title}`} onClose={()=>setDetail(null)} lg footer={<>
+          <div style={{display:"flex",gap:6,marginRight:"auto"}}>
+            <button className="btn btn-sec btn-sm" title="Customer-facing PDF" onClick={()=>printQuote(detail,"customer")}><FileText size={13}/>Customer PDF</button>
+            <button className="btn btn-sec btn-sm" title="Proforma invoice (no GST)" onClick={()=>printQuote(detail,"proforma")}>Proforma</button>
+            {isManager && <button className="btn btn-sm" style={{background:"#FEF3C7",color:"#92400E",border:"1px solid #FDE68A"}} title="Internal copy with cost & margin" onClick={()=>printQuote(detail,"internal")}>Internal</button>}
+            <button className="btn btn-sec btn-sm" title="Government format" onClick={()=>printQuote(detail,"government")}>Govt</button>
+          </div>
+          <button className="btn btn-sec btn-sm" onClick={()=>setDetail(null)}>Close</button>
+          <button className="btn btn-primary btn-sm" onClick={()=>{openEdit(detail);setDetail(null);}}><Edit2 size={13}/>Edit</button>
+        </>}>
           <div className="dp-grid">
             {[["Quote ID",detail._quoteId],["Account",detail._accName],["Sector",detail._sector],["Status",detail.status],["Probability",`${detail._prob}%`],["Version",`v${detail.version}`],["Created",fmt.date(detail.createdDate)],["Sent",detail.sentDate?fmt.date(detail.sentDate):"—"],["Expiry",detail.expiryDate?fmt.date(detail.expiryDate):"—"],["Validity",detail.validity],["Owner",TEAM_MAP[detail.owner]?.name||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>
@@ -846,15 +1020,21 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
           {formTab==="items"&&(<div>
             <FormError error={formErrors.items}/>
-            {form.items.map((item,i)=>(
-              <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 60px 80px 80px 30px",gap:8,alignItems:"end",marginBottom:8}}>
+            {form.items.map((item,i)=>{
+              const cost=Number(item.unitCost||0)*Number(item.qty||0);
+              const margin=Number(item.amount||0)-cost;
+              const marginPct=item.amount>0?+((margin/item.amount)*100).toFixed(1):0;
+              return (
+              <div key={i} style={{display:"grid",gridTemplateColumns:isManager?"2fr 50px 70px 70px 70px 80px 30px":"2fr 60px 80px 80px 30px",gap:8,alignItems:"end",marginBottom:8}}>
                 <div className="form-group"><label>{i===0?"Description":""}</label><input value={item.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Line item description"/></div>
                 <div className="form-group"><label>{i===0?"Qty":""}</label><input type="number" min={1} value={item.qty} onChange={e=>updateItem(i,"qty",+e.target.value)}/></div>
                 <div className="form-group"><label>{i===0?"Price(L)":""}</label><input type="number" min={0} step={0.5} value={item.unitPrice} onChange={e=>updateItem(i,"unitPrice",+e.target.value)}/></div>
+                {isManager && <div className="form-group"><label style={{color:"#92400E"}}>{i===0?"Cost(L)":""}</label><input type="number" min={0} step={0.5} value={item.unitCost||0} onChange={e=>updateItem(i,"unitCost",+e.target.value)} style={{background:"#FFFBEB"}} title="Internal cost — never shown to customer"/></div>}
+                {isManager && <div className="form-group"><label style={{color:"#047857"}}>{i===0?"Margin %":""}</label><input disabled value={item.unitCost>0?`${marginPct}%`:"—"} style={{background:marginPct<20?"#FEF2F2":marginPct<40?"#FFFBEB":"#ECFDF5",color:marginPct<20?"#B91C1C":marginPct<40?"#92400E":"#047857",fontWeight:600}}/></div>}
                 <div className="form-group"><label>{i===0?"Amount":""}</label><input disabled value={`₹${item.amount}`} style={{background:"var(--s2)"}}/></div>
                 <button className="icon-btn" style={{marginBottom:4}} onClick={()=>removeItem(i)}><Trash2 size={13}/></button>
               </div>
-            ))}
+            );})}
             <button className="btn btn-sec btn-sm" onClick={addItem} style={{marginTop:4}}><Plus size={13}/>Add Line Item</button>
             <div style={{marginTop:16,borderTop:"1px solid var(--border)",paddingTop:12}}>
               <div className="form-row three">
@@ -864,14 +1044,35 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                   <div style={{fontSize:12}}>Subtotal: ₹{form.subtotal}L</div>
                   <div style={{fontSize:12}}>Tax: ₹{form.taxAmount}L</div>
                   <div style={{fontSize:16,fontWeight:700,color:"var(--brand)"}}>Total: ₹{form.total}L</div>
+                  {isManager && (() => {
+                    const totalCost=form.items.reduce((s,i)=>s+(Number(i.unitCost||0)*Number(i.qty||0)),0);
+                    const margin=form.subtotal-totalCost;
+                    const marginPct=form.subtotal>0?+((margin/form.subtotal)*100).toFixed(1):0;
+                    if(totalCost===0) return null;
+                    return <div style={{marginTop:6,fontSize:12,color:marginPct<20?"#B91C1C":marginPct<40?"#92400E":"#047857",fontWeight:600,borderTop:"1px dashed var(--border)",paddingTop:6}}>Cost: ₹{totalCost.toFixed(1)}L · Margin: ₹{margin.toFixed(1)}L ({marginPct}%) <span style={{fontSize:10,fontWeight:500,opacity:0.7}}>· internal only</span></div>;
+                  })()}
                 </div>
               </div>
             </div>
           </div>)}
 
           {formTab==="terms"&&(<div>
+            <div className="form-group"><label>T&C Template (replaces current text)</label>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {TC_TEMPLATES.map(t=>(
+                  <button key={t.id} className="btn btn-sec btn-xs" style={{fontSize:11}} onClick={()=>{
+                    if(form.terms && !window.confirm(`Replace existing terms with "${t.name}" template?`)) return;
+                    setForm(f=>({...f,terms:t.body}));
+                  }}>{t.name}</button>
+                ))}
+                <button className="btn btn-xs" style={{fontSize:11,background:"#FEF2F2",color:"#B91C1C",border:"1px solid #FECACA"}} onClick={()=>{
+                  if(form.terms && !window.confirm("Clear all terms?")) return;
+                  setForm(f=>({...f,terms:""}));
+                }}>Clear</button>
+              </div>
+            </div>
             <div className="form-group"><label>Terms & Conditions</label>
-              <textarea rows={8} value={form.terms} onChange={e=>setForm(f=>({...f,terms:e.target.value}))} placeholder="Enter terms..." style={{width:"100%",resize:"vertical",fontFamily:"monospace",fontSize:12}}/>
+              <textarea rows={10} value={form.terms} onChange={e=>setForm(f=>({...f,terms:e.target.value}))} placeholder="Pick a template above or type your own terms..." style={{width:"100%",resize:"vertical",fontFamily:"monospace",fontSize:12}}/>
             </div>
             <div className="form-row">
               <div className="form-group"><label>Quote Document URL</label><input value={form.quoteFileUrl||""} onChange={e=>setForm(f=>({...f,quoteFileUrl:e.target.value}))} placeholder="https://drive/sharepoint link to the quote PDF"/></div>
