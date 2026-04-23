@@ -314,7 +314,9 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
   // Everyone else sees a read-only label. Same allow-list as other admin
   // operations across the app.
   const _myRole = (orgUsers.find(u => u.id === currentUser)?.role || "").toLowerCase();
-  const isAdmin = ["admin","md","director"].includes(_myRole);
+  // VP Sales & Marketing also gets inline-edit rights here — they're the
+  // operational owner of the routing table for their org.
+  const isAdmin = ["admin","md","director","vp_sales_mkt"].includes(_myRole);
   const [expanded,setExpanded]=useState({});
   const [modal,setModal]=useState(null);
   const [form,setForm]=useState({name:"",type:"Core",desc:""});

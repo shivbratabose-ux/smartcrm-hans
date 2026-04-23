@@ -408,13 +408,14 @@ export default function SmartCRM() {
   // Roles allowed to soft-delete records; all others can only archive (same action, UI label differs)
   const canDelete = useMemo(() => {
     const role = normalizeRole(orgUsers.find(u => u.id === currentUser)?.role);
-    return ["admin","md","director","line_mgr"].includes(role);
+    return ["admin","md","director","vp_sales_mkt","line_mgr"].includes(role);
   }, [currentUser, orgUsers]);
 
-  // Only admins can restore soft-deleted records
+  // Only admins can restore soft-deleted records (VP S&M too — needed to
+  // recover from accidental deletes by their downline)
   const canRestore = useMemo(() => {
     const role = normalizeRole(orgUsers.find(u => u.id === currentUser)?.role);
-    return ["admin","md","director"].includes(role);
+    return ["admin","md","director","vp_sales_mkt"].includes(role);
   }, [currentUser, orgUsers]);
 
   // Exclude soft-deleted records from all visible arrays.

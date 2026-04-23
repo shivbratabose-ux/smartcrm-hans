@@ -195,7 +195,12 @@ export function validateStageGate(lead, targetStage, stageGates) {
 // NOTE: bd_lead was previously global but was downgraded — a BD Lead now
 // only sees their own assigned records plus anyone reporting (solid or
 // dotted) to them. BD Leads with no reports see only themselves.
-export const GLOBAL_ROLES = ["admin", "md", "director"];
+// vp_sales_mkt is global by design — the VP Sales & Marketing role exists
+// specifically so one person can oversee + act across every sales, support,
+// and marketing team org-wide (leads, deals, calls, tickets, invoices,
+// quotes, comms, events). Keeping them out of GLOBAL_ROLES would defeat
+// the entire purpose of the role.
+export const GLOBAL_ROLES = ["admin", "md", "director", "vp_sales_mkt"];
 
 // Normalize a role value before any comparison. Live data has been observed
 // with mixed casing / whitespace ("Admin", " director"), which silently

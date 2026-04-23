@@ -42,7 +42,21 @@
       "Bash(git -C \"C:/Users/msdnu/Desktop/smartcrm-hans\" log --oneline -5)",
       "Bash(npm run:*)",
       "Read(//c/Users/msdnu/Desktop/Apr 2026/**)",
-      "Bash(python -c ':*)"
+      "Bash(python -c ':*)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git restore *)",
+      "Bash(powershell -Command \"Select-String -Path 'src\\\\components\\\\Reports.jsx' -Pattern '_scopedTeamSrc|},\\\\[' -Context 0,1 | Select-Object -First 60\")",
+      "Bash(gh api *)",
+      "Bash(powershell -Command \"\\(Select-String -Path 'src\\\\components\\\\TeamUsers.jsx' -Pattern 'Send password reset email|sendResetEmail|pwModal|setPwModal' | Measure-Object\\).Count\")",
+      "Bash(powershell -Command \"Get-Content 'src\\\\utils\\\\toast.js' -ErrorAction SilentlyContinue | Select-Object -First 30\")",
+      "Bash(n\\\\\"\")",
+      "Bash(powershell -Command \"\\(Get-Content 'src\\\\utils\\\\toast.jsx' | Select-String -Pattern 'export|notify\\\\.' | Select-Object -First 10\\) -join \\\\\"`n\\\\\"\")",
+      "Bash(nslookup -type=NS hansinfomatic.com 8.8.8.8)",
+      "Bash(nslookup r4h.com 8.8.8.8)",
+      "Bash(nslookup -type=SOA hansinfomatic.com 8.8.8.8)",
+      "Bash(awk '/CREATE TABLE.*leads/,/^\\\\\\);/' supabase/schema.sql)",
+      "Bash(gh repo *)"
     ]
   }
 }
