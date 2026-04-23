@@ -469,6 +469,41 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     return ids.map(id=>({id,name:TEAM_MAP[id]?.name||id}));
   },[quotes]);
 
+  /* ── Conversion analytics (manager-only) ── */
+  const [showAnalytics,setShowAnalytics]=useState(false);
+  const analytics=useMemo(()=>{
+    const sentLike=quotes.filter(q=>["Sent","Under Review","Accepted","Rejected","Expired"].includes(q.status));
+    const won=quotes.filter(q=>q.status==="Accepted");
+    const lost=quotes.filter(q=>q.status==="Rejected");
+    const winRate=sentLike.length>0?+((won.length/sentLike.length)*100).toFixed(1):0;
+    const avgDiscountPct=quotes.length>0?+((quotes.reduce((s,q)=>s+computeDiscountPct(q),0)/quotes.length).toFixed(1)):0;
+    // Avg time-to-close (sent → accepted/rejected)
+    const closed=quotes.filter(q=>q.sentDate && (q.acceptedDate || q.status==="Rejected"));
+    const avgDays=closed.length>0?Math.round(closed.reduce((s,q)=>{
+      const end=q.acceptedDate||q.approvedAt?.slice(0,10)||today;
+      return s+Math.max(0,(new Date(end)-new Date(q.sentDate))/86400000);
+    },0)/closed.length):0;
+    // By owner
+    const byOwner={};
+    quotes.forEach(q=>{
+      if(!byOwner[q.owner]) byOwner[q.owner]={sent:0,won:0,total:0};
+      byOwner[q.owner].total++;
+      if(["Sent","Under Review","Accepted","Rejected","Expired"].includes(q.status)) byOwner[q.owner].sent++;
+      if(q.status==="Accepted") byOwner[q.owner].won++;
+    });
+    const ownerRows=Object.entries(byOwner).map(([id,s])=>({id,name:TEAM_MAP[id]?.name||id,...s,winRate:s.sent>0?+((s.won/s.sent)*100).toFixed(1):0})).sort((a,b)=>b.winRate-a.winRate);
+    // By product
+    const byProduct={};
+    quotes.forEach(q=>{
+      const p=q.product||"—";
+      if(!byProduct[p]) byProduct[p]={sent:0,won:0};
+      if(["Sent","Under Review","Accepted","Rejected","Expired"].includes(q.status)) byProduct[p].sent++;
+      if(q.status==="Accepted") byProduct[p].won++;
+    });
+    const productRows=Object.entries(byProduct).map(([p,s])=>({product:p,...s,winRate:s.sent>0?+((s.won/s.sent)*100).toFixed(1):0})).sort((a,b)=>b.winRate-a.winRate);
+    return {winRate,won:won.length,lost:lost.length,sentLike:sentLike.length,avgDiscountPct,avgDays,ownerRows,productRows};
+  },[quotes]);
+
   return (
     <div>
       {/* ── KPI Summary Cards ── */}
@@ -504,6 +539,38 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>New Quote</button>
         </div>
       </div>
+
+      {/* ── Analytics panel (manager-only) ── */}
+      {isManager && (
+        <div style={{marginBottom:12,background:"#fff",border:"1px solid var(--border)",borderRadius:10,overflow:"hidden"}}>
+          <button onClick={()=>setShowAnalytics(s=>!s)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"transparent",border:"none",cursor:"pointer",fontSize:12.5,fontWeight:700,color:"var(--text)",letterSpacing:"0.3px"}}>
+            <span style={{display:"flex",alignItems:"center",gap:8}}><BarChart3 size={14}/>QUOTE → WIN ANALYTICS · Win {analytics.winRate}% · Avg discount {analytics.avgDiscountPct}% · Avg close {analytics.avgDays}d</span>
+            <span style={{fontSize:11,color:"var(--text3)",fontWeight:500}}>{showAnalytics?"▲ collapse":"▼ expand"}</span>
+          </button>
+          {showAnalytics && (
+            <div style={{padding:"6px 14px 14px",borderTop:"1px solid var(--border)",display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6}}>BY OWNER</div>
+                <table style={{width:"100%",fontSize:12}}>
+                  <thead><tr style={{textAlign:"left",color:"var(--text3)"}}><th style={{padding:"3px 4px"}}>Owner</th><th style={{padding:"3px 4px",textAlign:"right"}}>Sent</th><th style={{padding:"3px 4px",textAlign:"right"}}>Won</th><th style={{padding:"3px 4px",textAlign:"right"}}>Win %</th></tr></thead>
+                  <tbody>{analytics.ownerRows.map(r=>(
+                    <tr key={r.id}><td style={{padding:"3px 4px"}}>{r.name}</td><td style={{padding:"3px 4px",textAlign:"right"}}>{r.sent}</td><td style={{padding:"3px 4px",textAlign:"right"}}>{r.won}</td><td style={{padding:"3px 4px",textAlign:"right",fontWeight:600,color:r.winRate>=50?"#22C55E":r.winRate>=25?"#F59E0B":"#EF4444"}}>{r.winRate}%</td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6}}>BY PRODUCT</div>
+                <table style={{width:"100%",fontSize:12}}>
+                  <thead><tr style={{textAlign:"left",color:"var(--text3)"}}><th style={{padding:"3px 4px"}}>Product</th><th style={{padding:"3px 4px",textAlign:"right"}}>Sent</th><th style={{padding:"3px 4px",textAlign:"right"}}>Won</th><th style={{padding:"3px 4px",textAlign:"right"}}>Win %</th></tr></thead>
+                  <tbody>{analytics.productRows.map(r=>(
+                    <tr key={r.product}><td style={{padding:"3px 4px"}}>{PROD_MAP[r.product]?.name||r.product}</td><td style={{padding:"3px 4px",textAlign:"right"}}>{r.sent}</td><td style={{padding:"3px 4px",textAlign:"right"}}>{r.won}</td><td style={{padding:"3px 4px",textAlign:"right",fontWeight:600,color:r.winRate>=50?"#22C55E":r.winRate>=25?"#F59E0B":"#EF4444"}}>{r.winRate}%</td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Reminder cadence banner ── */}
       {pendingReminders.length>0 && (
@@ -846,15 +913,21 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
           {formTab==="items"&&(<div>
             <FormError error={formErrors.items}/>
-            {form.items.map((item,i)=>(
-              <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 60px 80px 80px 30px",gap:8,alignItems:"end",marginBottom:8}}>
+            {form.items.map((item,i)=>{
+              const cost=Number(item.unitCost||0)*Number(item.qty||0);
+              const margin=Number(item.amount||0)-cost;
+              const marginPct=item.amount>0?+((margin/item.amount)*100).toFixed(1):0;
+              return (
+              <div key={i} style={{display:"grid",gridTemplateColumns:isManager?"2fr 50px 70px 70px 70px 80px 30px":"2fr 60px 80px 80px 30px",gap:8,alignItems:"end",marginBottom:8}}>
                 <div className="form-group"><label>{i===0?"Description":""}</label><input value={item.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Line item description"/></div>
                 <div className="form-group"><label>{i===0?"Qty":""}</label><input type="number" min={1} value={item.qty} onChange={e=>updateItem(i,"qty",+e.target.value)}/></div>
                 <div className="form-group"><label>{i===0?"Price(L)":""}</label><input type="number" min={0} step={0.5} value={item.unitPrice} onChange={e=>updateItem(i,"unitPrice",+e.target.value)}/></div>
+                {isManager && <div className="form-group"><label style={{color:"#92400E"}}>{i===0?"Cost(L)":""}</label><input type="number" min={0} step={0.5} value={item.unitCost||0} onChange={e=>updateItem(i,"unitCost",+e.target.value)} style={{background:"#FFFBEB"}} title="Internal cost — never shown to customer"/></div>}
+                {isManager && <div className="form-group"><label style={{color:"#047857"}}>{i===0?"Margin %":""}</label><input disabled value={item.unitCost>0?`${marginPct}%`:"—"} style={{background:marginPct<20?"#FEF2F2":marginPct<40?"#FFFBEB":"#ECFDF5",color:marginPct<20?"#B91C1C":marginPct<40?"#92400E":"#047857",fontWeight:600}}/></div>}
                 <div className="form-group"><label>{i===0?"Amount":""}</label><input disabled value={`₹${item.amount}`} style={{background:"var(--s2)"}}/></div>
                 <button className="icon-btn" style={{marginBottom:4}} onClick={()=>removeItem(i)}><Trash2 size={13}/></button>
               </div>
-            ))}
+            );})}
             <button className="btn btn-sec btn-sm" onClick={addItem} style={{marginTop:4}}><Plus size={13}/>Add Line Item</button>
             <div style={{marginTop:16,borderTop:"1px solid var(--border)",paddingTop:12}}>
               <div className="form-row three">
@@ -864,6 +937,13 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                   <div style={{fontSize:12}}>Subtotal: ₹{form.subtotal}L</div>
                   <div style={{fontSize:12}}>Tax: ₹{form.taxAmount}L</div>
                   <div style={{fontSize:16,fontWeight:700,color:"var(--brand)"}}>Total: ₹{form.total}L</div>
+                  {isManager && (() => {
+                    const totalCost=form.items.reduce((s,i)=>s+(Number(i.unitCost||0)*Number(i.qty||0)),0);
+                    const margin=form.subtotal-totalCost;
+                    const marginPct=form.subtotal>0?+((margin/form.subtotal)*100).toFixed(1):0;
+                    if(totalCost===0) return null;
+                    return <div style={{marginTop:6,fontSize:12,color:marginPct<20?"#B91C1C":marginPct<40?"#92400E":"#047857",fontWeight:600,borderTop:"1px dashed var(--border)",paddingTop:6}}>Cost: ₹{totalCost.toFixed(1)}L · Margin: ₹{margin.toFixed(1)}L ({marginPct}%) <span style={{fontSize:10,fontWeight:500,opacity:0.7}}>· internal only</span></div>;
+                  })()}
                 </div>
               </div>
             </div>
