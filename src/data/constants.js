@@ -162,6 +162,11 @@ export function registerCatalog(catalog) {
     color: p.color || "#64748B",
     bg:    p.bg    || "#F1F5F9",
     text:  p.text  || p.color || "#334155",
+    // Owning user-id for this product. Used by SmartCRM to auto-route any
+    // lead/opp uploaded for the product when the row arrives unassigned —
+    // see autoRouteUnownedLeadsByProduct effect in SmartCRM.jsx. Empty
+    // string means "no owner; unassigned rows stay visible to admins only."
+    lineManagerId: p.lineManagerId || "",
   }));
   PRODUCTS.splice(0, PRODUCTS.length, ...normalised);
   Object.keys(PROD_MAP).forEach(k => { delete PROD_MAP[k]; });
