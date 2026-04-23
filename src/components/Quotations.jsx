@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
@@ -256,7 +256,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const con=contacts.find(c=>c.id===q.contactId);
     const acc=accounts.find(a=>a.id===q.accountId);
     const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:"",subject:`Quote ${q.id} – ${q.title||acc?.name||""}`.trim(),kind:"initial"};
-    setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Sent",sentDate,expiryDate:r.expiryDate||expiryDate,emailLog:[...(r.emailLog||[]),logEntry]}:r));
+    const ce={id:uid(),at:new Date().toISOString(),by:currentUser,field:"status",from:q.status,to:"Sent",note:"sent to customer"};
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Sent",sentDate,expiryDate:r.expiryDate||expiryDate,emailLog:[...(r.emailLog||[]),logEntry],changeLog:[...(r.changeLog||[]),ce]}:r));
   };
 
   /* ── Manual resend / send reminder action ── */
@@ -269,12 +270,16 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
   /* ── Approval actions (manager only) ── */
   const approveQuote=(q)=>{
-    setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Approved",approvedBy:currentUser,approvedAt:new Date().toISOString(),rejectedReason:""}:r));
+    const at=new Date().toISOString();
+    const ce={id:uid(),at,by:currentUser,field:"approvalStatus",from:q.approvalStatus||"Pending",to:"Approved",note:""};
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Approved",approvedBy:currentUser,approvedAt:at,rejectedReason:"",changeLog:[...(r.changeLog||[]),ce]}:r));
   };
   const rejectQuote=(q)=>{
     const reason=window.prompt("Reason for rejection (visible to quote owner):","");
     if(reason==null) return;
-    setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Rejected",approvedBy:currentUser,approvedAt:new Date().toISOString(),rejectedReason:reason||"No reason given"}:r));
+    const at=new Date().toISOString();
+    const ce={id:uid(),at,by:currentUser,field:"approvalStatus",from:q.approvalStatus||"Pending",to:"Rejected",note:reason||"No reason given"};
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Rejected",approvedBy:currentUser,approvedAt:at,rejectedReason:reason||"No reason given",changeLog:[...(r.changeLog||[]),ce]}:r));
   };
 
   /* ── Customer Accept: Sent/Under Review → Accepted + stamp + auto-create Contract draft ── */
@@ -308,7 +313,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       };
       setContracts(p=>[...p,newContract]);
     }
-    setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Accepted",acceptedDate,signedQuoteUrl:url,contractId,isFinal:true}:r));
+    const ce={id:uid(),at:new Date().toISOString(),by:currentUser,field:"status",from:q.status,to:"Accepted",note:contractId?`contract ${contractId} created`:"customer accepted"};
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Accepted",acceptedDate,signedQuoteUrl:url,contractId,isFinal:true,changeLog:[...(r.changeLog||[]),ce]}:r));
     if(contractId) alert(`Quote accepted. Contract draft ${contractId} created — open Contracts to finalise terms.`);
   };
 
@@ -383,6 +389,23 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     return chain;
   };
 
+  /* ── Change-log helper: diff watched fields and append entries ── */
+  const WATCHED_FIELDS=["title","accountId","contactId","oppId","status","total","discount","taxType","validity","terms","notes","owner"];
+  const diffEntries=(prev,next)=>{
+    const at=new Date().toISOString();
+    const out=[];
+    WATCHED_FIELDS.forEach(k=>{
+      const a=prev?.[k]??"";
+      const b=next?.[k]??"";
+      if(String(a)!==String(b)) out.push({id:uid(),at,by:currentUser,field:k,from:String(a),to:String(b),note:""});
+    });
+    // Detect line-item count changes (cheap signal for "items edited")
+    const aLen=Array.isArray(prev?.items)?prev.items.length:0;
+    const bLen=Array.isArray(next?.items)?next.items.length:0;
+    if(aLen!==bLen) out.push({id:uid(),at,by:currentUser,field:"items",from:`${aLen} line(s)`,to:`${bLen} line(s)`,note:""});
+    return out;
+  };
+
   const save=()=>{
     if(modal?.lockedFinal){
       setFormErrors({_lock:"This quote is marked Final and cannot be edited. Duplicate/Revise it instead to create a new version."});
@@ -392,9 +415,33 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     if(hasErrors(errs)){setFormErrors(errs);return;}
     const totals=recalc(form.items,form.taxType,form.discount);
     const clean=sanitizeObj({...form,...totals});
-    if(modal.mode==="add") setQuotes(p=>[...p,{...clean}]);
-    else setQuotes(p=>p.map(q=>q.id===clean.id?{...clean}:q));
+    if(modal.mode==="add"){
+      const created={...clean,changeLog:[{id:uid(),at:new Date().toISOString(),by:currentUser,field:"",from:"",to:"created",note:""}]};
+      setQuotes(p=>[...p,created]);
+    } else {
+      setQuotes(p=>p.map(q=>{
+        if(q.id!==clean.id) return q;
+        const entries=diffEntries(q,clean);
+        return {...clean,changeLog:[...(q.changeLog||[]),...entries]};
+      }));
+    }
     setModal(null);setFormErrors({});setDetail(null);
+  };
+
+  /* ── Attachment helpers (manage from detail modal) ── */
+  const addAttachment=(quoteId)=>{
+    const name=window.prompt("Attachment label (e.g. 'Customer RFP', 'Signed Quote'):","");
+    if(!name) return;
+    const url=window.prompt("Paste URL (Google Drive / SharePoint / public link):","");
+    if(!url) return;
+    const entry={id:uid(),name,url,kind:"document",addedBy:currentUser,addedAt:new Date().toISOString()};
+    setQuotes(p=>p.map(q=>q.id===quoteId?{...q,attachments:[...(q.attachments||[]),entry],changeLog:[...(q.changeLog||[]),{id:uid(),at:entry.addedAt,by:currentUser,field:"attachments",from:"",to:`+ ${name}`,note:url}]}:q));
+    // Refresh detail view if open
+    setDetail(d=>d&&d.id===quoteId?{...d,attachments:[...(d.attachments||[]),entry]}:d);
+  };
+  const removeAttachment=(quoteId,attId)=>{
+    setQuotes(p=>p.map(q=>q.id===quoteId?{...q,attachments:(q.attachments||[]).filter(a=>a.id!==attId),changeLog:[...(q.changeLog||[]),{id:uid(),at:new Date().toISOString(),by:currentUser,field:"attachments",from:(q.attachments||[]).find(a=>a.id===attId)?.name||"",to:"removed",note:""}]}:q));
+    setDetail(d=>d&&d.id===quoteId?{...d,attachments:(d.attachments||[]).filter(a=>a.id!==attId)}:d);
   };
   const del=(id)=>{setQuotes(p=>softDeleteById(p,id,currentUser));setConfirm(null);setDetail(null);};
 
@@ -601,6 +648,50 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               </div>
             );
           })()}
+          {/* Attachments */}
+          <div style={{marginTop:10,background:"#FAFAFA",border:"1px solid var(--border)",padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--text)",letterSpacing:"0.5px",display:"flex",alignItems:"center",gap:6}}><Paperclip size={12}/>ATTACHMENTS ({(detail.attachments||[]).length})</div>
+              <button className="btn btn-sm btn-sec" onClick={()=>addAttachment(detail.id)}><Plus size={12}/>Add</button>
+            </div>
+            {(detail.attachments||[]).length===0 ? (
+              <div style={{fontSize:11.5,color:"var(--text3)",fontStyle:"italic"}}>No files yet — attach customer RFP, signed quote, BOQ, etc.</div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {detail.attachments.map(a=>(
+                  <div key={a.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px dashed var(--border)"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0,flex:1}}>
+                      <FileText size={11} style={{color:"var(--text3)",flexShrink:0}}/>
+                      <a href={a.url} target="_blank" rel="noreferrer" style={{color:"#1D4ED8",fontSize:11.5,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</a>
+                      <span style={{fontSize:10,color:"var(--text3)"}}>· {a.addedAt?fmt.date(a.addedAt.slice(0,10)):"—"} · {TEAM_MAP[a.addedBy]?.name||a.addedBy}</span>
+                    </div>
+                    <button className="icon-btn" title="Remove" onClick={()=>removeAttachment(detail.id,a.id)}><X size={12}/></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Change log */}
+          {Array.isArray(detail.changeLog)&&detail.changeLog.length>0&&(
+            <div style={{marginTop:10,background:"#F8FAFC",border:"1px solid var(--border)",padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)",maxHeight:200,overflowY:"auto"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--text)",letterSpacing:"0.5px",display:"flex",alignItems:"center",gap:6,marginBottom:6}}><History size={12}/>CHANGE LOG ({detail.changeLog.length})</div>
+              <table style={{width:"100%",fontSize:11}}>
+                <thead><tr style={{textAlign:"left",color:"var(--text3)"}}><th style={{padding:"2px 4px"}}>When</th><th style={{padding:"2px 4px"}}>Who</th><th style={{padding:"2px 4px"}}>Field</th><th style={{padding:"2px 4px"}}>Change</th></tr></thead>
+                <tbody>
+                  {detail.changeLog.slice().reverse().map(e=>(
+                    <tr key={e.id}>
+                      <td style={{padding:"2px 4px",whiteSpace:"nowrap"}}>{e.at?fmt.date(e.at.slice(0,10)):"—"}</td>
+                      <td style={{padding:"2px 4px"}}>{TEAM_MAP[e.by]?.name||e.by||"—"}</td>
+                      <td style={{padding:"2px 4px",fontWeight:600}}>{e.field||"—"}</td>
+                      <td style={{padding:"2px 4px"}}>{e.from?<><span style={{color:"#94A3B8",textDecoration:"line-through"}}>{String(e.from).slice(0,40)}</span> → </>:""}<span style={{color:"#0F172A"}}>{String(e.to).slice(0,60)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {Array.isArray(detail.emailLog)&&detail.emailLog.length>0&&(
             <div style={{marginTop:10,background:"#F0F9FF",border:"1px solid #BAE6FD",padding:"10px 12px",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
               <div style={{fontSize:11,fontWeight:700,color:"#0369A1",marginBottom:6,letterSpacing:"0.5px",display:"flex",alignItems:"center",gap:6}}><Mail size={12}/>EMAIL LOG ({detail.emailLog.length})</div>

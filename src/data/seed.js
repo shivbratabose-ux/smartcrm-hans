@@ -230,7 +230,13 @@ export const INIT_CONTRACTS = [];
 export const INIT_COLLECTIONS = [];
 export const INIT_TARGETS = [];
 
-export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:"",emailLog:[],lastReminderAt:""};
+export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:"",emailLog:[],lastReminderAt:"",changeLog:[],attachments:[]};
+
+// Change-log entry: pushed onto quote.changeLog[] whenever the quote is mutated.
+// field=null is reserved for status / lifecycle transitions.
+export const BLANK_CHANGE_ENTRY={id:"",at:"",by:"",field:"",from:"",to:"",note:""};
+// Attachment entry: file metadata + URL. Storage is out of scope (link from Drive/SharePoint).
+export const BLANK_ATTACHMENT={id:"",name:"",url:"",kind:"document",addedBy:"",addedAt:""};
 
 // Approval thresholds: a quote needs manager approval before Send if either
 // the discount % exceeds DISCOUNT_PCT_THRESHOLD or the total exceeds VALUE_THRESHOLD.
