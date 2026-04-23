@@ -212,7 +212,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
   const openEdit=(q)=>{
     const seeded=(Array.isArray(q.productSelection)&&q.productSelection.length>0)?q.productSelection:(q.product?[{productId:q.product,moduleIds:[],noAddons:false}]:[]);
     setForm({...q,items:[...q.items.map(i=>({...i}))],productSelection:seeded});
-    setFormErrors({});setFormTab("details");setSourceMode(q.oppId?"opportunity":"account");setSourceLeadId("");setModal({mode:"edit"});
+    setFormErrors({});setFormTab("details");setSourceMode(q.oppId?"opportunity":"account");setSourceLeadId("");setModal({mode:"edit",lockedFinal:!!q.isFinal});
   };
   const duplicate=(q)=>{
     const id=`QT-${String(quotes.length+1).padStart(3,"0")}`;
@@ -220,6 +220,10 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
   };
 
   const save=()=>{
+    if(modal?.lockedFinal){
+      setFormErrors({_lock:"This quote is marked Final and cannot be edited. Duplicate/Revise it instead to create a new version."});
+      return;
+    }
     const errs=validateQuote(form);
     if(hasErrors(errs)){setFormErrors(errs);return;}
     const totals=recalc(form.items,form.taxType,form.discount);
@@ -394,7 +398,13 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
 
       {/* Add/Edit Modal */}
       {modal&&(
-        <Modal title={modal.mode==="add"?"New Quotation":"Edit Quotation"} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save Quote</button></>}>
+        <Modal title={modal.mode==="add"?"New Quotation":(modal.lockedFinal?"View Quotation (Final – Locked)":"Edit Quotation")} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}}>{modal.lockedFinal?"Close":"Cancel"}</button>{!modal.lockedFinal&&<button className="btn btn-primary" onClick={save}><Check size={14}/>Save Quote</button>}{modal.lockedFinal&&<button className="btn btn-sec btn-sm" onClick={()=>{duplicate(form);setModal(null);}}><Copy size={13}/>Duplicate / Revise</button>}</>}>
+          {modal.lockedFinal&&(
+            <div style={{background:"#FEF3C7",border:"1px solid #FCD34D",padding:"10px 14px",borderRadius:8,marginBottom:14,fontSize:12.5,color:"#92400E"}}>
+              <strong>Final quote — locked for contract.</strong> Editing is disabled. Use <em>Duplicate / Revise</em> to create a new version.
+            </div>
+          )}
+          <fieldset disabled={modal.lockedFinal} style={{border:"none",padding:0,margin:0,opacity:modal.lockedFinal?0.85:1}}>
           <div className="modal-tabs">
             {["details","items","terms"].map(t=><div key={t} className={`modal-tab${formTab===t?" active":""}`} onClick={()=>setFormTab(t)}>{t==="details"?"Details":t==="items"?`Items (${form.items.length})`:"Terms"}</div>)}
           </div>
@@ -529,6 +539,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUse
               </div>
             </div>
           </div>)}
+          </fieldset>
+          {formErrors._lock&&<div style={{marginTop:10,color:"#92400E",fontSize:12.5,fontWeight:600}}>{formErrors._lock}</div>}
         </Modal>
       )}
       {confirm&&<Confirm title="Delete Quote" msg="Remove this quotation permanently?" onConfirm={()=>del(confirm)} onCancel={()=>setConfirm(null)}/>}

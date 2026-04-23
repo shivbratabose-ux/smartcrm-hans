@@ -412,19 +412,22 @@ export default function SmartCRM() {
   // PER LOGIN SESSION — repeating it on every render would be hostile.
   // Sales VP / managers see their full downline's accounts; sales execs
   // see only their own. Account ownership comes via account.owner.
-  const _dormancyAlertedRef = useRef(false);
+  // ── COMBINED STARTUP ALERTS (dormancy + renewal) ──────────────────────
+  // Single session-once toast that combines:
+  //  • accounts dormant 45+ days (across activities/callReports/commLogs/events)
+  //  • Active contracts expiring in the next 60 days
+  // Renewal lines are throttled per-contract via renewalNotifiedAt — once a
+  // contract has been mentioned in a toast, we won't re-alert for 30 days
+  // even across sessions. Dormancy stays session-only (it self-heals when
+  // the user logs an activity).
+  const _startupAlertedRef = useRef(false);
   useEffect(() => {
     if (!currentUser) return;
-    if (_dormancyAlertedRef.current) return;
-    if (!Array.isArray(accounts) || accounts.length === 0) return;
+    if (_startupAlertedRef.current) return;
 
+    /* ── Dormancy scan ── */
     const DORMANCY_DAYS = 45;
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - DORMANCY_DAYS);
-    const cutoffMs = cutoff.getTime();
-
-    // Build accountId → latest-touch-timestamp map across every activity
-    // surface. Falls back to account.lastContactDate / updatedAt / createdAt
-    // so a brand-new account isn't flagged on day 1.
+    const dormCutoffMs = Date.now() - DORMANCY_DAYS * 24 * 60 * 60 * 1000;
     const latestByAcc = {};
     const bump = (accId, dateStr) => {
       if (!accId || !dateStr) return;
@@ -440,40 +443,22 @@ export default function SmartCRM() {
     const dormant = (accounts || []).filter(a => {
       if (a.isDeleted) return false;
       if (a.status === "Inactive" || a.status === "Closed") return false;
-      // Only alert for accounts the current user actually owns / sees
       if (!_globalRole && !(a.owner && _scopedIds.has(a.owner))) return false;
       const last = latestByAcc[a.id]
         || (a.lastContactDate ? new Date(a.lastContactDate).getTime() : 0)
         || (a.updatedAt       ? new Date(a.updatedAt).getTime()       : 0)
         || (a.createdAt       ? new Date(a.createdAt).getTime()       : 0);
-      // No timestamp at all → don't alert (avoids false positive for seeded demo rows)
       if (!last) return false;
-      return last < cutoffMs;
+      return last < dormCutoffMs;
     });
 
-    if (dormant.length > 0) {
-      _dormancyAlertedRef.current = true;
-      const sample = dormant.slice(0, 3).map(a => a.name).join(", ");
-      const more   = dormant.length > 3 ? ` +${dormant.length - 3} more` : "";
-      notify.info(`${dormant.length} account${dormant.length>1?"s":""} dormant 45+ days — ${sample}${more}. Reach out to keep relationships warm.`);
-    }
-  }, [currentUser, accounts, activities, callReports, commLogs, events, _scopedIds, _globalRole]);
-
-  // ── RENEWAL PRE-EXPIRY ALERT ──────────────────────────────────────────
-  // Scans active contracts for endDate within the next 60 days. Same
-  // session-once pattern as dormancy — managers / VP S&M / admins see
-  // every contract in scope, sales execs see their own. The contract
-  // detail view exposes a "Generate Renewal Quote" button that drops a
-  // pre-filled draft into Quotations linked back to the original contract.
-  const _renewalAlertedRef = useRef(false);
-  useEffect(() => {
-    if (!currentUser) return;
-    if (_renewalAlertedRef.current) return;
-    if (!Array.isArray(contracts) || contracts.length === 0) return;
-
+    /* ── Renewal scan with per-contract throttle ── */
     const RENEWAL_WINDOW_DAYS = 60;
-    const today  = new Date(); today.setHours(0,0,0,0);
-    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + RENEWAL_WINDOW_DAYS);
+    const RENEWAL_THROTTLE_DAYS = 30;
+    const todayMid = new Date(); todayMid.setHours(0,0,0,0);
+    const renewalCutoff = new Date(todayMid); renewalCutoff.setDate(renewalCutoff.getDate() + RENEWAL_WINDOW_DAYS);
+    const throttleMs = RENEWAL_THROTTLE_DAYS * 24 * 60 * 60 * 1000;
+    const nowMs = Date.now();
 
     const due = (contracts || []).filter(c => {
       if (c.isDeleted) return false;
@@ -481,16 +466,38 @@ export default function SmartCRM() {
       if (!c.endDate) return false;
       if (!_globalRole && !(c.owner && _scopedIds.has(c.owner))) return false;
       const end = new Date(c.endDate);
-      return end >= today && end <= cutoff;
+      if (end < todayMid || end > renewalCutoff) return false;
+      // Skip if we already alerted on this contract within the throttle window
+      if (c.renewalNotifiedAt) {
+        const notifiedMs = new Date(c.renewalNotifiedAt).getTime();
+        if (!Number.isNaN(notifiedMs) && (nowMs - notifiedMs) < throttleMs) return false;
+      }
+      return true;
     });
 
-    if (due.length > 0) {
-      _renewalAlertedRef.current = true;
-      const sample = due.slice(0, 3).map(c => c.title || c.contractNo || "Untitled").join(", ");
-      const more   = due.length > 3 ? ` +${due.length - 3} more` : "";
-      notify.info(`${due.length} contract${due.length>1?"s":""} expiring within 60 days — ${sample}${more}. Open Contracts to generate renewal quotes.`);
+    if (dormant.length === 0 && due.length === 0) return;
+    _startupAlertedRef.current = true;
+
+    const parts = [];
+    if (dormant.length > 0) {
+      const s = dormant.slice(0, 3).map(a => a.name).join(", ");
+      const more = dormant.length > 3 ? ` +${dormant.length - 3}` : "";
+      parts.push(`${dormant.length} dormant account${dormant.length>1?"s":""} (${s}${more})`);
     }
-  }, [currentUser, contracts, _scopedIds, _globalRole]);
+    if (due.length > 0) {
+      const s = due.slice(0, 3).map(c => c.title || c.contractNo || "Untitled").join(", ");
+      const more = due.length > 3 ? ` +${due.length - 3}` : "";
+      parts.push(`${due.length} contract${due.length>1?"s":""} expiring in 60d (${s}${more})`);
+    }
+    notify.info(`Heads up — ${parts.join(" · ")}.`);
+
+    // Stamp renewalNotifiedAt on the contracts we just alerted on
+    if (due.length > 0) {
+      const dueIds = new Set(due.map(c => c.id));
+      const stamp = new Date().toISOString();
+      setContracts(prev => prev.map(c => dueIds.has(c.id) ? { ...c, renewalNotifiedAt: stamp } : c));
+    }
+  }, [currentUser, accounts, contracts, activities, callReports, commLogs, events, _scopedIds, _globalRole, setContracts]);
 
   // ── HELPER: Generate a renewal quote from an existing contract ────────
   // Wired into Contracts.jsx as the "Generate Renewal Quote" action. Drops
