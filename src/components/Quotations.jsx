@@ -86,7 +86,7 @@ const KpiCard = ({icon,label,value,sub}) => (
   </div>
 );
 
-function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUsers,catalog,canDelete}) {
+function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],currentUser,orgUsers,catalog,canDelete}) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search,setSearch]=useState("");
   const [statusF,setStatusF]=useState("All");
@@ -99,6 +99,61 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
   const [confirm,setConfirm]=useState(null);
   const [formErrors,setFormErrors]=useState({});
   const [formTab,setFormTab]=useState("details");
+  const [sourceMode,setSourceMode]=useState("opportunity"); // "opportunity" | "lead" | "account"
+  const [sourceLeadId,setSourceLeadId]=useState("");
+
+  /* ── Auto-populate from a selected Opportunity ── */
+  const applyOppCascade=(oppId)=>{
+    const opp=opps.find(o=>o.id===oppId);
+    if(!opp){setForm(f=>({...f,oppId:""}));return;}
+    setForm(f=>{
+      const acc=accounts.find(a=>a.id===opp.accountId);
+      const sel=(Array.isArray(opp.productSelection)&&opp.productSelection.length>0)?opp.productSelection:(opp.products||[]).map(pid=>({productId:pid,moduleIds:[],noAddons:false}));
+      // Synthesize line items if none yet & opp has a value
+      let items=f.items;
+      if((!items||items.length===0)&&opp.value){
+        items=[{description:opp.title||"Deal value",qty:1,unitPrice:Number(opp.value)||0,amount:Number(opp.value)||0}];
+      }
+      const totals=recalc(items,f.taxType,f.discount);
+      return {
+        ...f,
+        oppId:opp.id,
+        accountId:opp.accountId||f.accountId,
+        contactId:opp.primaryContactId||f.contactId,
+        product:sel[0]?.productId||f.product,
+        productSelection:sel,
+        title:f.title||`${opp.title||"Quote"} – ${acc?.name||""}`.trim(),
+        items,
+        ...totals,
+      };
+    });
+  };
+
+  /* ── Auto-populate from a selected Lead ── */
+  const applyLeadCascade=(leadId)=>{
+    const lead=leads.find(l=>l.id===leadId);
+    setSourceLeadId(leadId);
+    if(!lead) return;
+    setForm(f=>{
+      const sel=(Array.isArray(lead.productSelection)&&lead.productSelection.length>0)?lead.productSelection:(lead.product?[{productId:lead.product,moduleIds:[],noAddons:false}]:[]);
+      let items=f.items;
+      if((!items||items.length===0)&&lead.estimatedValue){
+        items=[{description:`${lead.product||"Solution"} – ${lead.company||""}`.trim(),qty:1,unitPrice:Number(lead.estimatedValue)||0,amount:Number(lead.estimatedValue)||0}];
+      }
+      const totals=recalc(items,f.taxType,f.discount);
+      return {
+        ...f,
+        accountId:lead.accountId||f.accountId,
+        contactId:lead.contactIds?.[0]||f.contactId,
+        product:sel[0]?.productId||f.product,
+        productSelection:sel,
+        title:f.title||`Proposal for ${lead.company||lead.contact||""}`.trim(),
+        notes:f.notes||`Generated from lead ${lead.leadId||lead.id}. Source: ${lead.source||"—"}.`,
+        items,
+        ...totals,
+      };
+    });
+  };
 
   const enriched=useMemo(()=>quotes.map((q,idx)=>{
     const acc=accounts.find(a=>a.id===q.accountId);
@@ -152,12 +207,12 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
   const openAdd=()=>{
     const id=`QT-${String(quotes.length+1).padStart(3,"0")}`;
     setForm({...BLANK_QUOTE,id,owner:currentUser,createdDate:today,items:[]});
-    setFormErrors({});setFormTab("details");setModal({mode:"add"});
+    setFormErrors({});setFormTab("details");setSourceMode("opportunity");setSourceLeadId("");setModal({mode:"add"});
   };
   const openEdit=(q)=>{
     const seeded=(Array.isArray(q.productSelection)&&q.productSelection.length>0)?q.productSelection:(q.product?[{productId:q.product,moduleIds:[],noAddons:false}]:[]);
     setForm({...q,items:[...q.items.map(i=>({...i}))],productSelection:seeded});
-    setFormErrors({});setFormTab("details");setModal({mode:"edit"});
+    setFormErrors({});setFormTab("details");setSourceMode(q.oppId?"opportunity":"account");setSourceLeadId("");setModal({mode:"edit"});
   };
   const duplicate=(q)=>{
     const id=`QT-${String(quotes.length+1).padStart(3,"0")}`;
@@ -345,12 +400,68 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUser
           </div>
 
           {formTab==="details"&&(<div>
+            {/* ── Source Record Picker ── */}
+            <div style={{background:"#F0FDF4",border:"1px solid #BBF7D0",padding:"12px 14px",borderRadius:8,marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#15803D",letterSpacing:"0.5px",marginBottom:8}}>QUOTE SOURCE — auto-populates account, contact, products & price</div>
+              <div style={{display:"flex",gap:14,marginBottom:10}}>
+                {[["opportunity","From Opportunity"],["lead","From Lead"],["account","Direct (Account only)"]].map(([m,label])=>(
+                  <label key={m} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,fontWeight:600,cursor:"pointer",color:sourceMode===m?"#15803D":"var(--text2)"}}>
+                    <input type="radio" name="srcMode" checked={sourceMode===m} onChange={()=>setSourceMode(m)}/>
+                    {label}
+                  </label>
+                ))}
+              </div>
+              {sourceMode==="opportunity"&&(
+                <div className="form-group" style={{marginBottom:0}}>
+                  <label>Opportunity</label>
+                  <select value={form.oppId} onChange={e=>applyOppCascade(e.target.value)}>
+                    <option value="">Select opportunity to auto-fill...</option>
+                    {opps.map(o=>{const a=accounts.find(x=>x.id===o.accountId);return <option key={o.id} value={o.id}>{o.title} {a?`— ${a.name}`:""} ({o.stage})</option>;})}
+                  </select>
+                </div>
+              )}
+              {sourceMode==="lead"&&(
+                <div className="form-group" style={{marginBottom:0}}>
+                  <label>Lead</label>
+                  <select value={sourceLeadId} onChange={e=>applyLeadCascade(e.target.value)}>
+                    <option value="">Select lead to auto-fill...</option>
+                    {leads.map(l=><option key={l.id} value={l.id}>{l.company||l.contact||l.id} — {l.product||""} ({l.stage||""})</option>)}
+                  </select>
+                </div>
+              )}
+              {sourceMode==="account"&&(
+                <div style={{fontSize:11.5,color:"var(--text3)"}}>Pick the account below — billing context will appear once selected.</div>
+              )}
+            </div>
+
             <div className="form-row full"><div className="form-group"><label>Quote Title *</label><input value={form.title} onChange={e=>{setForm(f=>({...f,title:e.target.value}));setFormErrors(e=>({...e,title:undefined}));}} placeholder="e.g. WiseHandling Deploy – Colossal Avia" style={formErrors.title?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.title}/></div></div>
-            <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{setForm(f=>({...f,accountId:e.target.value}));setFormErrors(e=>({...e,accountId:undefined}));}} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select...</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div>
-              <div className="form-group"><label>Contact</label><select value={form.contactId} onChange={e=>setForm(f=>({...f,contactId:e.target.value}))}><option value="">Select...</option>{contacts.filter(c=>!form.accountId||c.accountId===form.accountId).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+            <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{setForm(f=>({...f,accountId:e.target.value,contactId:""}));setFormErrors(e=>({...e,accountId:undefined}));}} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select...</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div>
+              <div className="form-group"><label>Contact</label><select value={form.contactId} onChange={e=>setForm(f=>({...f,contactId:e.target.value}))}><option value="">Select...</option>{contacts.filter(c=>!form.accountId||c.accountId===form.accountId).map(c=><option key={c.id} value={c.id}>{c.name}{c.designation?` — ${c.designation}`:""}</option>)}</select></div>
             </div>
-            <div className="form-row"><div className="form-group"><label>Opportunity</label><select value={form.oppId} onChange={e=>{const oppId=e.target.value;const opp=opps.find(o=>o.id===oppId);setForm(f=>({...f,oppId,productSelection:(opp&&Array.isArray(opp.productSelection)&&opp.productSelection.length>0)?opp.productSelection:(f.productSelection||[])}));}}><option value="">None</option>{opps.filter(o=>!form.accountId||o.accountId===form.accountId).map(o=><option key={o.id} value={o.id}>{o.title}</option>)}</select></div>
-            </div>
+
+            {/* ── Auto-populated context panel ── */}
+            {(() => {
+              const acc=accounts.find(a=>a.id===form.accountId);
+              const con=contacts.find(c=>c.id===form.contactId);
+              const opp=opps.find(o=>o.id===form.oppId);
+              if(!acc&&!con&&!opp) return null;
+              return (
+                <div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"10px 14px",borderRadius:8,marginBottom:14,fontSize:12}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#1E40AF",letterSpacing:"0.5px",marginBottom:8}}>AUTO-POPULATED CONTEXT (read-only)</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 16px",color:"var(--text2)"}}>
+                    {acc&&<><div><strong>Customer:</strong> {acc.name}</div><div><strong>Type:</strong> {acc.type||"—"}</div></>}
+                    {acc&&<><div><strong>Billing Address:</strong> {acc.billingAddress||acc.address||"—"}{acc.billingCity?`, ${acc.billingCity}`:""}{acc.billingState?`, ${acc.billingState}`:""}{acc.billingPincode?` — ${acc.billingPincode}`:""}</div><div><strong>Country:</strong> {acc.billingCountry||acc.country||"—"}</div></>}
+                    {acc&&<><div><strong>GSTIN:</strong> {acc.gstin||"—"}</div><div><strong>PAN:</strong> {acc.pan||"—"}</div></>}
+                    {acc&&<><div><strong>Payment Terms:</strong> {acc.paymentTerms||"—"} ({acc.creditDays||0}d)</div><div><strong>Currency:</strong> {acc.currency||"INR"}</div></>}
+                    {con&&<><div><strong>Contact:</strong> {con.name}{con.designation?` — ${con.designation}`:""}</div><div><strong>Email / Phone:</strong> {con.email||"—"} · {con.phone||"—"}</div></>}
+                    {opp&&<><div><strong>Linked Opp:</strong> {opp.title} ({opp.stage})</div><div><strong>Deal Value:</strong> ₹{opp.value}L · {opp.probability}% prob</div></>}
+                  </div>
+                  {opp&&Array.isArray(opp.products)&&opp.products.length>0&&(
+                    <div style={{marginTop:8}}><strong>Opp Products:</strong> {opp.products.map(p=>PROD_MAP[p]?.name||p).join(", ")}</div>
+                  )}
+                </div>
+              );
+            })()}
             <div className="form-group" style={{marginBottom:12}}>
               <label>Products & Modules</label>
               <ProductModulePicker
