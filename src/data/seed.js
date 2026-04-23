@@ -230,7 +230,12 @@ export const INIT_CONTRACTS = [];
 export const INIT_COLLECTIONS = [];
 export const INIT_TARGETS = [];
 
-export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:""};
+export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:""};
+
+// Approval thresholds: a quote needs manager approval before Send if either
+// the discount % exceeds DISCOUNT_PCT_THRESHOLD or the total exceeds VALUE_THRESHOLD.
+// Both numbers are intentionally generous defaults; tune per business.
+export const QUOTE_APPROVAL_THRESHOLDS={discountPct:20,totalValue:500}; // total in same units as quote.total (Lakh / Cr / etc.)
 export const BLANK_QUOTE_ITEM={description:"",qty:1,unitPrice:0,amount:0};
 export const BLANK_COMM_LOG={type:"Email Sent",subject:"",body:"",from:"",to:"",accountId:"",contactId:"",oppId:"",date:"",status:"Sent",owner:"u1"};
 export const BLANK_EVENT={title:"",type:"Call",status:"Scheduled",date:"",time:"09:00",endTime:"09:30",accountId:"",contactId:"",oppId:"",owner:"u1",attendees:[],location:"",notes:"",reminderMin:15};
