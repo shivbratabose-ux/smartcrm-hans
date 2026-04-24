@@ -35,7 +35,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,cat
     return (po[a.priority]||4)-(po[b.priority]||4);
   }),[tickets,tabS,prodF,search]);
 
-  const openAdd=()=>{setForm({...BLANK_TKT,id:`TK-${String(tickets.length+1).padStart(3,"0")}`});setFormErrors({});setModal({mode:"add"});};
+  const openAdd=()=>{setForm({...BLANK_TKT,id:`TK-${String(tickets.length+1).padStart(3,"0")}`,assigned:currentUser||BLANK_TKT.assigned});setFormErrors({});setModal({mode:"add"});};
   // Backfill productSelection from legacy product+affectedModule when editing older rows
   const openEdit=(t)=>{
     const ps = Array.isArray(t.productSelection) && t.productSelection.length > 0

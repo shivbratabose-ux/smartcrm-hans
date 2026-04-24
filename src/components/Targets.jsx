@@ -59,7 +59,7 @@ function Targets({ targets, setTargets, currentUser, canDelete }) {
   }, [filtered]);
 
   const openAdd = () => {
-    setForm({ ...BLANK_TARGET, id: `tgt${uid()}`, period: periods[0] || "2026-Q1" });
+    setForm({ ...BLANK_TARGET, id: `tgt${uid()}`, period: periods[0] || "2026-Q1", userId: currentUser || BLANK_TARGET.userId });
     setFormErrors({});
     setModal({ mode: "add" });
   };

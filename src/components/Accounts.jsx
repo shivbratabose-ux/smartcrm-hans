@@ -624,7 +624,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     const next = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
     return `ACC-${year}-${String(next).padStart(3, '0')}`;
   };
-  const openAdd = () => { setForm({...BLANK_ACC, id:`a${uid()}`, accountNo: nextAccountNo(), addresses:[]}); setFormErrors({}); setModal({mode:"add"}); };
+  const openAdd = () => { setForm({...BLANK_ACC, id:`a${uid()}`, accountNo: nextAccountNo(), addresses:[], owner: currentUser || BLANK_ACC.owner}); setFormErrors({}); setModal({mode:"add"}); };
   const openEdit = a => {
     // Backfill productSelection from legacy `products` array so existing accounts open in the picker
     const seeded = (Array.isArray(a.productSelection) && a.productSelection.length > 0)
