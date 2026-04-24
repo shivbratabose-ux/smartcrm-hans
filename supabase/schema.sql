@@ -164,6 +164,35 @@ CREATE TABLE IF NOT EXISTS public.opportunities (
   hierarchy_level TEXT,
   lead_id TEXT,
   created_date DATE,
+  -- Identifiers & segmentation
+  opp_no TEXT,
+  product_selection JSONB DEFAULT '[]'::jsonb,
+  lob TEXT,
+  deal_size TEXT,
+  forecast_cat TEXT,
+  currency TEXT DEFAULT 'INR',
+  territory TEXT,
+  budget TEXT,
+  -- Multi-contact role linkage
+  contact_roles JSONB DEFAULT '[]'::jsonb,
+  source_lead_ids TEXT[] DEFAULT '{}',
+  -- Competitors / loss analysis
+  competitors TEXT,
+  loss_reason TEXT,
+  loss_reason_secondary TEXT,
+  lost_to_competitor TEXT,
+  loss_impact_areas TEXT[] DEFAULT '{}',
+  loss_mgmt_feedback TEXT,
+  loss_improvement_notes TEXT,
+  loss_closed_at TIMESTAMPTZ,
+  -- Upsell / cross-sell
+  upsell_flag BOOLEAN DEFAULT false,
+  cross_sell_notes TEXT,
+  -- Pipeline / next step
+  next_step TEXT,
+  decision_date DATE,
+  -- Marketing attribution
+  campaign_source TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -239,6 +268,45 @@ CREATE TABLE IF NOT EXISTS public.contracts (
   owner TEXT REFERENCES public.users(id),
   terms TEXT,
   notes TEXT,
+  -- Identifiers & references
+  contract_no TEXT,
+  opp_id TEXT,
+  -- Product
+  product TEXT,
+  product_selection JSONB DEFAULT '[]'::jsonb,
+  -- Billing terms
+  bill_term TEXT,
+  bill_type TEXT,
+  payment_terms TEXT DEFAULT 'Net 30',
+  currency TEXT DEFAULT 'INR',
+  billing_frequency TEXT DEFAULT 'Annual',
+  invoice_gen_basis TEXT,
+  -- GRI (Global Rate Increase)
+  gri_applicable TEXT DEFAULT 'No',
+  gri_percentage NUMERIC DEFAULT 0,
+  -- Capacity
+  no_of_users INTEGER DEFAULT 0,
+  no_of_branches INTEGER DEFAULT 0,
+  -- Approval & documents
+  approval_stage TEXT,
+  doc_type TEXT DEFAULT 'Contract',
+  po_number TEXT,
+  signed_doc_url TEXT,
+  eula_url TEXT,
+  -- Renewal lifecycle
+  renewal_date DATE,
+  renewal_type TEXT,
+  auto_renewal TEXT DEFAULT 'No',
+  renewal_notified_at TIMESTAMPTZ,
+  warranty_months INTEGER DEFAULT 0,
+  -- Commercial
+  commercial_model TEXT,
+  -- Onboarding / delivery
+  service_start_date DATE,
+  go_live_date DATE,
+  onboarding_notes TEXT,
+  -- Geography
+  territory TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -257,6 +325,24 @@ CREATE TABLE IF NOT EXISTS public.collections (
   payment_mode TEXT,
   remarks TEXT,
   owner TEXT REFERENCES public.users(id),
+  -- References
+  contract_id TEXT,
+  -- Tax / payable breakdown
+  invoice_type TEXT DEFAULT 'Tax Invoice',
+  product TEXT,
+  currency TEXT DEFAULT 'INR',
+  gst_amount NUMERIC DEFAULT 0,
+  tds_amount NUMERIC DEFAULT 0,
+  net_payable NUMERIC DEFAULT 0,
+  -- Billing period
+  bill_period_from DATE,
+  bill_period_to DATE,
+  -- Payment lifecycle
+  payment_date DATE,
+  aging_bucket TEXT,
+  follow_up_date DATE,
+  cheque_ref TEXT,
+  approved_by TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );

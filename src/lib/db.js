@@ -67,6 +67,8 @@ const DATE_COLUMNS = new Set([
   "approved_at", "last_reminder_at", "temp_password_expires_at",
   "renewal_notified_at", "loss_closed_at", "deleted_at", "created_at",
   "updated_at", "uploaded_at",
+  // Opp / Contract / Collection (add_missing_opp_contract_collection_fields_v1.sql)
+  "follow_up_date", "bill_period_from", "bill_period_to",
 ]);
 
 // ── Field mapping: JS camelCase ↔ DB snake_case ──
@@ -123,6 +125,32 @@ const toSnake = (obj, module) => {
     proposalSent:"proposal_sent", demoScheduled:"demo_scheduled",
     competitorName:"competitor_name", lastContactDate:"last_contact_date",
     productSelection:"product_selection",
+    // Opportunity fields (added by add_missing_opp_contract_collection_fields_v1.sql)
+    oppNo:"opp_no", forecastCat:"forecast_cat", lossReason:"loss_reason",
+    lossReasonSecondary:"loss_reason_secondary", lostToCompetitor:"lost_to_competitor",
+    lossImpactAreas:"loss_impact_areas", lossMgmtFeedback:"loss_mgmt_feedback",
+    lossImprovementNotes:"loss_improvement_notes", lossClosedAt:"loss_closed_at",
+    upsellFlag:"upsell_flag", crossSellNotes:"cross_sell_notes",
+    decisionDate:"decision_date", campaignSource:"campaign_source",
+    // Contract fields (added by add_missing_opp_contract_collection_fields_v1.sql)
+    contractNo:"contract_no", billTerm:"bill_term", billType:"bill_type",
+    approvalStage:"approval_stage", docType:"doc_type", poNumber:"po_number",
+    renewalDate:"renewal_date", renewalType:"renewal_type",
+    paymentTerms:"payment_terms", billingFrequency:"billing_frequency",
+    invoiceGenBasis:"invoice_gen_basis", griApplicable:"gri_applicable",
+    griPercentage:"gri_percentage", noOfBranches:"no_of_branches",
+    serviceStartDate:"service_start_date", commercialModel:"commercial_model",
+    autoRenewal:"auto_renewal", warrantyMonths:"warranty_months",
+    goLiveDate:"go_live_date", signedDocUrl:"signed_doc_url",
+    eulaUrl:"eula_url", onboardingNotes:"onboarding_notes",
+    renewalNotifiedAt:"renewal_notified_at",
+    // Collection fields (added by add_missing_opp_contract_collection_fields_v1.sql)
+    contractId:"contract_id", invoiceType:"invoice_type",
+    gstAmount:"gst_amount", tdsAmount:"tds_amount", netPayable:"net_payable",
+    billPeriodFrom:"bill_period_from", billPeriodTo:"bill_period_to",
+    paymentDate:"payment_date", agingBucket:"aging_bucket",
+    followUpDate:"follow_up_date", chequeRef:"cheque_ref",
+    approvedBy:"approved_by",
     // soft delete
     isDeleted:"is_deleted", deletedAt:"deleted_at", deletedBy:"deleted_by",
   };
@@ -193,6 +221,32 @@ const toCamel = (obj, module) => {
     proposal_sent:"proposalSent", demo_scheduled:"demoScheduled",
     competitor_name:"competitorName", last_contact_date:"lastContactDate",
     product_selection:"productSelection",
+    // Opportunity fields
+    opp_no:"oppNo", forecast_cat:"forecastCat", loss_reason:"lossReason",
+    loss_reason_secondary:"lossReasonSecondary", lost_to_competitor:"lostToCompetitor",
+    loss_impact_areas:"lossImpactAreas", loss_mgmt_feedback:"lossMgmtFeedback",
+    loss_improvement_notes:"lossImprovementNotes", loss_closed_at:"lossClosedAt",
+    upsell_flag:"upsellFlag", cross_sell_notes:"crossSellNotes",
+    decision_date:"decisionDate", campaign_source:"campaignSource",
+    // Contract fields
+    contract_no:"contractNo", bill_term:"billTerm", bill_type:"billType",
+    approval_stage:"approvalStage", doc_type:"docType", po_number:"poNumber",
+    renewal_date:"renewalDate", renewal_type:"renewalType",
+    payment_terms:"paymentTerms", billing_frequency:"billingFrequency",
+    invoice_gen_basis:"invoiceGenBasis", gri_applicable:"griApplicable",
+    gri_percentage:"griPercentage", no_of_branches:"noOfBranches",
+    service_start_date:"serviceStartDate", commercial_model:"commercialModel",
+    auto_renewal:"autoRenewal", warranty_months:"warrantyMonths",
+    go_live_date:"goLiveDate", signed_doc_url:"signedDocUrl",
+    eula_url:"eulaUrl", onboarding_notes:"onboardingNotes",
+    renewal_notified_at:"renewalNotifiedAt",
+    // Collection fields
+    contract_id:"contractId", invoice_type:"invoiceType",
+    gst_amount:"gstAmount", tds_amount:"tdsAmount", net_payable:"netPayable",
+    bill_period_from:"billPeriodFrom", bill_period_to:"billPeriodTo",
+    payment_date:"paymentDate", aging_bucket:"agingBucket",
+    follow_up_date:"followUpDate", cheque_ref:"chequeRef",
+    approved_by:"approvedBy",
     // soft delete
     is_deleted:"isDeleted", deleted_at:"deletedAt", deleted_by:"deletedBy",
   };
