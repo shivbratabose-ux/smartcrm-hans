@@ -212,14 +212,15 @@ export const INIT_MASTERS = {
 };
 
 // ── Blank form templates ──
-export const BLANK_ACC={name:"",type:"Airline",country:"India",city:"",website:"",segment:"Enterprise",status:"Prospect",products:[],productSelection:[],owner:"u1",arrRevenue:0,potential:0,parentId:"",hierarchyLevel:"Parent Company",hierarchyPath:"",address:"",accountNo:"",state:"",pincode:"",legalName:"",pan:"",gstin:"",cin:"",taxTreatment:"Domestic",tdsApplicable:"No",poMandatory:"No",billingAddress:"",billingCity:"",billingState:"",billingPincode:"",billingCountry:"",primaryContact:"",primaryEmail:"",primaryPhone:"",billingContactName:"",billingContactEmail:"",financeContactEmail:"",paymentTerms:"Net 30",creditDays:30,currency:"INR",billingFrequency:"Annual",entityType:"Head Office",groupCode:"",territory:""};
-export const BLANK_CON={name:"",role:"",email:"",phone:"",accountId:"",primary:false,contactId:"",designation:"",department:"",departments:[],products:[],branches:[],countries:[],linkedOpps:[],city:"",state:"",country:"",pincode:"",alternateEmail:"",alternatePhone:"",linkedInUrl:"",decisionLevel:"",influence:"Medium",category:"",preferredContactMode:"Email",doNotContact:"No",lastContactDate:"",source:""};
+export const BLANK_ACC={name:"",type:"Airline",country:"India",city:"",website:"",segment:"Enterprise",status:"Prospect",products:[],productSelection:[],owner:"u1",arrRevenue:0,potential:0,parentId:"",hierarchyLevel:"Parent Company",hierarchyPath:"",address:"",accountNo:"",state:"",pincode:"",legalName:"",pan:"",gstin:"",cin:"",taxTreatment:"Domestic",tdsApplicable:"No",poMandatory:"No",billingAddress:"",billingCity:"",billingState:"",billingPincode:"",billingCountry:"",primaryContact:"",primaryEmail:"",primaryPhone:"",billingContactName:"",billingContactEmail:"",financeContactEmail:"",paymentTerms:"Net 30",creditDays:30,currency:"INR",billingFrequency:"Annual",entityType:"Head Office",groupCode:"",territory:"",addresses:[]};
+export const BLANK_ADDRESS={id:"",label:"Head Office",line1:"",city:"",state:"",country:"India",pincode:"",isPrimary:true,isBilling:true};
+export const BLANK_CON={name:"",role:"",email:"",phone:"",accountId:"",addressId:"",primary:false,contactId:"",designation:"",department:"",departments:[],products:[],branches:[],countries:[],linkedOpps:[],city:"",state:"",country:"",pincode:"",alternateEmail:"",alternatePhone:"",linkedInUrl:"",decisionLevel:"",influence:"Medium",category:"",preferredContactMode:"Email",doNotContact:"No",lastContactDate:"",source:""};
 export const BLANK_OPP={oppNo:"",title:"",accountId:"",products:[],productSelection:[],stage:"Prospect",value:0,probability:10,owner:"u1",closeDate:"",country:"India",notes:"",source:"New Lead",primaryContactId:"",secondaryContactIds:[],hierarchyLevel:"Parent Company",leadId:"",contactRoles:[],sourceLeadIds:[],lob:"",dealSize:"Medium",forecastCat:"Pipeline",currency:"INR",competitors:"",lossReason:"",lossReasonSecondary:"",lostToCompetitor:"",lossImpactAreas:[],lossMgmtFeedback:"",lossImprovementNotes:"",lossClosedAt:"",upsellFlag:false,crossSellNotes:"",nextStep:"",decisionDate:"",budget:"",territory:"",campaignSource:"",createdDate:""};
 export const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
 export const BLANK_TKT={ticketNo:"",title:"",accountId:"",product:"iCAFFE",productSelection:[],type:"Bug / Glitch",priority:"Medium",status:"Open",assigned:"u7",description:"",sla:"",escalation:"L1 – Support Engineer",resolution:"",csat:0,category:"Technical",subCategory:"",reportedBy:"",reportedDate:"",resolvedDate:"",affectedModule:"",severity:"Medium",environment:"Production",workaround:"No",internalNotes:"",revisitDate:"",tags:""};
 export const BLANK_LEAD={company:"",contact:"",email:"",phone:"",product:"iCAFFE",productSelection:[],vertical:"CHA",region:"South Asia",source:"Inside Sales",stage:"MQL",assignedTo:"u1",notes:"",nextCall:"",score:50,createdDate:"",leadId:"",accountId:"",temperature:"Warm",designation:"",noOfUsers:0,businessType:"Customs Broker",staffSize:"",branches:0,monthlyVolume:{airExp:"",airImp:"",seaTEU:"",customsEntries:""},currentSoftware:"",swAge:"",swSatisfaction:0,painPoints:[],budgetRange:"",decisionMaker:"",decisionTimeline:"",evaluatingOthers:"",nextStep:"",objections:"",contactIds:[],contactRoles:{},additionalProducts:[],estimatedValue:0,stageHistory:[],convertedOppIds:[],branch:"",location:"",department:"",addresses:[],salesTeam:[],country:"",state:"",city:"",companyWebsite:"",alternatePhone:"",alternateEmail:"",linkedInUrl:"",annualRevenue:0,campaignName:"",referredBy:"",expectedCloseDate:"",proposalSent:"No",demoScheduled:"No",competitorName:"",lastContactDate:""};
 export const BLANK_CALL_REPORT={leadName:"",company:"",marketingPerson:"u1",leadStage:"MQL",callType:"Telephone Call",product:"iCAFFE",productSelection:[],callDate:"",notes:"",nextCallDate:"",objective:"General Followup",outcome:"Completed",contactId:"",accountId:"",oppId:"",duration:15};
-export const BLANK_CONTRACT={contractNo:"",title:"",accountId:"",oppId:"",product:"iCAFFE",productSelection:[],status:"Draft",startDate:"",endDate:"",value:0,billTerm:"Yearly",billType:"Renewals",approvalStage:"",terms:"",docType:"Contract",owner:"u1",poNumber:"",renewalDate:"",renewalType:"Manual",paymentTerms:"Net 30",currency:"INR",billingFrequency:"Annual",invoiceGenBasis:"Advance",griApplicable:"No",griPercentage:0,noOfUsers:0,noOfBranches:0,serviceStartDate:"",commercialModel:"Annual SaaS",autoRenewal:"No",warrantyMonths:0,goLiveDate:"",territory:"",signedDocUrl:"",eulaUrl:"",agreementUrl:"",onboardingNotes:"",finalQuoteId:"",renewalNotifiedAt:""};
+export const BLANK_CONTRACT={contractNo:"",title:"",accountId:"",oppId:"",product:"iCAFFE",productSelection:[],status:"Draft",startDate:"",endDate:"",value:0,billTerm:"Yearly",billType:"Renewals",approvalStage:"",terms:"",docType:"Contract",owner:"u1",poNumber:"",renewalDate:"",renewalType:"Manual",paymentTerms:"Net 30",currency:"INR",billingFrequency:"Annual",invoiceGenBasis:"Advance",griApplicable:"No",griPercentage:0,noOfUsers:0,noOfBranches:0,serviceStartDate:"",commercialModel:"Annual SaaS",autoRenewal:"No",warrantyMonths:0,goLiveDate:"",territory:"",signedDocUrl:"",eulaUrl:"",onboardingNotes:"",renewalNotifiedAt:""};
 export const BLANK_COLLECTION={invoiceNo:"",accountId:"",contractId:"",invoiceDate:"",dueDate:"",billedAmount:0,collectedAmount:0,pendingAmount:0,status:"Current",paymentMode:"NEFT",paymentDate:"",remarks:"",owner:"u1",invoiceType:"Tax Invoice",product:"",currency:"INR",gstAmount:0,tdsAmount:0,netPayable:0,billPeriodFrom:"",billPeriodTo:"",agingBucket:"",followUpDate:"",chequeRef:"",approvedBy:""};
 export const BLANK_TARGET={userId:"u1",period:"",product:"All",targetValue:0,achievedValue:0,targetDeals:0,achievedDeals:0,targetCalls:0,achievedCalls:0};
 
@@ -229,8 +230,27 @@ export const INIT_CONTRACTS = [];
 export const INIT_COLLECTIONS = [];
 export const INIT_TARGETS = [];
 
-export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:""};
-export const BLANK_QUOTE_ITEM={description:"",qty:1,unitPrice:0,amount:0};
+export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:"",emailLog:[],lastReminderAt:"",changeLog:[],attachments:[]};
+
+// Change-log entry: pushed onto quote.changeLog[] whenever the quote is mutated.
+// field=null is reserved for status / lifecycle transitions.
+export const BLANK_CHANGE_ENTRY={id:"",at:"",by:"",field:"",from:"",to:"",note:""};
+// Attachment entry: file metadata + URL. Storage is out of scope (link from Drive/SharePoint).
+export const BLANK_ATTACHMENT={id:"",name:"",url:"",kind:"document",addedBy:"",addedAt:""};
+
+// Approval thresholds: a quote needs manager approval before Send if either
+// the discount % exceeds DISCOUNT_PCT_THRESHOLD or the total exceeds VALUE_THRESHOLD.
+// Both numbers are intentionally generous defaults; tune per business.
+export const QUOTE_APPROVAL_THRESHOLDS={discountPct:20,totalValue:500}; // total in same units as quote.total (Lakh / Cr / etc.)
+
+// Email send-log entry: pushed onto quote.emailLog[] every time the quote is mailed.
+// kind = "initial" | "reminder" | "manual" — used to drive the reminder cadence.
+export const BLANK_EMAIL_LOG={id:"",sentAt:"",sentBy:"",to:"",cc:"",subject:"",kind:"initial"};
+
+// Reminder cadence after a quote is Sent (and not yet Accepted / Rejected / Expired):
+// fire follow-up nudges at these day offsets relative to sentDate.
+export const QUOTE_REMINDER_OFFSETS=[7,14];
+export const BLANK_QUOTE_ITEM={description:"",qty:1,unitPrice:0,amount:0,unitCost:0};
 export const BLANK_COMM_LOG={type:"Email Sent",subject:"",body:"",from:"",to:"",accountId:"",contactId:"",oppId:"",date:"",status:"Sent",owner:"u1"};
 export const BLANK_EVENT={title:"",type:"Call",status:"Scheduled",date:"",time:"09:00",endTime:"09:30",accountId:"",contactId:"",oppId:"",owner:"u1",attendees:[],location:"",notes:"",reminderMin:15};
 

@@ -1,14 +1,14 @@
 import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star, Building2, ArrowUpDown, ArrowUp, ArrowDown, Globe, Briefcase, Calendar, TrendingUp, FileText, Activity } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today } from "../utils/helpers";
+import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today, resolveAddress, formatAddress } from "../utils/helpers";
 import { PRODUCTS, PROD_MAP, COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
 import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, FormError, Empty } from "./shared";
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 
-const BLANK_CON={name:"",role:"",email:"",phone:"",accountId:"",primary:false,contactId:"",designation:"",department:"",departments:[],products:[],branches:[],countries:[],linkedOpps:[]};
+const BLANK_CON={name:"",role:"",email:"",phone:"",accountId:"",addressId:"",primary:false,contactId:"",designation:"",department:"",departments:[],products:[],branches:[],countries:[],linkedOpps:[]};
 
 const infoRow = (label, value) => (
   <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid var(--border)"}}>
@@ -92,7 +92,13 @@ function ContactDetail({ c, onClose, onEdit, accounts, opps=[], activities=[] })
                 {infoRow("Account", acc?.name || "—")}
                 {infoRow("Account No.", acc?.accountNo || "—")}
                 {infoRow("Type", acc?.type || "—")}
-                {infoRow("Country", acc?.country || "—")}
+                {(() => {
+                  const addr = resolveAddress(c, accounts);
+                  return <>
+                    {infoRow("Office", addr?.label || "—")}
+                    {infoRow("Address", addr ? formatAddress(addr) : "—")}
+                  </>;
+                })()}
                 {infoRow("Status", acc?.status || "—")}
               </div>
 
@@ -231,7 +237,7 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
   };
   const openEdit = c => { setForm({...c}); setFormErrors({}); setModal({mode:"edit"}); };
   const save = () => {
-    const errs = validateContact(form);
+    const errs = validateContact(form, accounts);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const isDup = contacts.some(existing =>
       existing.id !== form.id && (
@@ -257,6 +263,8 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
     {label:"department",            accessor:c=>(c.departments||[]).join("; ")},
     {label:"accountId",             accessor:c=>accounts.find(a=>a.id===c.accountId)?.accountNo||c.accountId||""},
     {label:"primary",               accessor:c=>c.primary?"Yes":"No"},
+    {label:"officeLabel",            accessor:c=>resolveAddress(c,accounts)?.label||""},
+    {label:"officeAddress",          accessor:c=>{const a=resolveAddress(c,accounts);return a?formatAddress(a):"";}},
     {label:"city",                  accessor:c=>c.city||""},
     {label:"state",                 accessor:c=>c.state||""},
     {label:"country",               accessor:c=>c.country||""},
@@ -434,7 +442,44 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
         <Modal title={modal.mode === "add" ? "Add Contact" : "Edit Contact"} onClose={() => setModal(null)} footer={<><button className="btn btn-sec" onClick={() => setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save Contact</button></>}>
           <div className="form-row"><div className="form-group"><label>Contact ID</label><input value={form.contactId||""} readOnly style={{background:"var(--s1)",fontFamily:"'Courier New',monospace",fontWeight:600,cursor:"default"}}/></div><div className="form-group"><label>Full Name *</label><input value={form.name} onChange={e=>{setForm(f=>({...f,name:e.target.value}));setFormErrors(e=>({...e,name:undefined}));}} placeholder="Full name" style={formErrors.name?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.name}/></div></div>
           <div className="form-row"><div className="form-group"><label>Designation</label><input value={form.designation||""} onChange={e=>setForm(f=>({...f,designation:e.target.value}))} placeholder="VP Cargo, CTO…"/></div><div className="form-group"><label>Department (primary)</label><select value={form.department||""} onChange={e=>setForm(f=>({...f,department:e.target.value}))}><option value="">Select department…</option>{CONTACT_DEPARTMENTS.map(d=><option key={d} value={d}>{d}</option>)}</select></div></div>
-          <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{setForm(f=>({...f,accountId:e.target.value}));setFormErrors(e=>({...e,accountId:undefined}));}} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select account…</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.accountNo ? `${a.accountNo} – ` : ""}{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div><div className="form-group"><label><input type="checkbox" checked={form.primary} onChange={e=>setForm(f=>({...f,primary:e.target.checked}))} style={{marginRight:6}}/>Primary contact for account</label></div></div>
+          <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{
+            const newAccId=e.target.value;
+            const newAcc=accounts.find(a=>a.id===newAccId);
+            const addrs=newAcc?.addresses||[];
+            // Auto-pick: if only one address, snap to it; if multiple, pick primary.
+            const autoPick = addrs.length===1 ? addrs[0].id : (addrs.find(a=>a.isPrimary)?.id || "");
+            setForm(f=>({...f,accountId:newAccId,addressId:autoPick}));
+            setFormErrors(e=>({...e,accountId:undefined,addressId:undefined}));
+          }} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select account…</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.accountNo ? `${a.accountNo} – ` : ""}{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div><div className="form-group"><label><input type="checkbox" checked={form.primary} onChange={e=>setForm(f=>({...f,primary:e.target.checked}))} style={{marginRight:6}}/>Primary contact for account</label></div></div>
+          {/* ── Office Address (linked to account's address book) ── */}
+          {form.accountId && (() => {
+            const acc=accounts.find(a=>a.id===form.accountId);
+            const addrs=acc?.addresses||[];
+            if (addrs.length===0) {
+              return (
+                <div style={{background:"#FEF3C7",border:"1px solid #FCD34D",padding:"10px 14px",borderRadius:8,fontSize:12,color:"#92400E",marginBottom:12}}>
+                  <strong>{acc?.name}</strong> has no office addresses yet. Open the account record and add at least one address before saving this contact.
+                  <FormError error={formErrors.addressId}/>
+                </div>
+              );
+            }
+            return (
+              <div className="form-row">
+                <div className="form-group" style={{flex:2}}>
+                  <label>Office Address *</label>
+                  <select value={form.addressId||""} onChange={e=>{setForm(f=>({...f,addressId:e.target.value}));setFormErrors(er=>({...er,addressId:undefined}));}} style={formErrors.addressId?{borderColor:"#DC2626"}:{}}>
+                    <option value="">Select office address…</option>
+                    {addrs.map(a=><option key={a.id} value={a.id}>{a.label}{a.city?` — ${a.city}`:""}{a.isPrimary?" (Primary)":""}{a.isBilling?" [Billing]":""}</option>)}
+                  </select>
+                  <FormError error={formErrors.addressId}/>
+                  {form.addressId && (() => {
+                    const sel=addrs.find(a=>a.id===form.addressId);
+                    return sel ? <div style={{fontSize:11,color:"var(--text3)",marginTop:4,fontStyle:"italic"}}>{formatAddress(sel)}</div> : null;
+                  })()}
+                </div>
+              </div>
+            );
+          })()}
           <div className="form-row"><div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e=>{setForm(f=>({...f,email:e.target.value}));setFormErrors(e=>({...e,email:undefined}));}} placeholder="email@company.com" style={formErrors.email?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.email}/></div><div className="form-group"><label>Phone</label><input value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="+91-98765-00000"/></div></div>
           <div className="form-group">
             <label>Departments (multi-select)</label>

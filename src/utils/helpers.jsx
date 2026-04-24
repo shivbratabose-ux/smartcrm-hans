@@ -81,13 +81,79 @@ export const validateAccount = (f) => {
 // Empty is allowed at this layer — required-ness is enforced per-form.
 export const isValidPhone = (s) => !s || /^[+\d\s\-()]{7,20}$/.test(String(s).trim());
 
-export const validateContact = (f) => {
+export const validateContact = (f, accounts) => {
   const errs = {};
   if (!f.name?.trim()) errs.name = "Contact name is required";
   if (!f.accountId) errs.accountId = "Account is required";
   if (f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) errs.email = "Invalid email format";
   if (f.phone && !isValidPhone(f.phone)) errs.phone = "Invalid phone (digits, spaces, +, -, ( ) only)";
+  // Address linkage: required if the chosen account has at least one address.
+  // If the account has no addresses yet, surface a directional error so the
+  // user knows to add an address on the account first.
+  if (f.accountId && Array.isArray(accounts)) {
+    const acc = accounts.find(a => a.id === f.accountId);
+    const addrs = (acc?.addresses || []);
+    if (addrs.length === 0) {
+      errs.addressId = "This account has no office addresses yet. Open the account and add at least one address before assigning a contact.";
+    } else if (!f.addressId) {
+      errs.addressId = "Office address is required";
+    } else if (!addrs.some(a => a.id === f.addressId)) {
+      errs.addressId = "Selected address no longer exists on this account";
+    }
+  }
   return errs;
+};
+
+// ── Address book helpers ──────────────────────────────────────────────
+// One-time-on-edit migration: if the account has legacy single-address
+// fields (address/city/state/pincode/country) but no entries in addresses[],
+// synthesize the first entry so the new UI has something to render.
+// Idempotent — safe to call multiple times.
+export const migrateAccountAddresses = (acc) => {
+  if (!acc) return acc;
+  if (Array.isArray(acc.addresses) && acc.addresses.length > 0) return acc;
+  const hasLegacy = acc.address || acc.city || acc.state || acc.pincode || acc.country;
+  if (!hasLegacy) return acc;
+  const primary = {
+    id: `addr_${Date.now().toString(36)}_1`,
+    label: "Head Office",
+    line1: acc.address || "",
+    city:  acc.city    || "",
+    state: acc.state   || "",
+    country: acc.country || "India",
+    pincode: acc.pincode || "",
+    isPrimary: true,
+    isBilling: !(acc.billingAddress || acc.billingCity), // billing address gets its own entry below
+  };
+  const out = [primary];
+  if (acc.billingAddress || acc.billingCity || acc.billingPincode) {
+    out.push({
+      id: `addr_${Date.now().toString(36)}_2`,
+      label: "Billing Office",
+      line1: acc.billingAddress || "",
+      city:  acc.billingCity    || "",
+      state: acc.billingState   || "",
+      country: acc.billingCountry || acc.country || "India",
+      pincode: acc.billingPincode || "",
+      isPrimary: false,
+      isBilling: true,
+    });
+  }
+  return { ...acc, addresses: out };
+};
+
+// Resolve an address line from a contact (or any record with addressId+accountId)
+// — returns { label, line1, city, state, country, pincode } or null.
+export const resolveAddress = (record, accounts) => {
+  if (!record?.addressId || !record?.accountId) return null;
+  const acc = (accounts || []).find(a => a.id === record.accountId);
+  return (acc?.addresses || []).find(x => x.id === record.addressId) || null;
+};
+
+// Pretty single-line render of an address object.
+export const formatAddress = (addr) => {
+  if (!addr) return "—";
+  return [addr.line1, addr.city, addr.state, addr.pincode, addr.country].filter(Boolean).join(", ");
 };
 export const validateOpp = (f) => {
   const errs = {};

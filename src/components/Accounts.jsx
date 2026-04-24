@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, TrendingUp, Activity, Download, Arr
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LEVELS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_ACC } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today, migrateAccountAddresses, formatAddress } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
@@ -624,22 +624,74 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     const next = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
     return `ACC-${year}-${String(next).padStart(3, '0')}`;
   };
-  const openAdd = () => { setForm({...BLANK_ACC, id:`a${uid()}`, accountNo: nextAccountNo()}); setFormErrors({}); setModal({mode:"add"}); };
+  const openAdd = () => { setForm({...BLANK_ACC, id:`a${uid()}`, accountNo: nextAccountNo(), addresses:[]}); setFormErrors({}); setModal({mode:"add"}); };
   const openEdit = a => {
     // Backfill productSelection from legacy `products` array so existing accounts open in the picker
     const seeded = (Array.isArray(a.productSelection) && a.productSelection.length > 0)
       ? a.productSelection
       : (a.products || []).filter(Boolean).map(productId => ({ productId, moduleIds: [], noAddons: false }));
-    setForm({...a, products:[...(a.products||[])], productSelection: seeded});
+    // Auto-migrate legacy address fields into the new addresses[] array
+    const migrated = migrateAccountAddresses(a);
+    setForm({...migrated, products:[...(a.products||[])], productSelection: seeded, addresses: [...(migrated.addresses || [])]});
     setFormErrors({});
     setModal({mode:"edit"});
   };
+
+  /* ── Address book CRUD (operates on form.addresses) ── */
+  const addAddress = () => {
+    const nextId = `addr_${Date.now().toString(36)}_${(form.addresses||[]).length + 1}`;
+    const isFirst = (form.addresses||[]).length === 0;
+    setForm(f => ({...f, addresses: [...(f.addresses||[]), {
+      id: nextId, label: isFirst ? "Head Office" : "Office",
+      line1: "", city: "", state: "", country: f.country || "India", pincode: "",
+      isPrimary: isFirst, isBilling: isFirst,
+    }]}));
+  };
+  const updateAddress = (idx, patch) => {
+    setForm(f => {
+      const next = [...(f.addresses||[])];
+      next[idx] = {...next[idx], ...patch};
+      // Enforce single primary / single billing — toggling on one clears the others
+      if (patch.isPrimary === true) next.forEach((a, i) => { if (i !== idx) a.isPrimary = false; });
+      if (patch.isBilling === true) next.forEach((a, i) => { if (i !== idx) a.isBilling = false; });
+      return {...f, addresses: next};
+    });
+  };
+  const removeAddress = (idx) => {
+    setForm(f => {
+      const next = (f.addresses||[]).filter((_, i) => i !== idx);
+      // If we removed the primary, promote the first remaining
+      if (next.length > 0 && !next.some(a => a.isPrimary)) next[0].isPrimary = true;
+      if (next.length > 0 && !next.some(a => a.isBilling)) next[0].isBilling = true;
+      return {...f, addresses: next};
+    });
+  };
+
   const save = () => {
     const errs = validateAccount(form);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const isDup = accounts.some(existing => existing.id !== form.id && existing.name.toLowerCase().trim() === form.name.toLowerCase().trim() && existing.country === form.country);
     if (isDup && !window.confirm("An account with the same name and country already exists. Continue anyway?")) return;
-    const clean = sanitizeObj(form);
+    // Sync legacy single-address + billingAddress fields with the primary/billing entries
+    // so anywhere in the app that still reads `acc.address` keeps working.
+    const addrs = form.addresses || [];
+    const primary = addrs.find(a => a.isPrimary) || addrs[0];
+    const billing = addrs.find(a => a.isBilling) || primary;
+    const synced = primary ? {
+      address: primary.line1 || form.address,
+      city: primary.city || form.city,
+      state: primary.state || form.state,
+      country: primary.country || form.country,
+      pincode: primary.pincode || form.pincode,
+    } : {};
+    const billingSynced = billing ? {
+      billingAddress: billing.line1 || form.billingAddress,
+      billingCity: billing.city || form.billingCity,
+      billingState: billing.state || form.billingState,
+      billingCountry: billing.country || form.billingCountry,
+      billingPincode: billing.pincode || form.billingPincode,
+    } : {};
+    const clean = sanitizeObj({...form, ...synced, ...billingSynced});
     if (modal.mode === "add") setAccounts(p => [...p, {...clean}]);
     else setAccounts(p => p.map(a => a.id === clean.id ? {...clean} : a));
     setModal(null); setDetail(null); setFormErrors({});
@@ -903,12 +955,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
               </select>
             </div>
           </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Address</label>
-              <input value={form.address||""} onChange={e => setForm(f => ({...f,address:e.target.value}))} placeholder="Full address"/>
-            </div>
-          </div>
+          {/* Legacy single-address input removed — managed via Address Book section below */}
           <div className="form-row"><div className="form-group"><label>Status</label><select value={form.status} onChange={e => setForm(f => ({...f,status:e.target.value}))}><option>Active</option><option>Prospect</option><option>Inactive</option></select></div><div className="form-group"><label>Segment</label><select value={form.segment} onChange={e => setForm(f => ({...f,segment:e.target.value}))}>{["Enterprise","Mid-Market","SMB","Government","Association"].map(s => <option key={s}>{s}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>ARR (₹L)</label><input type="number" min="0" value={form.arrRevenue} onChange={e => setForm(f => ({...f,arrRevenue:+e.target.value}))}/><FormError error={formErrors.arrRevenue}/></div><div className="form-group"><label>Potential (₹L)</label><input type="number" min="0" value={form.potential} onChange={e => setForm(f => ({...f,potential:+e.target.value}))}/><FormError error={formErrors.potential}/></div></div>
           <div className="form-row"><div className="form-group"><label>Website</label><input value={form.website} onChange={e => setForm(f => ({...f,website:e.target.value}))} placeholder="website.com"/></div><div className="form-group"><label>Owner</label><select value={form.owner} onChange={e => setForm(f => ({...f,owner:e.target.value}))}>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
@@ -936,21 +983,42 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
             <div className="form-group"><label>PO Mandatory</label><select value={form.poMandatory||"No"} onChange={e => setForm(f => ({...f,poMandatory:e.target.value}))}><option>Yes</option><option>No</option></select></div>
           </div>
 
-          {/* ── Address Details ── */}
-          <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:16,marginBottom:8,borderTop:"1px solid var(--border)",paddingTop:14}}>Address Details</div>
-          <div className="form-row">
-            <div className="form-group"><label>State / Province</label><input value={form.state||""} onChange={e => setForm(f => ({...f,state:e.target.value}))} placeholder="Registered state"/></div>
-            <div className="form-group"><label>PIN / ZIP Code</label><input value={form.pincode||""} onChange={e => setForm(f => ({...f,pincode:e.target.value}))} placeholder="Pincode"/></div>
+          {/* ── Address Book (multi-address per account; contacts link to one of these) ── */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,marginBottom:8,borderTop:"1px solid var(--border)",paddingTop:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Address Book ({(form.addresses||[]).length})</div>
+            <button type="button" className="btn btn-sec btn-sm" onClick={addAddress}><Plus size={13}/> Add Address</button>
           </div>
-          <div className="form-row"><div className="form-group"><label>Billing Address (if different)</label><input value={form.billingAddress||""} onChange={e => setForm(f => ({...f,billingAddress:e.target.value}))} placeholder="Billing address line"/></div></div>
-          <div className="form-row">
-            <div className="form-group"><label>Billing City</label><input value={form.billingCity||""} onChange={e => setForm(f => ({...f,billingCity:e.target.value}))} placeholder="Billing city"/></div>
-            <div className="form-group"><label>Billing State</label><input value={form.billingState||""} onChange={e => setForm(f => ({...f,billingState:e.target.value}))} placeholder="Billing state"/></div>
+          <div style={{fontSize:11,color:"var(--text3)",marginBottom:10,fontStyle:"italic"}}>
+            Add every office / branch / billing location for this company. Contacts must link to one of these addresses.
           </div>
-          <div className="form-row">
-            <div className="form-group"><label>Billing Pincode</label><input value={form.billingPincode||""} onChange={e => setForm(f => ({...f,billingPincode:e.target.value}))} placeholder="Billing PIN/ZIP"/></div>
-            <div className="form-group"><label>Billing Country</label><input value={form.billingCountry||""} onChange={e => setForm(f => ({...f,billingCountry:e.target.value}))} placeholder="Billing country"/></div>
-          </div>
+          {(form.addresses||[]).length === 0 && (
+            <div style={{background:"#FEF3C7",border:"1px solid #FCD34D",padding:"10px 14px",borderRadius:8,fontSize:12,color:"#92400E",marginBottom:12}}>
+              No addresses yet. Add at least one — contacts cannot be saved against an account that has no addresses.
+            </div>
+          )}
+          {(form.addresses||[]).map((addr, idx) => (
+            <div key={addr.id} style={{border:"1px solid var(--border)",borderRadius:8,padding:"12px 14px",marginBottom:10,background:addr.isPrimary?"#F0FDF4":"#fff"}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+                <input value={addr.label||""} onChange={e=>updateAddress(idx,{label:e.target.value})} placeholder="Label (e.g. Mumbai HQ, Delhi Branch)" style={{flex:1,fontWeight:600,fontSize:13}}/>
+                <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,fontWeight:600,color:"#15803D",cursor:"pointer"}}>
+                  <input type="checkbox" checked={!!addr.isPrimary} onChange={e=>updateAddress(idx,{isPrimary:e.target.checked})}/> Primary
+                </label>
+                <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,fontWeight:600,color:"#1E40AF",cursor:"pointer"}}>
+                  <input type="checkbox" checked={!!addr.isBilling} onChange={e=>updateAddress(idx,{isBilling:e.target.checked})}/> Billing
+                </label>
+                <button type="button" className="icon-btn" onClick={()=>removeAddress(idx)} title="Remove address"><Trash2 size={14}/></button>
+              </div>
+              <div className="form-row"><div className="form-group" style={{marginBottom:8}}><label>Address Line</label><input value={addr.line1||""} onChange={e=>updateAddress(idx,{line1:e.target.value})} placeholder="Street, building, floor"/></div></div>
+              <div className="form-row">
+                <div className="form-group" style={{marginBottom:0}}><label>City</label><input value={addr.city||""} onChange={e=>updateAddress(idx,{city:e.target.value})}/></div>
+                <div className="form-group" style={{marginBottom:0}}><label>State</label><input value={addr.state||""} onChange={e=>updateAddress(idx,{state:e.target.value})}/></div>
+              </div>
+              <div className="form-row" style={{marginTop:8}}>
+                <div className="form-group" style={{marginBottom:0}}><label>Pincode</label><input value={addr.pincode||""} onChange={e=>updateAddress(idx,{pincode:e.target.value})}/></div>
+                <div className="form-group" style={{marginBottom:0}}><label>Country</label><input value={addr.country||""} onChange={e=>updateAddress(idx,{country:e.target.value})}/></div>
+              </div>
+            </div>
+          ))}
 
           {/* ── Billing Profile ── */}
           <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:16,marginBottom:8,borderTop:"1px solid var(--border)",paddingTop:14}}>Billing Profile</div>
