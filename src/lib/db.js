@@ -93,6 +93,15 @@ const toSnake = (obj, module) => {
     keepLeadOpen:"keep_lead_open", followupTitle:"followup_title",
     followupAssign:"followup_assign", followupDue:"followup_due",
     taskType:"task_type", taskStatus:"task_status",
+    // Lead marketing / extra contact / pipeline fields
+    // (columns added by supabase/add_missing_lead_fields_v1.sql)
+    companyWebsite:"company_website", alternatePhone:"alternate_phone",
+    alternateEmail:"alternate_email", linkedInUrl:"linked_in_url",
+    annualRevenue:"annual_revenue", campaignName:"campaign_name",
+    referredBy:"referred_by", expectedCloseDate:"expected_close_date",
+    proposalSent:"proposal_sent", demoScheduled:"demo_scheduled",
+    competitorName:"competitor_name", lastContactDate:"last_contact_date",
+    productSelection:"product_selection",
     // soft delete
     isDeleted:"is_deleted", deletedAt:"deleted_at", deletedBy:"deleted_by",
   };
@@ -153,6 +162,14 @@ const toCamel = (obj, module) => {
     keep_lead_open:"keepLeadOpen", followup_title:"followupTitle",
     followup_assign:"followupAssign", followup_due:"followupDue",
     task_type:"taskType", task_status:"taskStatus",
+    // Lead marketing / extra contact / pipeline fields
+    company_website:"companyWebsite", alternate_phone:"alternatePhone",
+    alternate_email:"alternateEmail", linked_in_url:"linkedInUrl",
+    annual_revenue:"annualRevenue", campaign_name:"campaignName",
+    referred_by:"referredBy", expected_close_date:"expectedCloseDate",
+    proposal_sent:"proposalSent", demo_scheduled:"demoScheduled",
+    competitor_name:"competitorName", last_contact_date:"lastContactDate",
+    product_selection:"productSelection",
     // soft delete
     is_deleted:"isDeleted", deleted_at:"deletedAt", deleted_by:"deletedBy",
   };
