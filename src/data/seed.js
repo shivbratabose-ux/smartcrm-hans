@@ -230,7 +230,14 @@ export const INIT_CONTRACTS = [];
 export const INIT_COLLECTIONS = [];
 export const INIT_TARGETS = [];
 
-export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:"",emailLog:[],lastReminderAt:"",changeLog:[],attachments:[]};
+export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:"",emailLog:[],lastReminderAt:"",changeLog:[],attachments:[],
+  // ── Customer billing snapshot (taken at quote creation; editable on quote) ──
+  currency:"INR",exchangeRate:1,legalName:"",billingAddressSnapshot:"",shippingAddressSnapshot:"",gstin:"",pan:"",taxTreatment:"",poMandatory:"",poNumber:"",paymentTerms:"",creditDays:0,billingContactName:"",billingContactEmail:"",financeContactEmail:"",
+  // ── Sales / deal context (from Opportunity) ──
+  territory:"",lob:"",dealSize:"",secondaryContactIds:[],contactRoles:[],sourceLeadId:"",
+  // ── Sales narrative ──
+  scope:"",assumptions:"",exclusions:"",deliverables:"",preparedBy:"",salesEngineer:"",coverLetter:""
+};
 
 // Change-log entry: pushed onto quote.changeLog[] whenever the quote is mutated.
 // field=null is reserved for status / lifecycle transitions.

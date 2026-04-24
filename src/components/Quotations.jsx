@@ -120,6 +120,31 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const [sourceMode,setSourceMode]=useState("opportunity"); // "opportunity" | "lead" | "account"
   const [sourceLeadId,setSourceLeadId]=useState("");
 
+  /* ── Snapshot an Account's billing/legal context onto the quote ──
+     We copy into the form (editable) so a later account edit doesn't
+     rewrite historical quote PDFs. Only fill blanks on the form so the
+     user's manual edits win. */
+  const snapshotAccount=(acc,f)=>{
+    if(!acc) return {};
+    const billingAddr=acc.billingAddress||[acc.billingAddress,acc.billingCity,acc.billingState,acc.billingPincode,acc.billingCountry].filter(Boolean).join(", ")||acc.address||"";
+    return {
+      legalName:         f.legalName         || acc.legalName         || acc.name || "",
+      billingAddressSnapshot:  f.billingAddressSnapshot  || billingAddr,
+      shippingAddressSnapshot: f.shippingAddressSnapshot || billingAddr,
+      gstin:             f.gstin             || acc.gstin             || "",
+      pan:               f.pan               || acc.pan               || "",
+      taxTreatment:      f.taxTreatment      || acc.taxTreatment      || "",
+      poMandatory:       f.poMandatory       || acc.poMandatory       || "",
+      paymentTerms:      f.paymentTerms      || acc.paymentTerms      || "",
+      creditDays:        f.creditDays        || acc.creditDays        || 0,
+      currency:          f.currency          || acc.currency          || "INR",
+      billingContactName:  f.billingContactName  || acc.billingContactName  || acc.primaryContact || "",
+      billingContactEmail: f.billingContactEmail || acc.billingContactEmail || acc.primaryEmail   || "",
+      financeContactEmail: f.financeContactEmail || acc.financeContactEmail || "",
+      territory:         f.territory         || acc.territory         || "",
+    };
+  };
+
   /* ── Auto-populate from a selected Opportunity ── */
   const applyOppCascade=(oppId)=>{
     const opp=opps.find(o=>o.id===oppId);
@@ -127,12 +152,19 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     setForm(f=>{
       const acc=accounts.find(a=>a.id===opp.accountId);
       const sel=(Array.isArray(opp.productSelection)&&opp.productSelection.length>0)?opp.productSelection:(opp.products||[]).map(pid=>({productId:pid,moduleIds:[],noAddons:false}));
-      // Synthesize line items if none yet & opp has a value
+      // Synthesize line items: one per productSelection entry when possible,
+      // else a single deal-value lump sum.
       let items=f.items;
-      if((!items||items.length===0)&&opp.value){
-        items=[{description:opp.title||"Deal value",qty:1,unitPrice:Number(opp.value)||0,amount:Number(opp.value)||0}];
+      if(!items||items.length===0){
+        if(sel.length>0 && opp.value){
+          const per=Number(opp.value)/sel.length;
+          items=sel.map(s=>({description:`${s.productId}${Array.isArray(s.moduleIds)&&s.moduleIds.length?` (${s.moduleIds.join(", ")})`:""}`,qty:1,unitPrice:+per.toFixed(2),amount:+per.toFixed(2)}));
+        } else if(opp.value){
+          items=[{description:opp.title||"Deal value",qty:1,unitPrice:Number(opp.value)||0,amount:Number(opp.value)||0}];
+        }
       }
       const totals=recalc(items,f.taxType,f.discount);
+      const accSnap=snapshotAccount(acc,f);
       return {
         ...f,
         oppId:opp.id,
@@ -143,6 +175,18 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         title:f.title||`${opp.title||"Quote"} – ${acc?.name||""}`.trim(),
         items,
         ...totals,
+        // ── Deal context from opportunity ──
+        currency:     opp.currency     || accSnap.currency     || f.currency,
+        territory:    opp.territory    || accSnap.territory    || f.territory,
+        lob:          opp.lob          || f.lob,
+        dealSize:     opp.dealSize     || f.dealSize,
+        secondaryContactIds: (Array.isArray(opp.secondaryContactIds)&&opp.secondaryContactIds.length)?[...opp.secondaryContactIds]:f.secondaryContactIds,
+        contactRoles:        (Array.isArray(opp.contactRoles)&&opp.contactRoles.length)?[...opp.contactRoles]:f.contactRoles,
+        sourceLeadId: (Array.isArray(opp.sourceLeadIds)&&opp.sourceLeadIds[0])||opp.leadId||f.sourceLeadId,
+        expiryDate:   f.expiryDate || opp.decisionDate || opp.closeDate || "",
+        notes:        f.notes || [opp.nextStep&&`Next step: ${opp.nextStep}`,opp.competitors&&`Competitors: ${opp.competitors}`].filter(Boolean).join(" · "),
+        // ── Billing snapshot from account ──
+        ...accSnap,
       };
     });
   };
@@ -153,12 +197,20 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     setSourceLeadId(leadId);
     if(!lead) return;
     setForm(f=>{
+      const acc=accounts.find(a=>a.id===lead.accountId);
       const sel=(Array.isArray(lead.productSelection)&&lead.productSelection.length>0)?lead.productSelection:(lead.product?[{productId:lead.product,moduleIds:[],noAddons:false}]:[]);
       let items=f.items;
       if((!items||items.length===0)&&lead.estimatedValue){
         items=[{description:`${lead.product||"Solution"} – ${lead.company||""}`.trim(),qty:1,unitPrice:Number(lead.estimatedValue)||0,amount:Number(lead.estimatedValue)||0}];
       }
       const totals=recalc(items,f.taxType,f.discount);
+      const accSnap=snapshotAccount(acc,f);
+      const discoveryNotes=[
+        lead.painPoints&&(Array.isArray(lead.painPoints)?lead.painPoints.join("; "):lead.painPoints),
+        lead.decisionTimeline&&`Decision timeline: ${lead.decisionTimeline}`,
+        lead.budgetRange&&`Budget: ${lead.budgetRange}`,
+        lead.competitorName&&`Competitor: ${lead.competitorName}`,
+      ].filter(Boolean).join(" · ");
       return {
         ...f,
         accountId:lead.accountId||f.accountId,
@@ -166,11 +218,28 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         product:sel[0]?.productId||f.product,
         productSelection:sel,
         title:f.title||`Proposal for ${lead.company||lead.contact||""}`.trim(),
-        notes:f.notes||`Generated from lead ${lead.leadId||lead.id}. Source: ${lead.source||"—"}.`,
+        notes:f.notes|| (discoveryNotes?`${discoveryNotes} · `:"")+`Generated from lead ${lead.leadId||lead.id}. Source: ${lead.source||"—"}.`,
         items,
         ...totals,
+        expiryDate: f.expiryDate || lead.expectedCloseDate || "",
+        sourceLeadId: lead.id,
+        territory: lead.region || accSnap.territory || f.territory,
+        ...accSnap,
+        // Legal name falls back to lead company when no Account linked yet
+        legalName: f.legalName || acc?.legalName || acc?.name || lead.company || "",
       };
     });
+  };
+
+  /* ── Auto-populate from a selected Account (Direct mode) ── */
+  const applyAccountCascade=(accountId)=>{
+    const acc=accounts.find(a=>a.id===accountId);
+    setForm(f=>({
+      ...f,
+      accountId: accountId||"",
+      ...snapshotAccount(acc,f),
+      title: f.title || (acc ? `Quote – ${acc.name}` : f.title),
+    }));
   };
 
   const enriched=useMemo(()=>quotes.map((q,idx)=>{
@@ -963,7 +1032,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             </div>
 
             <div className="form-row full"><div className="form-group"><label>Quote Title *</label><input value={form.title} onChange={e=>{setForm(f=>({...f,title:e.target.value}));setFormErrors(e=>({...e,title:undefined}));}} placeholder="e.g. WiseHandling Deploy – Colossal Avia" style={formErrors.title?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.title}/></div></div>
-            <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{setForm(f=>({...f,accountId:e.target.value,contactId:""}));setFormErrors(e=>({...e,accountId:undefined}));}} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select...</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div>
+            <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{const id=e.target.value;applyAccountCascade(id);setForm(f=>({...f,contactId:""}));setFormErrors(er=>({...er,accountId:undefined}));}} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select...</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div>
               <div className="form-group"><label>Contact</label><select value={form.contactId} onChange={e=>setForm(f=>({...f,contactId:e.target.value}))}><option value="">Select...</option>{contacts.filter(c=>!form.accountId||c.accountId===form.accountId).map(c=><option key={c.id} value={c.id}>{c.name}{c.designation?` — ${c.designation}`:""}</option>)}</select></div>
             </div>
 
