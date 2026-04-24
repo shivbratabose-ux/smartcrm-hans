@@ -783,7 +783,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   const stalledCount = openDeals.filter(o => getDealHealth(o.id, activities) === "stalled").length;
 
   /* form handlers */
-  const openAdd = () => { setForm({ ...BLANK_OPP, id: `o${uid()}`, productSelection: [] }); setFormErrors({}); setModal({ mode: "add" }); };
+  const openAdd = () => { setForm({ ...BLANK_OPP, id: `o${uid()}`, productSelection: [], owner: currentUser || BLANK_OPP.owner }); setFormErrors({}); setModal({ mode: "add" }); };
   const openEdit = o => {
     // Backfill productSelection from legacy `products` array if missing,
     // so deals created before the picker shipped still load editable.
