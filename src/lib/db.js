@@ -292,8 +292,12 @@ export async function insertRecord(module, record) {
   // Remove undefined/null keys
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
+  // .maybeSingle() so a post-insert RLS visibility miss (row written, but
+  // RLS filter hides it from the caller) returns {data:null,error:null}
+  // instead of "Cannot coerce the result to a single JSON object". The
+  // insert itself still succeeded; we just can't read the row back.
   const { data, error } = await writeWithSchemaHeal(table, snaked,
-    payload => supabase.from(table).insert(payload).select().single());
+    payload => supabase.from(table).insert(payload).select().maybeSingle());
   if (error) dbLog('error', `[DB] insert ${module}:`, error);
   return { data: data ? toCamel(data, module) : record, error };
 }
@@ -310,8 +314,13 @@ export async function updateRecord(module, id, updates) {
   const snaked = toSnake(updates, module);
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
+  // .maybeSingle() so "update matched 0 rows" or "RLS hides the post-update
+  // row from caller" returns {data:null,error:null} instead of the PostgREST
+  // "Cannot coerce the result to a single JSON object" error. Users were
+  // seeing sync-failed toasts on every contact/lead edit even though the
+  // write landed, because RLS filters the returned row post-update.
   const { data, error } = await writeWithSchemaHeal(table, snaked,
-    payload => supabase.from(table).update(payload).eq("id", id).select().single());
+    payload => supabase.from(table).update(payload).eq("id", id).select().maybeSingle());
   if (error) dbLog('error', `[DB] update ${module}:`, error);
   return { data: data ? toCamel(data, module) : updates, error };
 }
