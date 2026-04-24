@@ -257,7 +257,22 @@ export const BLANK_EMAIL_LOG={id:"",sentAt:"",sentBy:"",to:"",cc:"",subject:"",k
 // Reminder cadence after a quote is Sent (and not yet Accepted / Rejected / Expired):
 // fire follow-up nudges at these day offsets relative to sentDate.
 export const QUOTE_REMINDER_OFFSETS=[7,14];
-export const BLANK_QUOTE_ITEM={description:"",qty:1,unitPrice:0,amount:0,unitCost:0};
+// Quote line item.
+//   - mrp / unit / currency: snapshot from catalogue at time of "Add from Catalogue".
+//     Stored on the line so a later master-rate edit doesn't silently rewrite
+//     historical quote PDFs.
+//   - discountType ("pct" | "abs"): whether discountValue is a % off MRP or an
+//     absolute amount (in same currency as MRP).
+//   - unitPrice: derived = mrp - discount (per unit). Stays editable so a sales
+//     rep can override even after picking from the catalogue.
+//   - productId / moduleId: cross-reference back to the catalogue master so the
+//     PDF and approval flow can group lines by product.
+export const BLANK_QUOTE_ITEM={
+  description:"", qty:1, unitPrice:0, amount:0, unitCost:0,
+  productId:"", moduleId:"",
+  mrp:0, unit:"", currency:"INR",
+  discountType:"pct", discountValue:0,
+};
 export const BLANK_COMM_LOG={type:"Email Sent",subject:"",body:"",from:"",to:"",accountId:"",contactId:"",oppId:"",date:"",status:"Sent",owner:"u1"};
 export const BLANK_EVENT={title:"",type:"Call",status:"Scheduled",date:"",time:"09:00",endTime:"09:30",accountId:"",contactId:"",oppId:"",owner:"u1",attendees:[],location:"",notes:"",reminderMin:15};
 

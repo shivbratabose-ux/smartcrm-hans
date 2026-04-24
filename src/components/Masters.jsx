@@ -319,7 +319,7 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
   const isAdmin = ["admin","md","director","vp_sales_mkt"].includes(_myRole);
   const [expanded,setExpanded]=useState({});
   const [modal,setModal]=useState(null);
-  const [form,setForm]=useState({name:"",type:"Core",desc:""});
+  const [form,setForm]=useState({name:"",type:"Core",desc:"",mrp:0,unit:"License",currency:"INR"});
   const [prodForm,setProdForm]=useState({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF",lineManagerId:""});
   const [confirm,setConfirm]=useState(null);
 
@@ -346,14 +346,15 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
   ];
 
   const toggle=id=>setExpanded(e=>({...e,[id]:!e[id]}));
-  const openAddMod=prodId=>{setForm({name:"",type:"Core",desc:""});setModal({mode:"addmod",prodId});};
-  const openEditMod=(prodId,mod)=>{setForm({name:mod.name,type:mod.type,desc:mod.desc});setModal({mode:"editmod",prodId,modId:mod.id});};
+  const openAddMod=prodId=>{setForm({name:"",type:"Core",desc:"",mrp:0,unit:"License",currency:"INR"});setModal({mode:"addmod",prodId});};
+  const openEditMod=(prodId,mod)=>{setForm({name:mod.name,type:mod.type,desc:mod.desc,mrp:Number(mod.mrp)||0,unit:mod.unit||"License",currency:mod.currency||"INR"});setModal({mode:"editmod",prodId,modId:mod.id});};
   const saveMod=()=>{
     if(!form.name.trim()) return;
+    const payload={name:form.name.trim(),type:form.type,desc:form.desc,mrp:Number(form.mrp)||0,unit:form.unit||"License",currency:form.currency||"INR"};
     setCatalog(c=>c.map(p=>{
       if(p.id!==modal.prodId) return p;
-      if(modal.mode==="addmod") return {...p,modules:[...p.modules,{id:`m_${uid()}`,name:form.name.trim(),type:form.type,desc:form.desc}]};
-      return {...p,modules:p.modules.map(m=>m.id===modal.modId?{...m,name:form.name.trim(),type:form.type,desc:form.desc}:m)};
+      if(modal.mode==="addmod") return {...p,modules:[...p.modules,{id:`m_${uid()}`,...payload}]};
+      return {...p,modules:p.modules.map(m=>m.id===modal.modId?{...m,...payload}:m)};
     }));
     setModal(null);
   };
@@ -443,17 +444,25 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
               {isOpen&&(
                 <div className="prod-catalog-body">
                   {p.modules.length===0&&<div style={{padding:"16px 18px",color:"var(--text3)",fontSize:13}}>No modules yet. Add the first module or sub-product above.</div>}
-                  {p.modules.map(m=>(
+                  {p.modules.map(m=>{
+                    const mrp=Number(m.mrp)||0;
+                    const cur=m.currency||"INR";
+                    const sym=cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":cur+" ";
+                    return (
                     <div key={m.id} className="module-row">
                       <span className={`module-type-tag ${MOD_TYPE_CLS[m.type]||"mod-core"}`}>{m.type}</span>
                       <span className="module-name">{m.name}</span>
                       <span className="module-desc">{m.desc}</span>
+                      <span style={{fontSize:11,fontWeight:600,color:mrp>0?"#047857":"#94A3B8",background:mrp>0?"#ECFDF5":"#F1F5F9",border:`1px solid ${mrp>0?"#A7F3D0":"#E2E8F0"}`,padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap",flexShrink:0}} title="List price (MRP)">
+                        {mrp>0?`${sym}${mrp.toLocaleString()} / ${m.unit||"License"}`:"No MRP"}
+                      </span>
                       <div style={{display:"flex",gap:4,flexShrink:0}}>
                         <button className="icon-btn" onClick={()=>openEditMod(p.id,m)}><Edit2 size={13}/></button>
                         <button className="icon-btn" onClick={()=>setConfirm({prodId:p.id,modId:m.id,name:m.name})}><Trash2 size={13}/></button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -469,11 +478,30 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
             </div>
           ):null;})()}
           <div className="form-row full"><div className="form-group"><label>Module / Feature Name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Ocean Tracking, OCR Engine, Mobile App"/></div></div>
-          <div className="form-row">
+          <div className="form-row three">
             <div className="form-group"><label>Type</label>
               <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>
                 {["Core","Add-on","Integration","Analytics","Mobile"].map(t=><option key={t}>{t}</option>)}
               </select>
+            </div>
+            <div className="form-group"><label>Unit
+              <HelpTooltip text="What the MRP is priced per: License, User, Site, Setup (one-time), Year, Month."/>
+            </label>
+              <select value={form.unit} onChange={e=>setForm(f=>({...f,unit:e.target.value}))}>
+                {["License","User","Site","Setup","Year","Month","Transaction"].map(u=><option key={u}>{u}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label>Currency</label>
+              <select value={form.currency} onChange={e=>setForm(f=>({...f,currency:e.target.value}))}>
+                {["INR","USD","EUR","GBP","AED","SGD"].map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>MRP / List Price
+              <HelpTooltip text="Master rate (no discount). Quotes auto-populate this when the module is added; the rep then applies a discount in % or absolute amount."/>
+            </label>
+              <input type="number" min={0} step={1} value={form.mrp} onChange={e=>setForm(f=>({...f,mrp:+e.target.value}))} placeholder="0"/>
             </div>
           </div>
           <div className="form-group"><label>Description</label><textarea value={form.desc} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} rows={2} placeholder="Brief description of what this module does…"/></div>

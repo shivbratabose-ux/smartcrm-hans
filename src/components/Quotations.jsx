@@ -195,11 +195,36 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       // else a single deal-value lump sum.
       let items=f.items;
       if(!items||items.length===0){
-        if(sel.length>0 && opp.value){
+        // Prefer building lines from the catalogue using each picked module's
+        // MRP — gives the rep a real starting price to discount against. We
+        // only fall back to splitting opp.value when no MRP is available.
+        const fromCatalog=[];
+        for(const s of sel){
+          const prod=(catalog||[]).find(p=>p.id===s.productId);
+          if(!prod) continue;
+          const modIds=Array.isArray(s.moduleIds)?s.moduleIds:[];
+          if(modIds.length===0) continue;
+          for(const mid of modIds){
+            const mod=(prod.modules||[]).find(m=>m.id===mid);
+            if(!mod) continue;
+            const mrp=Number(mod.mrp)||0;
+            fromCatalog.push({
+              ...BLANK_QUOTE_ITEM,
+              description: `${prod.name} – ${mod.name}`,
+              productId: prod.id, moduleId: mod.id,
+              mrp, unit: mod.unit||"License", currency: mod.currency||"INR",
+              qty: 1,
+              unitPrice: mrp, amount: mrp,
+            });
+          }
+        }
+        if(fromCatalog.length>0){
+          items=fromCatalog;
+        } else if(sel.length>0 && opp.value){
           const per=Number(opp.value)/sel.length;
-          items=sel.map(s=>({description:`${s.productId}${Array.isArray(s.moduleIds)&&s.moduleIds.length?` (${s.moduleIds.join(", ")})`:""}`,qty:1,unitPrice:+per.toFixed(2),amount:+per.toFixed(2)}));
+          items=sel.map(s=>({...BLANK_QUOTE_ITEM,description:`${s.productId}${Array.isArray(s.moduleIds)&&s.moduleIds.length?` (${s.moduleIds.join(", ")})`:""}`,qty:1,unitPrice:+per.toFixed(2),amount:+per.toFixed(2)}));
         } else if(opp.value){
-          items=[{description:opp.title||"Deal value",qty:1,unitPrice:Number(opp.value)||0,amount:Number(opp.value)||0}];
+          items=[{...BLANK_QUOTE_ITEM,description:opp.title||"Deal value",qty:1,unitPrice:Number(opp.value)||0,amount:Number(opp.value)||0}];
         }
       }
       const totals=recalc(items,f.taxType,f.discount);
@@ -651,12 +676,59 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   };
   const del=(id)=>{setQuotes(p=>softDeleteById(p,id,currentUser));setConfirm(null);setDetail(null);};
 
+  // Per-line price math:
+  //   unitPrice = mrp - (discountType==="pct" ? mrp*discountValue/100 : discountValue)
+  //   amount    = unitPrice * qty
+  // unitPrice stays editable (manual override). Whenever mrp/discountType/
+  // discountValue change we recompute unitPrice; whenever the rep edits
+  // unitPrice directly we leave the discount fields alone (they become stale
+  // — that's intentional, an explicit override should win).
+  const recalcLine=(item)=>{
+    const mrp=Number(item.mrp)||0;
+    const dv=Number(item.discountValue)||0;
+    const dt=item.discountType||"pct";
+    let unitPrice=Number(item.unitPrice)||0;
+    if(mrp>0){
+      const discountAmt=dt==="pct"?(mrp*dv)/100:dv;
+      unitPrice=Math.max(0,+(mrp-discountAmt).toFixed(2));
+    }
+    const qty=Number(item.qty)||0;
+    return {...item,unitPrice,amount:+(unitPrice*qty).toFixed(2)};
+  };
   const addItem=()=>{setForm(f=>({...f,items:[...f.items,{...BLANK_QUOTE_ITEM}]}));};
   const updateItem=(idx,field,val)=>{
     setForm(f=>{
       const items=[...f.items];
       items[idx]={...items[idx],[field]:val};
-      if(field==="qty"||field==="unitPrice") items[idx].amount=items[idx].qty*items[idx].unitPrice;
+      // Recompute the line whenever a pricing input changed. For a direct
+      // unitPrice edit we still recompute amount but skip the mrp→price step
+      // (already done by setting unitPrice).
+      if(["mrp","discountType","discountValue","qty"].includes(field)){
+        items[idx]=recalcLine(items[idx]);
+      } else if(field==="unitPrice"){
+        items[idx].amount=+(Number(items[idx].unitPrice||0)*Number(items[idx].qty||0)).toFixed(2);
+      }
+      const totals=recalc(items,f.taxType,f.discount);
+      return {...f,items,...totals};
+    });
+  };
+  // Add a line item from the catalogue: snapshots MRP, unit, currency onto
+  // the line so a later master-rate change doesn't rewrite this quote.
+  const addItemFromCatalog=(prod,mod)=>{
+    const item=recalcLine({
+      ...BLANK_QUOTE_ITEM,
+      description: `${prod.name} – ${mod.name}`,
+      productId: prod.id,
+      moduleId: mod.id,
+      mrp: Number(mod.mrp)||0,
+      unit: mod.unit||"License",
+      currency: mod.currency||"INR",
+      qty: 1,
+      discountType: "pct",
+      discountValue: 0,
+    });
+    setForm(f=>{
+      const items=[...f.items,item];
       const totals=recalc(items,f.taxType,f.discount);
       return {...f,items,...totals};
     });
@@ -1214,22 +1286,89 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
           {formTab==="items"&&(<div>
             <FormError error={formErrors.items}/>
+            {/* ── Add-from-Catalogue picker ── */}
+            {/* Snapshots MRP / unit / currency from the master so a later
+                rate edit doesn't silently rewrite this quote. */}
+            <div style={{background:"#F8FAFC",border:"1px solid var(--border)",borderRadius:8,padding:"10px 12px",marginBottom:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>ADD FROM CATALOGUE</span>
+              <select
+                value=""
+                onChange={e=>{
+                  if(!e.target.value) return;
+                  const [pid,mid]=e.target.value.split("||");
+                  const prod=(catalog||[]).find(p=>p.id===pid);
+                  const mod=prod?.modules?.find(m=>m.id===mid);
+                  if(prod && mod) addItemFromCatalog(prod,mod);
+                  e.target.value="";
+                }}
+                style={{flex:1,minWidth:280,fontSize:13,padding:"6px 8px"}}
+                title="Pick a module to add as a quote line. MRP is snapshotted onto the line."
+              >
+                <option value="">— Pick product · module to add —</option>
+                {(catalog||[]).map(p=>(
+                  <optgroup key={p.id} label={p.name}>
+                    {(p.modules||[]).map(m=>{
+                      const mrp=Number(m.mrp)||0;
+                      const cur=m.currency||"INR";
+                      const sym=cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":cur+" ";
+                      return <option key={m.id} value={`${p.id}||${m.id}`}>
+                        {m.type} · {m.name} {mrp>0?`— ${sym}${mrp.toLocaleString()} / ${m.unit||"License"}`:"(no MRP)"}
+                      </option>;
+                    })}
+                  </optgroup>
+                ))}
+              </select>
+              <span style={{fontSize:11,color:"var(--text3)"}}>or</span>
+              <button className="btn btn-sec btn-sm" onClick={addItem}><Plus size={13}/>Blank Line</button>
+            </div>
+
+            {/* ── Line items table ── */}
+            {form.items.length===0 && (
+              <div style={{padding:"24px 16px",textAlign:"center",color:"var(--text3)",fontSize:13,background:"var(--s2)",borderRadius:8,marginBottom:8}}>
+                No line items yet. Pick a module from the catalogue above, or add a blank line.
+              </div>
+            )}
             {form.items.map((item,i)=>{
               const cost=Number(item.unitCost||0)*Number(item.qty||0);
               const margin=Number(item.amount||0)-cost;
               const marginPct=item.amount>0?+((margin/item.amount)*100).toFixed(1):0;
+              const cur=item.currency||"INR";
+              const sym=cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":cur+" ";
+              const mrp=Number(item.mrp)||0;
+              const dt=item.discountType||"pct";
+              const dv=Number(item.discountValue)||0;
+              const discAmt=mrp>0?(dt==="pct"?(mrp*dv)/100:dv):0;
+              const cols=isManager
+                ? "1.6fr 50px 80px 110px 80px 70px 70px 80px 30px"
+                : "1.8fr 60px 90px 130px 90px 90px 30px";
               return (
-              <div key={i} style={{display:"grid",gridTemplateColumns:isManager?"2fr 50px 70px 70px 70px 80px 30px":"2fr 60px 80px 80px 30px",gap:8,alignItems:"end",marginBottom:8}}>
+              <div key={i} style={{display:"grid",gridTemplateColumns:cols,gap:6,alignItems:"end",marginBottom:8}}>
                 <div className="form-group"><label>{i===0?"Description":""}</label><input value={item.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Line item description"/></div>
                 <div className="form-group"><label>{i===0?"Qty":""}</label><input type="number" min={1} value={item.qty} onChange={e=>updateItem(i,"qty",+e.target.value)}/></div>
-                <div className="form-group"><label>{i===0?"Price(L)":""}</label><input type="number" min={0} step={0.5} value={item.unitPrice} onChange={e=>updateItem(i,"unitPrice",+e.target.value)}/></div>
-                {isManager && <div className="form-group"><label style={{color:"#92400E"}}>{i===0?"Cost(L)":""}</label><input type="number" min={0} step={0.5} value={item.unitCost||0} onChange={e=>updateItem(i,"unitCost",+e.target.value)} style={{background:"#FFFBEB"}} title="Internal cost — never shown to customer"/></div>}
+                <div className="form-group">
+                  <label>{i===0?`MRP (${cur})`:""}</label>
+                  <input type="number" min={0} step={1} value={item.mrp||0} onChange={e=>updateItem(i,"mrp",+e.target.value)} title={mrp>0?`List price per ${item.unit||"unit"}`:"No MRP — type the list price or leave 0 to bypass discount math"}/>
+                </div>
+                <div className="form-group">
+                  <label>{i===0?"Discount":""}</label>
+                  <div style={{display:"flex",gap:0}}>
+                    <input type="number" min={0} step={dt==="pct"?0.5:1} value={dv} onChange={e=>updateItem(i,"discountValue",+e.target.value)} style={{borderTopRightRadius:0,borderBottomRightRadius:0,flex:1,minWidth:0}}/>
+                    <button type="button" className="btn btn-sec btn-xs" style={{borderTopLeftRadius:0,borderBottomLeftRadius:0,padding:"0 8px",fontSize:11,fontWeight:700,minWidth:34,background:dt==="pct"?"#EFF6FF":"#FEF3C7",color:dt==="pct"?"#1D4ED8":"#92400E"}} onClick={()=>updateItem(i,"discountType",dt==="pct"?"abs":"pct")} title={dt==="pct"?"Click to switch to absolute amount off":`Click to switch to % off (currently ${sym} off)`}>
+                      {dt==="pct"?"%":sym.trim()||sym}
+                    </button>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>{i===0?`Price (${cur})`:""}</label>
+                  <input type="number" min={0} step={1} value={item.unitPrice||0} onChange={e=>updateItem(i,"unitPrice",+e.target.value)} style={{background:mrp>0&&dv>0?"#ECFDF5":"#fff",fontWeight:600}} title={mrp>0?`MRP ${sym}${mrp.toLocaleString()} − discount ${sym}${discAmt.toFixed(0)} = ${sym}${(mrp-discAmt).toFixed(0)}. Edit to override.`:"Unit price (no MRP set)"}/>
+                </div>
+                {isManager && <div className="form-group"><label style={{color:"#92400E"}}>{i===0?`Cost (${cur})`:""}</label><input type="number" min={0} step={1} value={item.unitCost||0} onChange={e=>updateItem(i,"unitCost",+e.target.value)} style={{background:"#FFFBEB"}} title="Internal cost — never shown to customer"/></div>}
                 {isManager && <div className="form-group"><label style={{color:"#047857"}}>{i===0?"Margin %":""}</label><input disabled value={item.unitCost>0?`${marginPct}%`:"—"} style={{background:marginPct<20?"#FEF2F2":marginPct<40?"#FFFBEB":"#ECFDF5",color:marginPct<20?"#B91C1C":marginPct<40?"#92400E":"#047857",fontWeight:600}}/></div>}
-                <div className="form-group"><label>{i===0?"Amount":""}</label><input disabled value={`₹${item.amount}`} style={{background:"var(--s2)"}}/></div>
+                <div className="form-group"><label>{i===0?"Amount":""}</label><input disabled value={`${sym}${(Number(item.amount)||0).toLocaleString()}`} style={{background:"var(--s2)",fontWeight:600}}/></div>
                 <button className="icon-btn" style={{marginBottom:4}} onClick={()=>removeItem(i)}><Trash2 size={13}/></button>
               </div>
             );})}
-            <button className="btn btn-sec btn-sm" onClick={addItem} style={{marginTop:4}}><Plus size={13}/>Add Line Item</button>
+            <button className="btn btn-sec btn-sm" onClick={addItem} style={{marginTop:4}}><Plus size={13}/>Add Blank Line</button>
             <div style={{marginTop:16,borderTop:"1px solid var(--border)",paddingTop:12}}>
               <div className="form-row three">
                 <div className="form-group"><label>Tax Type</label><select value={form.taxType} onChange={e=>{const t=e.target.value;setForm(f=>{const totals=recalc(f.items,t,f.discount);return{...f,taxType:t,...totals};});}}>{TAX_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
