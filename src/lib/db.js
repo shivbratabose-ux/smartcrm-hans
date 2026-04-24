@@ -48,6 +48,23 @@ const MODULE_ALIASES = {
   },
 };
 
+// ── DB columns typed as DATE/TIMESTAMP ──
+// Postgres rejects empty strings for these types ("invalid input syntax for
+// type date"). The BLANK_* templates initialize every date field as "", so
+// without coercion the first insert/update always fails. Coerce "" → null
+// before the write hits Supabase. List is in *snake_case* (post-toSnake).
+const DATE_COLUMNS = new Set([
+  "close_date", "call_date", "next_call_date", "invoice_date", "due_date",
+  "created_date", "start_date", "end_date", "join_date", "sent_date",
+  "expiry_date", "next_call", "call_time", "followup_due", "converted_date",
+  "expected_close_date", "last_contact_date", "payment_date", "renewal_date",
+  "service_start_date", "go_live_date", "accepted_date", "decision_date",
+  "reported_date", "resolved_date", "revisit_date", "approval_requested_at",
+  "approved_at", "last_reminder_at", "temp_password_expires_at",
+  "renewal_notified_at", "loss_closed_at", "deleted_at", "created_at",
+  "updated_at", "uploaded_at",
+]);
+
 // ── Field mapping: JS camelCase ↔ DB snake_case ──
 const toSnake = (obj, module) => {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
@@ -113,7 +130,9 @@ const toSnake = (obj, module) => {
     // "Could not find the 'X' column" errors on upsert.
     if (k.startsWith("_")) continue;
     const key = alias[k] || map[k] || k;
-    out[key] = v;
+    // Coerce empty strings → null for date/timestamp columns so Postgres
+    // doesn't reject "invalid input syntax for type date".
+    out[key] = (v === "" && DATE_COLUMNS.has(key)) ? null : v;
   }
   return out;
 };
