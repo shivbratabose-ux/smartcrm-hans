@@ -100,6 +100,47 @@ CREATE TABLE IF NOT EXISTS public.leads (
   evaluating_others TEXT,
   next_step TEXT,
   objections TEXT,
+  -- Multi-contact linkage (drives Lead→Opp conversion)
+  contact_ids TEXT[] DEFAULT '{}',
+  contact_roles JSONB DEFAULT '{}'::jsonb,
+  -- Lifecycle / conversion audit trail
+  stage_history JSONB DEFAULT '[]'::jsonb,
+  converted_opp_ids TEXT[] DEFAULT '{}',
+  converted_date DATE,
+  -- Forecasting / pipeline signals
+  estimated_value NUMERIC DEFAULT 0,
+  expected_close_date DATE,
+  proposal_sent TEXT DEFAULT 'No',
+  demo_scheduled TEXT DEFAULT 'No',
+  competitor_name TEXT,
+  last_contact_date DATE,
+  -- Products & segmentation
+  product_selection JSONB DEFAULT '[]'::jsonb,
+  additional_products TEXT[] DEFAULT '{}',
+  vertical TEXT,
+  region TEXT,
+  -- Org / address / team breakdown
+  branch TEXT,
+  location TEXT,
+  department TEXT,
+  country TEXT,
+  state TEXT,
+  city TEXT,
+  addresses JSONB DEFAULT '[]'::jsonb,
+  sales_team TEXT[] DEFAULT '{}',
+  -- Extra contact fields
+  company_website TEXT,
+  alternate_phone TEXT,
+  alternate_email TEXT,
+  linked_in_url TEXT,
+  -- Marketing / attribution
+  annual_revenue NUMERIC DEFAULT 0,
+  campaign_name TEXT,
+  referred_by TEXT,
+  -- Free-form notes (separate from `remarks`)
+  notes TEXT,
+  -- Qualification checklist (MQL → SQL gate)
+  qualification_checklist JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
