@@ -17,6 +17,36 @@ const SECTOR_MAP_FROM_TYPE = {
   "Government":"Government"
 };
 
+// ── Verify-before-Send checklist ──────────────────────────────────
+// Fields that must be populated before a quote can advance off Draft.
+// Each entry: [fieldName, labelShownToUser, optional predicate(form)].
+// Predicates let us conditionally require fields (e.g. GSTIN only when
+// taxTreatment is an Indian one). A missing predicate means "always required".
+const VERIFY_REQUIRED = [
+  ["legalName",             "Legal / Billing name"],
+  ["billingAddressSnapshot","Billing address"],
+  ["paymentTerms",          "Payment terms"],
+  ["billingContactEmail",   "Billing contact email"],
+  ["currency",              "Currency"],
+  ["gstin",                 "GSTIN",               f => /india|domestic|sez|export/i.test(f.taxTreatment || "")],
+  ["poNumber",              "PO Number",           f => /yes/i.test(f.poMandatory || "")],
+];
+
+export const getVerifyStatus = (f) => {
+  const missing = [];
+  for (const [key, label, when] of VERIFY_REQUIRED) {
+    if (when && !when(f)) continue;
+    const v = f?.[key];
+    if (v === undefined || v === null || String(v).trim() === "" || Number(v) === 0 && key === "creditDays" ? false : false) {
+      // the === 0 check isn't applicable to the listed keys; fall through
+    }
+    if (v === undefined || v === null || String(v).trim() === "") {
+      missing.push({ key, label });
+    }
+  }
+  return { complete: missing.length === 0, missing };
+};
+
 const validateQuote = (f) => {
   const errs = {};
   if (!f.title?.trim()) errs.title = "Quote title is required";
@@ -30,6 +60,15 @@ const validateQuote = (f) => {
   if (Array.isArray(f.items)) {
     const bad = f.items.find(it => Number(it.qty) < 0 || Number(it.unitPrice) < 0 || Number(it.discount) < 0);
     if (bad) errs.items = "Line item quantity / price / discount cannot be negative";
+  }
+  // Verify-before-Send gate: the customer snapshot must be complete before
+  // the quote can advance off Draft. The Verify tab exposes every field;
+  // we only block on save, not while the user is still editing Draft.
+  if (f.status && f.status !== "Draft") {
+    const { complete, missing } = getVerifyStatus(f);
+    if (!complete) {
+      errs._verify = `Cannot move to ${f.status}: fill Verify tab — ${missing.map(m => m.label).join(", ")}.`;
+    }
   }
   return errs;
 };
@@ -992,9 +1031,21 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             </div>
           )}
           <fieldset disabled={modal.lockedFinal} style={{border:"none",padding:0,margin:0,opacity:modal.lockedFinal?0.85:1}}>
-          <div className="modal-tabs">
-            {["details","items","terms"].map(t=><div key={t} className={`modal-tab${formTab===t?" active":""}`} onClick={()=>setFormTab(t)}>{t==="details"?"Details":t==="items"?`Items (${form.items.length})`:"Terms"}</div>)}
-          </div>
+          {(() => {
+            const vs = getVerifyStatus(form);
+            return (
+              <div className="modal-tabs">
+                {["details","verify","items","terms"].map(t=>{
+                  const label = t==="details" ? "Details"
+                              : t==="verify"  ? `Verify${vs.complete?" ✓":` (${vs.missing.length})`}`
+                              : t==="items"   ? `Items (${form.items.length})`
+                              : "Terms";
+                  const chipStyle = t==="verify" && !vs.complete ? {color:"#B45309"} : (t==="verify" && vs.complete ? {color:"#047857"} : undefined);
+                  return <div key={t} className={`modal-tab${formTab===t?" active":""}`} style={chipStyle} onClick={()=>setFormTab(t)}>{label}</div>;
+                })}
+              </div>
+            );
+          })()}
 
           {formTab==="details"&&(<div>
             {/* ── Source Record Picker ── */}
@@ -1087,6 +1138,80 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             <div className="form-group"><label>Notes</label><textarea rows={2} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Internal notes..." style={{width:"100%",resize:"vertical"}}/></div>
           </div>)}
 
+          {formTab==="verify"&&(<div>
+            {(() => {
+              const vs = getVerifyStatus(form);
+              return (
+                <div style={{background:vs.complete?"#ECFDF5":"#FFFBEB",border:`1px solid ${vs.complete?"#86EFAC":"#FCD34D"}`,padding:"10px 14px",borderRadius:8,marginBottom:14,fontSize:12.5}}>
+                  <div style={{fontWeight:700,color:vs.complete?"#047857":"#92400E",marginBottom:4}}>
+                    {vs.complete ? "✓ Verified — ready to send" : `Verification incomplete — ${vs.missing.length} field${vs.missing.length===1?"":"s"} missing`}
+                  </div>
+                  <div style={{fontSize:11,color:"var(--text3)"}}>
+                    {vs.complete
+                      ? "Snapshot is historically locked to this quote. Editing the account later won't rewrite these values."
+                      : `Required before Send: ${vs.missing.map(m => m.label).join(", ")}.`}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Legal / Billing snapshot ── */}
+            <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:4}}>LEGAL & BILLING SNAPSHOT</div>
+            <div className="form-row">
+              <div className="form-group"><label>Legal Name *</label><input value={form.legalName||""} onChange={e=>setForm(f=>({...f,legalName:e.target.value}))} placeholder="Legal entity name as on PO"/></div>
+              <div className="form-group"><label>Tax Treatment</label><select value={form.taxTreatment||""} onChange={e=>setForm(f=>({...f,taxTreatment:e.target.value}))}><option value="">—</option><option>Domestic</option><option>SEZ</option><option>Export</option><option>Overseas</option></select></div>
+            </div>
+            <div className="form-row">
+              <div className="form-group"><label>GSTIN{/india|domestic|sez|export/i.test(form.taxTreatment||"")?" *":""}</label><input value={form.gstin||""} onChange={e=>setForm(f=>({...f,gstin:e.target.value.toUpperCase()}))} placeholder="15-char GSTIN"/></div>
+              <div className="form-group"><label>PAN</label><input value={form.pan||""} onChange={e=>setForm(f=>({...f,pan:e.target.value.toUpperCase()}))} placeholder="10-char PAN"/></div>
+            </div>
+            <div className="form-group"><label>Billing Address *</label><textarea rows={2} value={form.billingAddressSnapshot||""} onChange={e=>setForm(f=>({...f,billingAddressSnapshot:e.target.value}))} placeholder="Full billing address as on invoice" style={{width:"100%",resize:"vertical"}}/></div>
+            <div className="form-group"><label>Shipping / Service Address</label><textarea rows={2} value={form.shippingAddressSnapshot||""} onChange={e=>setForm(f=>({...f,shippingAddressSnapshot:e.target.value}))} placeholder="Leave blank if same as billing" style={{width:"100%",resize:"vertical"}}/></div>
+
+            {/* ── Commercial terms ── */}
+            <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:14}}>COMMERCIAL TERMS</div>
+            <div className="form-row three">
+              <div className="form-group"><label>Currency *</label><select value={form.currency||"INR"} onChange={e=>setForm(f=>({...f,currency:e.target.value}))}><option>INR</option><option>USD</option><option>EUR</option><option>GBP</option><option>AED</option><option>SGD</option></select></div>
+              <div className="form-group"><label>Exchange Rate (→ INR)</label><input type="number" min={0} step={0.01} value={form.exchangeRate||1} onChange={e=>setForm(f=>({...f,exchangeRate:+e.target.value}))}/></div>
+              <div className="form-group"><label>Payment Terms *</label><select value={form.paymentTerms||""} onChange={e=>setForm(f=>({...f,paymentTerms:e.target.value}))}><option value="">—</option><option>Advance</option><option>Net 15</option><option>Net 30</option><option>Net 45</option><option>Net 60</option><option>Net 90</option><option>Milestone</option></select></div>
+            </div>
+            <div className="form-row three">
+              <div className="form-group"><label>Credit Days</label><input type="number" min={0} value={form.creditDays||0} onChange={e=>setForm(f=>({...f,creditDays:+e.target.value}))}/></div>
+              <div className="form-group"><label>PO Mandatory?</label><select value={form.poMandatory||""} onChange={e=>setForm(f=>({...f,poMandatory:e.target.value}))}><option value="">—</option><option>Yes</option><option>No</option></select></div>
+              <div className="form-group"><label>PO Number{/yes/i.test(form.poMandatory||"")?" *":""}</label><input value={form.poNumber||""} onChange={e=>setForm(f=>({...f,poNumber:e.target.value}))} placeholder="Customer PO #"/></div>
+            </div>
+
+            {/* ── Contacts ── */}
+            <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:14}}>BILLING CONTACTS</div>
+            <div className="form-row three">
+              <div className="form-group"><label>Billing Contact Name</label><input value={form.billingContactName||""} onChange={e=>setForm(f=>({...f,billingContactName:e.target.value}))}/></div>
+              <div className="form-group"><label>Billing Contact Email *</label><input type="email" value={form.billingContactEmail||""} onChange={e=>setForm(f=>({...f,billingContactEmail:e.target.value}))} placeholder="ap@customer.com"/></div>
+              <div className="form-group"><label>Finance / AP Email</label><input type="email" value={form.financeContactEmail||""} onChange={e=>setForm(f=>({...f,financeContactEmail:e.target.value}))} placeholder="finance@customer.com"/></div>
+            </div>
+
+            {/* ── Deal context ── */}
+            <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:14}}>DEAL CONTEXT</div>
+            <div className="form-row three">
+              <div className="form-group"><label>Territory</label><input value={form.territory||""} onChange={e=>setForm(f=>({...f,territory:e.target.value}))}/></div>
+              <div className="form-group"><label>Line of Business</label><input value={form.lob||""} onChange={e=>setForm(f=>({...f,lob:e.target.value}))} placeholder="e.g. SaaS / Implementation"/></div>
+              <div className="form-group"><label>Deal Size</label><select value={form.dealSize||""} onChange={e=>setForm(f=>({...f,dealSize:e.target.value}))}><option value="">—</option><option>Small</option><option>Medium</option><option>Large</option><option>Strategic</option></select></div>
+            </div>
+            <div className="form-row">
+              <div className="form-group"><label>Prepared By</label><input value={form.preparedBy||""} onChange={e=>setForm(f=>({...f,preparedBy:e.target.value}))} placeholder="Sales owner name"/></div>
+              <div className="form-group"><label>Sales Engineer</label><input value={form.salesEngineer||""} onChange={e=>setForm(f=>({...f,salesEngineer:e.target.value}))} placeholder="SE / solution architect"/></div>
+            </div>
+
+            {/* ── Narrative ── */}
+            <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:14}}>SALES NARRATIVE</div>
+            <div className="form-group"><label>Scope of Work</label><textarea rows={3} value={form.scope||""} onChange={e=>setForm(f=>({...f,scope:e.target.value}))} placeholder="What's included in this quote..." style={{width:"100%",resize:"vertical"}}/></div>
+            <div className="form-row">
+              <div className="form-group"><label>Assumptions</label><textarea rows={3} value={form.assumptions||""} onChange={e=>setForm(f=>({...f,assumptions:e.target.value}))} placeholder="Assumptions the pricing depends on" style={{width:"100%",resize:"vertical"}}/></div>
+              <div className="form-group"><label>Exclusions</label><textarea rows={3} value={form.exclusions||""} onChange={e=>setForm(f=>({...f,exclusions:e.target.value}))} placeholder="What's NOT included" style={{width:"100%",resize:"vertical"}}/></div>
+            </div>
+            <div className="form-group"><label>Deliverables</label><textarea rows={2} value={form.deliverables||""} onChange={e=>setForm(f=>({...f,deliverables:e.target.value}))} placeholder="Concrete deliverables / milestones" style={{width:"100%",resize:"vertical"}}/></div>
+            <div className="form-group"><label>Cover Letter</label><textarea rows={3} value={form.coverLetter||""} onChange={e=>setForm(f=>({...f,coverLetter:e.target.value}))} placeholder="Cover-letter text to paste at top of the quote PDF" style={{width:"100%",resize:"vertical"}}/></div>
+          </div>)}
+
           {formTab==="items"&&(<div>
             <FormError error={formErrors.items}/>
             {form.items.map((item,i)=>{
@@ -1165,6 +1290,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           </div>)}
           </fieldset>
           {formErrors._lock&&<div style={{marginTop:10,color:"#92400E",fontSize:12.5,fontWeight:600}}>{formErrors._lock}</div>}
+          {formErrors._verify&&<div style={{marginTop:10,background:"#FFFBEB",border:"1px solid #FCD34D",padding:"8px 12px",borderRadius:6,color:"#92400E",fontSize:12.5,fontWeight:600,display:"flex",alignItems:"center",gap:8}}>{formErrors._verify}<button className="btn btn-sec btn-xs" onClick={()=>setFormTab("verify")}>Open Verify</button></div>}
         </Modal>
       )}
       {confirm&&<Confirm title="Delete Quote" msg="Remove this quotation permanently?" onConfirm={()=>del(confirm)} onCancel={()=>setConfirm(null)}/>}
