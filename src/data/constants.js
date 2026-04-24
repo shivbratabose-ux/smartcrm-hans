@@ -152,6 +152,11 @@ export function registerMasters(masters) {
 
 // Register the live catalog from app state. Mutates PRODUCTS & PROD_MAP
 // in place so existing module-imports keep working unchanged.
+//
+// Module normalisation: every module is guaranteed to carry mrp/unit/currency
+// fields after this call. Older saved catalogs (and the seed) only had
+// {id, name, type, desc} — we backfill defaults so the Quotation "Add from
+// Catalogue" picker can read prices without each consumer guarding for undefined.
 export function registerCatalog(catalog) {
   if (!Array.isArray(catalog)) return;
   // Normalise catalog entries → product shape (id/name/desc/color/bg/text)
@@ -167,6 +172,15 @@ export function registerCatalog(catalog) {
     // see autoRouteUnownedLeadsByProduct effect in SmartCRM.jsx. Empty
     // string means "no owner; unassigned rows stay visible to admins only."
     lineManagerId: p.lineManagerId || "",
+    modules: Array.isArray(p.modules) ? p.modules.map(m => ({
+      id:       m.id,
+      name:     m.name || "",
+      type:     m.type || "Core",
+      desc:     m.desc || "",
+      mrp:      Number(m.mrp) || 0,         // list price (no discount)
+      unit:     m.unit || "License",        // License / User / Site / Setup / Year
+      currency: m.currency || "INR",
+    })) : [],
   }));
   PRODUCTS.splice(0, PRODUCTS.length, ...normalised);
   Object.keys(PROD_MAP).forEach(k => { delete PROD_MAP[k]; });
