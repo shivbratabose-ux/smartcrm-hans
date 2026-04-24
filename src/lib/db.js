@@ -38,8 +38,13 @@ const TABLE_MAP = {
 // invisible to non-global roles via RLS — i.e. "I can't see my team's leads".
 const MODULE_ALIASES = {
   leads: {
-    toSnake: { assignedTo: "owner" },
-    toCamel: { owner: "assignedTo" },
+    // `contact` is the legacy primary-contact-name field still used throughout
+    // the Leads UI, but the DB column is `contact_name`. Without this alias
+    // every lead insert/update threw "Could not find the 'contact' column" —
+    // the schema-heal path would strip it, but then the name was never
+    // persisted, so reloading from cloud silently dropped the Primary Contact.
+    toSnake: { assignedTo: "owner", contact: "contact_name" },
+    toCamel: { owner: "assignedTo", contact_name: "contact" },
   },
 };
 
@@ -216,7 +221,12 @@ function pruneKnownUnknowns(table, snaked) {
 // strip it, and retry. Caps at MAX_RETRIES so a truly broken schema can't
 // loop forever.
 async function writeWithSchemaHeal(table, snaked, runOp) {
-  const MAX_RETRIES = 5;
+  // 30 retries covers tables whose app-side BLANK_* template has drifted well
+  // ahead of the migrated schema (e.g. `leads` carries ~20 UI-only fields that
+  // were never added to supabase/schema.sql). Each retry strips exactly one
+  // unknown column, so 5 was not enough — the heal would give up mid-strip,
+  // the insert would fail, and the user would see "leads are not updating".
+  const MAX_RETRIES = 30;
   let payload = pruneKnownUnknowns(table, snaked);
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const { data, error } = await runOp(payload);
