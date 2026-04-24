@@ -54,6 +54,10 @@ const MODULE_ALIASES = {
 // without coercion the first insert/update always fails. Coerce "" → null
 // before the write hits Supabase. List is in *snake_case* (post-toSnake).
 const DATE_COLUMNS = new Set([
+  // Bare `date` column is used by activities, comm_logs, events tables —
+  // BLANK_ACT/BLANK_COMM_LOG/BLANK_EVENT all init `date:""`, so editing a
+  // record with a blank date would still throw the empty-string error.
+  "date", "time",
   "close_date", "call_date", "next_call_date", "invoice_date", "due_date",
   "created_date", "start_date", "end_date", "join_date", "sent_date",
   "expiry_date", "next_call", "call_time", "followup_due", "converted_date",
