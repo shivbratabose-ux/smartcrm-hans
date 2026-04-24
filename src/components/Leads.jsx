@@ -1641,7 +1641,17 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
 
   const openAdd = () => {
     const leadId = nextLeadId();
-    setForm({ ...BLANK_LEAD, id: `ld${uid()}`, leadId, createdDate: today });
+    // Default assignedTo to the current user so RLS lets them see their
+    // own new lead. BLANK_LEAD hardcodes "u1" (admin), which meant leads
+    // created by other users were invisible to them — only admins saw
+    // them — because the DB `owner` column ended up as u1.
+    setForm({
+      ...BLANK_LEAD,
+      id: `ld${uid()}`,
+      leadId,
+      createdDate: today,
+      assignedTo: currentUser || BLANK_LEAD.assignedTo,
+    });
     setFormErrors({});
     setModal({ mode: "add" });
   };
