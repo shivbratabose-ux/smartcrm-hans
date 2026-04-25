@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star, Building2, ArrowUpDown, ArrowUp, ArrowDown, Globe, Briefcase, Calendar, TrendingUp, FileText, Activity } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star, Building2, ArrowUpDown, ArrowUp, ArrowDown, Globe, Briefcase, Calendar, TrendingUp, FileText, Activity, X } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today, resolveAddress, formatAddress, lower, title } from "../utils/helpers";
 import { PRODUCTS, PROD_MAP, COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
@@ -26,7 +26,7 @@ function ContactDetail({ c, onClose, onEdit, accounts, opps=[], activities=[] })
   const linkedActs = [...activities].filter(a => a.contactId === c.id).sort((x,y) => (y.date||"").localeCompare(x.date||""));
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" onClick={e => e.target === e.currentTarget && onClose()} style={{zIndex:1000}}>
+    <div className="overlay" role="dialog" aria-modal="true" style={{zIndex:1000}}>
       <div style={{background:"var(--bg,#F1F5F9)",width:"90vw",maxWidth:800,maxHeight:"90vh",borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 25px 60px rgba(0,0,0,0.3)"}}>
         {/* Header */}
         <div style={{background:"white",padding:"20px 28px",borderBottom:"1px solid var(--border)",flexShrink:0}}>
@@ -47,8 +47,8 @@ function ContactDetail({ c, onClose, onEdit, accounts, opps=[], activities=[] })
               </div>
             </div>
             <div style={{display:"flex",gap:8}}>
-              <button className="btn btn-sec btn-sm" onClick={onClose}>Close</button>
               <button className="btn btn-primary btn-sm" onClick={onEdit}><Edit2 size={13}/>Edit</button>
+              <button className="icon-btn" onClick={onClose} aria-label="Close" style={{width:32,height:32}}><X size={18}/></button>
             </div>
           </div>
 

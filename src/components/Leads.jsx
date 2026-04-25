@@ -222,7 +222,7 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   };
 
   return (
-    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()} style={{zIndex:1100}}>
+    <div className="overlay" style={{zIndex:1100}}>
       <div style={{background:"white",borderRadius:16,width:"90vw",maxWidth:720,maxHeight:"88vh",overflow:"auto",boxShadow:"0 25px 60px rgba(0,0,0,0.3)"}}>
         <div style={{padding:"20px 28px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
@@ -607,7 +607,6 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Lead Profile"
-      onClick={e => e.target === e.currentTarget && onClose()}
       style={{zIndex:1000}}>
       <div style={{
         background:"var(--bg,#F1F5F9)",width:"94vw",maxWidth:1200,maxHeight:"94vh",

@@ -524,7 +524,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
     <div style={{
       position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.5)",
       display: "flex", justifyContent: "center", alignItems: "stretch",
-    }} onClick={e => e.target === e.currentTarget && onClose()}>
+    }}>
       <div style={{
         width: "90%", maxWidth: 900, background: "white", borderRadius: 16, margin: "24px 0",
         display: "flex", flexDirection: "column", overflow: "hidden",
