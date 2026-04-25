@@ -296,7 +296,10 @@ export const BLANK_QUOTE_ITEM={
   // module's intended commercial behaviour even if the catalog is later
   // edited. All fields are optional ("" / 0) when the module has no value
   // set — downstream code falls back to quote/contract defaults.
-  licenseType:"",        // "SaaS Subscription" | "Per-User SaaS" | "Term License" | "Perpetual (OTD)" | "Perpetual + AMC" — commercial framing
+  licenseType:"",        // commercial framing — one of:
+                         //   "SaaS Subscription"
+                         //   "SaaS — Per User / Month" | "SaaS — Per User / Quarterly" | "SaaS — Per User / Yearly"
+                         //   "Term License" | "Perpetual (OTD)" | "Perpetual + AMC"
   billingFrequency:"",   // "One-time" | "Monthly" | "Quarterly" | "Half-Yearly" | "Annual" | "Per-Transaction" | "Usage-based"
   pricingModel:"",       // "Flat" | "Per-Unit" | "Per-User" | "Per-Transaction" | "Tiered" | "Volume"
   hsnSac:"",             // HSN/SAC code for compliance on invoice/PDF

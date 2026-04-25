@@ -515,7 +515,14 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
                           <span title="GST rate carried to quote line" style={{fontSize:10.5,fontWeight:600,color:"#0F766E",background:"#F0FDFA",border:"1px solid #99F6E4",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>GST {m.gstRate}%</span>
                         )}
                         <span style={{fontSize:11,fontWeight:600,color:mrp>0?"#047857":"#94A3B8",background:mrp>0?"#ECFDF5":"#F1F5F9",border:`1px solid ${mrp>0?"#A7F3D0":"#E2E8F0"}`,padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap"}} title="List price (MRP)">
-                          {mrp>0?`${sym}${mrp.toLocaleString()} / ${m.unit||"License"}`:"No MRP"}
+                          {/* MRP label appends cadence for Per-User pricing so SaaS modules
+                              read as "₹X / User / Month" instead of just "₹X / User". For all
+                              other pricing models we keep the plain "₹X / Unit" form. */}
+                          {mrp>0
+                            ? (m.pricingModel==="Per-User" && m.billingFrequency)
+                              ? `${sym}${mrp.toLocaleString()} / ${m.unit||"User"} / ${m.billingFrequency}`
+                              : `${sym}${mrp.toLocaleString()} / ${m.unit||"License"}`
+                            : "No MRP"}
                         </span>
                       </div>
                       <div style={{display:"flex",gap:4,flexShrink:0}}>
@@ -579,12 +586,28 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
                   carries the license cost and MRP is the recurring AMC). */}
               <div className="form-row full">
                 <div className="form-group"><label>License Type
-                  <HelpTooltip text="Commercial model the customer signs up for. SaaS Subscription = month-to-month / annual recurring. Per-User SaaS = priced per active user. Term License = fixed-term contract (1Y/3Y) with renewal. Perpetual (OTD) = one-time payment, perpetual right to use. Perpetual + Annual Maintenance = one-time license + recurring AMC (use Setup Fee for the license, MRP for the annual AMC)."/>
+                  <HelpTooltip text="Commercial model the customer signs up for. SaaS — Per User options are cadence-bound (Month / Quarter / Year) and auto-set Pricing Model = Per-User, Unit = User, and Billing Frequency to match. SaaS Subscription = recurring on the chosen Billing Frequency without per-seat math. Term License = fixed-term contract (1Y/3Y) with renewal. Perpetual (OTD) = one-time payment. Perpetual + AMC = one-time license (Setup Fee) + recurring annual maintenance (MRP)."/>
                 </label>
-                  <select value={form.licenseType||""} onChange={e=>setForm(f=>({...f,licenseType:e.target.value}))}>
+                  <select value={form.licenseType||""} onChange={e=>{
+                    const lt=e.target.value;
+                    setForm(f=>{
+                      const next={...f, licenseType:lt};
+                      // Auto-derive dependent fields so the commercial framing
+                      // the user picked stays consistent with pricing math &
+                      // billing cadence. User can still override afterwards.
+                      if(lt==="SaaS — Per User / Month")     return {...next, pricingModel:"Per-User", unit:"User", billingFrequency:"Monthly"};
+                      if(lt==="SaaS — Per User / Quarterly") return {...next, pricingModel:"Per-User", unit:"User", billingFrequency:"Quarterly"};
+                      if(lt==="SaaS — Per User / Yearly")    return {...next, pricingModel:"Per-User", unit:"User", billingFrequency:"Annual"};
+                      if(lt==="Perpetual (OTD)")             return {...next, billingFrequency:"One-time"};
+                      if(lt==="Perpetual + AMC")             return {...next, billingFrequency:"Annual"};
+                      return next;
+                    });
+                  }}>
                     <option value="">— Not set —</option>
                     <option value="SaaS Subscription">SaaS Subscription</option>
-                    <option value="Per-User SaaS">Per-User SaaS (per user / month)</option>
+                    <option value="SaaS — Per User / Month">SaaS — Per User / Month</option>
+                    <option value="SaaS — Per User / Quarterly">SaaS — Per User / Quarterly</option>
+                    <option value="SaaS — Per User / Yearly">SaaS — Per User / Yearly</option>
                     <option value="Term License">Term License (fixed term + renewal)</option>
                     <option value="Perpetual (OTD)">Perpetual (OTD) — one-time</option>
                     <option value="Perpetual + AMC">Perpetual + Annual Maintenance</option>
