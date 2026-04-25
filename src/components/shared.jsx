@@ -559,6 +559,245 @@ export function FilesList({files,onAdd,currentUser}) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// SEND EMAIL MODAL — composes & sends a transactional email via the
+// `send-email` edge function, then hands a CommLog entry back to the
+// caller via `onSent` so they can append it to their commLogs state.
+//
+// Pickers: To (any contact), Template (5 built-in), Subject + Body
+// editable after template fill. Variable interpolation runs every time
+// the context (recipient / template / entity) changes so the preview
+// always matches what'll be sent.
+//
+// Context the modal can interpolate against (optional, all defaulting
+// to safe empty values):
+//   contact, account, quote, opp, lead, contract, invoice
+// Plus auto-derived: org, owner, lastSubject, daysToRenewal etc.
+// ═══════════════════════════════════════════════════════════════════
+import { EMAIL_TEMPLATES, TEMPLATES_BY_ID } from "../data/emailTemplates";
+import { interpolate, withFirstName, sendEmail } from "../utils/email";
+
+export function SendEmailModal({
+  onClose, onSent,
+  accounts = [], contacts = [],
+  prefill = {},
+  currentUser, orgUsers = [],
+}) {
+  // Resolve sender (the rep) for {{owner.*}} interpolation. Falls back to a
+  // friendly default so previews don't break when orgUsers isn't passed.
+  const me = orgUsers.find(u => u.id === currentUser) || { name: "You", email: "" };
+  const meWithFirst = withFirstName(me);
+
+  // Org name for the brand strip + signature footer in every template.
+  const ORG_NAME = "Hans Infomatic";
+
+  const [templateId, setTemplateId] = useState(prefill.templateId || "");
+  const [toEmail, setToEmail] = useState(prefill.toEmail || "");
+  const [contactId, setContactId] = useState(prefill.contactId || "");
+  const [accountId, setAccountId] = useState(prefill.accountId || "");
+  const [subject, setSubject] = useState("");
+  const [bodyHtml, setBodyHtml] = useState("");
+  const [showHtmlSource, setShowHtmlSource] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  // Derive the recipient contact (if picked) so {{contact.*}} resolves.
+  const contact = useMemo(() => {
+    if (!contactId) return null;
+    return contacts.find(c => c.id === contactId) || null;
+  }, [contactId, contacts]);
+
+  const account = useMemo(() => {
+    const id = accountId || contact?.accountId || "";
+    if (!id) return null;
+    return accounts.find(a => a.id === id) || null;
+  }, [accountId, contact, accounts]);
+
+  // Build the interpolation context the templates reference. Any prefill
+  // entity (quote, contract, invoice, lead, opp) flows through verbatim
+  // so callers can pass record-shaped objects.
+  const ctx = useMemo(() => ({
+    org: { name: ORG_NAME },
+    owner: meWithFirst,
+    contact: withFirstName(contact || prefill.contact || { name: "" }),
+    account: account || prefill.account || { name: "" },
+    quote: prefill.quote || {},
+    opp: prefill.opp || {},
+    lead: prefill.lead || {},
+    contract: prefill.contract || {},
+    invoice: prefill.invoice || {},
+    lastSubject: prefill.lastSubject || "our last conversation",
+    daysToRenewal: prefill.daysToRenewal || "",
+  }), [contact, account, prefill, meWithFirst]);
+
+  // When the picked template changes, refill subject + body from it.
+  // Subsequent edits in the textareas are preserved (we don't re-fill on
+  // every ctx change once the user starts typing).
+  const lastFilledTemplateRef = useRef("");
+  useEffect(() => {
+    if (!templateId) { setSubject(""); setBodyHtml(""); lastFilledTemplateRef.current = ""; return; }
+    if (templateId === lastFilledTemplateRef.current) return;
+    const t = TEMPLATES_BY_ID[templateId];
+    if (!t) return;
+    setSubject(interpolate(t.subject, ctx));
+    setBodyHtml(interpolate(t.body, ctx));
+    lastFilledTemplateRef.current = templateId;
+  }, [templateId, ctx]);
+
+  // Auto-fill the To field from the picked contact (only if currently empty
+  // or matches the previous contact's email, so a manual override sticks).
+  const lastContactEmailRef = useRef("");
+  useEffect(() => {
+    const email = contact?.email || "";
+    if (!email) return;
+    if (toEmail === "" || toEmail === lastContactEmailRef.current) {
+      setToEmail(email);
+    }
+    lastContactEmailRef.current = email;
+  }, [contact, toEmail]);
+
+  const canSend = !!toEmail.trim() && !!subject.trim() && !!bodyHtml.trim() && !sending;
+
+  const send = async () => {
+    setErrorMsg("");
+    setSending(true);
+    const res = await sendEmail({
+      to: toEmail.trim(),
+      subject: subject.trim(),
+      html: bodyHtml,
+    });
+    setSending(false);
+    if (!res.ok) {
+      setErrorMsg(res.error || "Send failed");
+      return;
+    }
+    // Hand a CommLog-shaped entry back to the caller so they can append +
+    // persist. The caller controls the JSONB write to keep us out of
+    // double-write races.
+    onSent?.({
+      id: `cm_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+      type: "Email Sent",
+      subject: subject.trim(),
+      body: bodyHtml,
+      from: res.from || me.email,
+      to: toEmail.trim(),
+      accountId: account?.id || accountId || "",
+      contactId: contact?.id || contactId || "",
+      oppId: prefill.opp?.id || "",
+      date: new Date().toISOString().slice(0,16).replace("T"," "),
+      status: "Sent",
+      owner: currentUser,
+      messageId: res.messageId,
+      templateId: templateId || "",
+    });
+    onClose?.();
+  };
+
+  // Filter contacts to those scoped to the picked account if any.
+  const contactOptions = (accountId
+    ? contacts.filter(c => c.accountId === accountId)
+    : contacts
+  ).map(c => ({ value: c.id, label: c.name, sub: c.email || c.designation || "" }));
+
+  const accountOptions = accounts.map(a => ({
+    value: a.id, label: a.name, sub: a.country || a.type || "",
+  }));
+
+  const templateOptions = EMAIL_TEMPLATES.map(t => ({
+    value: t.id, label: t.name, sub: t.description,
+  }));
+
+  return (
+    <Modal
+      title="Send Email"
+      size="xl" draggable resizable
+      onClose={onClose}
+      footer={<>
+        <button className="btn btn-sec" onClick={onClose} disabled={sending}>Cancel</button>
+        <button className="btn btn-primary" onClick={send} disabled={!canSend}>
+          {sending ? "Sending…" : <><Send size={14}/>Send Email</>}
+        </button>
+      </>}
+    >
+      {errorMsg && (
+        <div style={{background:"#FEF2F2",border:"1px solid #FECACA",color:"#991B1B",padding:"10px 12px",borderRadius:8,fontSize:12.5,marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+          <AlertTriangle size={14}/> {errorMsg}
+        </div>
+      )}
+
+      <div className="form-row">
+        <div className="form-group"><label>Account</label>
+          <TypeaheadSelect
+            value={accountId}
+            onChange={(id) => { setAccountId(id); setContactId(""); }}
+            options={accountOptions}
+            placeholder="Search accounts (optional)…"
+          />
+        </div>
+        <div className="form-group"><label>Contact</label>
+          <TypeaheadSelect
+            value={contactId}
+            onChange={(id) => setContactId(id)}
+            options={contactOptions}
+            placeholder={accountId ? "Search contacts in account…" : "Search any contact…"}
+          />
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="form-group"><label>To *</label>
+          <input value={toEmail} onChange={e => setToEmail(e.target.value)} placeholder="recipient@example.com" type="email"/>
+        </div>
+        <div className="form-group"><label>Template</label>
+          <TypeaheadSelect
+            value={templateId}
+            onChange={(id) => setTemplateId(id || "")}
+            options={templateOptions}
+            placeholder="Pick a template (optional)…"
+          />
+        </div>
+      </div>
+
+      <div className="form-group"><label>Subject *</label>
+        <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Email subject"/>
+      </div>
+
+      <div className="form-group">
+        <label style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span>Message *</span>
+          <button type="button" className="btn btn-sec btn-xs" onClick={() => setShowHtmlSource(s => !s)}>
+            {showHtmlSource ? "Hide HTML" : "Edit HTML"}
+          </button>
+        </label>
+        {showHtmlSource ? (
+          <textarea
+            rows={14}
+            value={bodyHtml}
+            onChange={e => setBodyHtml(e.target.value)}
+            placeholder="<html>…</html>"
+            style={{width:"100%",fontFamily:"'Courier New',monospace",fontSize:12,resize:"vertical"}}
+          />
+        ) : (
+          <div
+            style={{border:"1.5px solid var(--border)",borderRadius:8,padding:0,background:"#FAFBFC",height:360,overflow:"auto"}}
+          >
+            <iframe
+              title="Email preview"
+              srcDoc={bodyHtml}
+              style={{width:"100%",height:"100%",border:"none",background:"#fff"}}
+              sandbox=""
+            />
+          </div>
+        )}
+      </div>
+
+      <div style={{fontSize:11,color:"var(--text3)",marginTop:6}}>
+        Replies will go to <strong>{me.email || "your email on file"}</strong>. Sent via the configured outbound mail provider — see Help → Email Setup if delivery fails.
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // LOG CALL MODAL (shared across Pipeline, Accounts, Leads)
 // ═══════════════════════════════════════════════════════════════════
 const nowTime = () => {
