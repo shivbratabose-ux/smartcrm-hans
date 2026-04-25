@@ -14,6 +14,15 @@ export const fmt = {
 };
 export const uid  = () => Math.random().toString(36).slice(2,9);
 export const cmp  = (a,b,key) => (a[key]||"").toString().localeCompare((b[key]||"").toString());
+
+// Force a string to ALL CAPS — used at every input that captures a Company /
+// Account name, per company policy that account names must be uppercase
+// across the application. Coerces null/undefined safely; preserves an empty
+// string so input fields stay editable mid-typing without weird re-renders.
+// Applied to: Account form (Accounts.jsx), Lead form (Leads.jsx), inline
+// EditableLeadsGrid `company` cell, CallReports company input, and the
+// BulkUpload row-parser for both account.name and lead.company.
+export const upper = (v) => v == null ? v : String(v).toUpperCase();
 export const today = new Date().toISOString().slice(0,10);
 export const isOverdue = d => d && d < today;
 export const isFuture  = d => d && d > today;

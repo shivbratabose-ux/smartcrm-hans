@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Phone, Mail, Video, MessageSquare, Globe, MapPin, Calendar, Clock, AlertCircle } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, LEAD_STAGES, LEAD_STAGE_MAP } from '../data/constants';
 import { BLANK_CALL_REPORT } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors, getScopedUserIds, softDeleteById } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, getScopedUserIds, softDeleteById, upper } from '../utils/helpers';
 import { notify } from '../utils/toast';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
@@ -236,9 +236,9 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
             <div className="form-group"><label>Lead Name</label>
               <input value={form.leadName} onChange={e => setForm(f => ({...f, leadName: e.target.value}))} placeholder="Lead / deal name"/>
             </div>
-            <div className="form-group"><label>Company *</label>
-              <input value={form.company} onChange={e => {setForm(f => ({...f, company: e.target.value})); setFormErrors(e => ({...e, company: undefined}));}}
-                placeholder="Company name" style={formErrors.company ? {borderColor:"#DC2626"} : {}}/>
+            <div className="form-group"><label>Company * <span style={{fontSize:10.5,color:"var(--text3)",fontWeight:400,letterSpacing:"0.3px",marginLeft:6}}>(ALL CAPS)</span></label>
+              <input value={form.company} onChange={e => {setForm(f => ({...f, company: upper(e.target.value)})); setFormErrors(e => ({...e, company: undefined}));}}
+                placeholder="COMPANY NAME" style={{textTransform:"uppercase",...(formErrors.company ? {borderColor:"#DC2626"} : {})}}/>
               <FormError error={formErrors.company}/>
             </div>
           </div>
