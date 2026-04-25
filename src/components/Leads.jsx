@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import ProductModulePicker, { validateProductSelection, primaryProductId } from './ProductModulePicker';
@@ -1488,7 +1488,7 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
                     style={{fontFamily:"'Courier New',monospace",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"var(--s2)",color:"var(--brand)",cursor:"pointer"}}
                     title="Open detail view">{l.leadId}</span>
                 </td>
-                <td><GridCell value={l.company} onCommit={v => updateLeadField(l.id, "company", v)} style={{ fontWeight: 600 }}/></td>
+                <td><GridCell value={l.company} onCommit={v => updateLeadField(l.id, "company", v)} style={{ fontWeight: 600, textTransform: "uppercase" }}/></td>
                 <td><GridCell value={l.contact} onCommit={v => updateLeadField(l.id, "contact", v)}/></td>
                 <td><GridCell type="email" value={l.email} onCommit={v => updateLeadField(l.id, "email", v)}/></td>
                 <td><GridCell value={l.phone} onCommit={v => updateLeadField(l.id, "phone", v)}/></td>
@@ -1595,8 +1595,11 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [viewMode, setViewMode] = useState("table"); // "table" | "grid" (Excel-like editable)
 
   // Inline field updater for the editable grid. Saves immediately to leads state.
+  // Company names get uppercased per the company-wide policy that all
+  // Account / Company names are stored ALL CAPS — see upper() in helpers.
   const updateLeadField = (id, field, value) => {
-    setLeads(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l));
+    const v = field === "company" ? upper(value) : value;
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, [field]: v } : l));
   };
 
   const range = useMemo(() => rangeKey === "custom" && customFrom ? { from: customFrom, to: customTo || today } : getDateRange(rangeKey), [rangeKey, customFrom, customTo]);
@@ -2201,7 +2204,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           {/* ── A. PROSPECT DETAILS ── */}
           <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:4}}>A. Prospect Details</div>
           <div className="form-row">
-            <div className="form-group"><label>Company Name *</label><input value={form.company} onChange={e => { setForm(f => ({...f, company:e.target.value})); setFormErrors(e => ({...e, company:undefined})); }} placeholder="Company name" style={formErrors.company ? {borderColor:"#DC2626"} : {}}/><FormError error={formErrors.company}/></div>
+            <div className="form-group"><label>Company Name * <span style={{fontSize:10.5,color:"var(--text3)",fontWeight:400,letterSpacing:"0.3px",marginLeft:6}}>(ALL CAPS)</span></label><input value={form.company} onChange={e => { setForm(f => ({...f, company:upper(e.target.value)})); setFormErrors(e => ({...e, company:undefined})); }} placeholder="COMPANY NAME" style={{textTransform:"uppercase",...(formErrors.company ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.company}/></div>
             <div className="form-group"><label>Contact Name *</label><input value={form.contact} onChange={e => { setForm(f => ({...f, contact:e.target.value})); setFormErrors(e => ({...e, contact:undefined})); }} placeholder="Contact person" style={formErrors.contact ? {borderColor:"#DC2626"} : {}}/><FormError error={formErrors.contact}/></div>
           </div>
 

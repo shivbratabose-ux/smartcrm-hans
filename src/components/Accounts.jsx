@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, TrendingUp, Activity, Download, Arr
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LEVELS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_ACC } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today, migrateAccountAddresses, formatAddress } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today, migrateAccountAddresses, formatAddress, upper } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, TypeaheadSelect } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
@@ -946,7 +946,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
             <span style={{fontFamily:"'Courier New',monospace",fontSize:13,fontWeight:700,color:"var(--brand)"}}>{form.accountNo}</span>
             <span style={{fontSize:10,color:"var(--text3)",marginLeft:"auto"}}>Auto-generated</span>
           </div>}
-          <div className="form-row"><div className="form-group"><label>Account Name *</label><input value={form.name} onChange={e => {setForm(f => ({...f,name:e.target.value})); setFormErrors(e => ({...e,name:undefined}));}} placeholder="Company name" style={formErrors.name?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.name}/></div><div className="form-group"><label>Type</label><select value={form.type} onChange={e => setForm(f => ({...f,type:e.target.value}))}>{CUST_TYPES.map(t => <option key={t}>{t}</option>)}</select></div></div>
+          <div className="form-row"><div className="form-group"><label>Account Name * <span style={{fontSize:10.5,color:"var(--text3)",fontWeight:400,letterSpacing:"0.3px",marginLeft:6}}>(ALL CAPS)</span></label><input value={form.name} onChange={e => {setForm(f => ({...f,name:upper(e.target.value)})); setFormErrors(e => ({...e,name:undefined}));}} placeholder="COMPANY NAME" style={{textTransform:"uppercase",...(formErrors.name?{borderColor:"#DC2626"}:{})}}/><FormError error={formErrors.name}/></div><div className="form-group"><label>Type</label><select value={form.type} onChange={e => setForm(f => ({...f,type:e.target.value}))}>{CUST_TYPES.map(t => <option key={t}>{t}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>Country</label><select value={form.country} onChange={e => setForm(f => ({...f,country:e.target.value}))}>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></div><div className="form-group"><label>City</label><input value={form.city} onChange={e => setForm(f => ({...f,city:e.target.value}))} placeholder="City"/></div></div>
           <div className="form-row">
             <div className="form-group">
