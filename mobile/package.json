@@ -1,0 +1,48 @@
+{
+  "name": "smartcrm-mobile",
+  "version": "0.1.0",
+  "main": "expo-router/entry",
+  "private": true,
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-navigation/bottom-tabs": "^6.6.1",
+    "@react-navigation/native": "^6.1.18",
+    "@react-navigation/native-stack": "^6.11.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@tanstack/query-async-storage-persister": "^5.51.21",
+    "@tanstack/react-query": "^5.51.21",
+    "@tanstack/react-query-persist-client": "^5.51.21",
+    "expo": "~51.0.28",
+    "expo-constants": "~16.0.2",
+    "expo-linking": "~6.3.1",
+    "expo-notifications": "~0.28.16",
+    "expo-status-bar": "~1.12.1",
+    "lucide-react-native": "^0.428.0",
+    "react": "18.2.0",
+    "react-native": "0.74.5",
+    "react-native-gesture-handler": "~2.16.1",
+    "react-native-reanimated": "~3.10.1",
+    "react-native-safe-area-context": "4.10.5",
+    "react-native-screens": "3.31.1",
+    "react-native-svg": "15.2.0",
+    "react-native-url-polyfill": "^2.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@types/react": "~18.2.79",
+    "typescript": "~5.3.3"
+  },
+  "comments": {
+    "main": "expo-router/entry chosen here because Expo SDK 51 routes through it by default. We use it as the bootstrap; navigation is handled by React Navigation directly inside App.tsx so we still own the routing model.",
+    "@react-native-async-storage/async-storage": "Pinned to 1.23.1 — the version that pairs with Expo SDK 51. Don't bump independently or `expo doctor` will complain.",
+    "lucide-react-native": "Same icon set as the web app. Keeps visual parity between platforms.",
+    "expo-notifications": "Wired but inert until a server-side trigger is added (Phase 2 follow-up). Still needs to be installed at scaffold time so the AndroidManifest gets the right permissions.",
+    "react-native-url-polyfill": "Required by @supabase/supabase-js in React Native — its fetch/url shims fix the 'URL is not defined' runtime error you'd otherwise see on first auth call."
+  }
+}
