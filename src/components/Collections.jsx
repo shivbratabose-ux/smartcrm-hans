@@ -4,7 +4,7 @@ import { TEAM, TEAM_MAP, COLLECTION_STATUSES, PAYMENT_MODES, AGEING_BUCKETS } fr
 import { BLANK_COLLECTION } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { notify } from '../utils/toast';
-import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
+import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
 import { exportCSV } from '../utils/csv';
@@ -237,25 +237,32 @@ function Collections({ collections, setCollections, accounts, contracts, current
               <FormError error={formErrors.invoiceNo}/>
             </div>
             <div className="form-group"><label>Account *</label>
-              <select value={form.accountId} onChange={e => {setForm(f => ({...f, accountId: e.target.value})); setFormErrors(e => ({...e, accountId: undefined}));}}
-                style={formErrors.accountId ? {borderColor:"#DC2626"} : {}}>
-                <option value="">Select account...</option>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.accountId}
+                onChange={(id) => { setForm(f => ({...f, accountId: id})); setFormErrors(e => ({...e, accountId: undefined})); }}
+                options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+                placeholder="Search accounts…"
+                error={!!formErrors.accountId}
+              />
               <FormError error={formErrors.accountId}/>
             </div>
           </div>
           <div className="form-row">
             <div className="form-group"><label>Linked Contract</label>
-              <select value={form.contractId} onChange={e => setForm(f => ({...f, contractId: e.target.value}))}>
-                <option value="">None</option>
-                {contracts.filter(c => !form.accountId || c.accountId === form.accountId).map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.contractId}
+                onChange={(id) => setForm(f => ({...f, contractId: id}))}
+                options={contracts.filter(c => !form.accountId || c.accountId === form.accountId).map(c => ({ value: c.id, label: c.title }))}
+                placeholder="Search contracts…"
+              />
             </div>
             <div className="form-group"><label>Owner</label>
-              <select value={form.owner} onChange={e => setForm(f => ({...f, owner: e.target.value}))}>
-                {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.owner}
+                onChange={(id) => setForm(f => ({...f, owner: id}))}
+                options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                placeholder="Search owners…"
+              />
             </div>
           </div>
           <div className="form-row">

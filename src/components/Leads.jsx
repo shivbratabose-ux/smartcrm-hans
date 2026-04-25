@@ -332,9 +332,12 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
 
           <div className="form-row">
             <div className="form-group"><label>Owner (Primary)</label>
-              <select value={form.owner} onChange={e => setForm(f => ({...f, owner: e.target.value}))}>
-                {_team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.owner}
+                onChange={(id) => setForm(f => ({...f, owner: id}))}
+                options={_team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                placeholder="Search owners…"
+              />
             </div>
             <div className="form-group"><label>Forecast Category</label>
               <select value={form.forecastCategory} onChange={e => setForm(f => ({...f, forecastCategory: e.target.value}))}>
@@ -2434,7 +2437,14 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             <div className="form-group"><label>Lead Stage</label><select value={form.stage} onChange={e => setForm(f => ({...f, stage:e.target.value}))}>{LEAD_STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
           </div>
           <div className="form-row">
-            <div className="form-group"><label>Assigned To</label><select value={form.assignedTo} onChange={e => setForm(f => ({...f, assignedTo:e.target.value}))}>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+            <div className="form-group"><label>Assigned To</label>
+              <TypeaheadSelect
+                value={form.assignedTo}
+                onChange={(id) => setForm(f => ({...f, assignedTo: id}))}
+                options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                placeholder="Search team…"
+              />
+            </div>
           </div>
           <div className="form-row">
             <div className="form-group">

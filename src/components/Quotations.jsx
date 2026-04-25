@@ -1648,10 +1648,16 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               {sourceMode==="lead"&&(
                 <div className="form-group" style={{marginBottom:0}}>
                   <label>Lead</label>
-                  <select value={sourceLeadId} onChange={e=>applyLeadCascade(e.target.value)}>
-                    <option value="">Select lead to auto-fill...</option>
-                    {leads.map(l=><option key={l.id} value={l.id}>{l.company||l.contact||l.id} — {l.product||""} ({l.stage||""})</option>)}
-                  </select>
+                  <TypeaheadSelect
+                    value={sourceLeadId}
+                    onChange={(id) => applyLeadCascade(id)}
+                    options={leads.map(l => ({
+                      value: l.id,
+                      label: `${l.company || l.contact || l.id}${l.product ? ` — ${l.product}` : ""}`,
+                      sub: l.stage || "",
+                    }))}
+                    placeholder="Search leads to auto-fill…"
+                  />
                 </div>
               )}
               {sourceMode==="account"&&(
@@ -1725,7 +1731,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             </div>
             <div className="form-row three"><div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{QUOTE_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
               <div className="form-group"><label>Validity</label><select value={form.validity} onChange={e=>setForm(f=>({...f,validity:e.target.value}))}>{QUOTE_VALIDITY.map(v=><option key={v}>{v}</option>)}</select></div>
-              <div className="form-group"><label>Owner</label><select value={form.owner} onChange={e=>setForm(f=>({...f,owner:e.target.value}))}>{team.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+              <div className="form-group"><label>Owner</label>
+                <TypeaheadSelect
+                  value={form.owner}
+                  onChange={(id) => setForm(f => ({...f, owner: id}))}
+                  options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                  placeholder="Search owners…"
+                />
+              </div>
             </div>
             <div className="form-row"><div className="form-group"><label>Sent Date</label><input type="date" value={form.sentDate} onChange={e=>setForm(f=>({...f,sentDate:e.target.value}))}/></div>
               <div className="form-group"><label>Expiry Date</label><input type="date" value={form.expiryDate} onChange={e=>setForm(f=>({...f,expiryDate:e.target.value}))}/></div>

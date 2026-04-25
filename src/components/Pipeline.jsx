@@ -1434,9 +1434,12 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           <div className="form-row">
             <div className="form-group">
               <label>Owner</label>
-              <select value={form.owner} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))}>
-                {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.owner}
+                onChange={(id) => setForm(f => ({ ...f, owner: id }))}
+                options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                placeholder="Search owners…"
+              />
             </div>
             <div className="form-group">
               <label>Country</label>

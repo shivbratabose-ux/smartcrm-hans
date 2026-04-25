@@ -4,7 +4,7 @@ import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, CALL_TYPES, CALL_OBJECTIVES, CALL_O
 import { BLANK_CALL_REPORT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, getScopedUserIds, softDeleteById } from '../utils/helpers';
 import { notify } from '../utils/toast';
-import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
+import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -244,9 +244,12 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
           </div>
           <div className="form-row">
             <div className="form-group"><label>Salesperson</label>
-              <select value={form.marketingPerson} onChange={e => setForm(f => ({...f, marketingPerson: e.target.value}))}>
-                {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.marketingPerson}
+                onChange={(id) => setForm(f => ({...f, marketingPerson: id}))}
+                options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                placeholder="Search salespeople…"
+              />
             </div>
             <div className="form-group"><label>Lead Stage</label>
               <select value={form.leadStage} onChange={e => setForm(f => ({...f, leadStage: e.target.value}))}>
@@ -294,10 +297,12 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
               </select>
             </div>
             <div className="form-group"><label>Linked Account</label>
-              <select value={form.accountId} onChange={e => setForm(f => ({...f, accountId: e.target.value}))}>
-                <option value="">None</option>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.accountId}
+                onChange={(id) => setForm(f => ({...f, accountId: id}))}
+                options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+                placeholder="Search accounts…"
+              />
             </div>
           </div>
           <div className="form-group">

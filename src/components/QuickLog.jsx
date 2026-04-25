@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Plus, X, Phone, CheckSquare, FileText, Check, Search, Clock, Calendar } from "lucide-react";
 import { CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, ACT_TYPES, ACT_STATUS, TEAM } from "../data/constants";
 import { uid, today, sanitizeObj, hasErrors } from "../utils/helpers";
-import { Modal, FormError } from "./shared";
+import { Modal, FormError, TypeaheadSelect } from "./shared";
 
 // ═══════════════════════════════════════════════════════════════════
 // QUICK LOG — Universal floating action button + modal
@@ -154,24 +154,30 @@ function CallForm({ form, setForm, errors, setErrors, accounts, contacts, opps, 
       </div>
       <div className="form-row">
         <div className="form-group"><label>Company / Account</label>
-          <select value={form.accountId} onChange={e => set("accountId", e.target.value)}>
-            <option value="">-- Select --</option>
-            {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+          <TypeaheadSelect
+            value={form.accountId}
+            onChange={(id) => set("accountId", id)}
+            options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+            placeholder="Search accounts…"
+          />
         </div>
         <div className="form-group"><label>Lead</label>
-          <select value={form.leadId} onChange={e => set("leadId", e.target.value)}>
-            <option value="">-- None --</option>
-            {filteredLeads.map(l => <option key={l.id} value={l.id}>{l.company} — {l.contact}</option>)}
-          </select>
+          <TypeaheadSelect
+            value={form.leadId}
+            onChange={(id) => set("leadId", id)}
+            options={filteredLeads.map(l => ({ value: l.id, label: l.company || l.contact || l.id, sub: l.contact || "" }))}
+            placeholder="Search leads…"
+          />
         </div>
       </div>
       <div className="form-row">
         <div className="form-group"><label>Opportunity</label>
-          <select value={form.oppId} onChange={e => set("oppId", e.target.value)}>
-            <option value="">-- None --</option>
-            {filteredOpps.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}
-          </select>
+          <TypeaheadSelect
+            value={form.oppId}
+            onChange={(id) => set("oppId", id)}
+            options={filteredOpps.map(o => ({ value: o.id, label: o.title }))}
+            placeholder="Search opportunities…"
+          />
         </div>
         <div className="form-group"><label>Outcome</label>
           <select value={form.outcome} onChange={e => set("outcome", e.target.value)}>
@@ -243,10 +249,12 @@ function CallForm({ form, setForm, errors, setErrors, accounts, contacts, opps, 
                   placeholder="Follow-up task title" />
               </div>
               <div className="form-group"><label>Assign To</label>
-                <select value={form.followupAssign} onChange={e => set("followupAssign", e.target.value)}>
-                  <option value="">-- Select --</option>
-                  {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
+                <TypeaheadSelect
+                  value={form.followupAssign}
+                  onChange={(id) => set("followupAssign", id)}
+                  options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                  placeholder="Search team…"
+                />
               </div>
             </div>
             <div className="form-group"><label>Due Date</label>
@@ -297,25 +305,30 @@ function TaskForm({ form, setForm, errors, setErrors, accounts, contacts, opps, 
           <FormError error={errors.dueDate} />
         </div>
         <div className="form-group"><label>Assign To</label>
-          <select value={form.assignTo} onChange={e => set("assignTo", e.target.value)}>
-            {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
+          <TypeaheadSelect
+            value={form.assignTo}
+            onChange={(id) => set("assignTo", id)}
+            options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+            placeholder="Search team…"
+          />
         </div>
       </div>
       <div className="form-row">
         <div className="form-group"><label>Related Account</label>
-          <select value={form.accountId} onChange={e => set("accountId", e.target.value)}>
-            <option value="">-- None --</option>
-            {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+          <TypeaheadSelect
+            value={form.accountId}
+            onChange={(id) => set("accountId", id)}
+            options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+            placeholder="Search accounts…"
+          />
         </div>
         <div className="form-group"><label>Related Opportunity</label>
-          <select value={form.oppId} onChange={e => set("oppId", e.target.value)}>
-            <option value="">-- None --</option>
-            {(form.accountId ? opps.filter(o => o.accountId === form.accountId) : opps).map(o =>
-              <option key={o.id} value={o.id}>{o.title}</option>
-            )}
-          </select>
+          <TypeaheadSelect
+            value={form.oppId}
+            onChange={(id) => set("oppId", id)}
+            options={(form.accountId ? opps.filter(o => o.accountId === form.accountId) : opps).map(o => ({ value: o.id, label: o.title }))}
+            placeholder="Search opportunities…"
+          />
         </div>
       </div>
       <div className="form-group"><label>Related Contact</label>
@@ -371,33 +384,38 @@ function ActivityForm({ form, setForm, errors, setErrors, accounts, contacts, op
       </div>
       <div className="form-row">
         <div className="form-group"><label>Account</label>
-          <select value={form.accountId} onChange={e => set("accountId", e.target.value)}>
-            <option value="">-- None --</option>
-            {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+          <TypeaheadSelect
+            value={form.accountId}
+            onChange={(id) => set("accountId", id)}
+            options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+            placeholder="Search accounts…"
+          />
         </div>
         <div className="form-group"><label>Contact</label>
-          <select value={form.contactId} onChange={e => set("contactId", e.target.value)}>
-            <option value="">-- None --</option>
-            {(form.accountId ? contacts.filter(c => c.accountId === form.accountId) : contacts).map(c =>
-              <option key={c.id} value={c.id}>{c.name}</option>
-            )}
-          </select>
+          <TypeaheadSelect
+            value={form.contactId}
+            onChange={(id) => set("contactId", id)}
+            options={(form.accountId ? contacts.filter(c => c.accountId === form.accountId) : contacts).map(c => ({ value: c.id, label: c.name, sub: c.designation || c.role || "" }))}
+            placeholder="Search contacts…"
+          />
         </div>
       </div>
       <div className="form-row">
         <div className="form-group"><label>Opportunity</label>
-          <select value={form.oppId} onChange={e => set("oppId", e.target.value)}>
-            <option value="">-- None --</option>
-            {(form.accountId ? opps.filter(o => o.accountId === form.accountId) : opps).map(o =>
-              <option key={o.id} value={o.id}>{o.title}</option>
-            )}
-          </select>
+          <TypeaheadSelect
+            value={form.oppId}
+            onChange={(id) => set("oppId", id)}
+            options={(form.accountId ? opps.filter(o => o.accountId === form.accountId) : opps).map(o => ({ value: o.id, label: o.title }))}
+            placeholder="Search opportunities…"
+          />
         </div>
         <div className="form-group"><label>Owner / Assignee</label>
-          <select value={form.owner} onChange={e => set("owner", e.target.value)}>
-            {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
+          <TypeaheadSelect
+            value={form.owner}
+            onChange={(id) => set("owner", id)}
+            options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+            placeholder="Search team…"
+          />
         </div>
       </div>
       <div className="form-group">

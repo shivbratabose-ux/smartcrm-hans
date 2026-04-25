@@ -969,7 +969,17 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           {/* Legacy single-address input removed — managed via Address Book section below */}
           <div className="form-row"><div className="form-group"><label>Status</label><select value={form.status} onChange={e => setForm(f => ({...f,status:e.target.value}))}><option>Active</option><option>Prospect</option><option>Inactive</option></select></div><div className="form-group"><label>Segment</label><select value={form.segment} onChange={e => setForm(f => ({...f,segment:e.target.value}))}>{["Enterprise","Mid-Market","SMB","Government","Association"].map(s => <option key={s}>{s}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>ARR (₹L)</label><input type="number" min="0" value={form.arrRevenue} onChange={e => setForm(f => ({...f,arrRevenue:+e.target.value}))}/><FormError error={formErrors.arrRevenue}/></div><div className="form-group"><label>Potential (₹L)</label><input type="number" min="0" value={form.potential} onChange={e => setForm(f => ({...f,potential:+e.target.value}))}/><FormError error={formErrors.potential}/></div></div>
-          <div className="form-row"><div className="form-group"><label>Website</label><input value={form.website} onChange={e => setForm(f => ({...f,website:e.target.value}))} placeholder="website.com"/></div><div className="form-group"><label>Owner</label><select value={form.owner} onChange={e => setForm(f => ({...f,owner:e.target.value}))}>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
+          <div className="form-row">
+            <div className="form-group"><label>Website</label><input value={form.website} onChange={e => setForm(f => ({...f,website:e.target.value}))} placeholder="website.com"/></div>
+            <div className="form-group"><label>Owner</label>
+              <TypeaheadSelect
+                value={form.owner}
+                onChange={(id) => setForm(f => ({...f, owner: id}))}
+                options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                placeholder="Search owners…"
+              />
+            </div>
+          </div>
           <div className="form-group"><label>Products & Modules</label>
             <ProductModulePicker
               catalog={catalog || []}

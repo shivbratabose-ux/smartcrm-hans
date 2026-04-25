@@ -730,10 +730,12 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
                   placeholder="Follow-up task title" />
               </div>
               <div className="form-group"><label>Assign To</label>
-                <select value={form.followupAssign} onChange={e => set("followupAssign", e.target.value)}>
-                  <option value="">-- Select --</option>
-                  {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
+                <TypeaheadSelect
+                  value={form.followupAssign}
+                  onChange={(id) => set("followupAssign", id)}
+                  options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                  placeholder="Search team…"
+                />
               </div>
             </div>
             <div className="form-group"><label>Due Date</label>
