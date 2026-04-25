@@ -16,7 +16,7 @@ import { CSS } from "./styles";
 
 // Supabase integration
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, insertRecord, updateRecord, deleteRecord, restoreRecord, loadDeleted } from "./lib/db";
+import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, insertRecord, updateRecord, deleteRecord, restoreRecord, loadDeleted, loadSettings, saveSettings, subscribeToSettings } from "./lib/db";
 
 // Components
 import Login from "./components/Login";
@@ -775,6 +775,26 @@ export default function SmartCRM() {
         mergeOnLoad("notes",        data.notes,       notes,       setNotes);
         mergeOnLoad("files",        data.files,       files,       setFiles);
       }
+      // ── Masters & Catalog (org-wide settings, JSONB blob) ──
+      // Stored in app_settings table (see supabase/app_settings_v1.sql).
+      // Deep-merge with INIT_MASTERS / INIT_PRODUCT_CATALOG defaults so any
+      // master added in code since the last save fills in transparently —
+      // older orgs don't lose new dropdowns just because their saved blob
+      // pre-dates the schema addition.
+      loadSettings().then(remote => {
+        if (!remote) return;
+        if (remote.masters && Object.keys(remote.masters).length > 0) {
+          // Cloud row exists — cloud is authoritative for the keys it has,
+          // local INIT_MASTERS fills in any new master added since.
+          setMasters(prev => ({ ...INIT_MASTERS, ...prev, ...remote.masters }));
+        }
+        if (Array.isArray(remote.catalog) && remote.catalog.length > 0) {
+          setCatalog(remote.catalog);
+        }
+      }).catch(err => {
+        // eslint-disable-next-line no-console
+        console.error('[settings] load failed:', err);
+      });
       setDbReady(true);
       // Cloud is now the source of truth — start propagating local changes.
       // Any state transition that ran before this point (initial mount,
@@ -877,6 +897,42 @@ export default function SmartCRM() {
       leads, callReports, contracts, collections, invoices, targets, quotes, commLogs, events, updates, customPermissions });
   }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
     leads, callReports, contracts, collections, invoices, targets, quotes, commLogs, events, updates, customPermissions]);
+
+  // ── Debounced cloud sync for masters + catalog ──
+  // Pushes the latest masters / catalog to the app_settings JSONB blob
+  // every time either changes, with a 1.5s debounce so a chip-by-chip
+  // edit doesn't fire 50 round-trips. Skipped until syncReady — the
+  // initial cloud-hydrate triggers the same masters/catalog setters,
+  // and we don't want to immediately echo what we just loaded back to
+  // the server (would race with another tab's writes).
+  // localStorage write above runs unconditionally as a backup so the
+  // user's work survives a transient network failure.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    if (!syncReady.current) return;
+    const t = setTimeout(() => {
+      saveSettings({ masters, catalog }).then(({ error }) => {
+        if (error) {
+          notify.error(`Couldn't save Masters / Catalog to the cloud: ${error.message || "unknown error"}. Your changes are safe in this browser.`);
+        }
+      });
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [masters, catalog]);
+
+  // ── Realtime: pull settings when another user / tab edits Masters ──
+  // Reads the new row payload pushed by Supabase realtime and rehydrates
+  // local state. The debounced push effect above is gated on
+  // syncReady.current, so this incoming write doesn't bounce back as
+  // an outgoing write the moment React re-renders.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const unsubscribe = subscribeToSettings("org", ({ masters: m, catalog: c }) => {
+      if (m && Object.keys(m).length > 0) setMasters(prev => ({ ...prev, ...m }));
+      if (Array.isArray(c) && c.length > 0) setCatalog(c);
+    });
+    return unsubscribe;
+  }, []);
 
   const addNote = note => setNotes(p=>[...p,note]);
   const addFile = file => setFiles(p=>[...p,file]);

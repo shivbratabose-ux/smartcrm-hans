@@ -634,6 +634,110 @@ export function subscribeToAll(handlers) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// APP SETTINGS — masters & catalog persistence
+// ───────────────────────────────────────────────────────────────────
+// `masters` (every dropdown's allowed values) and `catalog` (product
+// catalogue with module pricing logic) live in the JSONB `app_settings`
+// table — see supabase/app_settings_v1.sql for schema rationale. These
+// helpers wrap the read / write / realtime-subscribe paths. The Supabase
+// realtime channel notifies other tabs / users to refetch on remote
+// write so two reps editing pipeline stages in two tabs don't end up
+// looking at stale lists.
+//
+// Conflict model: whole-blob upsert, last-write-wins. Masters edits are
+// infrequent and the editor is a single-pane CRUD UI — not a multi-pane
+// collaborative editor — so optimistic concurrency with a "your changes
+// were overwritten" prompt would add friction without solving anything.
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Load the org-wide settings row. Returns { masters, catalog, updatedAt,
+ * updatedBy } or null if Supabase isn't configured / no row exists yet.
+ *
+ * The caller (SmartCRM.jsx init effect) merges this with INIT_MASTERS /
+ * INIT_PRODUCT_CATALOG defaults so any new master added in code since
+ * the row was last saved fills in transparently.
+ */
+export async function loadSettings(scope = "org") {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("masters, catalog, updated_at, updated_by")
+    .eq("scope", scope)
+    .maybeSingle();
+  if (error) { dbLog('error', '[DB] loadSettings:', error); return null; }
+  if (!data) return null;
+  return {
+    masters: data.masters || {},
+    catalog: data.catalog || [],
+    updatedAt: data.updated_at,
+    updatedBy: data.updated_by,
+  };
+}
+
+/**
+ * Upsert the org settings row. Pass either or both of `masters` / `catalog` —
+ * the other is preserved by reading-then-writing the existing row when only
+ * one is supplied. Whole-blob write is intentional (see header comment).
+ *
+ * Returns { error } so the caller can surface a toast on failure without
+ * crashing the editor (the localStorage backup keeps the user's work).
+ */
+export async function saveSettings({ masters, catalog }, scope = "org") {
+  if (!isSupabaseConfigured) return { error: null };
+  // If the caller only supplied one half, fetch the other from the existing
+  // row so we don't accidentally null it out.
+  let next = { masters, catalog };
+  if (masters === undefined || catalog === undefined) {
+    const existing = await loadSettings(scope);
+    if (existing) {
+      if (masters === undefined) next.masters = existing.masters;
+      if (catalog === undefined) next.catalog = existing.catalog;
+    } else {
+      // First write — fill missing side with empty.
+      if (masters === undefined) next.masters = {};
+      if (catalog === undefined) next.catalog = [];
+    }
+  }
+  const { error } = await supabase
+    .from("app_settings")
+    .upsert({
+      scope,
+      masters: next.masters,
+      catalog: next.catalog,
+    }, { onConflict: "scope" });
+  if (error) dbLog('error', '[DB] saveSettings:', error);
+  return { error };
+}
+
+/**
+ * Subscribe to remote changes on the org settings row. Called once from
+ * SmartCRM after initial load; the callback receives `{ masters, catalog }`
+ * whenever another user / another tab writes the row, so the React state
+ * can be re-hydrated without a full page reload.
+ *
+ * Returns an unsubscribe function for the effect cleanup.
+ */
+export function subscribeToSettings(scope = "org", callback) {
+  if (!isSupabaseConfigured) return () => {};
+  const channel = supabase
+    .channel(`app_settings_${scope}`)
+    .on("postgres_changes",
+      { event: "*", schema: "public", table: "app_settings", filter: `scope=eq.${scope}` },
+      (payload) => {
+        const row = payload.new || {};
+        callback({
+          masters: row.masters || {},
+          catalog: row.catalog || [],
+          updatedAt: row.updated_at,
+          updatedBy: row.updated_by,
+        });
+      })
+    .subscribe();
+  return () => supabase.removeChannel(channel);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // AUDIT LOG
 // ═══════════════════════════════════════════════════════════════════
 
