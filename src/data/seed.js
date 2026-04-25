@@ -289,6 +289,25 @@ export const BLANK_QUOTE_ITEM={
   cgstRate:0, cgstAmount:0,
   sgstRate:0, sgstAmount:0,
   totalWithTax:0,
+  // ── Pricing-logic snapshot from Masters / Product Catalogue ──
+  // These are NOT used for tax math today (POS still drives the GST split,
+  // and quote-level taxType still picks the rate). They are carried on the
+  // line so the PDF / contract generator / invoice scheduler can read the
+  // module's intended commercial behaviour even if the catalog is later
+  // edited. All fields are optional ("" / 0) when the module has no value
+  // set — downstream code falls back to quote/contract defaults.
+  licenseType:"",        // commercial framing — one of:
+                         //   "SaaS Subscription"
+                         //   "SaaS — Per User / Month" | "SaaS — Per User / Quarterly" | "SaaS — Per User / Yearly"
+                         //   "Term License" | "Perpetual (OTD)" | "Perpetual + AMC"
+  billingFrequency:"",   // "One-time" | "Monthly" | "Quarterly" | "Half-Yearly" | "Annual" | "Per-Transaction" | "Usage-based"
+  pricingModel:"",       // "Flat" | "Per-Unit" | "Per-User" | "Per-Transaction" | "Tiered" | "Volume"
+  hsnSac:"",             // HSN/SAC code for compliance on invoice/PDF
+  setupFee:0,            // One-time onboarding fee (in module currency)
+  griApplicable:"",      // "Yes" | "No"
+  griPercentage:0,       // % YoY escalation when griApplicable="Yes"
+  defaultTermMonths:0,   // Default contract term (12 / 24 / 36)
+  minCommitment:0,       // Minimum revenue floor per period (in module currency)
 };
 export const BLANK_COMM_LOG={type:"Email Sent",subject:"",body:"",from:"",to:"",accountId:"",contactId:"",oppId:"",date:"",status:"Sent",owner:"u1"};
 export const BLANK_EVENT={title:"",type:"Call",status:"Scheduled",date:"",time:"09:00",endTime:"09:30",accountId:"",contactId:"",oppId:"",owner:"u1",attendees:[],location:"",notes:"",reminderMin:15};
