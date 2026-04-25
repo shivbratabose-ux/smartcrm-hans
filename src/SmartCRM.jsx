@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -1201,9 +1201,15 @@ export default function SmartCRM() {
             contactId = newCon.id;
           }
           insertIdx++;
+          // Defense in depth — even if BulkUpload's validateRow somehow misses
+          // a placeholder ("x", "n/a", etc.) or a pre-strip-era CSV slips
+          // through, isValidLeadId ensures we only preserve a well-formed
+          // FL-YYYY-NNN id. Anything else gets a fresh auto-generated id.
           return {
             ...BLANK_LEAD, ...strip(r),
-            leadId: r.leadId || `#FL-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
+            leadId: isValidLeadId(r.leadId)
+              ? r.leadId
+              : `#FL-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
             score: Math.max(0, Math.min(100, Number(r.score) || 30)),
             createdDate: r.createdDate || today,
             stage: r.stage || "MQL",
