@@ -15,14 +15,51 @@ export const fmt = {
 export const uid  = () => Math.random().toString(36).slice(2,9);
 export const cmp  = (a,b,key) => (a[key]||"").toString().localeCompare((b[key]||"").toString());
 
-// Force a string to ALL CAPS — used at every input that captures a Company /
-// Account name, per company policy that account names must be uppercase
-// across the application. Coerces null/undefined safely; preserves an empty
-// string so input fields stay editable mid-typing without weird re-renders.
-// Applied to: Account form (Accounts.jsx), Lead form (Leads.jsx), inline
-// EditableLeadsGrid `company` cell, CallReports company input, and the
-// BulkUpload row-parser for both account.name and lead.company.
+// ─────────────────────────────────────────────────────────────────────────────
+// Text-format coercion helpers — applied at every input layer so the value
+// stored in state matches what the user sees, and the same logical record
+// can never appear in two cases (e.g. "anita sharma" vs "Anita Sharma" vs
+// "ANITA SHARMA"). Each helper is null-safe and preserves the empty string
+// so React inputs stay editable mid-typing without re-render glitches.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ALL CAPS — Company / Account names (PR #98 policy).
+// Applied via onChange in: Accounts form, Leads form, EditableLeadsGrid
+// `company` cell, CallReports company input, BulkUpload validateRow().
 export const upper = (v) => v == null ? v : String(v).toUpperCase();
+
+// lowercase — emails, websites, LinkedIn URLs. RFC 5321 says the local-part
+// of an email is technically case-sensitive, but ~every real-world server
+// treats it case-insensitive AND mixed-case dupes wreck dedup. Same logic
+// for URLs (case-insensitive at the domain level; path can technically
+// be case-sensitive but in practice nobody types paths into CRM forms).
+export const lower = (v) => v == null ? v : String(v).toLowerCase();
+
+// Title Case — person names, designations, departments, cities, address
+// lines. "anita sharma" → "Anita Sharma". Preserves apostrophes, hyphens,
+// and parenthesised qualifiers ("o'brien", "j.r.r. tolkien", "VP (sales)").
+//
+// We deliberately don't try to be clever about "von", "de la", "Mc",
+// abbreviations, or roman numerals — those are content-aware decisions
+// the user should make explicitly. Title Case as a default beats lowercase
+// or ALL CAPS for displayability and matches CRM industry convention.
+//
+// Lower-cases the whole string first so existing "JOHN SMITH" gets
+// re-cased to "John Smith" on next edit; otherwise we'd preserve the
+// shouting.
+export const title = (v) => {
+  if (v == null) return v;
+  const s = String(v);
+  return s.toLowerCase().replace(/\b([a-z])([a-z'.-]*)/g, (_m, first, rest) =>
+    first.toUpperCase() + rest
+  );
+};
+
+// Trim leading + trailing whitespace AND collapse internal multi-spaces
+// to single spaces. Useful on freeform-prose-adjacent fields where the
+// user might paste in text with stray padding (Lead ID, account number,
+// phone, etc.) but we don't want to alter the actual content's case.
+export const tidy = (v) => v == null ? v : String(v).trim().replace(/\s+/g, " ");
 export const today = new Date().toISOString().slice(0,10);
 export const isOverdue = d => d && d < today;
 export const isFuture  = d => d && d > today;

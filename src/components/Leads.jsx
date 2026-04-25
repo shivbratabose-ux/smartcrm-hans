@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import ProductModulePicker, { validateProductSelection, primaryProductId } from './ProductModulePicker';
@@ -873,10 +873,10 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
                     <div key={c.id} style={{border:"1px solid var(--brand)",borderRadius:10,padding:"14px 16px",background:"white"}}>
                       <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Edit Contact</div>
                       <div style={{display:"grid",gap:6}}>
-                        <input placeholder="Name" value={contactEditData.name || ""} onChange={e => setContactEditData(d => ({...d, name: e.target.value}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}/>
-                        <input placeholder="Email" value={contactEditData.email || ""} onChange={e => setContactEditData(d => ({...d, email: e.target.value}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}/>
+                        <input placeholder="Name" value={contactEditData.name || ""} onChange={e => setContactEditData(d => ({...d, name: title(e.target.value)}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",textTransform:"capitalize"}}/>
+                        <input placeholder="Email" value={contactEditData.email || ""} onChange={e => setContactEditData(d => ({...d, email: lower(e.target.value)}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",textTransform:"lowercase"}}/>
                         <input placeholder="Phone" value={contactEditData.phone || ""} onChange={e => setContactEditData(d => ({...d, phone: e.target.value}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}/>
-                        <input placeholder="Designation" value={contactEditData.designation || ""} onChange={e => setContactEditData(d => ({...d, designation: e.target.value}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}/>
+                        <input placeholder="Designation" value={contactEditData.designation || ""} onChange={e => setContactEditData(d => ({...d, designation: title(e.target.value)}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",textTransform:"capitalize"}}/>
                         <select value={contactEditData.role || ""} onChange={e => setContactEditData(d => ({...d, role: e.target.value}))} style={{fontSize:12,padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
                           {LEAD_CONTACT_ROLES.map(r => <option key={r}>{r}</option>)}
                         </select>
@@ -1489,8 +1489,8 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
                     title="Open detail view">{l.leadId}</span>
                 </td>
                 <td><GridCell value={l.company} onCommit={v => updateLeadField(l.id, "company", v)} style={{ fontWeight: 600, textTransform: "uppercase" }}/></td>
-                <td><GridCell value={l.contact} onCommit={v => updateLeadField(l.id, "contact", v)}/></td>
-                <td><GridCell type="email" value={l.email} onCommit={v => updateLeadField(l.id, "email", v)}/></td>
+                <td><GridCell value={l.contact} onCommit={v => updateLeadField(l.id, "contact", v)} style={{ textTransform: "capitalize" }}/></td>
+                <td><GridCell type="email" value={l.email} onCommit={v => updateLeadField(l.id, "email", v)} style={{ textTransform: "lowercase" }}/></td>
                 <td><GridCell value={l.phone} onCommit={v => updateLeadField(l.id, "phone", v)}/></td>
                 <td><GridSelect value={l.stage} options={stageOpts} onCommit={v => updateLeadField(l.id, "stage", v)}/></td>
                 <td>
@@ -1595,10 +1595,16 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [viewMode, setViewMode] = useState("table"); // "table" | "grid" (Excel-like editable)
 
   // Inline field updater for the editable grid. Saves immediately to leads state.
-  // Company names get uppercased per the company-wide policy that all
-  // Account / Company names are stored ALL CAPS — see upper() in helpers.
+  // Per company-wide text-format policy:
+  //   company       → ALL CAPS  (PR #98)
+  //   contact, name → Title Case
+  //   email         → lowercase
+  // Other fields pass through as-is so dropdowns / dates / numbers are untouched.
   const updateLeadField = (id, field, value) => {
-    const v = field === "company" ? upper(value) : value;
+    let v = value;
+    if (field === "company") v = upper(value);
+    else if (field === "contact" || field === "name") v = title(value);
+    else if (field === "email") v = lower(value);
     setLeads(prev => prev.map(l => l.id === id ? { ...l, [field]: v } : l));
   };
 
@@ -2205,7 +2211,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:4}}>A. Prospect Details</div>
           <div className="form-row">
             <div className="form-group"><label>Company Name * <span style={{fontSize:10.5,color:"var(--text3)",fontWeight:400,letterSpacing:"0.3px",marginLeft:6}}>(ALL CAPS)</span></label><input value={form.company} onChange={e => { setForm(f => ({...f, company:upper(e.target.value)})); setFormErrors(e => ({...e, company:undefined})); }} placeholder="COMPANY NAME" style={{textTransform:"uppercase",...(formErrors.company ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.company}/></div>
-            <div className="form-group"><label>Contact Name *</label><input value={form.contact} onChange={e => { setForm(f => ({...f, contact:e.target.value})); setFormErrors(e => ({...e, contact:undefined})); }} placeholder="Contact person" style={formErrors.contact ? {borderColor:"#DC2626"} : {}}/><FormError error={formErrors.contact}/></div>
+            <div className="form-group"><label>Contact Name *</label><input value={form.contact} onChange={e => { setForm(f => ({...f, contact:title(e.target.value)})); setFormErrors(e => ({...e, contact:undefined})); }} placeholder="Contact Person" style={{textTransform:"capitalize",...(formErrors.contact ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.contact}/></div>
           </div>
 
           {/* Company Hierarchy */}
@@ -2217,7 +2223,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
 
           {/* Primary Contact Email/Phone */}
           <div className="form-row">
-            <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e => { setForm(f => ({...f, email:e.target.value})); setFormErrors(e => ({...e, email:undefined})); }} placeholder="email@company.com" style={formErrors.email ? {borderColor:"#DC2626"} : {}}/><FormError error={formErrors.email}/></div>
+            <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e => { setForm(f => ({...f, email:lower(e.target.value)})); setFormErrors(e => ({...e, email:undefined})); }} placeholder="email@company.com" style={{textTransform:"lowercase",...(formErrors.email ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.email}/></div>
             <div className="form-group"><label>Phone / WhatsApp</label><input value={form.phone} onChange={e => setForm(f => ({...f, phone:e.target.value}))} placeholder="+91-98765-00000"/></div>
           </div>
 
@@ -2329,7 +2335,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             );
           })()}
           <div className="form-row">
-            <div className="form-group"><label>Designation</label><input value={form.designation||""} onChange={e => setForm(f => ({...f, designation:e.target.value}))} placeholder="e.g. VP Operations, Owner/MD"/></div>
+            <div className="form-group"><label>Designation</label><input value={form.designation||""} onChange={e => setForm(f => ({...f, designation:title(e.target.value)}))} placeholder="e.g. VP Operations, Owner/MD" style={{textTransform:"capitalize"}}/></div>
             <div className="form-group"><label>No. of Users</label><input type="number" min="0" value={form.noOfUsers||0} onChange={e => setForm(f => ({...f, noOfUsers:+e.target.value}))}/></div>
           </div>
 

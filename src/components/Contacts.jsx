@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star, Building2, ArrowUpDown, ArrowUp, ArrowDown, Globe, Briefcase, Calendar, TrendingUp, FileText, Activity } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today, resolveAddress, formatAddress } from "../utils/helpers";
+import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today, resolveAddress, formatAddress, lower, title } from "../utils/helpers";
 import { PRODUCTS, PROD_MAP, COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
 import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, FormError, Empty, TypeaheadSelect } from "./shared";
 import Pagination, { usePagination } from './Pagination';
@@ -447,8 +447,8 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
       {/* Add/Edit Modal */}
       {modal && (
         <Modal title={modal.mode === "add" ? "Add Contact" : "Edit Contact"} onClose={() => setModal(null)} footer={<><button className="btn btn-sec" onClick={() => setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save Contact</button></>}>
-          <div className="form-row"><div className="form-group"><label>Contact ID</label><input value={form.contactId||""} readOnly style={{background:"var(--s1)",fontFamily:"'Courier New',monospace",fontWeight:600,cursor:"default"}}/></div><div className="form-group"><label>Full Name *</label><input value={form.name} onChange={e=>{setForm(f=>({...f,name:e.target.value}));setFormErrors(e=>({...e,name:undefined}));}} placeholder="Full name" style={formErrors.name?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.name}/></div></div>
-          <div className="form-row"><div className="form-group"><label>Designation</label><input value={form.designation||""} onChange={e=>setForm(f=>({...f,designation:e.target.value}))} placeholder="VP Cargo, CTO…"/></div><div className="form-group"><label>Department (primary)</label><select value={form.department||""} onChange={e=>setForm(f=>({...f,department:e.target.value}))}><option value="">Select department…</option>{CONTACT_DEPARTMENTS.map(d=><option key={d} value={d}>{d}</option>)}</select></div></div>
+          <div className="form-row"><div className="form-group"><label>Contact ID</label><input value={form.contactId||""} readOnly style={{background:"var(--s1)",fontFamily:"'Courier New',monospace",fontWeight:600,cursor:"default"}}/></div><div className="form-group"><label>Full Name *</label><input value={form.name} onChange={e=>{setForm(f=>({...f,name:title(e.target.value)}));setFormErrors(e=>({...e,name:undefined}));}} placeholder="Full Name" style={{textTransform:"capitalize",...(formErrors.name?{borderColor:"#DC2626"}:{})}}/><FormError error={formErrors.name}/></div></div>
+          <div className="form-row"><div className="form-group"><label>Designation</label><input value={form.designation||""} onChange={e=>setForm(f=>({...f,designation:title(e.target.value)}))} placeholder="VP Cargo, CTO…" style={{textTransform:"capitalize"}}/></div><div className="form-group"><label>Department (primary)</label><select value={form.department||""} onChange={e=>setForm(f=>({...f,department:e.target.value}))}><option value="">Select department…</option>{CONTACT_DEPARTMENTS.map(d=><option key={d} value={d}>{d}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>Account *</label>
             <TypeaheadSelect
               value={form.accountId}
@@ -499,7 +499,7 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
               </div>
             );
           })()}
-          <div className="form-row"><div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e=>{setForm(f=>({...f,email:e.target.value}));setFormErrors(e=>({...e,email:undefined}));}} placeholder="email@company.com" style={formErrors.email?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.email}/></div><div className="form-group"><label>Phone</label><input value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="+91-98765-00000"/></div></div>
+          <div className="form-row"><div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e=>{setForm(f=>({...f,email:lower(e.target.value)}));setFormErrors(e=>({...e,email:undefined}));}} placeholder="email@company.com" style={{textTransform:"lowercase",...(formErrors.email?{borderColor:"#DC2626"}:{})}}/><FormError error={formErrors.email}/></div><div className="form-group"><label>Phone</label><input value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="+91-98765-00000"/></div></div>
           <div className="form-group">
             <label>Departments (multi-select)</label>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>

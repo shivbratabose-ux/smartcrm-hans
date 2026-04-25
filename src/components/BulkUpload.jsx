@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Upload, Download, Check, AlertCircle, RefreshCw, ArrowUpCircle, PlusCircle, Info, Loader } from "lucide-react";
 import { UPLOAD_TYPES } from '../data/constants';
-import { uid, upper } from '../utils/helpers';
+import { uid, upper, lower, title, tidy } from '../utils/helpers';
 import { notify } from '../utils/toast';
 import { Empty, PageTip } from './shared';
 
@@ -507,20 +507,37 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
     const work = { ...row };
     const warnings = [];
 
-    // Normalise Company / Account name to ALL CAPS per company policy
-    // (matches the in-app input coercion in Accounts/Leads/CallReports).
-    // Surfaces a tiny warning so the user sees the row was transformed —
-    // helps when their CSV came from another system that mixed-case'd the
-    // names. Applied to both the `name` (Customers/Accounts upload) and
-    // `company` (Leads upload) columns.
-    if (work.name && typeof work.name === "string" && work.name !== upper(work.name)) {
-      warnings.push(`Account name normalised to ALL CAPS: "${work.name}" → "${upper(work.name)}"`);
-      work.name = upper(work.name);
-    }
-    if (work.company && typeof work.company === "string" && work.company !== upper(work.company)) {
-      warnings.push(`Company name normalised to ALL CAPS: "${work.company}" → "${upper(work.company)}"`);
-      work.company = upper(work.company);
-    }
+    // ─── Text-format normalisation (matches in-app input policy) ───
+    // ALL CAPS: company / account names (PR #98)
+    // Title Case: person names + designation + city (PR #99)
+    // lowercase: emails + URLs (PR #99)
+    // tidy: trim + collapse multi-spaces on free-text identifiers
+    //
+    // Each transform only fires if the row's value differs from the
+    // normalised form — so a CSV that's already correctly formatted
+    // imports without any "normalised to..." warning noise. The warnings
+    // are non-blocking; the row still imports.
+    const norm = (field, fn, label) => {
+      const v = work[field];
+      if (typeof v === "string" && v.trim() && v !== fn(v)) {
+        warnings.push(`${label} normalised: "${v}" → "${fn(v)}"`);
+        work[field] = fn(v);
+      }
+    };
+    norm("name",         upper, "Account name (ALL CAPS)");
+    norm("company",      upper, "Company name (ALL CAPS)");
+    norm("contact",      title, "Contact name (Title Case)");
+    norm("contactName",  title, "Contact name (Title Case)");
+    norm("leadName",     title, "Lead name (Title Case)");
+    norm("designation",  title, "Designation (Title Case)");
+    norm("city",         title, "City (Title Case)");
+    norm("state",        title, "State (Title Case)");
+    norm("email",        lower, "Email (lowercase)");
+    norm("alternateEmail", lower, "Alternate email (lowercase)");
+    norm("companyWebsite", lower, "Website (lowercase)");
+    norm("linkedInUrl",  lower, "LinkedIn URL (lowercase)");
+    norm("phone",        tidy,  "Phone (whitespace tidied)");
+    norm("alternatePhone", tidy, "Alternate phone (whitespace tidied)");
 
     // Auto-fill blank mandatory fields with sensible per-type defaults BEFORE
     // running the validator — turns "Stage required" errors into a yellow
