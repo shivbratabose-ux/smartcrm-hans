@@ -159,7 +159,17 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,cat
           </div></div>
           <div className="form-row full"><div className="form-group"><label>Product & Affected Module(s)</label><ProductModulePicker value={form.productSelection || []} onChange={(v)=>setForm(f=>({...f,productSelection:v}))} catalog={catalog}/><div style={{fontSize:11,color:"var(--text3)",marginTop:4}}>Pick the product and the specific module(s) impacted by this ticket. Choose "None" if the ticket is product-wide.</div></div></div>
           <div className="form-row"><div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{TICKET_TYPES.map(t=><option key={t}>{t}</option>)}</select></div><div className="form-group"><label>Priority</label><select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))}>{PRIORITIES.map(p=><option key={p}>{p}</option>)}</select></div></div>
-          <div className="form-row"><div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{TICKET_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div><div className="form-group"><label>Assigned To</label><select value={form.assigned} onChange={e=>setForm(f=>({...f,assigned:e.target.value}))}>{team.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
+          <div className="form-row">
+            <div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{TICKET_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
+            <div className="form-group"><label>Assigned To</label>
+              <TypeaheadSelect
+                value={form.assigned}
+                onChange={(id) => setForm(f => ({...f, assigned: id}))}
+                options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                placeholder="Search team…"
+              />
+            </div>
+          </div>
           <div className="form-row"><div className="form-group"><label>SLA Date</label><input type="date" value={form.sla} onChange={e=>setForm(f=>({...f,sla:e.target.value}))}/></div></div>
           <div className="form-group"><label>Description *</label><textarea value={form.description} onChange={e=>{setForm(f=>({...f,description:e.target.value}));setFormErrors(e=>({...e,description:undefined}));}} rows={4} placeholder="Detailed description, reproduction steps, impact…" style={formErrors.description?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.description}/></div>
         </Modal>

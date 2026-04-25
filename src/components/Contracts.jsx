@@ -5,7 +5,7 @@ import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, BILL_TERMS, BILL_TYPES, CONTRACT_ST
 import { BLANK_CONTRACT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { notify } from '../utils/toast';
-import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge } from './shared';
+import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge, TypeaheadSelect } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
@@ -451,30 +451,33 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
           </div></div>
           <div className="form-row">
             <div className="form-group"><label>Account *</label>
-              <select value={form.accountId} onChange={e => {setForm(f => ({...f, accountId: e.target.value})); setFormErrors(e => ({...e, accountId: undefined}));}}
-                style={formErrors.accountId ? {borderColor:"#DC2626"} : {}}>
-                <option value="">Select account...</option>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.accountId}
+                onChange={(id) => { setForm(f => ({...f, accountId: id})); setFormErrors(e => ({...e, accountId: undefined})); }}
+                options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+                placeholder="Search accounts…"
+                error={!!formErrors.accountId}
+              />
               <FormError error={formErrors.accountId}/>
             </div>
             <div className="form-group"><label>Linked Opportunity</label>
-              <select value={form.oppId} onChange={e => {
-                const oppId = e.target.value;
-                const opp = opps.find(o => o.id === oppId);
-                setForm(f => ({
-                  ...f,
-                  oppId,
-                  // Inherit picker selection from the linked opportunity (if any)
-                  // so contract carries through the exact module/sub-product picks.
-                  productSelection: (opp && Array.isArray(opp.productSelection) && opp.productSelection.length > 0)
-                    ? opp.productSelection
-                    : (f.productSelection || []),
-                }));
-              }}>
-                <option value="">None</option>
-                {opps.filter(o => !form.accountId || o.accountId === form.accountId).map(o => <option key={o.id} value={o.id}>{o.title}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.oppId}
+                onChange={(oppId) => {
+                  const opp = opps.find(o => o.id === oppId);
+                  setForm(f => ({
+                    ...f,
+                    oppId,
+                    // Inherit picker selection from the linked opportunity (if any)
+                    // so contract carries through the exact module/sub-product picks.
+                    productSelection: (opp && Array.isArray(opp.productSelection) && opp.productSelection.length > 0)
+                      ? opp.productSelection
+                      : (f.productSelection || []),
+                  }));
+                }}
+                options={opps.filter(o => !form.accountId || o.accountId === form.accountId).map(o => ({ value: o.id, label: o.title }))}
+                placeholder="Search opportunities…"
+              />
             </div>
           </div>
           <div className="form-group" style={{marginBottom:12}}>
@@ -536,9 +539,12 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
               <input value={form.poNumber} onChange={e => setForm(f => ({...f, poNumber: e.target.value}))} placeholder="PO-XXXX-XXXX"/>
             </div>
             <div className="form-group"><label>Owner</label>
-              <select value={form.owner} onChange={e => setForm(f => ({...f, owner: e.target.value}))}>
-                {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.owner}
+                onChange={(id) => setForm(f => ({...f, owner: id}))}
+                options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+                placeholder="Search owners…"
+              />
             </div>
           </div>
           <div className="form-group"><label>Terms & Conditions</label>

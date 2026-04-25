@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, Mail, MessageSquare, Send
 import { TEAM, TEAM_MAP, COMM_TYPES, COMM_STATUSES } from '../data/constants';
 import { BLANK_COMM_LOG } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
-import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
+import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
 
@@ -123,8 +123,22 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
             <div className="form-group"><label>To *</label><input value={form.to} onChange={e=>{setForm(f=>({...f,to:e.target.value}));setFormErrors(e=>({...e,to:undefined}));}} placeholder="recipient@email.com" style={formErrors.to?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.to}/></div>
           </div>
           <div className="form-row">
-            <div className="form-group"><label>Account</label><select value={form.accountId} onChange={e=>setForm(f=>({...f,accountId:e.target.value}))}><option value="">None</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
-            <div className="form-group"><label>Contact</label><select value={form.contactId} onChange={e=>setForm(f=>({...f,contactId:e.target.value}))}><option value="">None</option>{contacts.filter(c=>!form.accountId||c.accountId===form.accountId).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+            <div className="form-group"><label>Account</label>
+              <TypeaheadSelect
+                value={form.accountId}
+                onChange={(id) => setForm(f => ({...f, accountId: id}))}
+                options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+                placeholder="Search accounts…"
+              />
+            </div>
+            <div className="form-group"><label>Contact</label>
+              <TypeaheadSelect
+                value={form.contactId}
+                onChange={(id) => setForm(f => ({...f, contactId: id}))}
+                options={contacts.filter(c => !form.accountId || c.accountId === form.accountId).map(c => ({ value: c.id, label: c.name, sub: c.designation || c.role || "" }))}
+                placeholder="Search contacts…"
+              />
+            </div>
           </div>
           <div className="form-group"><label>Date & Time</label><input value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} placeholder="2026-03-21 10:30"/></div>
           <div className="form-group"><label>Message Body</label><textarea rows={5} value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))} placeholder="Full message content..." style={{width:"100%",resize:"vertical"}}/></div>
