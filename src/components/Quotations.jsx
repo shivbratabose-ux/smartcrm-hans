@@ -1699,98 +1699,212 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           {formTab==="verify"&&(<div>
             {(() => {
               const vs = getVerifyStatus(form);
+              // ─────────────────────────────────────────────────────────
+              // ALL_VERIFY — full snapshot checklist, grouped by section.
+              // Surfaces both required (true) and optional (false) so the
+              // reviewer can scan the whole thing before Send. Click a row
+              // to jump-and-flash the corresponding form field below.
+              // ─────────────────────────────────────────────────────────
+              const ALL_VERIFY = [
+                ["LEGAL & BILLING", [
+                  ["legalName","Legal Name",true],
+                  ["taxTreatment","Tax Treatment",false],
+                  ["gstin","GSTIN",/india|domestic|sez|export/i.test(form.taxTreatment||"")],
+                  ["pan","PAN",false],
+                  ["billingAddressSnapshot","Billing Address",true],
+                  ["shippingAddressSnapshot","Shipping / Service Address",false],
+                ]],
+                ["COMMERCIAL TERMS", [
+                  ["currency","Currency",true],
+                  ["exchangeRate","FX Rate",false],
+                  ["paymentTerms","Payment Terms",true],
+                  ["creditDays","Credit Days",false],
+                  ["poMandatory","PO Mandatory?",false],
+                  ["poNumber","PO Number",/yes/i.test(form.poMandatory||"")],
+                  ["placeOfSupply","Place of Supply",/india|domestic|sez/i.test(form.taxTreatment||"")],
+                  ["taxType","Tax Mode",false],
+                ]],
+                ["BILLING CONTACTS", [
+                  ["billingContactName","Billing Contact Name",false],
+                  ["billingContactEmail","Billing Contact Email",true],
+                  ["financeContactEmail","Finance / AP Email",false],
+                ]],
+                ["DEAL CONTEXT", [
+                  ["territory","Territory",false],
+                  ["lob","Line of Business",false],
+                  ["dealSize","Deal Size",false],
+                  ["preparedBy","Prepared By",false],
+                  ["salesEngineer","Sales Engineer",false],
+                ]],
+                ["SALES NARRATIVE", [
+                  ["scope","Scope of Work",false],
+                  ["assumptions","Assumptions",false],
+                  ["exclusions","Exclusions",false],
+                  ["deliverables","Deliverables",false],
+                  ["coverLetter","Cover Letter",false],
+                ]],
+              ];
+              const isFilled = (key) => {
+                const v = form?.[key];
+                return !(v === undefined || v === null || String(v).trim() === "");
+              };
+              // jumpTo: find vf-${key} in this tab, expand its parent
+              // <details> if collapsed, scroll into view and flash yellow.
+              const jumpTo = (key) => {
+                setTimeout(() => {
+                  const el = document.getElementById(`vf-${key}`);
+                  if (!el) return;
+                  const det = el.closest("details");
+                  if (det && !det.open) det.open = true;
+                  el.scrollIntoView({behavior:"smooth", block:"center"});
+                  const orig = el.style.background;
+                  el.style.transition = "background 0.6s";
+                  el.style.background = "#FEF3C7";
+                  setTimeout(() => { el.style.background = orig; }, 1200);
+                  if (typeof el.focus === "function") el.focus({preventScroll:true});
+                }, 30);
+              };
               return (
-                <div style={{background:vs.complete?"#ECFDF5":"#FFFBEB",border:`1px solid ${vs.complete?"#86EFAC":"#FCD34D"}`,padding:"10px 14px",borderRadius:8,marginBottom:14,fontSize:12.5}}>
-                  <div style={{fontWeight:700,color:vs.complete?"#047857":"#92400E",marginBottom:4}}>
-                    {vs.complete ? "✓ Verified — ready to send" : `Verification incomplete — ${vs.missing.length} field${vs.missing.length===1?"":"s"} missing`}
+                <>
+                  <div style={{background:vs.complete?"#ECFDF5":"#FFFBEB",border:`1px solid ${vs.complete?"#86EFAC":"#FCD34D"}`,padding:"10px 14px",borderRadius:8,marginBottom:14,fontSize:12.5}}>
+                    <div style={{fontWeight:700,color:vs.complete?"#047857":"#92400E",marginBottom:4}}>
+                      {vs.complete ? "✓ Verified — ready to send" : `Verification incomplete — ${vs.missing.length} field${vs.missing.length===1?"":"s"} missing`}
+                    </div>
+                    <div style={{fontSize:11,color:"var(--text3)"}}>
+                      {vs.complete
+                        ? "Snapshot is historically locked to this quote. Editing the account later won't rewrite these values."
+                        : "Click any row below to jump to that field. Required fields must be filled before status can leave Draft."}
+                    </div>
                   </div>
-                  <div style={{fontSize:11,color:"var(--text3)"}}>
-                    {vs.complete
-                      ? "Snapshot is historically locked to this quote. Editing the account later won't rewrite these values."
-                      : `Required before Send: ${vs.missing.map(m => m.label).join(", ")}.`}
+
+                  {/* ── At-a-glance grid of every snapshot field ── */}
+                  <div style={{marginBottom:18,border:"1px solid var(--border)",borderRadius:6,overflow:"hidden"}}>
+                    <div style={{padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>VERIFY-BEFORE-SEND CHECKLIST</div>
+                    {ALL_VERIFY.map(([groupLabel, rows]) => (
+                      <div key={groupLabel}>
+                        <div style={{padding:"6px 12px",background:"#F8FAFC",fontSize:10.5,fontWeight:700,color:"var(--text3)",letterSpacing:"0.4px",borderTop:"1px solid var(--border)"}}>{groupLabel}</div>
+                        {rows.map(([key,label,required],i) => {
+                          const filled = isFilled(key);
+                          const isMissing = required && !filled;
+                          const status = filled ? "✓" : (required ? "✗" : "—");
+                          const statusColor = filled ? "#047857" : (required ? "#B91C1C" : "#94A3B8");
+                          const v = form?.[key];
+                          const display = v === undefined || v === null || String(v).trim() === "" ? "—" : String(v).length > 60 ? String(v).slice(0,60) + "…" : String(v);
+                          return (
+                            <div key={key} onClick={() => jumpTo(key)} style={{display:"grid",gridTemplateColumns:"24px 1.2fr 2fr",gap:10,alignItems:"center",padding:"7px 12px",borderTop:"1px solid var(--border)",cursor:"pointer",background:isMissing?"#FFFBEB":"transparent",fontSize:12.5}} title="Click to jump to this field">
+                              <div style={{color:statusColor,fontWeight:700,textAlign:"center"}}>{status}</div>
+                              <div style={{fontWeight:600}}>{label}{required && <span style={{color:"#B91C1C",marginLeft:4}}>*</span>}</div>
+                              <div style={{color:filled?"var(--text2)":"var(--text3)",fontStyle:filled?"normal":"italic"}}>{display}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
                   </div>
-                </div>
+                </>
               );
             })()}
 
-            {/* ── Legal / Billing snapshot ── */}
-            <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:4}}>LEGAL & BILLING SNAPSHOT</div>
-            <div className="form-row">
-              <div className="form-group"><label>Legal Name *</label><input value={form.legalName||""} onChange={e=>setForm(f=>({...f,legalName:e.target.value}))} placeholder="Legal entity name as on PO"/></div>
-              <div className="form-group"><label>Tax Treatment</label><select value={form.taxTreatment||""} onChange={e=>setForm(f=>({...f,taxTreatment:e.target.value}))}><option value="">—</option><option>Domestic</option><option>SEZ</option><option>Export</option><option>Overseas</option></select></div>
-            </div>
-            <div className="form-row">
-              <div className="form-group"><label>GSTIN{/india|domestic|sez|export/i.test(form.taxTreatment||"")?" *":""}</label><input value={form.gstin||""} onChange={e=>setForm(f=>({...f,gstin:e.target.value.toUpperCase()}))} placeholder="15-char GSTIN"/></div>
-              <div className="form-group"><label>PAN</label><input value={form.pan||""} onChange={e=>setForm(f=>({...f,pan:e.target.value.toUpperCase()}))} placeholder="10-char PAN"/></div>
-            </div>
-            <div className="form-group"><label>Billing Address *</label><textarea rows={2} value={form.billingAddressSnapshot||""} onChange={e=>setForm(f=>({...f,billingAddressSnapshot:e.target.value}))} placeholder="Full billing address as on invoice" style={{width:"100%",resize:"vertical"}}/></div>
-            <div className="form-group"><label>Shipping / Service Address</label><textarea rows={2} value={form.shippingAddressSnapshot||""} onChange={e=>setForm(f=>({...f,shippingAddressSnapshot:e.target.value}))} placeholder="Leave blank if same as billing" style={{width:"100%",resize:"vertical"}}/></div>
-
-            {/* ── Commercial terms ── */}
-            <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:14}}>COMMERCIAL TERMS</div>
-            <div className="form-row three">
-              <div className="form-group"><label>Currency *</label><select value={form.currency||"INR"} onChange={e=>setForm(f=>({...f,currency:e.target.value}))}><option>INR</option><option>USD</option><option>EUR</option><option>GBP</option><option>AED</option><option>SGD</option></select></div>
-              <div className="form-group"><label>Exchange Rate (→ INR)</label><input type="number" min={0} step={0.01} value={form.exchangeRate||1} onChange={e=>setForm(f=>({...f,exchangeRate:+e.target.value}))}/></div>
-              <div className="form-group"><label>Payment Terms *</label><select value={form.paymentTerms||""} onChange={e=>setForm(f=>({...f,paymentTerms:e.target.value}))}><option value="">—</option><option>Advance</option><option>Net 15</option><option>Net 30</option><option>Net 45</option><option>Net 60</option><option>Net 90</option><option>Milestone</option></select></div>
-            </div>
-            <div className="form-row three">
-              <div className="form-group"><label>Credit Days</label><input type="number" min={0} value={form.creditDays||0} onChange={e=>setForm(f=>({...f,creditDays:+e.target.value}))}/></div>
-              <div className="form-group"><label>PO Mandatory?</label><select value={form.poMandatory||""} onChange={e=>setForm(f=>({...f,poMandatory:e.target.value}))}><option value="">—</option><option>Yes</option><option>No</option></select></div>
-              <div className="form-group"><label>PO Number{/yes/i.test(form.poMandatory||"")?" *":""}</label><input value={form.poNumber||""} onChange={e=>setForm(f=>({...f,poNumber:e.target.value}))} placeholder="Customer PO #"/></div>
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Place of Supply
-                  <HelpTooltip text={`Drives the GST split per line. Same as seller home (${SELLER_HOME_STATE}) → CGST + SGST. Different state → IGST. Outside India → zero-rated. Leave blank to fall back to lump-sum tax (legacy quotes).`}/>
-                </label>
-                <select value={form.placeOfSupply||""} onChange={e=>{
-                  const pos=e.target.value;
-                  setForm(f=>{
-                    const totals=recalc(f.items,f.taxType,f.discount,pos);
-                    return {...f,placeOfSupply:pos,...totals};
-                  });
-                }}>
-                  <option value="">— Not set (lump-sum tax) —</option>
-                  {PLACES_OF_SUPPLY.map(s=><option key={s} value={s}>{s===SELLER_HOME_STATE?`${s} (intra-state · CGST+SGST)`:s==="Outside India"?`${s} (zero-rated)`:`${s} (inter-state · IGST)`}</option>)}
-                </select>
+            {/* ─────────────────────────────────────────────────────────
+                Each Details-tab section is a native <details open> so the
+                rep can collapse the noisy ones (e.g. Sales Narrative once
+                they've drafted it) and keep their eye on what they're
+                editing. The id="vf-X" anchors are targeted by the Verify
+                tab's click-to-jump handler — keep them in sync if you
+                rename a field. */}
+            <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
+              <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>LEGAL & BILLING SNAPSHOT</summary>
+              <div style={{padding:"10px 12px"}}>
+                <div className="form-row">
+                  <div className="form-group"><label>Legal Name *</label><input id="vf-legalName" value={form.legalName||""} onChange={e=>setForm(f=>({...f,legalName:e.target.value}))} placeholder="Legal entity name as on PO"/></div>
+                  <div className="form-group"><label>Tax Treatment</label><select id="vf-taxTreatment" value={form.taxTreatment||""} onChange={e=>setForm(f=>({...f,taxTreatment:e.target.value}))}><option value="">—</option><option>Domestic</option><option>SEZ</option><option>Export</option><option>Overseas</option></select></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>GSTIN{/india|domestic|sez|export/i.test(form.taxTreatment||"")?" *":""}</label><input id="vf-gstin" value={form.gstin||""} onChange={e=>setForm(f=>({...f,gstin:e.target.value.toUpperCase()}))} placeholder="15-char GSTIN"/></div>
+                  <div className="form-group"><label>PAN</label><input id="vf-pan" value={form.pan||""} onChange={e=>setForm(f=>({...f,pan:e.target.value.toUpperCase()}))} placeholder="10-char PAN"/></div>
+                </div>
+                <div className="form-group"><label>Billing Address *</label><textarea id="vf-billingAddressSnapshot" rows={2} value={form.billingAddressSnapshot||""} onChange={e=>setForm(f=>({...f,billingAddressSnapshot:e.target.value}))} placeholder="Full billing address as on invoice" style={{width:"100%",resize:"vertical"}}/></div>
+                <div className="form-group"><label>Shipping / Service Address</label><textarea id="vf-shippingAddressSnapshot" rows={2} value={form.shippingAddressSnapshot||""} onChange={e=>setForm(f=>({...f,shippingAddressSnapshot:e.target.value}))} placeholder="Leave blank if same as billing" style={{width:"100%",resize:"vertical"}}/></div>
               </div>
-              <div className="form-group">
-                <label>Tax Mode</label>
-                <select value={form.taxType} onChange={e=>{const t=e.target.value;setForm(f=>{const totals=recalc(f.items,t,f.discount,f.placeOfSupply);return{...f,taxType:t,...totals};});}}>
-                  {TAX_TYPES.map(t=><option key={t}>{t}</option>)}
-                </select>
+            </details>
+
+            <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
+              <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>COMMERCIAL TERMS</summary>
+              <div style={{padding:"10px 12px"}}>
+                <div className="form-row three">
+                  <div className="form-group"><label>Currency *</label><select id="vf-currency" value={form.currency||"INR"} onChange={e=>setForm(f=>({...f,currency:e.target.value}))}><option>INR</option><option>USD</option><option>EUR</option><option>GBP</option><option>AED</option><option>SGD</option></select></div>
+                  <div className="form-group"><label>Exchange Rate (→ INR)</label><input id="vf-exchangeRate" type="number" min={0} step={0.01} value={form.exchangeRate||1} onChange={e=>setForm(f=>({...f,exchangeRate:+e.target.value}))}/></div>
+                  <div className="form-group"><label>Payment Terms *</label><select id="vf-paymentTerms" value={form.paymentTerms||""} onChange={e=>setForm(f=>({...f,paymentTerms:e.target.value}))}><option value="">—</option><option>Advance</option><option>Net 15</option><option>Net 30</option><option>Net 45</option><option>Net 60</option><option>Net 90</option><option>Milestone</option></select></div>
+                </div>
+                <div className="form-row three">
+                  <div className="form-group"><label>Credit Days</label><input id="vf-creditDays" type="number" min={0} value={form.creditDays||0} onChange={e=>setForm(f=>({...f,creditDays:+e.target.value}))}/></div>
+                  <div className="form-group"><label>PO Mandatory?</label><select id="vf-poMandatory" value={form.poMandatory||""} onChange={e=>setForm(f=>({...f,poMandatory:e.target.value}))}><option value="">—</option><option>Yes</option><option>No</option></select></div>
+                  <div className="form-group"><label>PO Number{/yes/i.test(form.poMandatory||"")?" *":""}</label><input id="vf-poNumber" value={form.poNumber||""} onChange={e=>setForm(f=>({...f,poNumber:e.target.value}))} placeholder="Customer PO #"/></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Place of Supply{/india|domestic|sez/i.test(form.taxTreatment||"")?" *":""}
+                      <HelpTooltip text={`Drives the GST split per line. Same as seller home (${SELLER_HOME_STATE}) → CGST + SGST. Different state → IGST. Outside India → zero-rated. Leave blank to fall back to lump-sum tax (legacy quotes).`}/>
+                    </label>
+                    <select id="vf-placeOfSupply" value={form.placeOfSupply||""} onChange={e=>{
+                      const pos=e.target.value;
+                      setForm(f=>{
+                        const totals=recalc(f.items,f.taxType,f.discount,pos);
+                        return {...f,placeOfSupply:pos,...totals};
+                      });
+                    }}>
+                      <option value="">— Not set (lump-sum tax) —</option>
+                      {PLACES_OF_SUPPLY.map(s=><option key={s} value={s}>{s===SELLER_HOME_STATE?`${s} (intra-state · CGST+SGST)`:s==="Outside India"?`${s} (zero-rated)`:`${s} (inter-state · IGST)`}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Tax Mode</label>
+                    <select id="vf-taxType" value={form.taxType} onChange={e=>{const t=e.target.value;setForm(f=>{const totals=recalc(f.items,t,f.discount,f.placeOfSupply);return{...f,taxType:t,...totals};});}}>
+                      {TAX_TYPES.map(t=><option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
               </div>
-            </div>
+            </details>
 
-            {/* ── Contacts ── */}
-            <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:14}}>BILLING CONTACTS</div>
-            <div className="form-row three">
-              <div className="form-group"><label>Billing Contact Name</label><input value={form.billingContactName||""} onChange={e=>setForm(f=>({...f,billingContactName:e.target.value}))}/></div>
-              <div className="form-group"><label>Billing Contact Email *</label><input type="email" value={form.billingContactEmail||""} onChange={e=>setForm(f=>({...f,billingContactEmail:e.target.value}))} placeholder="ap@customer.com"/></div>
-              <div className="form-group"><label>Finance / AP Email</label><input type="email" value={form.financeContactEmail||""} onChange={e=>setForm(f=>({...f,financeContactEmail:e.target.value}))} placeholder="finance@customer.com"/></div>
-            </div>
+            <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
+              <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>BILLING CONTACTS</summary>
+              <div style={{padding:"10px 12px"}}>
+                <div className="form-row three">
+                  <div className="form-group"><label>Billing Contact Name</label><input id="vf-billingContactName" value={form.billingContactName||""} onChange={e=>setForm(f=>({...f,billingContactName:e.target.value}))}/></div>
+                  <div className="form-group"><label>Billing Contact Email *</label><input id="vf-billingContactEmail" type="email" value={form.billingContactEmail||""} onChange={e=>setForm(f=>({...f,billingContactEmail:e.target.value}))} placeholder="ap@customer.com"/></div>
+                  <div className="form-group"><label>Finance / AP Email</label><input id="vf-financeContactEmail" type="email" value={form.financeContactEmail||""} onChange={e=>setForm(f=>({...f,financeContactEmail:e.target.value}))} placeholder="finance@customer.com"/></div>
+                </div>
+              </div>
+            </details>
 
-            {/* ── Deal context ── */}
-            <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:14}}>DEAL CONTEXT</div>
-            <div className="form-row three">
-              <div className="form-group"><label>Territory</label><input value={form.territory||""} onChange={e=>setForm(f=>({...f,territory:e.target.value}))}/></div>
-              <div className="form-group"><label>Line of Business</label><input value={form.lob||""} onChange={e=>setForm(f=>({...f,lob:e.target.value}))} placeholder="e.g. SaaS / Implementation"/></div>
-              <div className="form-group"><label>Deal Size</label><select value={form.dealSize||""} onChange={e=>setForm(f=>({...f,dealSize:e.target.value}))}><option value="">—</option><option>Small</option><option>Medium</option><option>Large</option><option>Strategic</option></select></div>
-            </div>
-            <div className="form-row">
-              <div className="form-group"><label>Prepared By</label><input value={form.preparedBy||""} onChange={e=>setForm(f=>({...f,preparedBy:e.target.value}))} placeholder="Sales owner name"/></div>
-              <div className="form-group"><label>Sales Engineer</label><input value={form.salesEngineer||""} onChange={e=>setForm(f=>({...f,salesEngineer:e.target.value}))} placeholder="SE / solution architect"/></div>
-            </div>
+            <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
+              <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>DEAL CONTEXT</summary>
+              <div style={{padding:"10px 12px"}}>
+                <div className="form-row three">
+                  <div className="form-group"><label>Territory</label><input id="vf-territory" value={form.territory||""} onChange={e=>setForm(f=>({...f,territory:e.target.value}))}/></div>
+                  <div className="form-group"><label>Line of Business</label><input id="vf-lob" value={form.lob||""} onChange={e=>setForm(f=>({...f,lob:e.target.value}))} placeholder="e.g. SaaS / Implementation"/></div>
+                  <div className="form-group"><label>Deal Size</label><select id="vf-dealSize" value={form.dealSize||""} onChange={e=>setForm(f=>({...f,dealSize:e.target.value}))}><option value="">—</option><option>Small</option><option>Medium</option><option>Large</option><option>Strategic</option></select></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>Prepared By</label><input id="vf-preparedBy" value={form.preparedBy||""} onChange={e=>setForm(f=>({...f,preparedBy:e.target.value}))} placeholder="Sales owner name"/></div>
+                  <div className="form-group"><label>Sales Engineer</label><input id="vf-salesEngineer" value={form.salesEngineer||""} onChange={e=>setForm(f=>({...f,salesEngineer:e.target.value}))} placeholder="SE / solution architect"/></div>
+                </div>
+              </div>
+            </details>
 
-            {/* ── Narrative ── */}
-            <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:14}}>SALES NARRATIVE</div>
-            <div className="form-group"><label>Scope of Work</label><textarea rows={3} value={form.scope||""} onChange={e=>setForm(f=>({...f,scope:e.target.value}))} placeholder="What's included in this quote..." style={{width:"100%",resize:"vertical"}}/></div>
-            <div className="form-row">
-              <div className="form-group"><label>Assumptions</label><textarea rows={3} value={form.assumptions||""} onChange={e=>setForm(f=>({...f,assumptions:e.target.value}))} placeholder="Assumptions the pricing depends on" style={{width:"100%",resize:"vertical"}}/></div>
-              <div className="form-group"><label>Exclusions</label><textarea rows={3} value={form.exclusions||""} onChange={e=>setForm(f=>({...f,exclusions:e.target.value}))} placeholder="What's NOT included" style={{width:"100%",resize:"vertical"}}/></div>
-            </div>
-            <div className="form-group"><label>Deliverables</label><textarea rows={2} value={form.deliverables||""} onChange={e=>setForm(f=>({...f,deliverables:e.target.value}))} placeholder="Concrete deliverables / milestones" style={{width:"100%",resize:"vertical"}}/></div>
-            <div className="form-group"><label>Cover Letter</label><textarea rows={3} value={form.coverLetter||""} onChange={e=>setForm(f=>({...f,coverLetter:e.target.value}))} placeholder="Cover-letter text to paste at top of the quote PDF" style={{width:"100%",resize:"vertical"}}/></div>
+            <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
+              <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>SALES NARRATIVE</summary>
+              <div style={{padding:"10px 12px"}}>
+                <div className="form-group"><label>Scope of Work</label><textarea id="vf-scope" rows={3} value={form.scope||""} onChange={e=>setForm(f=>({...f,scope:e.target.value}))} placeholder="What's included in this quote..." style={{width:"100%",resize:"vertical"}}/></div>
+                <div className="form-row">
+                  <div className="form-group"><label>Assumptions</label><textarea id="vf-assumptions" rows={3} value={form.assumptions||""} onChange={e=>setForm(f=>({...f,assumptions:e.target.value}))} placeholder="Assumptions the pricing depends on" style={{width:"100%",resize:"vertical"}}/></div>
+                  <div className="form-group"><label>Exclusions</label><textarea id="vf-exclusions" rows={3} value={form.exclusions||""} onChange={e=>setForm(f=>({...f,exclusions:e.target.value}))} placeholder="What's NOT included" style={{width:"100%",resize:"vertical"}}/></div>
+                </div>
+                <div className="form-group"><label>Deliverables</label><textarea id="vf-deliverables" rows={2} value={form.deliverables||""} onChange={e=>setForm(f=>({...f,deliverables:e.target.value}))} placeholder="Concrete deliverables / milestones" style={{width:"100%",resize:"vertical"}}/></div>
+                <div className="form-group"><label>Cover Letter</label><textarea id="vf-coverLetter" rows={3} value={form.coverLetter||""} onChange={e=>setForm(f=>({...f,coverLetter:e.target.value}))} placeholder="Cover-letter text to paste at top of the quote PDF" style={{width:"100%",resize:"vertical"}}/></div>
+              </div>
+            </details>
           </div>)}
 
           {formTab==="items"&&(<ItemsComposerTab
