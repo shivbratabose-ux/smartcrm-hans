@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, createContext, useContext } from "react";
 import {
   Plus, ChevronLeft, ChevronRight, Edit2, Trash2, Check, X,
   BarChart3, List, Kanban, Clock, AlertTriangle, TrendingUp,
@@ -11,7 +11,14 @@ import {
   PieChart, Pie, Cell, Legend, CartesianGrid
 } from "recharts";
 import {
-  PRODUCTS, PROD_MAP, STAGES, STAGE_PROB, STAGE_COL, TEAM, TEAM_MAP,
+  PRODUCTS, PROD_MAP,
+  // STAGES / STAGE_PROB / STAGE_COL are now editable via Masters → Pipeline
+  // Stages and live in `masters.stages`. We import the bundled defaults under
+  // aliases so the StagesContext provider can fall back to them when the
+  // masters slot is missing (fresh state, dev fixture, etc.). Don't reference
+  // these directly in render code — use useContext(StagesContext) instead.
+  STAGES as DEFAULT_STAGES, STAGE_PROB as DEFAULT_STAGE_PROB, STAGE_COL as DEFAULT_STAGE_COL,
+  TEAM, TEAM_MAP,
   COUNTRIES, OPP_SOURCES, HIERARCHY_LEVELS, FORECAST_CATS, OPP_SIZES,
   WIN_REASONS, LOSS_REASONS, LOSS_IMPACT_AREAS, SUSPEND_REASONS, ACT_TYPES, INIT_USERS,
   CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES
@@ -21,6 +28,54 @@ import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, g
 import { exportCSV } from "../utils/csv";
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect } from "./shared";
 import ProductModulePicker, { validateProductSelection, primaryProductId } from "./ProductModulePicker";
+
+/* ───────── stages context ─────────
+   Pipeline stages were hardcoded in constants.js; they're now editable in
+   Masters → Pipeline Stages and live on `masters.stages`. We expose the
+   derived maps via Context so the deeply-nested subcomponents
+   (StageUpdateModal, BackStageModal, DealDetail) don't need every
+   ancestor to thread props.
+   The shape provided is identical to the legacy import shape:
+       { STAGES, STAGE_PROB, STAGE_COL,
+         wonName, lostName,        // resolved by `kind` so logic survives a rename
+         openStages, closingNames }
+   The provider in Pipeline() builds this from masters.stages, falling back
+   to the bundled defaults when the masters slot is empty.                 */
+const StagesContext = createContext(null);
+
+// Build the derived maps from a `masters.stages` array (or null/undefined,
+// in which case we synthesise from the legacy constants so the app boots
+// even on a fresh state).
+function buildStagesContext(stagesList) {
+  // Fallback: rebuild list-shape from old string-array constants when the
+  // masters.stages slot is missing. Once a real user has touched Masters,
+  // this branch never runs in production.
+  const list = (stagesList && stagesList.length)
+    ? stagesList
+    : DEFAULT_STAGES.map(s => ({
+        id: `_def_${s}`, name: s,
+        probability: DEFAULT_STAGE_PROB[s] || 0,
+        color: DEFAULT_STAGE_COL[s] || "#94A3B8",
+        kind: s === "Won" ? "won" : s === "Lost" ? "lost" : "open",
+      }));
+  const STAGES = list.map(s => s.name);
+  const STAGE_PROB = Object.fromEntries(list.map(s => [s.name, Number(s.probability) || 0]));
+  const STAGE_COL = Object.fromEntries(list.map(s => [s.name, s.color || "#94A3B8"]));
+  // Resolve closing-stage names by kind so renames don't break forecast /
+  // win-rate logic. Falls back to "Won" / "Lost" string names if no stage
+  // is flagged (only happens on legacy data prior to this PR).
+  const wonStage  = list.find(s => s.kind === "won");
+  const lostStage = list.find(s => s.kind === "lost");
+  const wonName   = wonStage ? wonStage.name : "Won";
+  const lostName  = lostStage ? lostStage.name : "Lost";
+  return {
+    STAGES, STAGE_PROB, STAGE_COL,
+    wonName, lostName,
+    closingNames: [wonName, lostName],
+    openStages: STAGES.filter(n => n !== wonName && n !== lostName),
+    list,
+  };
+}
 
 /* ───────── constants ───────── */
 const HEALTH_CFG = {
@@ -99,6 +154,8 @@ function KpiCard({ label, value, sub, icon: Icon, color }) {
    STAGE UPDATE MODAL — gates every stage advancement
    ═══════════════════════════════════════════════════════ */
 function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accounts }) {
+  // Single context grab — destructure here to avoid stale closure issues.
+  const { STAGE_COL, closingNames, wonName: wonStageName, lostName: lostStageName } = useContext(StagesContext);
   const [actType, setActType] = useState("");
   const [notes, setNotes] = useState("");
   const [nextDate, setNextDate] = useState("");
@@ -122,7 +179,7 @@ function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accoun
     if (!actType) e.actType = "Activity type is required";
     if (!notes.trim() || notes.trim().length < 20) e.notes = "Notes must be at least 20 characters — describe what was discussed, client response, objections, next steps";
     // Next action date is meaningless for closed deals — only require it for active stages.
-    const isClosingNow = toStage === "Won" || toStage === "Lost";
+    const isClosingNow = closingNames.includes(toStage);
     if (!isClosingNow) {
       if (!nextDate) e.nextDate = "Next action date is required";
       else if (nextDate <= today) e.nextDate = "Next action date must be in the future";
@@ -130,7 +187,7 @@ function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accoun
     if (!outcome) e.outcome = "Outcome is required";
     // Mandatory loss-analysis when closing as Lost — turns the post-mortem
     // into a forced learning loop instead of an afterthought.
-    if (toStage === "Lost") {
+    if (toStage === lostStageName) {
       if (!lossPrimary) e.lossPrimary = "Primary loss reason is required";
       if (!lossImprove.trim() || lossImprove.trim().length < 15) e.lossImprove = "Improvement notes (min 15 chars) — what would we do differently?";
     }
@@ -141,7 +198,7 @@ function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accoun
     const e = validate();
     if (hasErrors(e)) { setErrors(e); return; }
     const payload = { actType, notes: notes.trim(), nextDate, outcome };
-    if (toStage === "Lost") {
+    if (toStage === lostStageName) {
       payload.lossFields = {
         lossReason: lossPrimary,
         lossReasonSecondary: lossSecondary,
@@ -156,18 +213,21 @@ function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accoun
   };
 
   const acc = accounts.find(a => a.id === opp.accountId);
-  const isClosing = toStage === "Won" || toStage === "Lost";
+  // closingNames is [wonName, lostName] resolved by `kind` so renaming
+  // "Won" → "Closed Won" still flags the stage as a closing one.
+  const isClosing = closingNames.includes(toStage);
+  const isLostClose = toStage === lostStageName;
   return (
     <Modal title={isClosing ? `Closing Deal as ${toStage}` : "Stage Update Required"} onClose={onCancel} lg footer={
       <>
         <button className="btn btn-sec" onClick={onCancel}>Cancel</button>
-        <button className={isClosing && toStage === "Lost" ? "btn btn-danger" : "btn btn-primary"} onClick={submit}>
+        <button className={isClosing && isLostClose ? "btn btn-danger" : "btn btn-primary"} onClick={submit}>
           <Check size={14} /> {isClosing ? `Confirm Close as ${toStage}` : "Confirm Stage Move"}
         </button>
       </>
     }>
       {isClosing ? (
-        <div style={{ background: toStage === "Won" ? "#D1FAE5" : "#FEE2E2", border: `1px solid ${toStage === "Won" ? "#10B981" : "#EF4444"}`, borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 12.5, color: toStage === "Won" ? "#065F46" : "#991B1B", display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ background: toStage === wonStageName ? "#D1FAE5" : "#FEE2E2", border: `1px solid ${toStage === wonStageName ? "#10B981" : "#EF4444"}`, borderRadius: 8, padding: "12px 14px", marginBottom: 16, fontSize: 12.5, color: toStage === wonStageName ? "#065F46" : "#991B1B", display: "flex", alignItems: "flex-start", gap: 8 }}>
           <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
           <div>
             <strong>This will close the deal as {toStage}.</strong> The opportunity will be removed from the active pipeline. Capture the reason and outcome in the notes below — this becomes part of the permanent record.
@@ -217,7 +277,7 @@ function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accoun
           <span style={{ fontSize: 10, color: notes.length >= 20 ? "#22C55E" : "var(--text3)" }}>{notes.length}/20+</span>
         </div>
       </div>
-      {!(toStage === "Won" || toStage === "Lost") && (
+      {!isClosing && (
         <div className="form-row">
           <div className="form-group">
             <label>Next Action Date *</label>
@@ -234,7 +294,7 @@ function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accoun
           reason + improvement notes before the system accepts the close.
           Secondary reason, competitor name, impact tags, and management
           feedback are optional but encouraged for the deep dive. */}
-      {toStage === "Lost" && (
+      {toStage === lostStageName && (
         <div style={{ marginTop:18, paddingTop:16, borderTop:"1px dashed var(--border)" }}>
           <div style={{ fontSize:13, fontWeight:700, color:"#991B1B", marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
             <AlertTriangle size={14} /> Loss Analysis — Post-Mortem
@@ -301,6 +361,7 @@ function StageUpdateModal({ opp, fromStage, toStage, onConfirm, onCancel, accoun
    BACK STAGE MODAL — simpler, just a comment
    ═══════════════════════════════════════════════════════ */
 function BackStageModal({ opp, fromStage, toStage, onConfirm, onCancel }) {
+  const { STAGE_COL } = useContext(StagesContext);
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
   const submit = () => {
@@ -372,6 +433,7 @@ function QuickUpdatePopover({ opp, onSave, onClose }) {
    DEAL DETAIL (Enhanced)
    ═══════════════════════════════════════════════════════ */
 function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, onLogCall }) {
+  const { STAGE_COL, STAGES } = useContext(StagesContext);
   const [tab, setTab] = useState("overview");
 
   // ── Inline field editing ──
@@ -509,7 +571,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
                 <div className="dp-row"><span className="dp-key">Account</span><span className="dp-val">{acc?.name || "—"}</span></div>
                 <div className="dp-row"><span className="dp-key">Health</span><span className="dp-val"><HealthBadge health={health}/></span></div>
                 {/* Editable rows */}
-                {editableRow("Stage", "stage", "select", ["Prospect","Qualified","Demo","Proposal","Negotiation","Won","Lost"])}
+                {editableRow("Stage", "stage", "select", STAGES)}
                 {editableRow("Value (₹L)", "value", "number")}
                 {editableRow("Probability (%)", "probability", "number")}
                 {editableRow("Close Date", "closeDate", "date")}
@@ -649,6 +711,12 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
 function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete }) {
+  // Pipeline stages are now editable in Masters → Pipeline Stages. Build the
+  // derived maps once per render — buildStagesContext handles fallback to
+  // bundled defaults when masters.stages is missing.
+  const stagesCtx = useMemo(() => buildStagesContext(masters?.stages), [masters?.stages]);
+  const { STAGES, STAGE_PROB, STAGE_COL, wonName, lostName, closingNames } = stagesCtx;
+
   const _pipelineScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const team = useMemo(() => {
     const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
@@ -773,11 +841,11 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   }), [opps, prodF, ownerF, regionF, stageF, statusF, searchQ, activities, accounts]);
 
   /* KPIs */
-  const openDeals = filtered.filter(o => !["Won", "Lost"].includes(o.stage));
+  const openDeals = filtered.filter(o => !closingNames.includes(o.stage));
   const totalPipe = openDeals.reduce((s, o) => s + o.value, 0);
   const weighted = openDeals.reduce((s, o) => s + (o.value * (o.probability / 100)), 0);
-  const wonCount = filtered.filter(o => o.stage === "Won").length;
-  const lostCount = filtered.filter(o => o.stage === "Lost").length;
+  const wonCount = filtered.filter(o => o.stage === wonName).length;
+  const lostCount = filtered.filter(o => o.stage === lostName).length;
   const winRate = wonCount + lostCount > 0 ? Math.round((wonCount / (wonCount + lostCount)) * 100) : 0;
   const atRiskCount = openDeals.filter(o => getDealHealth(o.id, activities) === "at-risk").length;
   const stalledCount = openDeals.filter(o => getDealHealth(o.id, activities) === "stalled").length;
@@ -808,7 +876,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     } else {
       const prev = opps.find(o => o.id === clean.id);
       setOpps(p => p.map(o => o.id === clean.id ? { ...clean } : o));
-      if (clean.stage === "Won" && prev?.stage !== "Won" && onDealWon) onDealWon(clean);
+      if (clean.stage === wonName && prev?.stage !== wonName && onDealWon) onDealWon(clean);
     }
     setModal(null); setDetail(null); setFormErrors({});
   };
@@ -859,7 +927,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       ...(lossFields || {}),
     };
     setOpps(p => p.map(o => o.id === opp.id ? updated : o));
-    if (toStage === "Won" && onDealWon) onDealWon(updated);
+    if (toStage === wonName && onDealWon) onDealWon(updated);
     setStageModal(null);
   };
 
@@ -933,45 +1001,55 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   }, [filtered, sortKey, sortDir, accounts, activities]);
 
   /* ── ANALYTICS DATA ── */
-  const stageConvData = useMemo(() => STAGES.filter(s => s !== "Lost").map(s => ({
+  // STAGES / closingNames / wonName / lostName resolved from masters (with
+  // legacy fallback) — see buildStagesContext at module top.
+  const stageConvData = useMemo(() => STAGES.filter(s => s !== lostName).map(s => ({
     stage: s, count: opps.filter(o => o.stage === s).length,
-  })), [opps]);
+  })), [opps, STAGES, lostName]);
 
   const winLossData = useMemo(() => [
-    { name: "Won", value: opps.filter(o => o.stage === "Won").length },
-    { name: "Lost", value: opps.filter(o => o.stage === "Lost").length },
-    { name: "Open", value: opps.filter(o => !["Won", "Lost"].includes(o.stage)).length },
-  ], [opps]);
+    { name: wonName, value: opps.filter(o => o.stage === wonName).length },
+    { name: lostName, value: opps.filter(o => o.stage === lostName).length },
+    { name: "Open", value: opps.filter(o => !closingNames.includes(o.stage)).length },
+  ], [opps, wonName, lostName, closingNames]);
 
   const forecastData = useMemo(() => {
     const months = {};
-    opps.filter(o => !["Won", "Lost"].includes(o.stage) && o.closeDate).forEach(o => {
+    opps.filter(o => !closingNames.includes(o.stage) && o.closeDate).forEach(o => {
       const m = o.closeDate.slice(0, 7);
       months[m] = (months[m] || 0) + o.value * (o.probability / 100);
     });
     return Object.entries(months).sort().slice(0, 6).map(([m, v]) => ({ month: m, value: +v.toFixed(1) }));
-  }, [opps]);
+  }, [opps, closingNames]);
 
-  const activityVsConv = useMemo(() => STAGES.filter(s => !["Won", "Lost"].includes(s)).map(s => {
+  const activityVsConv = useMemo(() => STAGES.filter(s => !closingNames.includes(s)).map(s => {
     const stageOpps = opps.filter(o => o.stage === s);
     const avgActs = stageOpps.length > 0
       ? Math.round(stageOpps.reduce((sum, o) => sum + (activities || []).filter(a => a.oppId === o.id && a.status === "Completed").length, 0) / stageOpps.length)
       : 0;
     return { stage: s, avgActivities: avgActs, deals: stageOpps.length };
-  }), [opps, activities]);
+  }), [opps, activities, STAGES, closingNames]);
 
   /* ── MANAGER VIEW: mismatch detection ── */
+  // Excludes closed deals (Won/Lost) AND the very first stage in the list
+  // (typically "Prospect") since brand-new deals haven't had time to log
+  // activity yet. Using STAGES[0] makes this survive a stage rename / reorder.
+  const firstStageName = STAGES[0];
   const mismatchDeals = useMemo(() => {
     if (!mgrView) return [];
     return opps.filter(o => {
-      if (["Won", "Lost", "Prospect"].includes(o.stage)) return false;
+      if (closingNames.includes(o.stage) || o.stage === firstStageName) return false;
       const recent = (activities || []).filter(a => a.oppId === o.id && a.status === "Completed" && a.date >= (() => { const d = new Date(today); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); })());
       return recent.length === 0;
     });
-  }, [opps, activities, mgrView]);
+  }, [opps, activities, mgrView, closingNames, firstStageName]);
 
   /* ─────────────────── RENDER ─────────────────── */
   return (
+    // StagesContext.Provider feeds the derived STAGES / STAGE_PROB / STAGE_COL
+    // maps + closing-stage names (resolved by `kind`) to every subcomponent
+    // tree below — including modals rendered as direct children.
+    <StagesContext.Provider value={stagesCtx}>
     <div>
       <PageTip
         id="pipeline-tip-v1"
@@ -1141,7 +1219,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                           <HealthBadge health={health} />
                         </div>
                         {o.oppId && <div style={{ fontSize: 10, fontFamily: "'Courier New',monospace", color: "#1B6B5A", background: "#F0FDF4", padding: "1px 6px", borderRadius: 4, marginBottom: 4, display: "inline-block" }}>{o.oppId}</div>}
-                        {o.stage === "Won" && acc?.accountNo && <div style={{ fontSize: 10, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "1px 6px", borderRadius: 4, marginBottom: 4, display: "inline-block", marginLeft: 4 }}>Customer: {acc.accountNo}</div>}
+                        {o.stage === wonName && acc?.accountNo && <div style={{ fontSize: 10, fontWeight: 600, color: "#7C3AED", background: "#F5F3FF", padding: "1px 6px", borderRadius: 4, marginBottom: 4, display: "inline-block", marginLeft: 4 }}>Customer: {acc.accountNo}</div>}
                         <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6 }}>{acc?.name}</div>
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
                           {o.products.slice(0, 2).map(p => <ProdTag key={p} pid={p} />)}
@@ -1323,7 +1401,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           <div className="card" style={{ padding: 20, gridColumn: "1 / -1" }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Deal Velocity Metrics</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
-              {STAGES.filter(s => !["Won", "Lost"].includes(s)).map(s => {
+              {STAGES.filter(s => !closingNames.includes(s)).map(s => {
                 const stageOpps = opps.filter(o => o.stage === s);
                 const totalVal = stageOpps.reduce((sum, o) => sum + o.value, 0);
                 const avgProb = stageOpps.length > 0 ? Math.round(stageOpps.reduce((sum, o) => sum + o.probability, 0) / stageOpps.length) : 0;
@@ -1479,7 +1557,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
             </div>
           </div>
           {/* Win/Loss/Suspend Reasons (conditional) */}
-          {form.stage === "Won" && (
+          {form.stage === wonName && (
             <div className="form-row">
               <div className="form-group">
                 <label>Win Reason</label>
@@ -1490,7 +1568,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
               </div>
             </div>
           )}
-          {form.stage === "Lost" && (
+          {form.stage === lostName && (
             <div className="form-row">
               <div className="form-group">
                 <label>Loss Reason</label>
@@ -1538,6 +1616,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
         />
       )}
     </div>
+    </StagesContext.Provider>
   );
 }
 
