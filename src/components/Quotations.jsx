@@ -1560,7 +1560,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
       {/* Add/Edit Modal */}
       {modal&&(
-        <Modal title={modal.mode==="add"?"New Quotation":(modal.lockedFinal?"View Quotation (Final – Locked)":"Edit Quotation")} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}} lg footer={
+        <Modal title={modal.mode==="add"?"New Quotation":(modal.lockedFinal?"View Quotation (Final – Locked)":"Edit Quotation")} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}} size="xl" draggable resizable footer={
           // ── Action bar (matches legacy Add / Modify / Void / Revise / Clear / Print) ──
           // Dest / Save lives on the right; secondary actions on the left.
           <div style={{display:"flex",alignItems:"center",gap:8,width:"100%"}}>
