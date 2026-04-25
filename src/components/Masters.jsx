@@ -326,8 +326,12 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
   const BLANK_MOD = {
     name:"", type:"Core", desc:"",
     mrp:0, unit:"License", currency:"INR",
-    // Pricing-logic master fields (see BLANK_QUOTE_ITEM in seed.js for snapshot semantics)
-    billingFrequency:"", pricingModel:"", gstRate:18, hsnSac:"",
+    // Pricing-logic master fields (see BLANK_QUOTE_ITEM in seed.js for snapshot semantics).
+    // licenseType captures the COMMERCIAL framing the customer signs up for; it's
+    // distinct from billingFrequency (cadence) and pricingModel (math). Together
+    // they cover SaaS Per-User/Month, Term Licenses, OTD perpetual, and
+    // Perpetual + Annual Maintenance — see the dropdown options for the full set.
+    licenseType:"", billingFrequency:"", pricingModel:"", gstRate:18, hsnSac:"",
     setupFee:0, griApplicable:"No", griPercentage:0,
     defaultTermMonths:0, minCommitment:0,
   };
@@ -376,6 +380,7 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
       unit:form.unit||"License",
       currency:form.currency||"INR",
       // Pricing-logic master fields
+      licenseType:form.licenseType||"",
       billingFrequency:form.billingFrequency||"",
       pricingModel:form.pricingModel||"",
       gstRate:Number(form.gstRate)||0,
@@ -494,6 +499,9 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
                       {/* Each badge appears only when the field is actually set, so older modules
                           without pricing data still render clean (just MRP + edit/delete). */}
                       <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center",justifyContent:"flex-end",flexShrink:0}}>
+                        {m.licenseType && (
+                          <span title="License Type (commercial model)" style={{fontSize:10.5,fontWeight:600,color:"#3730A3",background:"#EEF2FF",border:"1px solid #C7D2FE",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>{m.licenseType}</span>
+                        )}
                         {m.billingFrequency && (
                           <span title="Billing Frequency" style={{fontSize:10.5,fontWeight:600,color:"#1D4ED8",background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>{m.billingFrequency}</span>
                         )}
@@ -565,6 +573,24 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
           <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
             <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>PRICING &amp; BILLING</summary>
             <div style={{padding:"10px 12px"}}>
+              {/* License Type sits at the top because it's the COMMERCIAL framing
+                  the customer signs up for — it informs how the rest of this
+                  section should be filled (e.g. Perpetual+AMC means Setup Fee
+                  carries the license cost and MRP is the recurring AMC). */}
+              <div className="form-row full">
+                <div className="form-group"><label>License Type
+                  <HelpTooltip text="Commercial model the customer signs up for. SaaS Subscription = month-to-month / annual recurring. Per-User SaaS = priced per active user. Term License = fixed-term contract (1Y/3Y) with renewal. Perpetual (OTD) = one-time payment, perpetual right to use. Perpetual + Annual Maintenance = one-time license + recurring AMC (use Setup Fee for the license, MRP for the annual AMC)."/>
+                </label>
+                  <select value={form.licenseType||""} onChange={e=>setForm(f=>({...f,licenseType:e.target.value}))}>
+                    <option value="">— Not set —</option>
+                    <option value="SaaS Subscription">SaaS Subscription</option>
+                    <option value="Per-User SaaS">Per-User SaaS (per user / month)</option>
+                    <option value="Term License">Term License (fixed term + renewal)</option>
+                    <option value="Perpetual (OTD)">Perpetual (OTD) — one-time</option>
+                    <option value="Perpetual + AMC">Perpetual + Annual Maintenance</option>
+                  </select>
+                </div>
+              </div>
               <div className="form-row three">
                 <div className="form-group"><label>MRP / List Price
                   <HelpTooltip text="Master rate (no discount). Quotes auto-populate this when the module is added; the rep then applies a discount in % or absolute amount."/>
@@ -572,7 +598,7 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
                   <input type="number" min={0} step={1} value={form.mrp} onChange={e=>setForm(f=>({...f,mrp:+e.target.value}))} placeholder="0"/>
                 </div>
                 <div className="form-group"><label>Setup Fee
-                  <HelpTooltip text="One-time onboarding / implementation fee charged on top of the recurring MRP. Optional. Carried onto the quote line so the proposal PDF can show it separately."/>
+                  <HelpTooltip text="One-time fee charged on top of the recurring MRP. Use for: onboarding / implementation, OR the upfront license cost when License Type is Perpetual + AMC (then MRP carries the recurring annual maintenance). Carried onto the quote line so the proposal PDF can show it separately."/>
                 </label>
                   <input type="number" min={0} step={1} value={form.setupFee||0} onChange={e=>setForm(f=>({...f,setupFee:+e.target.value}))} placeholder="0"/>
                 </div>
@@ -596,7 +622,7 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
                 </label>
                   <select value={form.pricingModel||""} onChange={e=>setForm(f=>({...f,pricingModel:e.target.value}))}>
                     <option value="">— Not set —</option>
-                    {["Flat","Per-Unit","Per-Transaction","Tiered","Volume","Usage-based"].map(p=><option key={p}>{p}</option>)}
+                    {["Flat","Per-Unit","Per-User","Per-Transaction","Tiered","Volume","Usage-based"].map(p=><option key={p}>{p}</option>)}
                   </select>
                 </div>
                 <div className="form-group"><label>Default Contract Term

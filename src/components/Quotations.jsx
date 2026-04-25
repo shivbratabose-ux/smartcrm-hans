@@ -1143,7 +1143,9 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         discountValue: 0,
         // Pricing-logic snapshot from master (all optional — fall through
         // to BLANK_QUOTE_ITEM defaults when the catalog entry is missing
-        // a value)
+        // a value). licenseType is the commercial framing (SaaS / OTD / etc.)
+        // — see Masters BLANK_MOD comment for the full vocabulary.
+        licenseType:      mod.licenseType || "",
         billingFrequency: mod.billingFrequency || "",
         pricingModel:     mod.pricingModel || "",
         hsnSac:           mod.hsnSac || "",
