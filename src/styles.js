@@ -194,6 +194,26 @@ export const CSS = `
   .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--rl); padding:20px; box-shadow:var(--sh-xs); }
   .card-title { font-family:'Outfit',sans-serif; font-size:14px; font-weight:600; margin-bottom:14px; color:var(--text); }
 
+  /* ── LIST + ASIDE LAYOUT ──
+     Pages like Leads / Accounts / Contacts show a table on the left with an
+     insights panel on the right. Without these classes the table's content
+     width pushed the rightmost action column visually OVER the aside on
+     ~1100–1400px viewports (the flex item shrunk via min-width:0 but the
+     table inside stayed wider, and overflow was visible). The fix:
+       1. main column gets min-width:0 so flex can shrink it
+       2. wrap the table in .tbl-scroll so horizontal overflow scrolls
+          inside the column instead of bleeding out
+       3. aside drops below the main column at narrow viewports rather
+          than getting overlapped */
+  .list-with-aside { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+  .list-with-aside > .lwa-main { flex:1 1 540px; min-width:0; }
+  .list-with-aside > .lwa-aside { flex:0 0 270px; }
+  .list-with-aside > .lwa-aside.w260 { flex-basis:260px; }
+  @media (max-width: 1180px) {
+    .list-with-aside > .lwa-aside { flex:1 1 100%; }
+  }
+  .tbl-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
   /* ── FILTER BAR ── */
   .filter-bar { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
   .filter-search { display:flex; align-items:center; gap:7px; background:var(--surface); border:1.5px solid var(--border); border-radius:var(--r); padding:7px 12px; flex:1; min-width:180px; max-width:280px; }

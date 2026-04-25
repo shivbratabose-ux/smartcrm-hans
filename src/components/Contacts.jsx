@@ -318,9 +318,9 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
         </div>
       </div>
 
-      <div style={{display:"flex",gap:16}}>
+      <div className="list-with-aside">
         {/* Main table */}
-        <div style={{flex:1,minWidth:0}}>
+        <div className="lwa-main">
           <div className="filter-bar" style={{flexWrap:"wrap"}}>
             <div className="filter-search"><Search size={14} style={{color:"var(--text3)",flexShrink:0}}/><input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}/></div>
             <select className="filter-select" value={accF} onChange={e => setAccF(e.target.value)}><option value="All">All Accounts</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
@@ -335,6 +335,7 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
             {filtered.length === 0 ? (
               <Empty icon={<Users size={22}/>} title="No contacts found" sub="Try adjusting filters or add a new contact."/>
             ) : (
+              <div className="tbl-scroll">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -382,13 +383,14 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
                   );
                 })}</tbody>
               </table>
+              </div>
             )}
             <Pagination {...pg}/>
           </div>
         </div>
 
         {/* Right: Insights Panel */}
-        <div style={{width:260,flexShrink:0}}>
+        <div className="lwa-aside w260">
           {/* Department Distribution */}
           <div className="card" style={{padding:16,marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:"var(--text3)",letterSpacing:"0.06em",marginBottom:10}}>BY DEPARTMENT</div>

@@ -791,9 +791,9 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
         </div>
       </div>
 
-      <div style={{display:"flex",gap:16}}>
+      <div className="list-with-aside">
         {/* Left: Main table */}
-        <div style={{flex:1,minWidth:0}}>
+        <div className="lwa-main">
           {/* Filters */}
           <div className="filter-bar" style={{flexWrap:"wrap"}}>
             <div className="filter-search"><Search size={14} style={{color:"var(--text3)",flexShrink:0}}/><input placeholder="Search accounts…" value={search} onChange={e => setSearch(e.target.value)}/></div>
@@ -811,6 +811,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
             {filtered.length === 0 ? (
               <Empty icon={<Building2 size={22}/>} title="No accounts found" sub="Try adjusting filters or add a new account."/>
             ) : (
+              <div className="tbl-scroll">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -862,13 +863,14 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
                   </tr>
                 ))}</tbody>
               </table>
+              </div>
             )}
             <Pagination {...pg}/>
           </div>
         </div>
 
         {/* Right: Insights Panel */}
-        <div style={{width:270,flexShrink:0}}>
+        <div className="lwa-aside">
           {/* Product Adoption */}
           <div className="card" style={{padding:16,marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:"var(--text3)",letterSpacing:"0.06em",marginBottom:10}}>PRODUCT ADOPTION</div>

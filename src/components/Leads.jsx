@@ -1904,9 +1904,9 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
         ))}
       </div>
 
-      <div style={{display:"flex",gap:16}}>
+      <div className="list-with-aside">
         {/* Left: Main content */}
-        <div style={{flex:1,minWidth:0}}>
+        <div className="lwa-main">
           {/* Filters */}
           <div className="filter-bar" style={{flexWrap:"wrap"}}>
             <div className="filter-search">
@@ -1973,6 +1973,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 onOpenDetail={setDetail}
               />
             ) : (
+              <div className="tbl-scroll">
               <table className="tbl">
                 <thead>
                   <tr>
@@ -2058,13 +2059,14 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                   })}
                 </tbody>
               </table>
+              </div>
             )}
             <Pagination {...pg}/>
           </div>
         </div>
 
         {/* Right: Lead Insights Panel */}
-        <div style={{width:270,flexShrink:0}}>
+        <div className="lwa-aside">
           {/* Source Distribution */}
           <div className="card" style={{padding:16,marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",color:"var(--text3)",letterSpacing:"0.06em",marginBottom:10}}>SOURCE DISTRIBUTION</div>
