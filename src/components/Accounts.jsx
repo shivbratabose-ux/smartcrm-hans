@@ -89,7 +89,6 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Account Profile"
-      onClick={e => e.target === e.currentTarget && onClose()}
       style={{zIndex:1000}}>
       <div style={{background:"var(--bg,#F1F5F9)",width:"94vw",maxWidth:1200,maxHeight:"94vh",borderRadius:16,overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 25px 60px rgba(0,0,0,0.3)"}}>
 
@@ -120,8 +119,8 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                 <span style={{fontSize:12,fontWeight:700,color:healthColor}}>{healthScore}%</span>
                 <span style={{fontSize:11,color:healthColor}}>{healthLabel}</span>
               </div>
-              <button className="btn btn-sec btn-sm" onClick={onClose}>Close</button>
               <button className="btn btn-primary btn-sm" onClick={onEdit}><Edit2 size={13}/>Edit</button>
+              <button className="icon-btn" onClick={onClose} aria-label="Close" style={{width:32,height:32}}><X size={18}/></button>
             </div>
           </div>
 

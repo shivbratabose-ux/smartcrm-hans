@@ -58,11 +58,15 @@ export function Modal({title,onClose,children,footer,lg,size,draggable,resizable
   const [pos, setPos] = useState(null);   // {x,y} once user has dragged
   const dragStart = useRef(null);
 
-  useEffect(() => {
-    const handleKey = e => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+  // Per UX policy: modals stay open until the user takes an INTENTIONAL
+  // close action (Submit / Save / Cancel button, or the X icon top-right).
+  // We deliberately do NOT close on:
+  //   - clicks on the overlay backdrop (too easy to do accidentally while
+  //     reaching for a form field; was costing users their unsaved data)
+  //   - the Esc key (also accidental, especially while editing fields where
+  //     Esc cancels input — that cancel is then re-purposed to close the
+  //     whole modal, dropping all other unsaved fields)
+  // See PR #101 for the full rationale.
 
   const onHeadMouseDown = (e) => {
     if (!draggable) return;
@@ -92,7 +96,7 @@ export function Modal({title,onClose,children,footer,lg,size,draggable,resizable
   const modalStyle = pos ? { position:"fixed", top: pos.y, left: pos.x, margin: 0 } : undefined;
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label={title} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="overlay" role="dialog" aria-modal="true" aria-label={title}>
       <div className={`modal${sizeCls}${floatCls}`} style={modalStyle}>
         <div className="modal-head" onMouseDown={onHeadMouseDown} title={draggable ? "Drag to move" : undefined}>
           <div className="modal-title">{title}</div>

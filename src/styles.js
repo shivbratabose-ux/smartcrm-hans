@@ -322,7 +322,11 @@ export const CSS = `
   .form-group textarea { resize:vertical; min-height:80px; }
 
   /* ── MODALS ── */
-  .overlay { position:fixed; inset:0; background:rgba(13,31,45,0.48); z-index:500; display:flex; align-items:center; justify-content:center; padding:20px; }
+  /* Modal backdrop. Per UX policy (PR #101) clicks on the backdrop do NOT
+     close the modal — the user must use Submit / Save / Cancel / X icon.
+     cursor:default makes that visually obvious so users don't reflexively
+     click expecting it to close. */
+  .overlay { position:fixed; inset:0; background:rgba(13,31,45,0.48); z-index:500; display:flex; align-items:center; justify-content:center; padding:20px; cursor:default; }
   .modal { background:white; border-radius:var(--rxl); box-shadow:var(--sh-lg); width:100%; max-width:520px; max-height:90vh; display:flex; flex-direction:column; }
   .modal-lg { max-width:680px; }
   /* xl: wide enough for the Quotations Items composer (Charge/Desc/Currency/ExRate/Unit/Qty/MRP/Discount + Price/Cost/Amount + chips) without horizontal scroll on standard desktops */
