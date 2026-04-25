@@ -253,6 +253,8 @@ export const CSS = `
   .overlay { position:fixed; inset:0; background:rgba(13,31,45,0.48); z-index:500; display:flex; align-items:center; justify-content:center; padding:20px; }
   .modal { background:white; border-radius:var(--rxl); box-shadow:var(--sh-lg); width:100%; max-width:520px; max-height:90vh; display:flex; flex-direction:column; }
   .modal-lg { max-width:680px; }
+  /* xl: wide enough for the Quotations Items composer (Charge/Desc/Currency/ExRate/Unit/Qty/MRP/Discount + Price/Cost/Amount + chips) without horizontal scroll on standard desktops */
+  .modal-xl { max-width:min(1180px, 96vw); }
   .modal-head { display:flex; align-items:center; justify-content:space-between; padding:20px 24px 0; flex-shrink:0; }
   .modal-title { font-family:'Outfit',sans-serif; font-size:16px; font-weight:700; color:var(--text); }
   .modal-body { padding:20px 24px; overflow-y:auto; flex:1; }
@@ -260,6 +262,14 @@ export const CSS = `
   .modal-tabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:20px; }
   .modal-tab { padding:8px 16px; font-size:13px; font-weight:500; color:var(--text3); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:color 0.12s, border-color 0.12s; }
   .modal-tab.active { color:var(--brand); border-bottom-color:var(--brand); font-weight:600; }
+  /* ── floating-window opt-ins (draggable / resizable Modal) ── */
+  .modal-draggable .modal-head { cursor:move; user-select:none; }
+  .modal-draggable .modal-head .modal-title::before { content:"⋮⋮"; display:inline-block; color:var(--text3); margin-right:8px; letter-spacing:-2px; font-size:14px; transform:rotate(90deg); opacity:0.6; }
+  .modal-resizable { resize:both; overflow:hidden; min-width:480px; min-height:360px; }
+  /* When resizable, drop the height cap so the user can grow the window beyond 90vh */
+  .modal-resizable { max-height:none; height:min(90vh, 800px); }
+  /* Once the user has dragged, escape the overlay's flex centering */
+  .modal-floating { margin:0 !important; }
 
   /* ── MISC ── */
   .empty { text-align:center; padding:48px 20px; }

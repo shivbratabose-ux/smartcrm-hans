@@ -40,16 +40,61 @@ export function UserPill({uid:u}) {
   const initials = user.initials || user.name?.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase() || "?";
   return <span className="u-pill"><span className="u-av">{initials}</span><span className="u-name">{user.name}</span></span>;
 }
-export function Modal({title,onClose,children,footer,lg}) {
+/**
+ * Modal — base dialog used across the app.
+ *
+ * Opt-in props for floating-window behaviour (added for the Quotations
+ * modal whose Items composer is wider than fits in lg, but kept generic
+ * so any heavy modal can adopt them):
+ *   - size="xl" → ~1100px wide, ~95vw cap
+ *   - draggable → grab the title bar to move the modal anywhere on screen
+ *   - resizable → drag the bottom-right corner to grow / shrink
+ *
+ * State is local to the Modal instance; closing & re-opening resets the
+ * window back to centered + default size, which matches how desktop
+ * apps usually behave for transient dialogs.
+ */
+export function Modal({title,onClose,children,footer,lg,size,draggable,resizable}) {
+  const [pos, setPos] = useState(null);   // {x,y} once user has dragged
+  const dragStart = useRef(null);
+
   useEffect(() => {
     const handleKey = e => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
+
+  const onHeadMouseDown = (e) => {
+    if (!draggable) return;
+    // Don't start a drag from the close button or any interactive child.
+    if (e.target.closest("button, input, select, textarea, a")) return;
+    const modalEl = e.currentTarget.parentElement;
+    const rect = modalEl.getBoundingClientRect();
+    dragStart.current = { offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top };
+    const onMove = (ev) => {
+      if (!dragStart.current) return;
+      // Keep at least 80px of the modal on-screen so the user can always grab it back.
+      const x = Math.max(8 - rect.width + 80, Math.min(window.innerWidth - 80, ev.clientX - dragStart.current.offsetX));
+      const y = Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - dragStart.current.offsetY));
+      setPos({ x, y });
+    };
+    const onUp = () => {
+      dragStart.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const sizeCls = size === "xl" ? " modal-xl" : (lg ? " modal-lg" : "");
+  const floatCls = `${draggable ? " modal-draggable" : ""}${resizable ? " modal-resizable" : ""}${pos ? " modal-floating" : ""}`;
+  const modalStyle = pos ? { position:"fixed", top: pos.y, left: pos.x, margin: 0 } : undefined;
+
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label={title} onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div className={`modal${lg?" modal-lg":""}`}>
-        <div className="modal-head">
+      <div className={`modal${sizeCls}${floatCls}`} style={modalStyle}>
+        <div className="modal-head" onMouseDown={onHeadMouseDown} title={draggable ? "Drag to move" : undefined}>
           <div className="modal-title">{title}</div>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18}/></button>
         </div>
