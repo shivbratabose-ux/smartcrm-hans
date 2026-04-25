@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import ProductModulePicker, { validateProductSelection, primaryProductId } from './ProductModulePicker';
@@ -1542,9 +1542,17 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   }, [orgUsers, _scopedIds]);
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
 
-  // Auto-generate leadId for bulk-uploaded leads that are missing one, and coerce score to number
+  // Auto-heal leadId on every render: regenerates an FL-YYYY-NNN id for any
+  // lead whose leadId is missing OR is a placeholder ("x", "-", "n/a", etc.)
+  // OR is free-text garbage that doesn't match the canonical pattern.
+  // This catches three failure modes:
+  //   1. CSV imports that reached the table with bad ids (the screenshot
+  //      bug from production where rows showed "x" as the lead number)
+  //   2. Manual lead creates that left the field blank
+  //   3. Legacy data that pre-dates the FL- numbering scheme
+  // Same effect also keeps `score` clamped to 0..100 as a number.
   useEffect(() => {
-    const needsLeadId = leads.some(l => !l.leadId);
+    const needsLeadId = leads.some(l => !isValidLeadId(l.leadId));
     const needsScoreFix = leads.some(l => typeof l.score === "string" || l.score === undefined || l.score === null);
     if (!needsLeadId && !needsScoreFix) return;
 
@@ -1557,7 +1565,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
 
     const updated = leads.map(l => {
       let patched = l;
-      if (!l.leadId) {
+      if (!isValidLeadId(l.leadId)) {
         maxSeq++;
         patched = { ...patched, leadId: `#FL-${year}-${String(maxSeq).padStart(3, "0")}` };
       }

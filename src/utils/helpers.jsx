@@ -60,6 +60,47 @@ export const title = (v) => {
 // user might paste in text with stray padding (Lead ID, account number,
 // phone, etc.) but we don't want to alter the actual content's case.
 export const tidy = (v) => v == null ? v : String(v).trim().replace(/\s+/g, " ");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lead-ID validation
+// ─────────────────────────────────────────────────────────────────────────────
+// Bug surfaced in production: a CSV upload that had "x" / "xx" / "-" / etc.
+// in the Lead ID column saved the literal placeholder as the leadId on
+// some rows (the import path checked only `r.leadId || generate(...)`,
+// which preserves any truthy string including "x"). Result: rows like
+// "Katlin Technologies Private Limited" displayed with "x" instead of an
+// FL-2026-NNN id, and the auto-id effect skipped them because "x" is
+// truthy.
+//
+// Centralised here so the BulkUpload validator, the SmartCRM import path,
+// and the Leads.jsx auto-heal effect all agree on what "valid" means.
+
+// Placeholder tokens users frequently type when they don't have a real ID.
+// Treated as empty so the system regenerates a proper FL-YYYY-NNN id.
+export const PLACEHOLDER_IDS = new Set([
+  "x", "xx", "xxx",
+  "-", "–", "—",
+  "n/a", "na", "none", "new", "tbd", "?",
+  "null", "undefined",
+]);
+
+// Canonical Lead ID: optional leading "#", "FL-" or "LEAD-" prefix,
+// 4-digit year, dash, 3+ digit sequence. Anchored with ^/$ so we don't
+// accept embedded matches.
+const LEAD_ID_PATTERN = /^#?(?:FL|LEAD)-\d{4}-\d{3,}$/i;
+
+/**
+ * Returns true if the value is a real, well-formed Lead ID (e.g. "#FL-2026-001").
+ * Returns false for: empty, placeholder tokens, and free-text garbage.
+ * Used everywhere we decide whether to keep an existing id or generate a new one.
+ */
+export const isValidLeadId = (v) => {
+  if (v == null) return false;
+  const s = String(v).trim();
+  if (!s) return false;
+  if (PLACEHOLDER_IDS.has(s.toLowerCase())) return false;
+  return LEAD_ID_PATTERN.test(s);
+};
 export const today = new Date().toISOString().slice(0,10);
 export const isOverdue = d => d && d < today;
 export const isFuture  = d => d && d > today;

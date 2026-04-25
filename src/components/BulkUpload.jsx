@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Upload, Download, Check, AlertCircle, RefreshCw, ArrowUpCircle, PlusCircle, Info, Loader } from "lucide-react";
 import { UPLOAD_TYPES } from '../data/constants';
-import { uid, upper, lower, title, tidy } from '../utils/helpers';
+import { uid, upper, lower, title, tidy, PLACEHOLDER_IDS, isValidLeadId } from '../utils/helpers';
 import { notify } from '../utils/toast';
 import { Empty, PageTip } from './shared';
 
@@ -571,18 +571,29 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
     // fallbacks so a re-upload of legacy CSVs without ids still resolves to
     // UPDATE and doesn't create duplicates.
     //
-    // Users frequently type placeholder tokens like "x", "-", "new", "n/a"
-    // in the id column instead of leaving it blank. Treat those as empty so
-    // we don't store literal "x" as a leadId AND so fallback dedup runs.
-    const PLACEHOLDER_IDS = new Set(["x", "xx", "xxx", "-", "–", "—", "n/a", "na", "none", "new", "tbd", "?", "null", "undefined"]);
+    // PLACEHOLDER_IDS + isValidLeadId are centralised in utils/helpers so
+    // the Leads.jsx auto-id effect and the SmartCRM.jsx import path agree
+    // with the validator on what counts as "valid". For the Leads schema
+    // we treat ANY value that isn't a well-formed FL-YYYY-NNN id as
+    // invalid (placeholder OR garbage) — surface a yellow warning saying
+    // it'll be auto-replaced on import, so the user isn't surprised.
     const rawRef = work[schema.refKey]?.trim() || "";
-    const isPlaceholder = PLACEHOLDER_IDS.has(rawRef.toLowerCase());
-    if (isPlaceholder) {
-      // Strip the placeholder so downstream (and the auto-leadId effect in
-      // Leads.jsx) generates a real id post-import.
+    let isInvalid = false;
+    if (rawRef) {
+      if (PLACEHOLDER_IDS.has(rawRef.toLowerCase())) {
+        warnings.push(`${schema.refKey} "${rawRef}" looks like a placeholder — will be auto-replaced with a fresh ID on import.`);
+        isInvalid = true;
+      } else if (schema.refKey === "leadId" && !isValidLeadId(rawRef)) {
+        warnings.push(`Lead ID "${rawRef}" doesn't match the FL-YYYY-NNN pattern — will be auto-replaced with a fresh ID on import.`);
+        isInvalid = true;
+      }
+    }
+    if (isInvalid) {
+      // Strip so downstream (and the auto-leadId effect / SmartCRM import
+      // path) generates a real id post-import.
       work[schema.refKey] = "";
     }
-    const refVal = isPlaceholder ? "" : rawRef;
+    const refVal = isInvalid ? "" : rawRef;
     let matched = refVal ? existingByRef[refVal.toLowerCase()] : null;
     let matchedBy = matched ? schema.refKey : null;
     if (!matched) {
