@@ -347,6 +347,97 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
             {editingIdx>=0?<><Check size={14}/>Update</>:<><Plus size={14}/>Insert</>}
           </button>
         </div>
+
+        {/* ── Row 4: Pricing & Billing context (snapshot from Masters) ──
+            Auto-populated when the line is added from the catalogue — a quote
+            edit can also override per-line. Collapsed by default to keep the
+            composer compact; opens automatically if any pricing field is set. */}
+        {(() => {
+          const hasPricingSnap = composer.licenseType || composer.billingFrequency
+            || (Number(composer.setupFee)||0) > 0
+            || (composer.griApplicable === "Yes" && (Number(composer.griPercentage)||0) > 0)
+            || composer.hsnSac || (Number(composer.defaultTermMonths)||0) > 0
+            || (Number(composer.minCommitment)||0) > 0;
+          return (
+        <details open={hasPricingSnap} style={{marginTop:10,paddingTop:10,borderTop:"1px dashed var(--border)"}}>
+          <summary style={{cursor:"pointer",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.4px",marginBottom:8,userSelect:"none"}}>
+            PRICING &amp; BILLING (per-line snapshot from module master)
+          </summary>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:8}}>
+            <div className="form-group"><label>License Type</label>
+              <select value={composer.licenseType||""} onChange={e=>{
+                const lt=e.target.value;
+                // Mirror the Masters auto-derive: picking SaaS Per-User variants
+                // also sets pricingModel + billingFrequency for consistency.
+                setComposer(c=>{
+                  const next={...c, licenseType:lt};
+                  if(lt==="SaaS — Per User / Month")     return {...next, pricingModel:"Per-User", unit:"User", billingFrequency:"Monthly"};
+                  if(lt==="SaaS — Per User / Quarterly") return {...next, pricingModel:"Per-User", unit:"User", billingFrequency:"Quarterly"};
+                  if(lt==="SaaS — Per User / Yearly")    return {...next, pricingModel:"Per-User", unit:"User", billingFrequency:"Annual"};
+                  if(lt==="Perpetual (OTD)")             return {...next, billingFrequency:"One-time"};
+                  if(lt==="Perpetual + AMC")             return {...next, billingFrequency:"Annual"};
+                  return next;
+                });
+              }}>
+                <option value="">— Not set —</option>
+                <option value="SaaS Subscription">SaaS Subscription</option>
+                <option value="SaaS — Per User / Month">SaaS — Per User / Month</option>
+                <option value="SaaS — Per User / Quarterly">SaaS — Per User / Quarterly</option>
+                <option value="SaaS — Per User / Yearly">SaaS — Per User / Yearly</option>
+                <option value="Term License">Term License</option>
+                <option value="Perpetual (OTD)">Perpetual (OTD)</option>
+                <option value="Perpetual + AMC">Perpetual + AMC</option>
+              </select>
+            </div>
+            <div className="form-group"><label>Billing Frequency</label>
+              <select value={composer.billingFrequency||""} onChange={e=>setC("billingFrequency",e.target.value)}>
+                <option value="">— Not set —</option>
+                {["One-time","Monthly","Quarterly","Half-Yearly","Annual","Per-Transaction","Usage-based"].map(b=><option key={b}>{b}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label>Pricing Model</label>
+              <select value={composer.pricingModel||""} onChange={e=>setC("pricingModel",e.target.value)}>
+                <option value="">— Not set —</option>
+                {["Flat","Per-Unit","Per-User","Per-Transaction","Tiered","Volume","Usage-based"].map(p=><option key={p}>{p}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label>HSN/SAC</label>
+              <input value={composer.hsnSac||""} onChange={e=>setC("hsnSac",e.target.value)} placeholder="e.g. 998313"/>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:8}}>
+            <div className="form-group"><label>Setup Fee ({sym.trim()||sym})</label>
+              <input type="number" min={0} step={1} value={composer.setupFee||0} onChange={e=>setC("setupFee",+e.target.value)} placeholder="0"/>
+            </div>
+            <div className="form-group"><label>Min Commitment / period</label>
+              <input type="number" min={0} step={1} value={composer.minCommitment||0} onChange={e=>setC("minCommitment",+e.target.value)} placeholder="0"/>
+            </div>
+            <div className="form-group"><label>Default Term</label>
+              <select value={String(composer.defaultTermMonths||0)} onChange={e=>setC("defaultTermMonths",+e.target.value)}>
+                <option value="0">— Not set —</option>
+                <option value="12">12 months</option>
+                <option value="24">24 months</option>
+                <option value="36">36 months</option>
+                <option value="60">60 months</option>
+              </select>
+            </div>
+            <div className="form-group"><label>GRI Applicable</label>
+              <select value={composer.griApplicable||""} onChange={e=>setC("griApplicable",e.target.value)}>
+                <option value="">— Not set —</option>
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+              </select>
+            </div>
+            <div className="form-group"><label>GRI %</label>
+              <input type="number" min={0} max={100} step={0.5} value={composer.griPercentage||0} onChange={e=>setC("griPercentage",+e.target.value)} disabled={composer.griApplicable!=="Yes"} placeholder="0"/>
+            </div>
+          </div>
+          <div style={{fontSize:11,color:"var(--text3)",marginTop:6,fontStyle:"italic"}}>
+            These fields are carried onto the quote line as a snapshot of the module master at quote time, so the proposal PDF and the contract generator have the right billing context even if the catalogue is later edited. Setup Fee is currently informational on the line — quote-level totals don't add it automatically.
+          </div>
+        </details>
+          );
+        })()}
       </div>
 
       {/* ── Lines grid (read-back of inserted lines) ── */}
@@ -383,7 +474,21 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
                 style={{display:"grid",gridTemplateColumns:isManager?"30px 110px 1.6fr 50px 70px 90px 80px 90px 90px 90px 60px":"30px 110px 1.8fr 50px 80px 100px 90px 90px 90px 60px",padding:"10px",gap:8,fontSize:12.5,borderBottom:"1px solid var(--border)",cursor:"pointer",background:isEditing?"#FFFBEB":(i%2?"#F8FAFC":"#fff"),alignItems:"center"}}>
                 <span style={{color:"var(--text3)",fontWeight:600}}>{i+1}</span>
                 <span style={{fontFamily:"monospace",fontSize:11,color:"var(--text2)"}}>{item.chargeName||"—"}</span>
-                <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={item.description}>{item.description||<em style={{color:"var(--text3)"}}>(no description)</em>}</span>
+                <span style={{minWidth:0,overflow:"hidden"}}>
+                  <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={item.description}>{item.description||<em style={{color:"var(--text3)"}}>(no description)</em>}</div>
+                  {/* Per-line pricing-context badges from Masters snapshot — only render
+                      what's set, so legacy lines stay visually clean. Click on the row
+                      still loads it into the composer for editing (event bubbles up). */}
+                  {(item.licenseType || item.billingFrequency || (Number(item.setupFee)||0)>0 || (item.griApplicable==="Yes" && (Number(item.griPercentage)||0)>0) || item.hsnSac) && (
+                    <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:3}}>
+                      {item.licenseType && <span title="License Type" style={{fontSize:9.5,fontWeight:600,color:"#3730A3",background:"#EEF2FF",border:"1px solid #C7D2FE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>{item.licenseType}</span>}
+                      {item.billingFrequency && <span title="Billing Frequency" style={{fontSize:9.5,fontWeight:600,color:"#1D4ED8",background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>{item.billingFrequency}</span>}
+                      {(Number(item.setupFee)||0)>0 && <span title="One-time setup fee" style={{fontSize:9.5,fontWeight:600,color:"#5B21B6",background:"#EDE9FE",border:"1px solid #DDD6FE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>Setup {s}{Number(item.setupFee).toLocaleString()}</span>}
+                      {item.griApplicable==="Yes" && Number(item.griPercentage)>0 && <span title="Annual GRI" style={{fontSize:9.5,fontWeight:600,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>GRI {item.griPercentage}%</span>}
+                      {item.hsnSac && <span title="HSN/SAC" style={{fontSize:9.5,fontWeight:600,color:"#0F766E",background:"#F0FDFA",border:"1px solid #99F6E4",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>HSN {item.hsnSac}</span>}
+                    </div>
+                  )}
+                </span>
                 <span style={{textAlign:"right"}}>{item.qty}</span>
                 <span style={{textAlign:"right"}}>{(Number(item.mrp)||0)>0?`${s}${(Number(item.mrp)||0).toLocaleString()}`:"—"}</span>
                 <span style={{textAlign:"right",color:dv>0?"#B91C1C":"var(--text3)"}}>{dv>0?(dt==="pct"?`${dv}%`:`${s}${dv.toLocaleString()}`):"—"}</span>
@@ -1432,7 +1537,21 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                 return (
                   <tr key={i}>
                     <td style={{fontFamily:"monospace",fontSize:11,color:"var(--text2)"}}>{item.chargeName||"—"}</td>
-                    <td style={{fontSize:12.5}}>{item.description||<em style={{color:"var(--text3)"}}>(no description)</em>}</td>
+                    <td style={{fontSize:12.5}}>
+                      <div>{item.description||<em style={{color:"var(--text3)"}}>(no description)</em>}</div>
+                      {/* Read-only pricing-context badges so the rendered quote
+                          shows the customer the License Type / Frequency / Setup /
+                          GRI / HSN context for each line. */}
+                      {(item.licenseType || item.billingFrequency || (Number(item.setupFee)||0)>0 || (item.griApplicable==="Yes" && (Number(item.griPercentage)||0)>0) || item.hsnSac) && (
+                        <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:4}}>
+                          {item.licenseType && <span style={{fontSize:9.5,fontWeight:600,color:"#3730A3",background:"#EEF2FF",border:"1px solid #C7D2FE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>{item.licenseType}</span>}
+                          {item.billingFrequency && <span style={{fontSize:9.5,fontWeight:600,color:"#1D4ED8",background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>{item.billingFrequency}</span>}
+                          {(Number(item.setupFee)||0)>0 && <span style={{fontSize:9.5,fontWeight:600,color:"#5B21B6",background:"#EDE9FE",border:"1px solid #DDD6FE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>Setup {s}{Number(item.setupFee).toLocaleString()}</span>}
+                          {item.griApplicable==="Yes" && Number(item.griPercentage)>0 && <span style={{fontSize:9.5,fontWeight:600,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>GRI {item.griPercentage}%</span>}
+                          {item.hsnSac && <span style={{fontSize:9.5,fontWeight:600,color:"#0F766E",background:"#F0FDFA",border:"1px solid #99F6E4",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>HSN {item.hsnSac}</span>}
+                        </div>
+                      )}
+                    </td>
                     <td style={{textAlign:"right"}}>{item.qty}</td>
                     <td style={{textAlign:"right"}}>{(Number(item.mrp)||0)>0?`${s}${(Number(item.mrp)||0).toLocaleString()}`:"—"}</td>
                     <td style={{textAlign:"right",color:dv>0?"#B91C1C":"var(--text3)"}}>{dv>0?(dt==="pct"?`${dv}%`:`${s}${dv.toLocaleString()}`):"—"}</td>
