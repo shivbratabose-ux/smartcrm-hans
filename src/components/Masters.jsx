@@ -319,7 +319,19 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
   const isAdmin = ["admin","md","director","vp_sales_mkt"].includes(_myRole);
   const [expanded,setExpanded]=useState({});
   const [modal,setModal]=useState(null);
-  const [form,setForm]=useState({name:"",type:"Core",desc:"",mrp:0,unit:"License",currency:"INR"});
+  // BLANK_MOD: full module shape including the new pricing-logic fields.
+  // Keeping a single source of truth for resets / clones so any future field
+  // addition only needs to touch this default and the BLANK_QUOTE_ITEM
+  // snapshot in seed.js — not every place state is initialised.
+  const BLANK_MOD = {
+    name:"", type:"Core", desc:"",
+    mrp:0, unit:"License", currency:"INR",
+    // Pricing-logic master fields (see BLANK_QUOTE_ITEM in seed.js for snapshot semantics)
+    billingFrequency:"", pricingModel:"", gstRate:18, hsnSac:"",
+    setupFee:0, griApplicable:"No", griPercentage:0,
+    defaultTermMonths:0, minCommitment:0,
+  };
+  const [form,setForm]=useState(BLANK_MOD);
   const [prodForm,setProdForm]=useState({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF",lineManagerId:""});
   const [confirm,setConfirm]=useState(null);
 
@@ -346,11 +358,34 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
   ];
 
   const toggle=id=>setExpanded(e=>({...e,[id]:!e[id]}));
-  const openAddMod=prodId=>{setForm({name:"",type:"Core",desc:"",mrp:0,unit:"License",currency:"INR"});setModal({mode:"addmod",prodId});};
-  const openEditMod=(prodId,mod)=>{setForm({name:mod.name,type:mod.type,desc:mod.desc,mrp:Number(mod.mrp)||0,unit:mod.unit||"License",currency:mod.currency||"INR"});setModal({mode:"editmod",prodId,modId:mod.id});};
+  const openAddMod=prodId=>{setForm({...BLANK_MOD});setModal({mode:"addmod",prodId});};
+  const openEditMod=(prodId,mod)=>{
+    // Spread BLANK_MOD first so any catalog row missing the new pricing
+    // fields (older quotes / pre-migration data) gets sensible defaults
+    // instead of `undefined` reaching the inputs.
+    setForm({...BLANK_MOD, ...mod});
+    setModal({mode:"editmod",prodId,modId:mod.id});
+  };
   const saveMod=()=>{
     if(!form.name.trim()) return;
-    const payload={name:form.name.trim(),type:form.type,desc:form.desc,mrp:Number(form.mrp)||0,unit:form.unit||"License",currency:form.currency||"INR"};
+    const payload={
+      name:form.name.trim(),
+      type:form.type,
+      desc:form.desc,
+      mrp:Number(form.mrp)||0,
+      unit:form.unit||"License",
+      currency:form.currency||"INR",
+      // Pricing-logic master fields
+      billingFrequency:form.billingFrequency||"",
+      pricingModel:form.pricingModel||"",
+      gstRate:Number(form.gstRate)||0,
+      hsnSac:(form.hsnSac||"").trim(),
+      setupFee:Number(form.setupFee)||0,
+      griApplicable:form.griApplicable||"No",
+      griPercentage:Number(form.griPercentage)||0,
+      defaultTermMonths:Number(form.defaultTermMonths)||0,
+      minCommitment:Number(form.minCommitment)||0,
+    };
     setCatalog(c=>c.map(p=>{
       if(p.id!==modal.prodId) return p;
       if(modal.mode==="addmod") return {...p,modules:[...p.modules,{id:`m_${uid()}`,...payload}]};
@@ -448,14 +483,33 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
                     const mrp=Number(m.mrp)||0;
                     const cur=m.currency||"INR";
                     const sym=cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":cur+" ";
+                    const setup=Number(m.setupFee)||0;
+                    const griOn=m.griApplicable==="Yes" && Number(m.griPercentage)>0;
                     return (
                     <div key={m.id} className="module-row">
                       <span className={`module-type-tag ${MOD_TYPE_CLS[m.type]||"mod-core"}`}>{m.type}</span>
                       <span className="module-name">{m.name}</span>
                       <span className="module-desc">{m.desc}</span>
-                      <span style={{fontSize:11,fontWeight:600,color:mrp>0?"#047857":"#94A3B8",background:mrp>0?"#ECFDF5":"#F1F5F9",border:`1px solid ${mrp>0?"#A7F3D0":"#E2E8F0"}`,padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap",flexShrink:0}} title="List price (MRP)">
-                        {mrp>0?`${sym}${mrp.toLocaleString()} / ${m.unit||"License"}`:"No MRP"}
-                      </span>
+                      {/* ── Compact pricing-logic badges ── */}
+                      {/* Each badge appears only when the field is actually set, so older modules
+                          without pricing data still render clean (just MRP + edit/delete). */}
+                      <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center",justifyContent:"flex-end",flexShrink:0}}>
+                        {m.billingFrequency && (
+                          <span title="Billing Frequency" style={{fontSize:10.5,fontWeight:600,color:"#1D4ED8",background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>{m.billingFrequency}</span>
+                        )}
+                        {griOn && (
+                          <span title="Annual GRI (Growth Rate Increase)" style={{fontSize:10.5,fontWeight:600,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>GRI {m.griPercentage}%</span>
+                        )}
+                        {setup>0 && (
+                          <span title="One-time setup fee" style={{fontSize:10.5,fontWeight:600,color:"#5B21B6",background:"#EDE9FE",border:"1px solid #DDD6FE",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>Setup {sym}{setup.toLocaleString()}</span>
+                        )}
+                        {Number(m.gstRate)>0 && (
+                          <span title="GST rate carried to quote line" style={{fontSize:10.5,fontWeight:600,color:"#0F766E",background:"#F0FDFA",border:"1px solid #99F6E4",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>GST {m.gstRate}%</span>
+                        )}
+                        <span style={{fontSize:11,fontWeight:600,color:mrp>0?"#047857":"#94A3B8",background:mrp>0?"#ECFDF5":"#F1F5F9",border:`1px solid ${mrp>0?"#A7F3D0":"#E2E8F0"}`,padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap"}} title="List price (MRP)">
+                          {mrp>0?`${sym}${mrp.toLocaleString()} / ${m.unit||"License"}`:"No MRP"}
+                        </span>
+                      </div>
                       <div style={{display:"flex",gap:4,flexShrink:0}}>
                         <button className="icon-btn" onClick={()=>openEditMod(p.id,m)}><Edit2 size={13}/></button>
                         <button className="icon-btn" onClick={()=>setConfirm({prodId:p.id,modId:m.id,name:m.name})}><Trash2 size={13}/></button>
@@ -471,40 +525,130 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
       </div>
       {(modal?.mode==="addmod"||modal?.mode==="editmod")&&(
         <Modal title={modal.mode==="addmod"?"Add Module / Sub-Product":"Edit Module"} onClose={()=>setModal(null)}
+          size="xl" draggable resizable
           footer={<><button className="btn btn-sec" onClick={()=>setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={saveMod}><Check size={14}/>Save Module</button></>}>
           {(()=>{const prod=catalog.find(c=>c.id===modal.prodId)||PROD_MAP[modal.prodId];return prod?(
             <div style={{background:prod.bg,border:`1.5px solid ${prod.color}22`,borderRadius:8,padding:"8px 12px",marginBottom:16,fontSize:12.5,fontWeight:600,color:prod.color}}>
               Product: {prod.name}
             </div>
           ):null;})()}
-          <div className="form-row full"><div className="form-group"><label>Module / Feature Name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Ocean Tracking, OCR Engine, Mobile App"/></div></div>
-          <div className="form-row three">
-            <div className="form-group"><label>Type</label>
-              <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>
-                {["Core","Add-on","Integration","Analytics","Mobile"].map(t=><option key={t}>{t}</option>)}
-              </select>
+
+          {/* ── BASICS ── */}
+          <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
+            <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>BASICS</summary>
+            <div style={{padding:"10px 12px"}}>
+              <div className="form-row full"><div className="form-group"><label>Module / Feature Name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Ocean Tracking, OCR Engine, Mobile App"/></div></div>
+              <div className="form-row three">
+                <div className="form-group"><label>Type</label>
+                  <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>
+                    {["Core","Add-on","Integration","Analytics","Mobile"].map(t=><option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="form-group"><label>Unit
+                  <HelpTooltip text="What the MRP is priced per: License, User, Site, Setup (one-time), Year, Month, Transaction."/>
+                </label>
+                  <select value={form.unit} onChange={e=>setForm(f=>({...f,unit:e.target.value}))}>
+                    {["License","User","Site","Setup","Year","Month","Transaction"].map(u=><option key={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div className="form-group"><label>Currency</label>
+                  <select value={form.currency} onChange={e=>setForm(f=>({...f,currency:e.target.value}))}>
+                    {["INR","USD","EUR","GBP","AED","SGD"].map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-group"><label>Description</label><textarea value={form.desc} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} rows={2} placeholder="Brief description of what this module does…"/></div>
             </div>
-            <div className="form-group"><label>Unit
-              <HelpTooltip text="What the MRP is priced per: License, User, Site, Setup (one-time), Year, Month."/>
-            </label>
-              <select value={form.unit} onChange={e=>setForm(f=>({...f,unit:e.target.value}))}>
-                {["License","User","Site","Setup","Year","Month","Transaction"].map(u=><option key={u}>{u}</option>)}
-              </select>
+          </details>
+
+          {/* ── PRICING & BILLING ── */}
+          <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
+            <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>PRICING &amp; BILLING</summary>
+            <div style={{padding:"10px 12px"}}>
+              <div className="form-row three">
+                <div className="form-group"><label>MRP / List Price
+                  <HelpTooltip text="Master rate (no discount). Quotes auto-populate this when the module is added; the rep then applies a discount in % or absolute amount."/>
+                </label>
+                  <input type="number" min={0} step={1} value={form.mrp} onChange={e=>setForm(f=>({...f,mrp:+e.target.value}))} placeholder="0"/>
+                </div>
+                <div className="form-group"><label>Setup Fee
+                  <HelpTooltip text="One-time onboarding / implementation fee charged on top of the recurring MRP. Optional. Carried onto the quote line so the proposal PDF can show it separately."/>
+                </label>
+                  <input type="number" min={0} step={1} value={form.setupFee||0} onChange={e=>setForm(f=>({...f,setupFee:+e.target.value}))} placeholder="0"/>
+                </div>
+                <div className="form-group"><label>Min Commitment / period
+                  <HelpTooltip text="Revenue floor per billing period (Monthly / Quarterly / Annual depending on Frequency). If actual usage falls below this, the customer is still billed the floor. Optional."/>
+                </label>
+                  <input type="number" min={0} step={1} value={form.minCommitment||0} onChange={e=>setForm(f=>({...f,minCommitment:+e.target.value}))} placeholder="0"/>
+                </div>
+              </div>
+              <div className="form-row three">
+                <div className="form-group"><label>Billing Frequency
+                  <HelpTooltip text="How often the customer is billed for this module. Drives the invoice scheduler in Contracts and the recurring badge on the quote line."/>
+                </label>
+                  <select value={form.billingFrequency||""} onChange={e=>setForm(f=>({...f,billingFrequency:e.target.value}))}>
+                    <option value="">— Not set —</option>
+                    {["One-time","Monthly","Quarterly","Half-Yearly","Annual","Per-Transaction","Usage-based"].map(b=><option key={b}>{b}</option>)}
+                  </select>
+                </div>
+                <div className="form-group"><label>Pricing Model
+                  <HelpTooltip text="How the line is priced: Flat (fixed regardless of qty), Per-Unit (MRP × qty — the default), Per-Transaction / Volume / Tiered (rate scales with quantity bands)."/>
+                </label>
+                  <select value={form.pricingModel||""} onChange={e=>setForm(f=>({...f,pricingModel:e.target.value}))}>
+                    <option value="">— Not set —</option>
+                    {["Flat","Per-Unit","Per-Transaction","Tiered","Volume","Usage-based"].map(p=><option key={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div className="form-group"><label>Default Contract Term
+                  <HelpTooltip text="Default term in months when this module is added to a contract (e.g. 12 / 24 / 36). The contract owner can override at signing."/>
+                </label>
+                  <select value={String(form.defaultTermMonths||0)} onChange={e=>setForm(f=>({...f,defaultTermMonths:+e.target.value}))}>
+                    <option value="0">— Not set —</option>
+                    <option value="12">12 months</option>
+                    <option value="24">24 months</option>
+                    <option value="36">36 months</option>
+                    <option value="60">60 months</option>
+                  </select>
+                </div>
+              </div>
             </div>
-            <div className="form-group"><label>Currency</label>
-              <select value={form.currency} onChange={e=>setForm(f=>({...f,currency:e.target.value}))}>
-                {["INR","USD","EUR","GBP","AED","SGD"].map(c=><option key={c}>{c}</option>)}
-              </select>
+          </details>
+
+          {/* ── TAX & ESCALATION ── */}
+          <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
+            <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>TAX &amp; ANNUAL ESCALATION</summary>
+            <div style={{padding:"10px 12px"}}>
+              <div className="form-row three">
+                <div className="form-group"><label>GST Rate (%)
+                  <HelpTooltip text="Per-module GST slab. Snapshot to the quote line. Today the quote-level Tax Mode + Place of Supply still drive the actual CGST/SGST/IGST split — this field is carried for compliance reporting and future per-line GST overrides."/>
+                </label>
+                  <select value={String(form.gstRate||0)} onChange={e=>setForm(f=>({...f,gstRate:+e.target.value}))}>
+                    {[0,5,12,18,28].map(r=><option key={r} value={r}>{r===0?"0% (Exempt / Zero-rated)":`${r}%`}</option>)}
+                  </select>
+                </div>
+                <div className="form-group"><label>HSN / SAC Code
+                  <HelpTooltip text="6 or 8-digit HSN (goods) / SAC (services) code printed on the tax invoice and quote PDF. Required for B2B invoicing in India. Optional in masters but recommended."/>
+                </label>
+                  <input value={form.hsnSac||""} onChange={e=>setForm(f=>({...f,hsnSac:e.target.value}))} placeholder="e.g. 998314"/>
+                </div>
+              </div>
+              <div className="form-row three">
+                <div className="form-group"><label>Annual GRI Applicable?
+                  <HelpTooltip text="GRI = Growth Rate Increase, the standard SaaS annual price escalation. When Yes, contracts auto-apply the % below at each renewal anniversary."/>
+                </label>
+                  <select value={form.griApplicable||"No"} onChange={e=>setForm(f=>({...f,griApplicable:e.target.value}))}>
+                    <option>No</option>
+                    <option>Yes</option>
+                  </select>
+                </div>
+                <div className="form-group"><label>GRI %
+                  <HelpTooltip text="Year-on-year price escalation %. Typical SaaS contracts: 3–7%. Only applied when GRI Applicable = Yes."/>
+                </label>
+                  <input type="number" min={0} max={100} step={0.5} value={form.griPercentage||0} onChange={e=>setForm(f=>({...f,griPercentage:+e.target.value}))} disabled={form.griApplicable!=="Yes"} placeholder="0"/>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group"><label>MRP / List Price
-              <HelpTooltip text="Master rate (no discount). Quotes auto-populate this when the module is added; the rep then applies a discount in % or absolute amount."/>
-            </label>
-              <input type="number" min={0} step={1} value={form.mrp} onChange={e=>setForm(f=>({...f,mrp:+e.target.value}))} placeholder="0"/>
-            </div>
-          </div>
-          <div className="form-group"><label>Description</label><textarea value={form.desc} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} rows={2} placeholder="Brief description of what this module does…"/></div>
+          </details>
         </Modal>
       )}
       {(modal?.mode==="addprod"||modal?.mode==="editprod")&&(

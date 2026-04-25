@@ -1119,8 +1119,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       return {...f,...totals};
     });
   };
-  // Add a line item from the catalogue: snapshots MRP, unit, currency onto
-  // the line so a later master-rate change doesn't rewrite this quote.
+  // Add a line item from the catalogue: snapshots MRP, unit, currency, AND
+  // the pricing-logic master fields (billingFrequency / GRI / setup fee /
+  // hsn / etc.) onto the line so a later master-rate or master-policy edit
+  // doesn't rewrite this historic quote.
+  //
+  // Tax math is unchanged — quote-level taxType + Place of Supply still
+  // drive the per-line CGST/SGST/IGST split. The mod.gstRate value is
+  // snapshot-only today, reserved for a future per-line GST override.
   const addItemFromCatalog=(prod,mod)=>{
     setForm(f=>{
       const ctx={taxType:f.taxType,placeOfSupply:f.placeOfSupply};
@@ -1135,6 +1141,17 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         qty: 1,
         discountType: "pct",
         discountValue: 0,
+        // Pricing-logic snapshot from master (all optional — fall through
+        // to BLANK_QUOTE_ITEM defaults when the catalog entry is missing
+        // a value)
+        billingFrequency: mod.billingFrequency || "",
+        pricingModel:     mod.pricingModel || "",
+        hsnSac:           mod.hsnSac || "",
+        setupFee:         Number(mod.setupFee) || 0,
+        griApplicable:    mod.griApplicable || "",
+        griPercentage:    Number(mod.griPercentage) || 0,
+        defaultTermMonths:Number(mod.defaultTermMonths) || 0,
+        minCommitment:    Number(mod.minCommitment) || 0,
       },ctx);
       const items=[...f.items,item];
       const totals=recalc(items,f.taxType,f.discount,f.placeOfSupply);
