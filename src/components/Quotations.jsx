@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip } from "lucide-react";
-import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES } from '../data/constants';
+import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
-import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
+import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
@@ -143,6 +143,275 @@ const approvalReason = (q) => {
   return reasons.join(" + ");
 };
 
+// ── Currency-symbol helper (shared by composer / grid / footer) ──
+const curSym = (cur) => cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":cur==="GBP"?"£":(cur||"INR")+" ";
+
+// ══════════════════════════════════════════════════════════════════
+// ITEMS COMPOSER TAB
+// ══════════════════════════════════════════════════════════════════
+// Layout faithful to the legacy quotation-entry pattern:
+//
+//   ┌─ Add from Catalogue picker ──────────────────────────────┐
+//   ├─ Compose Line card (all line fields visible side-by-side)
+//   │     Row 1: Charge Name | Description
+//   │     Row 2: Currency | ExRate | Unit | Qty | MRP | Disc
+//   │     Row 3: Price (computed) | Amount | computed GST chips
+//   │     [Insert] [Clear Composer]
+//   ├─ Lines grid (read-back of inserted lines, click row to edit)
+//   └─ Tax summary footer (CardRate · Disc · Taxable · IGST · CGST · SGST · Total)
+//
+// "editingIdx" tracks which grid row is loaded into the composer:
+//   -1 → composing a brand-new line (Insert appends)
+//   ≥0 → editing an existing line in place (Insert applies + clears)
+function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,updateItem,removeItem,recalc,recalcLineWithCtx,formErrors}) {
+  const [composer,setComposer]=useState({...BLANK_QUOTE_ITEM});
+  const [editingIdx,setEditingIdx]=useState(-1);
+  // Recompute composer's derived fields on every keystroke so the
+  // computed price / amount / GST chips track typing.
+  const ctx={taxType:form.taxType,placeOfSupply:form.placeOfSupply};
+  const composerLive=recalcLineWithCtx(composer,ctx);
+  const setC=(field,val)=>setComposer(c=>({...c,[field]:val}));
+  const sym=curSym(composer.currency);
+  const insert=()=>{
+    if(!composerLive.description?.trim() && !composerLive.chargeName?.trim()){
+      // Block insert if both blank — gives the user an obvious error
+      window.alert("Charge Name or Description is required.");
+      return;
+    }
+    setForm(f=>{
+      const items=[...f.items];
+      if(editingIdx>=0) items[editingIdx]=composerLive;
+      else items.push(composerLive);
+      const totals=recalc(items,f.taxType,f.discount,f.placeOfSupply);
+      return {...f,...totals};
+    });
+    setComposer({...BLANK_QUOTE_ITEM});
+    setEditingIdx(-1);
+  };
+  const loadRowToComposer=(item,idx)=>{
+    setComposer({...item});
+    setEditingIdx(idx);
+  };
+  const clearComposer=()=>{
+    setComposer({...BLANK_QUOTE_ITEM});
+    setEditingIdx(-1);
+  };
+
+  // ── Footer totals (6-way breakdown) ──
+  // We compute from form (post-recalc) so they always reflect what's saved.
+  const cardRateTotal=form.items.reduce((s,i)=>s+(Number(i.mrp)||0)*(Number(i.qty)||0),0);
+  const discountTotalPerLine=form.items.reduce((s,i)=>{
+    const mrp=Number(i.mrp)||0;
+    const dv=Number(i.discountValue)||0;
+    const dt=i.discountType||"pct";
+    const perUnit=mrp>0?(dt==="pct"?(mrp*dv)/100:dv):0;
+    return s+perUnit*(Number(i.qty)||0);
+  },0);
+  const taxableTotal=Number(form.subtotal)||0;
+  const igstTotal=form.items.reduce((s,i)=>s+(Number(i.igstAmount)||0),0);
+  const cgstTotal=form.items.reduce((s,i)=>s+(Number(i.cgstAmount)||0),0);
+  const sgstTotal=form.items.reduce((s,i)=>s+(Number(i.sgstAmount)||0),0);
+  const grandTotal=Number(form.total)||0;
+
+  return (
+    <div>
+      <FormError error={formErrors.items}/>
+
+      {/* ── Add from Catalogue ── */}
+      <div style={{background:"#F8FAFC",border:"1px solid var(--border)",borderRadius:8,padding:"10px 12px",marginBottom:12,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>ADD FROM CATALOGUE</span>
+        <select
+          value=""
+          onChange={e=>{
+            if(!e.target.value) return;
+            const [pid,mid]=e.target.value.split("||");
+            const prod=(catalog||[]).find(p=>p.id===pid);
+            const mod=prod?.modules?.find(m=>m.id===mid);
+            if(prod && mod) addItemFromCatalog(prod,mod);
+            e.target.value="";
+          }}
+          style={{flex:1,minWidth:280,fontSize:13,padding:"6px 8px"}}
+          title="Drop a fully-priced line straight from the catalogue. MRP is snapshotted onto the line."
+        >
+          <option value="">— Pick product · module to add directly —</option>
+          {(catalog||[]).map(p=>(
+            <optgroup key={p.id} label={p.name}>
+              {(p.modules||[]).map(m=>{
+                const mrp=Number(m.mrp)||0;
+                const s=curSym(m.currency||"INR");
+                return <option key={m.id} value={`${p.id}||${m.id}`}>
+                  {m.type} · {m.name} {mrp>0?`— ${s}${mrp.toLocaleString()} / ${m.unit||"License"}`:"(no MRP)"}
+                </option>;
+              })}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+
+      {/* ── Compose Line card ── */}
+      <div style={{background:"#fff",border:`1.5px solid ${editingIdx>=0?"#F59E0B":"var(--border)"}`,borderRadius:10,padding:14,marginBottom:14,boxShadow:editingIdx>=0?"0 0 0 3px #FEF3C7":"none"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:700,color:editingIdx>=0?"#92400E":"var(--text3)",letterSpacing:"0.5px"}}>
+            {editingIdx>=0?`EDITING LINE #${editingIdx+1}`:"COMPOSE NEW LINE"}
+          </div>
+          {editingIdx>=0 && <button className="btn btn-sec btn-xs" onClick={clearComposer}>Cancel edit</button>}
+        </div>
+        {/* Row 1: Charge Name + Description */}
+        <div className="form-row">
+          <div className="form-group"><label>Charge Name</label><input value={composer.chargeName||""} onChange={e=>setC("chargeName",e.target.value)} placeholder="SKU / short code (e.g. WISE-FREIGHT-OCEAN)"/></div>
+          <div className="form-group"><label>Description</label><input value={composer.description||""} onChange={e=>setC("description",e.target.value)} placeholder="Long description shown on PDF"/></div>
+        </div>
+        {/* Row 2: Currency / ExRate / Unit / Qty / MRP / Discount */}
+        <div style={{display:"grid",gridTemplateColumns:"90px 90px 100px 70px 1fr 140px",gap:8,marginBottom:8}}>
+          <div className="form-group"><label>Currency</label>
+            <select value={composer.currency||"INR"} onChange={e=>setC("currency",e.target.value)}>
+              {["INR","USD","EUR","GBP","AED","SGD"].map(c=><option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="form-group"><label>ExRate</label><input type="number" min={0} step={0.01} value={composer.exRate||1} onChange={e=>setC("exRate",+e.target.value)} title="Line FX → INR (1 if same currency)"/></div>
+          <div className="form-group"><label>Unit</label>
+            <select value={composer.unit||"License"} onChange={e=>setC("unit",e.target.value)}>
+              {["License","User","Site","Setup","Year","Month","Transaction"].map(u=><option key={u}>{u}</option>)}
+            </select>
+          </div>
+          <div className="form-group"><label>Qty</label><input type="number" min={1} value={composer.qty||1} onChange={e=>setC("qty",+e.target.value)}/></div>
+          <div className="form-group"><label>MRP / Card Rate ({sym.trim()||sym})</label><input type="number" min={0} step={1} value={composer.mrp||0} onChange={e=>setC("mrp",+e.target.value)} placeholder="0"/></div>
+          <div className="form-group"><label>Discount</label>
+            <div style={{display:"flex",gap:0}}>
+              <input type="number" min={0} step={(composer.discountType||"pct")==="pct"?0.5:1} value={composer.discountValue||0} onChange={e=>setC("discountValue",+e.target.value)} style={{borderTopRightRadius:0,borderBottomRightRadius:0,flex:1,minWidth:0}}/>
+              <button type="button" className="btn btn-sec btn-xs" style={{borderTopLeftRadius:0,borderBottomLeftRadius:0,padding:"0 8px",fontSize:11,fontWeight:700,minWidth:34,background:(composer.discountType||"pct")==="pct"?"#EFF6FF":"#FEF3C7",color:(composer.discountType||"pct")==="pct"?"#1D4ED8":"#92400E"}} onClick={()=>setC("discountType",(composer.discountType||"pct")==="pct"?"abs":"pct")}>
+                {(composer.discountType||"pct")==="pct"?"%":sym.trim()||sym}
+              </button>
+            </div>
+          </div>
+        </div>
+        {/* Row 3: Price (override) / Cost (mgr) / Computed Amount + Tax chips + Insert */}
+        <div style={{display:"grid",gridTemplateColumns:isManager?"1fr 1fr 1fr 2.6fr 100px":"1fr 1fr 2.6fr 100px",gap:8,alignItems:"end"}}>
+          <div className="form-group"><label>Unit Price ({sym.trim()||sym})</label><input type="number" min={0} step={1} value={composerLive.unitPrice||0} onChange={e=>setC("unitPrice",+e.target.value)} style={{background:(Number(composer.mrp)||0)>0&&(Number(composer.discountValue)||0)>0?"#ECFDF5":"#fff",fontWeight:600}} title="Auto = MRP − discount. Edit to override."/></div>
+          {isManager && <div className="form-group"><label style={{color:"#92400E"}}>Cost ({sym.trim()||sym})</label><input type="number" min={0} step={1} value={composer.unitCost||0} onChange={e=>setC("unitCost",+e.target.value)} style={{background:"#FFFBEB"}}/></div>}
+          <div className="form-group"><label>Amount ({sym.trim()||sym})</label><input disabled value={(composerLive.amount||0).toLocaleString()} style={{background:"var(--s2)",fontWeight:700}}/></div>
+          {/* Computed GST chips for this line */}
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",fontSize:11,paddingBottom:6}}>
+            {(composerLive.igstRate>0||composerLive.cgstRate>0||composerLive.sgstRate>0)?(
+              <>
+                {composerLive.igstRate>0 && <span style={{background:"#EDE9FE",color:"#5B21B6",border:"1px solid #DDD6FE",padding:"3px 8px",borderRadius:10,fontWeight:600}}>IGST {composerLive.igstRate}% = {sym}{composerLive.igstAmount.toLocaleString()}</span>}
+                {composerLive.cgstRate>0 && <span style={{background:"#DBEAFE",color:"#1E40AF",border:"1px solid #BFDBFE",padding:"3px 8px",borderRadius:10,fontWeight:600}}>CGST {composerLive.cgstRate}% = {sym}{composerLive.cgstAmount.toLocaleString()}</span>}
+                {composerLive.sgstRate>0 && <span style={{background:"#D1FAE5",color:"#065F46",border:"1px solid #A7F3D0",padding:"3px 8px",borderRadius:10,fontWeight:600}}>SGST {composerLive.sgstRate}% = {sym}{composerLive.sgstAmount.toLocaleString()}</span>}
+                <span style={{fontWeight:700,color:"var(--brand)"}}>Total: {sym}{(composerLive.totalWithTax||0).toLocaleString()}</span>
+              </>
+            ):(
+              <span style={{color:"var(--text3)",fontStyle:"italic"}}>{!form.placeOfSupply?"Set Place of Supply (Details tab) for per-line GST":"Tax mode is No Tax / Custom"}</span>
+            )}
+          </div>
+          <button type="button" className="btn btn-primary btn-sm" onClick={insert} style={{height:34}}>
+            {editingIdx>=0?<><Check size={14}/>Update</>:<><Plus size={14}/>Insert</>}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Lines grid (read-back of inserted lines) ── */}
+      {form.items.length===0 ? (
+        <div style={{padding:"24px 16px",textAlign:"center",color:"var(--text3)",fontSize:13,background:"var(--s2)",borderRadius:8,marginBottom:14}}>
+          No line items yet. Pick from the catalogue above, or compose a line and click <strong>Insert</strong>.
+        </div>
+      ) : (
+        <div style={{border:"1px solid var(--border)",borderRadius:8,overflow:"hidden",marginBottom:14}}>
+          <div style={{background:"#1E293B",color:"#E2E8F0",fontSize:11,fontWeight:700,letterSpacing:"0.4px",display:"grid",gridTemplateColumns:isManager?"30px 110px 1.6fr 50px 70px 90px 80px 90px 90px 90px 60px":"30px 110px 1.8fr 50px 80px 100px 90px 90px 90px 60px",padding:"8px 10px",gap:8}}>
+            <span>#</span>
+            <span>Charge</span>
+            <span>Description</span>
+            <span style={{textAlign:"right"}}>Qty</span>
+            <span style={{textAlign:"right"}}>MRP</span>
+            <span style={{textAlign:"right"}}>Discount</span>
+            <span style={{textAlign:"right"}}>Price</span>
+            {isManager && <span style={{textAlign:"right"}}>Cost</span>}
+            <span style={{textAlign:"right"}}>Taxable</span>
+            <span style={{textAlign:"right"}}>GST</span>
+            <span style={{textAlign:"right"}}>Total</span>
+            <span></span>
+          </div>
+          {form.items.map((item,i)=>{
+            const s=curSym(item.currency);
+            const dv=Number(item.discountValue)||0;
+            const dt=item.discountType||"pct";
+            const gst=(Number(item.igstAmount)||0)+(Number(item.cgstAmount)||0)+(Number(item.sgstAmount)||0);
+            const isEditing=editingIdx===i;
+            return (
+              <div key={i}
+                onClick={()=>loadRowToComposer(item,i)}
+                title="Click to load into composer for editing"
+                style={{display:"grid",gridTemplateColumns:isManager?"30px 110px 1.6fr 50px 70px 90px 80px 90px 90px 90px 60px":"30px 110px 1.8fr 50px 80px 100px 90px 90px 90px 60px",padding:"10px",gap:8,fontSize:12.5,borderBottom:"1px solid var(--border)",cursor:"pointer",background:isEditing?"#FFFBEB":(i%2?"#F8FAFC":"#fff"),alignItems:"center"}}>
+                <span style={{color:"var(--text3)",fontWeight:600}}>{i+1}</span>
+                <span style={{fontFamily:"monospace",fontSize:11,color:"var(--text2)"}}>{item.chargeName||"—"}</span>
+                <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={item.description}>{item.description||<em style={{color:"var(--text3)"}}>(no description)</em>}</span>
+                <span style={{textAlign:"right"}}>{item.qty}</span>
+                <span style={{textAlign:"right"}}>{(Number(item.mrp)||0)>0?`${s}${(Number(item.mrp)||0).toLocaleString()}`:"—"}</span>
+                <span style={{textAlign:"right",color:dv>0?"#B91C1C":"var(--text3)"}}>{dv>0?(dt==="pct"?`${dv}%`:`${s}${dv.toLocaleString()}`):"—"}</span>
+                <span style={{textAlign:"right",fontWeight:600}}>{s}{(Number(item.unitPrice)||0).toLocaleString()}</span>
+                {isManager && <span style={{textAlign:"right",color:"#92400E"}}>{(Number(item.unitCost)||0)>0?`${s}${(Number(item.unitCost)||0).toLocaleString()}`:"—"}</span>}
+                <span style={{textAlign:"right",fontWeight:600}}>{s}{(Number(item.amount)||0).toLocaleString()}</span>
+                <span style={{textAlign:"right",color:gst>0?"var(--text2)":"var(--text3)"}} title={gst>0?`IGST ${item.igstAmount||0} · CGST ${item.cgstAmount||0} · SGST ${item.sgstAmount||0}`:""}>{gst>0?`${s}${gst.toLocaleString()}`:"—"}</span>
+                <span style={{textAlign:"right",fontWeight:700,color:"var(--brand)"}}>{s}{(Number(item.totalWithTax)||Number(item.amount)||0).toLocaleString()}</span>
+                <span style={{textAlign:"right"}}>
+                  <button type="button" className="icon-btn" onClick={(e)=>{e.stopPropagation();removeItem(i);if(editingIdx===i) clearComposer();}} title="Remove line"><Trash2 size={13}/></button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Tax summary footer (6-way breakdown) ── */}
+      <div style={{background:"#F8FAFC",border:"1px solid var(--border)",borderRadius:10,padding:"14px 16px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:12,fontSize:12}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",letterSpacing:"0.4px",marginBottom:3}}>CARD RATE TOTAL</div>
+            <div style={{fontWeight:600}}>₹{cardRateTotal.toLocaleString()}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:"#B91C1C",letterSpacing:"0.4px",marginBottom:3}}>DISCOUNT</div>
+            <div style={{fontWeight:600,color:"#B91C1C"}}>− ₹{(discountTotalPerLine + (Number(form.discount)||0)).toLocaleString()}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",letterSpacing:"0.4px",marginBottom:3}}>TAXABLE</div>
+            <div style={{fontWeight:600}}>₹{taxableTotal.toLocaleString()}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:"#5B21B6",letterSpacing:"0.4px",marginBottom:3}}>IGST</div>
+            <div style={{fontWeight:600,color:igstTotal>0?"#5B21B6":"var(--text3)"}}>{igstTotal>0?`₹${igstTotal.toLocaleString()}`:"—"}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:"#1E40AF",letterSpacing:"0.4px",marginBottom:3}}>CGST</div>
+            <div style={{fontWeight:600,color:cgstTotal>0?"#1E40AF":"var(--text3)"}}>{cgstTotal>0?`₹${cgstTotal.toLocaleString()}`:"—"}</div>
+          </div>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:"#065F46",letterSpacing:"0.4px",marginBottom:3}}>SGST</div>
+            <div style={{fontWeight:600,color:sgstTotal>0?"#065F46":"var(--text3)"}}>{sgstTotal>0?`₹${sgstTotal.toLocaleString()}`:"—"}</div>
+          </div>
+          <div style={{borderLeft:"2px solid var(--brand)",paddingLeft:12}}>
+            <div style={{fontSize:10,fontWeight:700,color:"var(--brand)",letterSpacing:"0.4px",marginBottom:3}}>GRAND TOTAL</div>
+            <div style={{fontSize:18,fontWeight:800,color:"var(--brand)",lineHeight:1}}>₹{grandTotal.toLocaleString()}</div>
+          </div>
+        </div>
+        {/* Quote-level discount adjuster (kept for backward-compat with old quotes
+            that used a single bottom-line discount before per-line was available). */}
+        <div style={{marginTop:10,paddingTop:10,borderTop:"1px dashed var(--border)",display:"flex",alignItems:"center",gap:12,fontSize:12}}>
+          <span style={{color:"var(--text3)",fontSize:11}}>Quote-level extra discount (optional, applied after per-line):</span>
+          <input type="number" min={0} step={0.5} value={form.discount||0} onChange={e=>{const d=+e.target.value;setForm(f=>{const totals=recalc(f.items,f.taxType,d,f.placeOfSupply);return{...f,discount:d,...totals};});}} style={{width:100,padding:"4px 6px"}}/>
+          {!form.placeOfSupply && <span style={{color:"#92400E",background:"#FFFBEB",padding:"2px 8px",borderRadius:10,fontSize:11,fontWeight:600,border:"1px solid #FCD34D"}}>⚠ Set Place of Supply in Details tab for proper IGST/CGST/SGST split</span>}
+          {isManager && (() => {
+            const totalCost=form.items.reduce((s,i)=>s+(Number(i.unitCost||0)*Number(i.qty||0)),0);
+            if(totalCost===0) return null;
+            const margin=taxableTotal-totalCost;
+            const marginPct=taxableTotal>0?+((margin/taxableTotal)*100).toFixed(1):0;
+            return <span style={{marginLeft:"auto",fontSize:11,color:marginPct<20?"#B91C1C":marginPct<40?"#92400E":"#047857",fontWeight:600}}>Cost: ₹{totalCost.toLocaleString()} · Margin: ₹{margin.toLocaleString()} ({marginPct}%) <span style={{fontWeight:500,opacity:0.7}}>· internal only</span></span>;
+          })()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,currentUser,orgUsers,catalog,canDelete,isManager=false}) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search,setSearch]=useState("");
@@ -227,7 +496,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           items=[{...BLANK_QUOTE_ITEM,description:opp.title||"Deal value",qty:1,unitPrice:Number(opp.value)||0,amount:Number(opp.value)||0}];
         }
       }
-      const totals=recalc(items,f.taxType,f.discount);
+      const totals=recalc(items,f.taxType,f.discount,f.placeOfSupply);
       const accSnap=snapshotAccount(acc,f);
       return {
         ...f,
@@ -267,7 +536,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       if((!items||items.length===0)&&lead.estimatedValue){
         items=[{description:`${lead.product||"Solution"} – ${lead.company||""}`.trim(),qty:1,unitPrice:Number(lead.estimatedValue)||0,amount:Number(lead.estimatedValue)||0}];
       }
-      const totals=recalc(items,f.taxType,f.discount);
+      const totals=recalc(items,f.taxType,f.discount,f.placeOfSupply);
       const accSnap=snapshotAccount(acc,f);
       const discoveryNotes=[
         lead.painPoints&&(Array.isArray(lead.painPoints)?lead.painPoints.join("; "):lead.painPoints),
@@ -347,12 +616,67 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const totalValue=quotes.filter(q=>["Sent","Under Review"].includes(q.status)).reduce((s,q)=>s+q.total,0);
   const acceptedValue=quotes.filter(q=>q.status==="Accepted").reduce((s,q)=>s+q.total,0);
 
-  const recalc=(items,taxType,discount)=>{
-    const subtotal=items.reduce((s,i)=>s+i.amount,0);
+  // ── Per-line GST split based on Place of Supply ─────────────────
+  // Returns the {igst, cgst, sgst} percentages that should apply to each
+  // line. Logic:
+  //   - taxType "No Tax" / rate 0 → all zero
+  //   - placeOfSupply empty  → all zero per-line; total tax falls back to
+  //                            quote-level lump-sum (legacy behaviour)
+  //   - POS == seller home   → CGST + SGST (split rate in half)
+  //   - POS == "Outside India" → all zero (export / zero-rated)
+  //   - POS != seller home   → IGST (full rate)
+  const lineTaxRates=(taxType,placeOfSupply)=>{
     const rate=TAX_RATES[taxType]||0;
-    const taxAmount=+((subtotal-discount)*rate/100).toFixed(2);
-    const total=+(subtotal-discount+taxAmount).toFixed(2);
-    return {subtotal,taxAmount,total};
+    if(rate===0||!placeOfSupply) return {igst:0,cgst:0,sgst:0};
+    if(placeOfSupply==="Outside India") return {igst:0,cgst:0,sgst:0};
+    if(placeOfSupply===SELLER_HOME_STATE) return {igst:0,cgst:rate/2,sgst:rate/2};
+    return {igst:rate,cgst:0,sgst:0};
+  };
+
+  // Single-line recompute: derives unitPrice from MRP+discount, amount from
+  // qty, then per-line GST amounts from the quote's POS context.
+  const recalcLineWithCtx=(item,quoteCtx)=>{
+    const mrp=Number(item.mrp)||0;
+    const dv=Number(item.discountValue)||0;
+    const dt=item.discountType||"pct";
+    let unitPrice=Number(item.unitPrice)||0;
+    if(mrp>0){
+      const discountAmt=dt==="pct"?(mrp*dv)/100:dv;
+      unitPrice=Math.max(0,+(mrp-discountAmt).toFixed(2));
+    }
+    const qty=Number(item.qty)||0;
+    const amount=+(unitPrice*qty).toFixed(2);
+    const rates=quoteCtx ? lineTaxRates(quoteCtx.taxType,quoteCtx.placeOfSupply)
+                         : {igst:Number(item.igstRate)||0,cgst:Number(item.cgstRate)||0,sgst:Number(item.sgstRate)||0};
+    const igstAmount=+(amount*rates.igst/100).toFixed(2);
+    const cgstAmount=+(amount*rates.cgst/100).toFixed(2);
+    const sgstAmount=+(amount*rates.sgst/100).toFixed(2);
+    const totalWithTax=+(amount+igstAmount+cgstAmount+sgstAmount).toFixed(2);
+    return {...item,unitPrice,amount,
+      igstRate:rates.igst,cgstRate:rates.cgst,sgstRate:rates.sgst,
+      igstAmount,cgstAmount,sgstAmount,totalWithTax};
+  };
+
+  // Whole-quote recompute. Recomputes every line's tax using the current
+  // POS, then aggregates totals. Returns `items` so callers spread it back
+  // and per-line tax stays consistent with quote-level POS.
+  const recalc=(items,taxType,discount,placeOfSupply)=>{
+    const ctx={taxType,placeOfSupply};
+    const recomputed=(items||[]).map(it=>recalcLineWithCtx(it,ctx));
+    const subtotal=+recomputed.reduce((s,i)=>s+(Number(i.amount)||0),0).toFixed(2);
+    const igstTotal=+recomputed.reduce((s,i)=>s+(Number(i.igstAmount)||0),0).toFixed(2);
+    const cgstTotal=+recomputed.reduce((s,i)=>s+(Number(i.cgstAmount)||0),0).toFixed(2);
+    const sgstTotal=+recomputed.reduce((s,i)=>s+(Number(i.sgstAmount)||0),0).toFixed(2);
+    let taxAmount=+(igstTotal+cgstTotal+sgstTotal).toFixed(2);
+    // Legacy fallback: when POS is empty (old quotes / not yet set), fall
+    // back to the lump-sum tax = (subtotal - discount) * rate so existing
+    // quotes don't lose their displayed tax until the rep sets POS.
+    if(!placeOfSupply){
+      const rate=TAX_RATES[taxType]||0;
+      taxAmount=+((subtotal-(+discount||0))*rate/100).toFixed(2);
+    }
+    const total=+(subtotal-(+discount||0)+taxAmount).toFixed(2);
+    return {items:recomputed,subtotal,taxAmount,total,igstTotal,cgstTotal,sgstTotal};
   };
 
   const openAdd=()=>{
@@ -546,7 +870,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     }
     const errs=validateQuote(form);
     if(hasErrors(errs)){setFormErrors(errs);return;}
-    const totals=recalc(form.items,form.taxType,form.discount);
+    const totals=recalc(form.items,form.taxType,form.discount,form.placeOfSupply);
     const clean=sanitizeObj({...form,...totals});
     if(modal.mode==="add"){
       const created={...clean,changeLog:[{id:uid(),at:new Date().toISOString(),by:currentUser,field:"",from:"",to:"created",note:""}]};
@@ -683,18 +1007,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   // discountValue change we recompute unitPrice; whenever the rep edits
   // unitPrice directly we leave the discount fields alone (they become stale
   // — that's intentional, an explicit override should win).
-  const recalcLine=(item)=>{
-    const mrp=Number(item.mrp)||0;
-    const dv=Number(item.discountValue)||0;
-    const dt=item.discountType||"pct";
-    let unitPrice=Number(item.unitPrice)||0;
-    if(mrp>0){
-      const discountAmt=dt==="pct"?(mrp*dv)/100:dv;
-      unitPrice=Math.max(0,+(mrp-discountAmt).toFixed(2));
-    }
-    const qty=Number(item.qty)||0;
-    return {...item,unitPrice,amount:+(unitPrice*qty).toFixed(2)};
-  };
+  // (recalcLineWithCtx is defined alongside recalc above; this is the
+  // single per-line maths used by addItem / updateItem / catalogue picker.)
   const addItem=()=>{setForm(f=>({...f,items:[...f.items,{...BLANK_QUOTE_ITEM}]}));};
   const updateItem=(idx,field,val)=>{
     setForm(f=>{
@@ -703,41 +1017,46 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       // Recompute the line whenever a pricing input changed. For a direct
       // unitPrice edit we still recompute amount but skip the mrp→price step
       // (already done by setting unitPrice).
+      const ctx={taxType:f.taxType,placeOfSupply:f.placeOfSupply};
       if(["mrp","discountType","discountValue","qty"].includes(field)){
-        items[idx]=recalcLine(items[idx]);
+        items[idx]=recalcLineWithCtx(items[idx],ctx);
       } else if(field==="unitPrice"){
-        items[idx].amount=+(Number(items[idx].unitPrice||0)*Number(items[idx].qty||0)).toFixed(2);
+        // Override path: keep unitPrice as-typed, just recompute amount + tax.
+        const qty=Number(items[idx].qty)||0;
+        items[idx]={...items[idx],amount:+(Number(items[idx].unitPrice||0)*qty).toFixed(2)};
+        items[idx]=recalcLineWithCtx(items[idx],{...ctx,_keepUnit:true}); // ctx ignored when no rate change; safe
       }
-      const totals=recalc(items,f.taxType,f.discount);
-      return {...f,items,...totals};
+      const totals=recalc(items,f.taxType,f.discount,f.placeOfSupply);
+      return {...f,...totals};
     });
   };
   // Add a line item from the catalogue: snapshots MRP, unit, currency onto
   // the line so a later master-rate change doesn't rewrite this quote.
   const addItemFromCatalog=(prod,mod)=>{
-    const item=recalcLine({
-      ...BLANK_QUOTE_ITEM,
-      description: `${prod.name} – ${mod.name}`,
-      productId: prod.id,
-      moduleId: mod.id,
-      mrp: Number(mod.mrp)||0,
-      unit: mod.unit||"License",
-      currency: mod.currency||"INR",
-      qty: 1,
-      discountType: "pct",
-      discountValue: 0,
-    });
     setForm(f=>{
+      const ctx={taxType:f.taxType,placeOfSupply:f.placeOfSupply};
+      const item=recalcLineWithCtx({
+        ...BLANK_QUOTE_ITEM,
+        description: `${prod.name} – ${mod.name}`,
+        productId: prod.id,
+        moduleId: mod.id,
+        mrp: Number(mod.mrp)||0,
+        unit: mod.unit||"License",
+        currency: mod.currency||"INR",
+        qty: 1,
+        discountType: "pct",
+        discountValue: 0,
+      },ctx);
       const items=[...f.items,item];
-      const totals=recalc(items,f.taxType,f.discount);
-      return {...f,items,...totals};
+      const totals=recalc(items,f.taxType,f.discount,f.placeOfSupply);
+      return {...f,...totals};
     });
   };
   const removeItem=(idx)=>{
     setForm(f=>{
       const items=f.items.filter((_,i)=>i!==idx);
-      const totals=recalc(items,f.taxType,f.discount);
-      return {...f,items,...totals};
+      const totals=recalc(items,f.taxType,f.discount,f.placeOfSupply);
+      return {...f,...totals};
     });
   };
 
@@ -1096,7 +1415,29 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
       {/* Add/Edit Modal */}
       {modal&&(
-        <Modal title={modal.mode==="add"?"New Quotation":(modal.lockedFinal?"View Quotation (Final – Locked)":"Edit Quotation")} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}}>{modal.lockedFinal?"Close":"Cancel"}</button>{!modal.lockedFinal&&<button className="btn btn-primary" onClick={save}><Check size={14}/>Save Quote</button>}{modal.lockedFinal&&<button className="btn btn-sec btn-sm" onClick={()=>{duplicate(form);setModal(null);}}><Copy size={13}/>Duplicate / Revise</button>}</>}>
+        <Modal title={modal.mode==="add"?"New Quotation":(modal.lockedFinal?"View Quotation (Final – Locked)":"Edit Quotation")} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}} lg footer={
+          // ── Action bar (matches legacy Add / Modify / Void / Revise / Clear / Print) ──
+          // Dest / Save lives on the right; secondary actions on the left.
+          <div style={{display:"flex",alignItems:"center",gap:8,width:"100%"}}>
+            {/* Left cluster: secondary actions */}
+            {!modal.lockedFinal && (
+              <button className="btn btn-sec btn-sm" type="button" title="Reset all fields to blank (does not delete saved quote)" onClick={()=>{
+                if(!window.confirm("Clear all fields on this form? Saved data is not affected until you click Save.")) return;
+                setForm(f=>({...BLANK_QUOTE,id:f.id,owner:f.owner,createdDate:f.createdDate}));
+                setFormErrors({});
+              }}><X size={13}/>Clear</button>
+            )}
+            {modal.mode!=="add" && (
+              <button className="btn btn-sec btn-sm" type="button" title="Clone as a new draft (next version) — original stays untouched" onClick={()=>{duplicate(form);setModal(null);}}><Copy size={13}/>Revise</button>
+            )}
+            <button className="btn btn-sec btn-sm" type="button" title="Open print-ready PDF preview in a new window" onClick={()=>printQuote(form,"customer")}><FileText size={13}/>Print</button>
+            {/* Right cluster: cancel / save */}
+            <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+              <button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});setForm(BLANK_QUOTE);}}>{modal.lockedFinal?"Close":"Cancel"}</button>
+              {!modal.lockedFinal && <button className="btn btn-primary" onClick={save}><Check size={14}/>Save Quote</button>}
+            </div>
+          </div>
+        }>
           {modal.lockedFinal&&(
             <div style={{background:"#FEF3C7",border:"1px solid #FCD34D",padding:"10px 14px",borderRadius:8,marginBottom:14,fontSize:12.5,color:"#92400E"}}>
               <strong>Final quote — locked for contract.</strong> Editing is disabled. Use <em>Duplicate / Revise</em> to create a new version.
@@ -1252,6 +1593,29 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               <div className="form-group"><label>PO Mandatory?</label><select value={form.poMandatory||""} onChange={e=>setForm(f=>({...f,poMandatory:e.target.value}))}><option value="">—</option><option>Yes</option><option>No</option></select></div>
               <div className="form-group"><label>PO Number{/yes/i.test(form.poMandatory||"")?" *":""}</label><input value={form.poNumber||""} onChange={e=>setForm(f=>({...f,poNumber:e.target.value}))} placeholder="Customer PO #"/></div>
             </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Place of Supply
+                  <HelpTooltip text={`Drives the GST split per line. Same as seller home (${SELLER_HOME_STATE}) → CGST + SGST. Different state → IGST. Outside India → zero-rated. Leave blank to fall back to lump-sum tax (legacy quotes).`}/>
+                </label>
+                <select value={form.placeOfSupply||""} onChange={e=>{
+                  const pos=e.target.value;
+                  setForm(f=>{
+                    const totals=recalc(f.items,f.taxType,f.discount,pos);
+                    return {...f,placeOfSupply:pos,...totals};
+                  });
+                }}>
+                  <option value="">— Not set (lump-sum tax) —</option>
+                  {PLACES_OF_SUPPLY.map(s=><option key={s} value={s}>{s===SELLER_HOME_STATE?`${s} (intra-state · CGST+SGST)`:s==="Outside India"?`${s} (zero-rated)`:`${s} (inter-state · IGST)`}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Tax Mode</label>
+                <select value={form.taxType} onChange={e=>{const t=e.target.value;setForm(f=>{const totals=recalc(f.items,t,f.discount,f.placeOfSupply);return{...f,taxType:t,...totals};});}}>
+                  {TAX_TYPES.map(t=><option key={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
 
             {/* ── Contacts ── */}
             <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:6,marginTop:14}}>BILLING CONTACTS</div>
@@ -1284,110 +1648,15 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             <div className="form-group"><label>Cover Letter</label><textarea rows={3} value={form.coverLetter||""} onChange={e=>setForm(f=>({...f,coverLetter:e.target.value}))} placeholder="Cover-letter text to paste at top of the quote PDF" style={{width:"100%",resize:"vertical"}}/></div>
           </div>)}
 
-          {formTab==="items"&&(<div>
-            <FormError error={formErrors.items}/>
-            {/* ── Add-from-Catalogue picker ── */}
-            {/* Snapshots MRP / unit / currency from the master so a later
-                rate edit doesn't silently rewrite this quote. */}
-            <div style={{background:"#F8FAFC",border:"1px solid var(--border)",borderRadius:8,padding:"10px 12px",marginBottom:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <span style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>ADD FROM CATALOGUE</span>
-              <select
-                value=""
-                onChange={e=>{
-                  if(!e.target.value) return;
-                  const [pid,mid]=e.target.value.split("||");
-                  const prod=(catalog||[]).find(p=>p.id===pid);
-                  const mod=prod?.modules?.find(m=>m.id===mid);
-                  if(prod && mod) addItemFromCatalog(prod,mod);
-                  e.target.value="";
-                }}
-                style={{flex:1,minWidth:280,fontSize:13,padding:"6px 8px"}}
-                title="Pick a module to add as a quote line. MRP is snapshotted onto the line."
-              >
-                <option value="">— Pick product · module to add —</option>
-                {(catalog||[]).map(p=>(
-                  <optgroup key={p.id} label={p.name}>
-                    {(p.modules||[]).map(m=>{
-                      const mrp=Number(m.mrp)||0;
-                      const cur=m.currency||"INR";
-                      const sym=cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":cur+" ";
-                      return <option key={m.id} value={`${p.id}||${m.id}`}>
-                        {m.type} · {m.name} {mrp>0?`— ${sym}${mrp.toLocaleString()} / ${m.unit||"License"}`:"(no MRP)"}
-                      </option>;
-                    })}
-                  </optgroup>
-                ))}
-              </select>
-              <span style={{fontSize:11,color:"var(--text3)"}}>or</span>
-              <button className="btn btn-sec btn-sm" onClick={addItem}><Plus size={13}/>Blank Line</button>
-            </div>
-
-            {/* ── Line items table ── */}
-            {form.items.length===0 && (
-              <div style={{padding:"24px 16px",textAlign:"center",color:"var(--text3)",fontSize:13,background:"var(--s2)",borderRadius:8,marginBottom:8}}>
-                No line items yet. Pick a module from the catalogue above, or add a blank line.
-              </div>
-            )}
-            {form.items.map((item,i)=>{
-              const cost=Number(item.unitCost||0)*Number(item.qty||0);
-              const margin=Number(item.amount||0)-cost;
-              const marginPct=item.amount>0?+((margin/item.amount)*100).toFixed(1):0;
-              const cur=item.currency||"INR";
-              const sym=cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":cur+" ";
-              const mrp=Number(item.mrp)||0;
-              const dt=item.discountType||"pct";
-              const dv=Number(item.discountValue)||0;
-              const discAmt=mrp>0?(dt==="pct"?(mrp*dv)/100:dv):0;
-              const cols=isManager
-                ? "1.6fr 50px 80px 110px 80px 70px 70px 80px 30px"
-                : "1.8fr 60px 90px 130px 90px 90px 30px";
-              return (
-              <div key={i} style={{display:"grid",gridTemplateColumns:cols,gap:6,alignItems:"end",marginBottom:8}}>
-                <div className="form-group"><label>{i===0?"Description":""}</label><input value={item.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Line item description"/></div>
-                <div className="form-group"><label>{i===0?"Qty":""}</label><input type="number" min={1} value={item.qty} onChange={e=>updateItem(i,"qty",+e.target.value)}/></div>
-                <div className="form-group">
-                  <label>{i===0?`MRP (${cur})`:""}</label>
-                  <input type="number" min={0} step={1} value={item.mrp||0} onChange={e=>updateItem(i,"mrp",+e.target.value)} title={mrp>0?`List price per ${item.unit||"unit"}`:"No MRP — type the list price or leave 0 to bypass discount math"}/>
-                </div>
-                <div className="form-group">
-                  <label>{i===0?"Discount":""}</label>
-                  <div style={{display:"flex",gap:0}}>
-                    <input type="number" min={0} step={dt==="pct"?0.5:1} value={dv} onChange={e=>updateItem(i,"discountValue",+e.target.value)} style={{borderTopRightRadius:0,borderBottomRightRadius:0,flex:1,minWidth:0}}/>
-                    <button type="button" className="btn btn-sec btn-xs" style={{borderTopLeftRadius:0,borderBottomLeftRadius:0,padding:"0 8px",fontSize:11,fontWeight:700,minWidth:34,background:dt==="pct"?"#EFF6FF":"#FEF3C7",color:dt==="pct"?"#1D4ED8":"#92400E"}} onClick={()=>updateItem(i,"discountType",dt==="pct"?"abs":"pct")} title={dt==="pct"?"Click to switch to absolute amount off":`Click to switch to % off (currently ${sym} off)`}>
-                      {dt==="pct"?"%":sym.trim()||sym}
-                    </button>
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>{i===0?`Price (${cur})`:""}</label>
-                  <input type="number" min={0} step={1} value={item.unitPrice||0} onChange={e=>updateItem(i,"unitPrice",+e.target.value)} style={{background:mrp>0&&dv>0?"#ECFDF5":"#fff",fontWeight:600}} title={mrp>0?`MRP ${sym}${mrp.toLocaleString()} − discount ${sym}${discAmt.toFixed(0)} = ${sym}${(mrp-discAmt).toFixed(0)}. Edit to override.`:"Unit price (no MRP set)"}/>
-                </div>
-                {isManager && <div className="form-group"><label style={{color:"#92400E"}}>{i===0?`Cost (${cur})`:""}</label><input type="number" min={0} step={1} value={item.unitCost||0} onChange={e=>updateItem(i,"unitCost",+e.target.value)} style={{background:"#FFFBEB"}} title="Internal cost — never shown to customer"/></div>}
-                {isManager && <div className="form-group"><label style={{color:"#047857"}}>{i===0?"Margin %":""}</label><input disabled value={item.unitCost>0?`${marginPct}%`:"—"} style={{background:marginPct<20?"#FEF2F2":marginPct<40?"#FFFBEB":"#ECFDF5",color:marginPct<20?"#B91C1C":marginPct<40?"#92400E":"#047857",fontWeight:600}}/></div>}
-                <div className="form-group"><label>{i===0?"Amount":""}</label><input disabled value={`${sym}${(Number(item.amount)||0).toLocaleString()}`} style={{background:"var(--s2)",fontWeight:600}}/></div>
-                <button className="icon-btn" style={{marginBottom:4}} onClick={()=>removeItem(i)}><Trash2 size={13}/></button>
-              </div>
-            );})}
-            <button className="btn btn-sec btn-sm" onClick={addItem} style={{marginTop:4}}><Plus size={13}/>Add Blank Line</button>
-            <div style={{marginTop:16,borderTop:"1px solid var(--border)",paddingTop:12}}>
-              <div className="form-row three">
-                <div className="form-group"><label>Tax Type</label><select value={form.taxType} onChange={e=>{const t=e.target.value;setForm(f=>{const totals=recalc(f.items,t,f.discount);return{...f,taxType:t,...totals};});}}>{TAX_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
-                <div className="form-group"><label>Discount (₹L)</label><input type="number" min={0} step={0.5} value={form.discount} onChange={e=>{const d=+e.target.value;setForm(f=>{const totals=recalc(f.items,f.taxType,d);return{...f,discount:d,...totals};});}}/></div>
-                <div style={{textAlign:"right",paddingTop:20}}>
-                  <div style={{fontSize:12}}>Subtotal: ₹{form.subtotal}L</div>
-                  <div style={{fontSize:12}}>Tax: ₹{form.taxAmount}L</div>
-                  <div style={{fontSize:16,fontWeight:700,color:"var(--brand)"}}>Total: ₹{form.total}L</div>
-                  {isManager && (() => {
-                    const totalCost=form.items.reduce((s,i)=>s+(Number(i.unitCost||0)*Number(i.qty||0)),0);
-                    const margin=form.subtotal-totalCost;
-                    const marginPct=form.subtotal>0?+((margin/form.subtotal)*100).toFixed(1):0;
-                    if(totalCost===0) return null;
-                    return <div style={{marginTop:6,fontSize:12,color:marginPct<20?"#B91C1C":marginPct<40?"#92400E":"#047857",fontWeight:600,borderTop:"1px dashed var(--border)",paddingTop:6}}>Cost: ₹{totalCost.toFixed(1)}L · Margin: ₹{margin.toFixed(1)}L ({marginPct}%) <span style={{fontSize:10,fontWeight:500,opacity:0.7}}>· internal only</span></div>;
-                  })()}
-                </div>
-              </div>
-            </div>
-          </div>)}
+          {formTab==="items"&&(<ItemsComposerTab
+            form={form} setForm={setForm}
+            isManager={isManager}
+            catalog={catalog}
+            addItemFromCatalog={addItemFromCatalog}
+            updateItem={updateItem} removeItem={removeItem}
+            recalc={recalc} recalcLineWithCtx={recalcLineWithCtx}
+            formErrors={formErrors}
+          />)}
 
           {formTab==="terms"&&(<div>
             <div className="form-group"><label>T&C Template (replaces current text)</label>

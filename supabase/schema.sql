@@ -437,6 +437,8 @@ CREATE TABLE IF NOT EXISTS public.quotations (
   prepared_by           TEXT,
   sales_engineer        TEXT,
   cover_letter          TEXT,
+  -- ── Place of Supply (drives intra-state CGST+SGST vs inter-state IGST) ──
+  place_of_supply       TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );

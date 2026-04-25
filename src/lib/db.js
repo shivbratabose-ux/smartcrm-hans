@@ -167,6 +167,7 @@ const toSnake = (obj, module) => {
     financeContactEmail:"finance_contact_email",
     sourceLeadId:"source_lead_id", preparedBy:"prepared_by",
     salesEngineer:"sales_engineer", coverLetter:"cover_letter",
+    placeOfSupply:"place_of_supply",
     // soft delete
     isDeleted:"is_deleted", deletedAt:"deleted_at", deletedBy:"deleted_by",
   };
@@ -279,6 +280,7 @@ const toCamel = (obj, module) => {
     finance_contact_email:"financeContactEmail",
     source_lead_id:"sourceLeadId", prepared_by:"preparedBy",
     sales_engineer:"salesEngineer", cover_letter:"coverLetter",
+    place_of_supply:"placeOfSupply",
     // soft delete
     is_deleted:"isDeleted", deleted_at:"deletedAt", deleted_by:"deletedBy",
   };

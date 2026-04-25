@@ -233,6 +233,10 @@ export const INIT_TARGETS = [];
 export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:"",emailLog:[],lastReminderAt:"",changeLog:[],attachments:[],
   // ── Customer billing snapshot (taken at quote creation; editable on quote) ──
   currency:"INR",exchangeRate:1,legalName:"",billingAddressSnapshot:"",shippingAddressSnapshot:"",gstin:"",pan:"",taxTreatment:"",poMandatory:"",poNumber:"",paymentTerms:"",creditDays:0,billingContactName:"",billingContactEmail:"",financeContactEmail:"",
+  // ── Place of Supply (drives intra-state CGST+SGST vs inter-state IGST split per line) ──
+  // Empty = "use customer billing state" at line-recompute time. Setting it
+  // explicitly here lets the rep override (e.g. ship-to differs from bill-to).
+  placeOfSupply:"",
   // ── Sales / deal context (from Opportunity) ──
   territory:"",lob:"",dealSize:"",secondaryContactIds:[],contactRoles:[],sourceLeadId:"",
   // ── Sales narrative ──
@@ -265,13 +269,26 @@ export const QUOTE_REMINDER_OFFSETS=[7,14];
 //     absolute amount (in same currency as MRP).
 //   - unitPrice: derived = mrp - discount (per unit). Stays editable so a sales
 //     rep can override even after picking from the catalogue.
+//   - amount: unitPrice * qty (taxable value before GST).
 //   - productId / moduleId: cross-reference back to the catalogue master so the
 //     PDF and approval flow can group lines by product.
+//   - chargeName: SKU-style short code printed on the invoice (separate from
+//     the long human description). Optional.
+//   - exRate: line-level FX (foreign currency → INR). Defaults to 1.
+//   - igstRate / cgstRate / sgstRate: per-line rates. Computed by the form
+//     based on quote.placeOfSupply vs seller home state, but stored explicitly
+//     on the line so the historic invoice survives later POS / rate changes.
+//   - igstAmount / cgstAmount / sgstAmount / totalWithTax: derived; carried on
+//     the line for stable PDF rendering.
 export const BLANK_QUOTE_ITEM={
   description:"", qty:1, unitPrice:0, amount:0, unitCost:0,
-  productId:"", moduleId:"",
-  mrp:0, unit:"", currency:"INR",
+  productId:"", moduleId:"", chargeName:"",
+  mrp:0, unit:"", currency:"INR", exRate:1,
   discountType:"pct", discountValue:0,
+  igstRate:0, igstAmount:0,
+  cgstRate:0, cgstAmount:0,
+  sgstRate:0, sgstAmount:0,
+  totalWithTax:0,
 };
 export const BLANK_COMM_LOG={type:"Email Sent",subject:"",body:"",from:"",to:"",accountId:"",contactId:"",oppId:"",date:"",status:"Sent",owner:"u1"};
 export const BLANK_EVENT={title:"",type:"Call",status:"Scheduled",date:"",time:"09:00",endTime:"09:30",accountId:"",contactId:"",oppId:"",owner:"u1",attendees:[],location:"",notes:"",reminderMin:15};
