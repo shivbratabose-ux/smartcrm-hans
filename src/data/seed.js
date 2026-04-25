@@ -1,6 +1,6 @@
 import {
   ACT_TYPES, ACT_STATUS, CUST_TYPES, COUNTRIES, REGIONS, PRIORITIES,
-  STAGES, STAGE_PROB, TICKET_TYPES, TICKET_STATUSES, CALL_TYPES, CALL_OBJECTIVES,
+  STAGES, STAGE_PROB, STAGE_COL, TICKET_TYPES, TICKET_STATUSES, CALL_TYPES, CALL_OBJECTIVES,
   CALL_OUTCOMES, VERTICALS, LEAD_SOURCES, LEAD_TEMPERATURES, BUSINESS_TYPES,
   STAFF_SIZES, CURRENT_SOFTWARE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS,
   DECISION_TIMELINES, OPP_PHASES, OPP_STAGES, FORECAST_CATS, OPP_SIZES,
@@ -147,7 +147,18 @@ export const INIT_MASTERS = {
   winReasons:       mk("wr", WIN_REASONS),
   lossReasons:      mk("lr", LOSS_REASONS),
   suspendReasons:   mk("sr", SUSPEND_REASONS),
-  stages:           STAGES.map(s=>({id:`st${s}`,name:s,probability:STAGE_PROB[s]||0})),
+  // Pipeline stages — editable via Masters → Sales → Pipeline Stages.
+  // `kind` is the semantic role of the stage so downstream forecast / win-rate
+  // logic can identify the closing stages even after a rename. Two kinds are
+  // reserved as system stages: "won" and "lost". They can't be deleted (UI
+  // prevents it) but can be renamed (e.g. "Won" → "Closed Won").
+  stages: STAGES.map(s => ({
+    id: `st${s}`,
+    name: s,
+    probability: STAGE_PROB[s] || 0,
+    color: STAGE_COL[s] || "#94A3B8",
+    kind: s === "Won" ? "won" : s === "Lost" ? "lost" : "open",
+  })),
   evaluationStatus: mk("evs2", EVALUATION_STATUS),
   nextSteps:        mk("ns", NEXT_STEPS),
 

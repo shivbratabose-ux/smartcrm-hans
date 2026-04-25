@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Edit2, Trash2, Check, X, ChevronDown, Search } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Plus, Edit2, Trash2, Check, X, ChevronDown, Search, ArrowUp, ArrowDown, GitBranch } from "lucide-react";
 import { PROD_MAP } from '../data/constants';
 import { uid } from '../utils/helpers';
 import { Modal, Confirm, HelpTooltip, PageTip } from './shared';
@@ -21,8 +21,11 @@ const SECTIONS = {
     { key:"oppSources",      title:"Opportunity Sources" },
     { key:"oppSizes",        title:"Deal Sizes" },
     { key:"forecastCats",    title:"Forecast Categories" },
-    { key:"stages",          title:"Legacy Deal Stages", subKey:"probability", subLabel:"Prob %", subType:"num",
-      help:"Probability % is used in weighted pipeline forecasting. Won = 100, Lost = 0." },
+    // Pipeline stages get their own dedicated editor (rendered above the
+    // chip grid). They support color, probability %, kind (open/won/lost),
+    // ordering, and delete-blocked-when-in-use — none of which the chip
+    // editor handles. The `stages` master is therefore intentionally NOT
+    // in this list; see <PipelineStagesEditor/> below.
     { key:"winReasons",      title:"Win Reasons" },
     { key:"lossReasons",     title:"Loss Reasons" },
     { key:"suspendReasons",  title:"Suspend Reasons" },
@@ -219,9 +222,244 @@ const MASTERS_CSS = `
 .m-group-tab{padding:8px 16px;border-radius:8px 8px 0 0;border:none;background:transparent;color:var(--text2);font-size:13.5px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s}
 .m-group-tab:hover{color:var(--brand)}
 .m-group-tab.active{color:#1B6B5A;border-bottom-color:#1B6B5A;background:var(--brand-bg)}
+
+/* ── Pipeline Stages editor ── */
+.ps-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:20px;box-shadow:var(--sh-xs)}
+.ps-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.ps-title{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--text)}
+.ps-sub{font-size:12px;color:var(--text3);margin-bottom:14px}
+.ps-table{width:100%;border-collapse:separate;border-spacing:0 4px}
+.ps-row{background:var(--s2);border-radius:8px}
+.ps-row td{padding:8px 10px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.ps-row td:first-child{border-left:1px solid var(--border);border-radius:8px 0 0 8px}
+.ps-row td:last-child{border-right:1px solid var(--border);border-radius:0 8px 8px 0}
+.ps-row.ps-system{background:#FEF7E6}
+.ps-name-input{background:transparent;border:1px solid transparent;font-size:13px;font-weight:600;color:var(--text);padding:5px 8px;border-radius:6px;width:100%;outline:none}
+.ps-name-input:hover{border-color:var(--border)}
+.ps-name-input:focus{border-color:var(--brand);background:#fff}
+.ps-prob-input{width:60px;padding:5px 6px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;text-align:right;outline:none}
+.ps-prob-input:focus{border-color:var(--brand)}
+.ps-color-swatch{width:22px;height:22px;border-radius:6px;border:2px solid #fff;box-shadow:0 0 0 1px var(--border);cursor:pointer;flex-shrink:0}
+.ps-color-pop{position:absolute;background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px;box-shadow:var(--sh-md);z-index:10;display:grid;grid-template-columns:repeat(8,1fr);gap:4px}
+.ps-color-cell{width:22px;height:22px;border-radius:5px;border:none;cursor:pointer}
+.ps-kind{font-size:9.5px;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;text-transform:uppercase}
+.ps-kind.k-open{background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE}
+.ps-kind.k-won{background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0}
+.ps-kind.k-lost{background:#FEF2F2;color:#991B1B;border:1px solid #FECACA}
+.ps-icon-btn{width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:var(--text3)}
+.ps-icon-btn:hover:not(:disabled){background:var(--s2);color:var(--text);border-color:var(--border2)}
+.ps-icon-btn:disabled{opacity:0.4;cursor:not-allowed}
+.ps-icon-btn.ps-del:hover:not(:disabled){background:#FEF2F2;color:#DC2626;border-color:#FCA5A5}
+.ps-add-row{display:flex;gap:8px;align-items:center;margin-top:10px}
 `;
 
-function Masters({masters,setMasters,catalog,setCatalog,orgUsers=[],currentUser=null}) {
+// Color palette for pipeline stages — 16 distinct, visually-balanced choices
+// that play nicely with the kanban / chart colors used elsewhere in the app.
+const STAGE_COLOR_PALETTE = [
+  "#94A3B8","#3B82F6","#8B5CF6","#F59E0B","#F97316","#22C55E","#EF4444","#0EA5E9",
+  "#14B8A6","#EAB308","#EC4899","#A855F7","#F43F5E","#06B6D4","#84CC16","#6366F1",
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// PIPELINE STAGES EDITOR
+// ───────────────────────────────────────────────────────────────────
+// Replaces the old chip-grid entry for `masters.stages`. Adds:
+//   - Color swatch + 16-color picker pop-out per stage
+//   - Probability % field (used in weighted forecast)
+//   - Kind badge (Open / Won / Lost) — Won + Lost are reserved system
+//     stages, can be RENAMED but not DELETED, and must always exist
+//     exactly once each so downstream "is this a closed deal?" checks
+//     have something to look up
+//   - Up/Down arrows to reorder (drag-and-drop deferred to keep this
+//     PR small; arrow buttons cover 95% of the use case)
+//   - Delete blocked when any opportunity currently sits at this stage
+//     (preserves data integrity — a follow-up could offer a "merge into"
+//     selector before deletion)
+// ═══════════════════════════════════════════════════════════════════
+function PipelineStagesEditor({ stages, setStages, opps }) {
+  const [colorPickerFor, setColorPickerFor] = useState(null);   // stage id
+  const [addingName, setAddingName] = useState("");
+  const [confirmDel, setConfirmDel] = useState(null);            // stage id
+
+  // Count of opps currently at each stage — used to block delete +
+  // surface usage hint to the user.
+  const usageByStage = useMemo(() => {
+    const map = {};
+    (opps || []).forEach(o => {
+      if (!o.stage) return;
+      map[o.stage] = (map[o.stage] || 0) + 1;
+    });
+    return map;
+  }, [opps]);
+
+  // System-stage existence check — UI guarantees we never end up with zero
+  // Won or Lost stages by disabling the delete button on the last one of
+  // each kind.
+  const wonCount = stages.filter(s => s.kind === "won").length;
+  const lostCount = stages.filter(s => s.kind === "lost").length;
+
+  const update = (id, patch) => setStages(stages.map(s => s.id === id ? { ...s, ...patch } : s));
+
+  const move = (id, dir) => {
+    const idx = stages.findIndex(s => s.id === id);
+    const next = idx + dir;
+    if (idx < 0 || next < 0 || next >= stages.length) return;
+    const copy = [...stages];
+    [copy[idx], copy[next]] = [copy[next], copy[idx]];
+    setStages(copy);
+  };
+
+  const remove = (id) => {
+    const s = stages.find(x => x.id === id);
+    if (!s) return;
+    // Final guard — UI should already block, but defend in depth.
+    if (usageByStage[s.name]) return;
+    if (s.kind === "won" && wonCount <= 1) return;
+    if (s.kind === "lost" && lostCount <= 1) return;
+    setStages(stages.filter(x => x.id !== id));
+    setConfirmDel(null);
+  };
+
+  const addStage = () => {
+    const name = addingName.trim();
+    if (!name) return;
+    const id = `st_${Date.now().toString(36)}`;
+    setStages([
+      ...stages,
+      { id, name, probability: 50, color: STAGE_COLOR_PALETTE[stages.length % STAGE_COLOR_PALETTE.length], kind: "open" },
+    ]);
+    setAddingName("");
+  };
+
+  return (
+    <div className="ps-card">
+      <div className="ps-head">
+        <div className="ps-title">
+          <GitBranch size={16} style={{color:"var(--brand)"}}/>
+          Pipeline Stages
+          <HelpTooltip text="The list of stages every opportunity moves through. Probability % is used by the weighted forecast (Won = 100, Lost = 0). Kind tags Won / Lost as the closing stages so reports keep working even if you rename them. Delete is blocked while any deal sits at the stage — move those deals first."/>
+        </div>
+        <span style={{fontSize:11.5,color:"var(--text3)"}}>{stages.length} stages · {(opps || []).length} deals across them</span>
+      </div>
+      <div className="ps-sub">
+        Define your sales process. Reorder with the arrows; click a color swatch to recolor; rename inline. Won &amp; Lost are reserved closing stages — you can rename them but at least one of each must exist.
+      </div>
+
+      <table className="ps-table">
+        <thead>
+          <tr style={{fontSize:10.5,color:"var(--text3)",letterSpacing:"0.4px",textTransform:"uppercase",fontWeight:700}}>
+            <th style={{width:36,padding:"6px 10px",textAlign:"center"}}>#</th>
+            <th style={{width:36,padding:"6px 10px"}}>Color</th>
+            <th style={{padding:"6px 10px",textAlign:"left"}}>Name</th>
+            <th style={{width:90,padding:"6px 10px",textAlign:"right"}}>Prob %</th>
+            <th style={{width:80,padding:"6px 10px"}}>Kind</th>
+            <th style={{width:120,padding:"6px 10px",textAlign:"right"}}>In use</th>
+            <th style={{width:130,padding:"6px 10px",textAlign:"right"}}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {stages.map((s, i) => {
+            const inUse = usageByStage[s.name] || 0;
+            const isOnlyWon = s.kind === "won" && wonCount <= 1;
+            const isOnlyLost = s.kind === "lost" && lostCount <= 1;
+            const delBlocked = inUse > 0 || isOnlyWon || isOnlyLost;
+            const delTitle = inUse > 0
+              ? `${inUse} deal${inUse===1?"":"s"} currently at this stage — move them before deleting`
+              : isOnlyWon ? "Can't delete the only Won stage"
+              : isOnlyLost ? "Can't delete the only Lost stage"
+              : "Delete this stage";
+
+            return (
+              <tr key={s.id} className={`ps-row ${s.kind!=="open" ? "ps-system" : ""}`}>
+                <td style={{textAlign:"center",fontSize:11,color:"var(--text3)",fontWeight:600}}>{i + 1}</td>
+                <td>
+                  <div style={{position:"relative"}}>
+                    <button
+                      type="button"
+                      className="ps-color-swatch"
+                      style={{background: s.color || "#94A3B8"}}
+                      onClick={() => setColorPickerFor(colorPickerFor === s.id ? null : s.id)}
+                      aria-label="Change color"
+                    />
+                    {colorPickerFor === s.id && (
+                      <div className="ps-color-pop" onMouseLeave={() => setColorPickerFor(null)}>
+                        {STAGE_COLOR_PALETTE.map(c => (
+                          <button key={c} type="button" className="ps-color-cell"
+                            style={{background:c, outline: c===s.color ? "2px solid #0D1F2D" : "none"}}
+                            onClick={() => { update(s.id, { color: c }); setColorPickerFor(null); }}
+                            aria-label={c}/>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </td>
+                <td>
+                  <input
+                    className="ps-name-input"
+                    value={s.name}
+                    onChange={e => update(s.id, { name: e.target.value })}
+                    placeholder="Stage name"
+                  />
+                </td>
+                <td style={{textAlign:"right"}}>
+                  <input
+                    className="ps-prob-input"
+                    type="number"
+                    min={0} max={100} step={5}
+                    value={Number(s.probability) || 0}
+                    onChange={e => update(s.id, { probability: Math.max(0, Math.min(100, +e.target.value || 0)) })}
+                  />
+                </td>
+                <td>
+                  <span className={`ps-kind k-${s.kind || "open"}`}>{s.kind || "open"}</span>
+                </td>
+                <td style={{textAlign:"right",fontSize:11.5,color: inUse > 0 ? "var(--brand)" : "var(--text3)",fontWeight: inUse > 0 ? 600 : 400}}>
+                  {inUse > 0 ? `${inUse} deal${inUse===1?"":"s"}` : "—"}
+                </td>
+                <td style={{textAlign:"right"}}>
+                  <div style={{display:"inline-flex",gap:4}}>
+                    <button className="ps-icon-btn" onClick={() => move(s.id, -1)} disabled={i === 0} title="Move up"><ArrowUp size={13}/></button>
+                    <button className="ps-icon-btn" onClick={() => move(s.id, +1)} disabled={i === stages.length - 1} title="Move down"><ArrowDown size={13}/></button>
+                    <button className="ps-icon-btn ps-del" onClick={() => setConfirmDel(s.id)} disabled={delBlocked} title={delTitle}><Trash2 size={13}/></button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <div className="ps-add-row">
+        <input
+          value={addingName}
+          onChange={e => setAddingName(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && addStage()}
+          placeholder="New stage name (e.g. Discovery, Pilot, Contract Sent)"
+          style={{flex:1,padding:"7px 10px",border:"1.5px solid var(--border)",borderRadius:6,fontSize:13,outline:"none"}}
+        />
+        <button className="btn btn-sec btn-sm" onClick={addStage} disabled={!addingName.trim()}>
+          <Plus size={13}/>Add Stage
+        </button>
+      </div>
+
+      {confirmDel && (() => {
+        const s = stages.find(x => x.id === confirmDel);
+        if (!s) return null;
+        return (
+          <Confirm
+            title={`Delete stage "${s.name}"?`}
+            msg="This stage will be removed from the pipeline. Deals can no longer be moved to it. This is reversible — you can re-add a stage with the same name."
+            onConfirm={() => remove(s.id)}
+            onCancel={() => setConfirmDel(null)}
+          />
+        );
+      })()}
+    </div>
+  );
+}
+
+
+function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],currentUser=null}) {
   const [tab,setTab]=useState("reference");
   const [group,setGroup]=useState("sales");
   const [search,setSearch]=useState("");
@@ -281,6 +519,18 @@ function Masters({masters,setMasters,catalog,setCatalog,orgUsers=[],currentUser=
             <input className="m-search" placeholder={`Search ${group} masters or items…`}
               value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
+
+          {/* Dedicated editor for pipeline stages — sits at the top of the
+              Sales group because it's the highest-leverage master and needs a
+              richer UI than the chip grid (color, probability, kind, order,
+              usage-blocked delete). */}
+          {group === "sales" && (
+            <PipelineStagesEditor
+              stages={masters.stages || []}
+              setStages={(next) => mk("stages", next)}
+              opps={opps}
+            />
+          )}
 
           <div className="m-grid">
             {visible.map(cfg=>(

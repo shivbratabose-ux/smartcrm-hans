@@ -85,7 +85,15 @@ const Progress = ({value,max,color,height=6}) => (
 );
 
 /* ═══════════════════════════════════════════════════════════════ */
-function Reports({accounts,opps,tickets,activities,leads,callReports,collections,targets,contacts,contracts,quotes,currentUser,orgUsers}) {
+function Reports({accounts,opps,tickets,activities,leads,callReports,collections,targets,contacts,contracts,quotes,currentUser,orgUsers,masters}) {
+  // Stage list + color map are now editable in Masters → Pipeline Stages.
+  // Fall back to bundled defaults when the masters slot is empty so a fresh
+  // install renders sensible charts before anyone customises stages.
+  const stageList = (masters?.stages && masters.stages.length)
+    ? masters.stages
+    : STAGES.map(s => ({ name: s, color: STAGE_COL[s] || "#94A3B8" }));
+  const reportStages = stageList.map(s => s.name);
+  const reportStageColor = Object.fromEntries(stageList.map(s => [s.name, s.color || "#94A3B8"]));
   const [tab,setTab]=useState("executive");
   const [periodFilter,setPeriodFilter]=useState("all");
   const [ownerFilter,setOwnerFilter]=useState("all");
@@ -199,11 +207,11 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   },[opps,activities,leads,tickets,collections,contracts,accounts,callReports]);
 
   // ── Pipeline by Stage ──
-  const stageData = useMemo(()=> STAGES.map(s=>({
+  const stageData = useMemo(()=> reportStages.map(s=>({
     stage:s, count:ownerOpps.filter(o=>o.stage===s).length,
     value:ownerOpps.filter(o=>o.stage===s).reduce((a,o)=>a+o.value,0),
-    color:STAGE_COL[s]
-  })),[ownerOpps]);
+    color:reportStageColor[s] || "#94A3B8"
+  })),[ownerOpps,reportStages,reportStageColor]);
 
   // ── Pipeline by Country ──
   const countryData = useMemo(()=>[...new Set(ownerOpps.map(o=>o.country))].map(c=>({
