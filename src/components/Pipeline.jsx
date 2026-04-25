@@ -19,7 +19,7 @@ import {
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds } from "../utils/helpers";
 import { exportCSV } from "../utils/csv";
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect } from "./shared";
 import ProductModulePicker, { validateProductSelection, primaryProductId } from "./ProductModulePicker";
 
 /* ───────── constants ───────── */
@@ -1019,18 +1019,21 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search deals..."
             style={{ paddingLeft: 30, fontSize: 12, width: "100%", height: 34, borderRadius: 8, border: "1px solid var(--border)" }} />
         </div>
-        <select className="filter-select" value={prodF} onChange={e => setProdF(e.target.value)}>
-          <option value="All">All Products</option>
-          {PRODUCTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <select className="filter-select" value={ownerF} onChange={e => setOwnerF(e.target.value)}>
-          <option value="All">All Owners</option>
-          {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
-        <select className="filter-select" value={regionF} onChange={e => setRegionF(e.target.value)}>
-          <option value="All">All Regions</option>
-          {COUNTRIES.map(c => <option key={c}>{c}</option>)}
-        </select>
+        <TypeaheadSelect
+          size="filter" allowAll allLabel="All Products" placeholder="Search products…"
+          value={prodF} onChange={setProdF}
+          options={PRODUCTS.map(p => ({ value: p.id, label: p.name }))}
+        />
+        <TypeaheadSelect
+          size="filter" allowAll allLabel="All Owners" placeholder="Search owners…"
+          value={ownerF} onChange={setOwnerF}
+          options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+        />
+        <TypeaheadSelect
+          size="filter" allowAll allLabel="All Regions" placeholder="Search regions…"
+          value={regionF} onChange={setRegionF}
+          options={COUNTRIES.map(c => ({ value: c, label: c }))}
+        />
         <select className="filter-select" value={stageF} onChange={e => setStageF(e.target.value)}>
           <option value="All">All Stages</option>
           {STAGES.map(s => <option key={s}>{s}</option>)}
@@ -1385,11 +1388,13 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           <div className="form-row">
             <div className="form-group">
               <label>Account *</label>
-              <select value={form.accountId} onChange={e => { const a = accounts.find(x => x.id === e.target.value); setForm(f => ({ ...f, accountId: e.target.value, country: a?.country || f.country })); setFormErrors(p => ({ ...p, accountId: undefined })); }}
-                style={formErrors.accountId ? { borderColor: "#DC2626" } : {}}>
-                <option value="">Select account…</option>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.accountId}
+                onChange={(id) => { const a = accounts.find(x => x.id === id); setForm(f => ({ ...f, accountId: id, country: a?.country || f.country })); setFormErrors(p => ({ ...p, accountId: undefined })); }}
+                options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+                placeholder="Search accounts…"
+                error={!!formErrors.accountId}
+              />
               <FormError error={formErrors.accountId} />
             </div>
             <div className="form-group">

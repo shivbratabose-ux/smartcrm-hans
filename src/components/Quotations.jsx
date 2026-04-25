@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE, INDIAN_STATES } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
-import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip } from './shared';
+import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip, TypeaheadSelect } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
@@ -1660,8 +1660,26 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             </div>
 
             <div className="form-row full"><div className="form-group"><label>Quote Title *</label><input value={form.title} onChange={e=>{setForm(f=>({...f,title:e.target.value}));setFormErrors(e=>({...e,title:undefined}));}} placeholder="e.g. WiseHandling Deploy – Colossal Avia" style={formErrors.title?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.title}/></div></div>
-            <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{const id=e.target.value;applyAccountCascade(id);setForm(f=>({...f,contactId:""}));setFormErrors(er=>({...er,accountId:undefined}));}} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select...</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div>
-              <div className="form-group"><label>Contact</label><select value={form.contactId} onChange={e=>setForm(f=>({...f,contactId:e.target.value}))}><option value="">Select...</option>{contacts.filter(c=>!form.accountId||c.accountId===form.accountId).map(c=><option key={c.id} value={c.id}>{c.name}{c.designation?` — ${c.designation}`:""}</option>)}</select></div>
+            <div className="form-row">
+              <div className="form-group"><label>Account *</label>
+                <TypeaheadSelect
+                  value={form.accountId}
+                  onChange={(id) => { applyAccountCascade(id); setForm(f => ({...f, contactId:""})); setFormErrors(er => ({...er, accountId:undefined})); }}
+                  options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+                  placeholder="Search accounts…"
+                  error={!!formErrors.accountId}
+                />
+                <FormError error={formErrors.accountId}/>
+              </div>
+              <div className="form-group"><label>Contact</label>
+                <TypeaheadSelect
+                  value={form.contactId}
+                  onChange={(id) => setForm(f => ({...f, contactId: id}))}
+                  options={contacts.filter(c => !form.accountId || c.accountId === form.accountId).map(c => ({ value: c.id, label: c.name, sub: c.designation || "" }))}
+                  placeholder={form.accountId ? "Search contacts…" : "Pick an account first…"}
+                  disabled={!form.accountId && contacts.length > 0 ? false : false}
+                />
+              </div>
             </div>
 
             {/* ── Auto-populated context panel ── */}

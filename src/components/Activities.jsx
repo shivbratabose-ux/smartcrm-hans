@@ -8,7 +8,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { ACT_TYPES, ACT_STATUS, TEAM, TEAM_MAP } from '../data/constants';
 import { uid, fmt, today, sanitizeObj, validateActivity, hasErrors, softDeleteById } from '../utils/helpers';
-import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList, PageTip } from './shared';
+import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList, PageTip, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 
 const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
@@ -199,7 +199,11 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
         </div>
         <div className="filter-search" style={{maxWidth:220}}><Search size={14} style={{color:"var(--text3)",flexShrink:0}}/><input placeholder="Search activities…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
         <select className="filter-select" value={typeF} onChange={e=>setTypeF(e.target.value)}><option>All</option>{ACT_TYPES.map(t=><option key={t}>{t}</option>)}</select>
-        <select className="filter-select" value={ownerF} onChange={e=>setOwnerF(e.target.value)}><option value="All">All Owners</option>{team.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>
+        <TypeaheadSelect
+          size="filter" allowAll allLabel="All Owners" placeholder="Search owners…"
+          value={ownerF} onChange={setOwnerF}
+          options={team.map(u=>({ value:u.id, label:u.name, sub:u.role }))}
+        />
         <div style={{display:"flex",marginLeft:"auto",background:"var(--s2)",borderRadius:8,padding:2}}>
           <button onClick={()=>setViewMode("card")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:viewMode==="card"?"white":"transparent",color:viewMode==="card"?"var(--brand)":"var(--text3)",boxShadow:viewMode==="card"?"0 1px 3px rgba(0,0,0,0.1)":"none"}}><LayoutGrid size={13}/>Card View</button>
           <button onClick={()=>setViewMode("table")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:viewMode==="table"?"white":"transparent",color:viewMode==="table"?"var(--brand)":"var(--text3)",boxShadow:viewMode==="table"?"0 1px 3px rgba(0,0,0,0.1)":"none"}}><List size={13}/>Table View</button>

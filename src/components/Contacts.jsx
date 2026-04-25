@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star,
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today, resolveAddress, formatAddress } from "../utils/helpers";
 import { PRODUCTS, PROD_MAP, COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
-import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, FormError, Empty } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, FormError, Empty, TypeaheadSelect } from "./shared";
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -323,7 +323,12 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
         <div className="lwa-main">
           <div className="filter-bar" style={{flexWrap:"wrap"}}>
             <div className="filter-search"><Search size={14} style={{color:"var(--text3)",flexShrink:0}}/><input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}/></div>
-            <select className="filter-select" value={accF} onChange={e => setAccF(e.target.value)}><option value="All">All Accounts</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+            {/* Account filter — large dataset, type-ahead is essential at scale */}
+            <TypeaheadSelect
+              size="filter" allowAll allLabel="All Accounts" placeholder="Search accounts…"
+              value={accF} onChange={setAccF}
+              options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+            />
             <select className="filter-select" value={deptF} onChange={e => setDeptF(e.target.value)}><option value="All">All Departments</option>{CONTACT_DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
           </div>
 
@@ -444,15 +449,27 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
         <Modal title={modal.mode === "add" ? "Add Contact" : "Edit Contact"} onClose={() => setModal(null)} footer={<><button className="btn btn-sec" onClick={() => setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save Contact</button></>}>
           <div className="form-row"><div className="form-group"><label>Contact ID</label><input value={form.contactId||""} readOnly style={{background:"var(--s1)",fontFamily:"'Courier New',monospace",fontWeight:600,cursor:"default"}}/></div><div className="form-group"><label>Full Name *</label><input value={form.name} onChange={e=>{setForm(f=>({...f,name:e.target.value}));setFormErrors(e=>({...e,name:undefined}));}} placeholder="Full name" style={formErrors.name?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.name}/></div></div>
           <div className="form-row"><div className="form-group"><label>Designation</label><input value={form.designation||""} onChange={e=>setForm(f=>({...f,designation:e.target.value}))} placeholder="VP Cargo, CTO…"/></div><div className="form-group"><label>Department (primary)</label><select value={form.department||""} onChange={e=>setForm(f=>({...f,department:e.target.value}))}><option value="">Select department…</option>{CONTACT_DEPARTMENTS.map(d=><option key={d} value={d}>{d}</option>)}</select></div></div>
-          <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{
-            const newAccId=e.target.value;
-            const newAcc=accounts.find(a=>a.id===newAccId);
-            const addrs=newAcc?.addresses||[];
-            // Auto-pick: if only one address, snap to it; if multiple, pick primary.
-            const autoPick = addrs.length===1 ? addrs[0].id : (addrs.find(a=>a.isPrimary)?.id || "");
-            setForm(f=>({...f,accountId:newAccId,addressId:autoPick}));
-            setFormErrors(e=>({...e,accountId:undefined,addressId:undefined}));
-          }} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select account…</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.accountNo ? `${a.accountNo} – ` : ""}{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div><div className="form-group"><label><input type="checkbox" checked={form.primary} onChange={e=>setForm(f=>({...f,primary:e.target.checked}))} style={{marginRight:6}}/>Primary contact for account</label></div></div>
+          <div className="form-row"><div className="form-group"><label>Account *</label>
+            <TypeaheadSelect
+              value={form.accountId}
+              onChange={(newAccId) => {
+                const newAcc = accounts.find(a => a.id === newAccId);
+                const addrs = newAcc?.addresses || [];
+                // Auto-pick: if only one address, snap to it; if multiple, pick primary.
+                const autoPick = addrs.length === 1 ? addrs[0].id : (addrs.find(a => a.isPrimary)?.id || "");
+                setForm(f => ({...f, accountId: newAccId, addressId: autoPick}));
+                setFormErrors(e => ({...e, accountId: undefined, addressId: undefined}));
+              }}
+              options={accounts.map(a => ({
+                value: a.id,
+                label: a.accountNo ? `${a.accountNo} – ${a.name}` : a.name,
+                sub: a.country || a.type || "",
+              }))}
+              placeholder="Search accounts…"
+              error={!!formErrors.accountId}
+            />
+            <FormError error={formErrors.accountId}/>
+          </div><div className="form-group"><label><input type="checkbox" checked={form.primary} onChange={e=>setForm(f=>({...f,primary:e.target.checked}))} style={{marginRight:6}}/>Primary contact for account</label></div></div>
           {/* ── Office Address (linked to account's address book) ── */}
           {form.accountId && (() => {
             const acc=accounts.find(a=>a.id===form.accountId);
