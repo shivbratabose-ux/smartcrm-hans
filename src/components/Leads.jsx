@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds } from '../utils/helpers';
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip } from './shared';
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import ProductModulePicker, { validateProductSelection, primaryProductId } from './ProductModulePicker';
 import BulkActions, { useBulkSelect } from './BulkActions';
@@ -1913,10 +1913,14 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
               <Search size={14} style={{ color: "var(--text3)", flexShrink: 0 }}/>
               <input placeholder="Search leads..." value={search} onChange={e => setSearch(e.target.value)}/>
             </div>
-            <select className="filter-select" value={productF} onChange={e => setProductF(e.target.value)}>
-              <option value="All">All Products</option>
-              {PRODUCTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            {/* Product / Owner use TypeaheadSelect — both can grow large.
+                Stage / Source stay as plain selects: bounded enums (~5 items),
+                no benefit from typing. */}
+            <TypeaheadSelect
+              size="filter" allowAll allLabel="All Products" placeholder="Search products…"
+              value={productF} onChange={setProductF}
+              options={PRODUCTS.map(p => ({ value: p.id, label: p.name }))}
+            />
             <select className="filter-select" value={stageF} onChange={e => setStageF(e.target.value)}>
               <option value="All">All Stages</option>
               {LEAD_STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1925,10 +1929,11 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
               <option value="All">All Sources</option>
               {LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select className="filter-select" value={ownerF} onChange={e => setOwnerF(e.target.value)}>
-              <option value="All">All Owners</option>
-              {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+            <TypeaheadSelect
+              size="filter" allowAll allLabel="All Owners" placeholder="Search owners…"
+              value={ownerF} onChange={setOwnerF}
+              options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+            />
 
             {/* View toggle: Table (read-only) vs. Grid (Excel-like editable) */}
             <div style={{display:"flex",gap:0,marginLeft:"auto",border:"1.5px solid #CBD5E1",borderRadius:6,overflow:"hidden"}}>
@@ -2414,10 +2419,16 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           </div>
           <div className="form-row">
             <div className="form-group"><label>Link to Account</label>
-              <select value={form.accountId||""} onChange={e => setForm(f => ({...f, accountId:e.target.value||""}))}>
-                <option value="">— None —</option>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.accountNo ? `${a.accountNo} – ` : ""}{a.name}</option>)}
-              </select>
+              <TypeaheadSelect
+                value={form.accountId||""}
+                onChange={(id) => setForm(f => ({...f, accountId: id || ""}))}
+                options={accounts.map(a => ({
+                  value: a.id,
+                  label: a.accountNo ? `${a.accountNo} – ${a.name}` : a.name,
+                  sub: a.country || a.type || "",
+                }))}
+                placeholder="Search accounts…"
+              />
               {form.accountId && (() => { const acct = accounts.find(a => a.id === form.accountId); return acct?.hierarchyPath ? <div style={{fontSize:11, color:"var(--text3)", marginTop:2}}>{acct.hierarchyPath}</div> : null; })()}
             </div>
             <div className="form-group"><label>Lead Stage</label><select value={form.stage} onChange={e => setForm(f => ({...f, stage:e.target.value}))}>{LEAD_STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>

@@ -221,6 +221,187 @@ const dismissTip   = id => {
   if (!d.includes(id)) { localStorage.setItem(TIPS_KEY, JSON.stringify([...d, id])); }
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// TYPEAHEAD SELECT — drop-in replacement for static <select> dropdowns
+// where the option list could grow large (Account / Contact / Owner /
+// Lead / Opportunity selectors, list-page filters etc.).
+//
+// Why this exists: the app started with simple <select> + <option>
+// lists, which becomes unusable past ~50 options and unviable past
+// ~500. This component keeps the same API shape (value / onChange)
+// but renders a free-typing input with a filtered suggestion panel,
+// keyboard nav, and click-outside dismiss.
+//
+// API:
+//   <TypeaheadSelect
+//     value={ownerF}                              // current value (id, name, or "" for cleared)
+//     onChange={(val, opt) => setOwnerF(val)}     // fires with selected value (and full option)
+//     options={team.map(u => ({ value:u.id, label:u.name, sub:u.role }))}
+//     placeholder="Search owners…"
+//     allowAll={true}                             // adds an "All" pseudo-option at top
+//     allLabel="All Owners"                       // text for the All option
+//     allValue="All"                              // value to emit when All is picked
+//     size="filter"                               // "filter" (compact) | "form" (default field height)
+//     icon={<Search size={14}/>}                  // optional leading icon
+//     allowFreeText={false}                       // if true, Enter on no-match emits the typed value
+//     maxResults={50}                             // safety cap
+//   />
+//
+// Matching: case-insensitive substring on label + sub. Results are
+// ranked so prefix matches sort above mid-string matches; ties broken
+// by label length then alphabetical.
+// ═══════════════════════════════════════════════════════════════════
+export function TypeaheadSelect({
+  value, onChange, options = [],
+  placeholder = "Search…",
+  allowAll = false, allLabel = "All", allValue = "All",
+  size = "form", icon, allowFreeText = false, maxResults = 50,
+  disabled = false, autoFocus = false, className = "", error = false,
+}) {
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState("");
+  const [hi, setHi]       = useState(0);   // highlighted index in filtered list
+  const wrapRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Resolve the *display* text for the current value.
+  // When the dropdown is open we show the user's query instead.
+  const selected = useMemo(
+    () => options.find(o => String(o.value) === String(value)) || null,
+    [options, value]
+  );
+  const displayValue = open
+    ? query
+    : (value === allValue && allowAll ? allLabel : (selected?.label ?? ""));
+
+  // Filtered + ranked suggestions.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let pool = options;
+    if (q) {
+      const scored = [];
+      for (const o of options) {
+        const lbl = (o.label || "").toLowerCase();
+        const sub = (o.sub   || "").toLowerCase();
+        const li = lbl.indexOf(q);
+        const si = sub.indexOf(q);
+        if (li === -1 && si === -1) continue;
+        // Score: prefix-on-label = 0, prefix-on-sub = 1,
+        // substring-on-label = 2, substring-on-sub = 3.
+        // Lower is better.
+        const score = li === 0 ? 0 : si === 0 ? 1 : li > 0 ? 2 : 3;
+        scored.push({ o, score, lblLen: lbl.length });
+      }
+      scored.sort((a, b) =>
+        a.score - b.score ||
+        a.lblLen - b.lblLen ||
+        (a.o.label || "").localeCompare(b.o.label || "")
+      );
+      pool = scored.map(s => s.o);
+    }
+    return pool.slice(0, maxResults);
+  }, [options, query, maxResults]);
+
+  // Reset highlight whenever the visible result set changes.
+  useEffect(() => { setHi(0); }, [query, open]);
+
+  // Click-outside to close.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = e => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const commit = (opt) => {
+    onChange?.(opt.value, opt);
+    setOpen(false);
+    setQuery("");
+    inputRef.current?.blur();
+  };
+
+  const onKey = e => {
+    if (!open && (e.key === "ArrowDown" || e.key === "Enter")) {
+      setOpen(true); return;
+    }
+    if (!open) return;
+    const list = allowAll
+      ? [{ value: allValue, label: allLabel, _all: true }, ...filtered]
+      : filtered;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi(i => Math.min(i + 1, list.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHi(i => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      if (list[hi]) commit(list[hi]);
+      else if (allowFreeText && query.trim()) commit({ value: query.trim(), label: query.trim() });
+    }
+    else if (e.key === "Escape") { setOpen(false); setQuery(""); inputRef.current?.blur(); }
+    else if (e.key === "Tab") { setOpen(false); }
+  };
+
+  const clear = () => { onChange?.(allowAll ? allValue : "", null); setQuery(""); inputRef.current?.focus(); };
+
+  // The visible list when the panel is open. We prepend a synthetic
+  // "All" row when allowAll is set so users always see it as the first
+  // suggestion regardless of query.
+  const listForRender = allowAll
+    ? [{ value: allValue, label: allLabel, _all: true }, ...filtered]
+    : filtered;
+
+  return (
+    <div ref={wrapRef} className={`ts-wrap ts-${size} ${error ? "ts-error" : ""} ${className}`} style={{ position: "relative" }}>
+      {icon && <span className="ts-icon">{icon}</span>}
+      <input
+        ref={inputRef}
+        type="text"
+        className={`ts-input ${icon ? "ts-input-with-icon" : ""}`}
+        value={displayValue}
+        placeholder={placeholder}
+        disabled={disabled}
+        autoFocus={autoFocus}
+        onChange={e => { setQuery(e.target.value); if (!open) setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKey}
+        autoComplete="off"
+        spellCheck="false"
+      />
+      {!disabled && (selected || (allowAll && value !== allValue && value !== "")) && !open && (
+        <button type="button" className="ts-clear" aria-label="Clear" onClick={clear}>×</button>
+      )}
+      {open && (
+        <div className="ts-panel" role="listbox">
+          {listForRender.length === 0 ? (
+            <div className="ts-empty">
+              {allowFreeText && query.trim()
+                ? <>Press Enter to use “<b>{query.trim()}</b>”</>
+                : "No matches"}
+            </div>
+          ) : (
+            listForRender.map((o, i) => (
+              <div
+                key={o._all ? "__all" : `${o.value}_${i}`}
+                className={`ts-row ${i === hi ? "ts-row-hi" : ""} ${o._all ? "ts-row-all" : ""}`}
+                role="option"
+                aria-selected={i === hi}
+                onMouseEnter={() => setHi(i)}
+                onMouseDown={e => { e.preventDefault(); commit(o); }}
+              >
+                <div className="ts-row-label">{o.label}</div>
+                {o.sub && <div className="ts-row-sub">{o.sub}</div>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PageTip({ id, title, text, link, linkLabel, onLink }) {
   const [visible, setVisible] = useState(() => !getDismissed().includes(id));
   if (!visible) return null;

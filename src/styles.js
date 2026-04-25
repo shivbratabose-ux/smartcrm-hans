@@ -214,6 +214,58 @@ export const CSS = `
   }
   .tbl-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
 
+  /* ── TYPEAHEAD SELECT ──
+     Drop-in replacement for static <select> + <option> filters and
+     entity pickers (Account / Contact / Owner / Product / etc.). The
+     wrapper is position:relative so the .ts-panel can absolute-position
+     beneath the input without depending on the parent's overflow.
+     Two size presets: .ts-filter (compact, matches .filter-select) and
+     .ts-form (default form-input height). */
+  .ts-wrap { display:inline-flex; align-items:center; min-width:0; position:relative; }
+  /* Default width when used in a .filter-bar so it visually matches .filter-select */
+  .ts-wrap.ts-filter { min-width:160px; }
+  .filter-bar > .ts-wrap.ts-filter { flex:0 0 auto; width:170px; }
+  .ts-input {
+    width:100%; background:var(--surface); border:1.5px solid var(--border);
+    border-radius:var(--r); font-family:inherit; color:var(--text);
+    outline:none; transition:border-color 0.12s;
+  }
+  .ts-input:focus { border-color:var(--brand); }
+  .ts-error .ts-input { border-color:#DC2626; }
+  .ts-input:disabled { background:var(--s2); color:var(--text3); cursor:not-allowed; }
+  .ts-filter .ts-input { padding:7px 28px 7px 10px; font-size:13px; }
+  .ts-form   .ts-input { padding:9px 30px 9px 12px; font-size:14px; }
+  .ts-input-with-icon { padding-left:32px !important; }
+  .ts-icon {
+    position:absolute; left:10px; top:50%; transform:translateY(-50%);
+    color:var(--text3); pointer-events:none; display:flex; align-items:center;
+  }
+  .ts-clear {
+    position:absolute; right:8px; top:50%; transform:translateY(-50%);
+    width:18px; height:18px; border-radius:9px; border:none; cursor:pointer;
+    background:var(--s3); color:var(--text2); font-size:14px; line-height:1;
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .ts-clear:hover { background:var(--border2); color:var(--text); }
+  .ts-panel {
+    position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:50;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+    box-shadow:var(--sh-md); max-height:280px; overflow-y:auto;
+    padding:4px; min-width:200px;
+  }
+  .ts-panel::-webkit-scrollbar { width:6px; }
+  .ts-panel::-webkit-scrollbar-thumb { background:var(--border2); border-radius:99px; }
+  .ts-row {
+    padding:7px 10px; border-radius:6px; cursor:pointer;
+    font-size:13px; color:var(--text);
+  }
+  .ts-row-hi { background:var(--brand-bg); }
+  .ts-row-all { font-weight:600; color:var(--text2); border-bottom:1px solid var(--border); border-radius:0; margin-bottom:2px; }
+  .ts-row-all.ts-row-hi { background:var(--s3); }
+  .ts-row-label { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ts-row-sub   { font-size:11px; color:var(--text3); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ts-empty     { padding:12px; font-size:12px; color:var(--text3); text-align:center; }
+
   /* ── FILTER BAR ── */
   .filter-bar { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
   .filter-search { display:flex; align-items:center; gap:7px; background:var(--surface); border:1.5px solid var(--border); border-radius:var(--r); padding:7px 12px; flex:1; min-width:180px; max-width:280px; }

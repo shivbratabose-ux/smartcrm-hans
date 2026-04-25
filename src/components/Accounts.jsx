@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LEVELS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_ACC } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today, migrateAccountAddresses, formatAddress } from '../utils/helpers';
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal } from './shared';
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, TypeaheadSelect } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
@@ -798,9 +798,18 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           <div className="filter-bar" style={{flexWrap:"wrap"}}>
             <div className="filter-search"><Search size={14} style={{color:"var(--text3)",flexShrink:0}}/><input placeholder="Search accounts…" value={search} onChange={e => setSearch(e.target.value)}/></div>
             <select className="filter-select" value={typeF} onChange={e => setTypeF(e.target.value)}><option>All</option>{CUST_TYPES.map(t => <option key={t}>{t}</option>)}</select>
-            <select className="filter-select" value={countryF} onChange={e => setCountryF(e.target.value)}><option>All</option>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select>
+            {/* Country list grows with global expansion → typeahead */}
+            <TypeaheadSelect
+              size="filter" allowAll allLabel="All Countries" placeholder="Search countries…"
+              value={countryF} onChange={setCountryF}
+              options={COUNTRIES.map(c => ({ value: c, label: c }))}
+            />
             <select className="filter-select" value={statusF} onChange={e => setStatusF(e.target.value)}><option>All</option><option>Active</option><option>Prospect</option></select>
-            <select className="filter-select" value={ownerF} onChange={e => setOwnerF(e.target.value)}><option value="All">All Owners</option>{team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
+            <TypeaheadSelect
+              size="filter" allowAll allLabel="All Owners" placeholder="Search owners…"
+              value={ownerF} onChange={setOwnerF}
+              options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
+            />
           </div>
 
           <BulkActions count={bulk.count} onClear={bulk.clear}

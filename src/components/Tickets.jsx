@@ -4,7 +4,7 @@ import { PRODUCTS, PROD_MAP, TICKET_TYPES, TICKET_STATUSES, PRIORITIES, TEAM, TE
 import { BLANK_TKT } from '../data/seed';
 import { uid, fmt, today, isOverdue, sanitizeObj, validateTicket, hasErrors, softDeleteById } from '../utils/helpers';
 import { notify } from '../utils/toast';
-import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError } from './shared';
+import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
 import BulkActions, { useBulkSelect } from './BulkActions';
@@ -147,7 +147,16 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,cat
       {modal&&(
         <Modal title={modal.mode==="add"?"New Ticket":"Edit Ticket"} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_TKT);}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});setForm(BLANK_TKT);}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save Ticket</button></>}>
           <div className="form-row full"><div className="form-group"><label>Title *</label><input value={form.title} onChange={e=>{setForm(f=>({...f,title:e.target.value}));setFormErrors(e=>({...e,title:undefined}));}} placeholder="Brief description of the issue or request" style={formErrors.title?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.title}/></div></div>
-          <div className="form-row"><div className="form-group"><label>Account *</label><select value={form.accountId} onChange={e=>{setForm(f=>({...f,accountId:e.target.value}));setFormErrors(e=>({...e,accountId:undefined}));}} style={formErrors.accountId?{borderColor:"#DC2626"}:{}}><option value="">Select account…</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><FormError error={formErrors.accountId}/></div></div>
+          <div className="form-row"><div className="form-group"><label>Account *</label>
+            <TypeaheadSelect
+              value={form.accountId}
+              onChange={(id) => { setForm(f => ({...f, accountId: id})); setFormErrors(e => ({...e, accountId: undefined})); }}
+              options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
+              placeholder="Search accounts…"
+              error={!!formErrors.accountId}
+            />
+            <FormError error={formErrors.accountId}/>
+          </div></div>
           <div className="form-row full"><div className="form-group"><label>Product & Affected Module(s)</label><ProductModulePicker value={form.productSelection || []} onChange={(v)=>setForm(f=>({...f,productSelection:v}))} catalog={catalog}/><div style={{fontSize:11,color:"var(--text3)",marginTop:4}}>Pick the product and the specific module(s) impacted by this ticket. Choose "None" if the ticket is product-wide.</div></div></div>
           <div className="form-row"><div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{TICKET_TYPES.map(t=><option key={t}>{t}</option>)}</select></div><div className="form-group"><label>Priority</label><select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))}>{PRIORITIES.map(p=><option key={p}>{p}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{TICKET_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div><div className="form-group"><label>Assigned To</label><select value={form.assigned} onChange={e=>setForm(f=>({...f,assigned:e.target.value}))}>{team.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
