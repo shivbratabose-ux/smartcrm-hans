@@ -352,6 +352,26 @@ export const QUOTE_STATUSES = ["Draft","Sent","Under Review","Accepted","Rejecte
 export const TAX_TYPES = ["GST 18%","GST 12%","GST 5%","No Tax","Custom"];
 export const TAX_RATES = {"GST 18%":18,"GST 12%":12,"GST 5%":5,"No Tax":0,"Custom":0};
 export const QUOTE_VALIDITY = ["7 Days","15 Days","30 Days","45 Days","60 Days","90 Days"];
+
+// ── Place of Supply (Indian states + UTs + foreign) ──
+// Drives the GST split on each quote line:
+//   - POS == seller's home state → CGST + SGST  (intra-state)
+//   - POS != seller's home state → IGST          (inter-state)
+//   - POS == "Outside India"     → Export / Zero-rated
+// Per Section 12-13 IGST Act. The seller's home state is captured per-org
+// via Master → Tax Setup; defaults to Karnataka (Hans Infomatic HQ) if unset.
+export const INDIAN_STATES = [
+  "Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat",
+  "Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh",
+  "Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab",
+  "Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand",
+  "West Bengal",
+  // Union Territories
+  "Andaman and Nicobar","Chandigarh","Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi","Jammu and Kashmir","Ladakh","Lakshadweep","Puducherry",
+];
+export const PLACES_OF_SUPPLY = [...INDIAN_STATES, "Outside India"];
+export const SELLER_HOME_STATE = "Karnataka"; // Hans Infomatic HQ — TODO: move to org-level master
 export const STANDARD_TERMS = [
   "Payment due within 30 days of invoice date.",
   "Annual license fee payable in advance.",
