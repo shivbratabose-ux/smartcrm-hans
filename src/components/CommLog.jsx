@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, Mail, MessageSquare, Send
 import { TEAM, TEAM_MAP, COMM_TYPES, COMM_STATUSES } from '../data/constants';
 import { BLANK_COMM_LOG } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
-import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
+import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect, SendEmailModal } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
 
@@ -16,7 +16,7 @@ const CSV_COLS = [
   {label:"Account",accessor:c=>c._accName||""},{label:"Owner",accessor:c=>TEAM_MAP[c.owner]?.name||""},
 ];
 
-function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDelete}) {
+function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDelete,orgUsers}) {
   const [search,setSearch]=useState("");
   const [typeF,setTypeF]=useState("All");
   const [modal,setModal]=useState(null);
@@ -24,6 +24,8 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
   const [detail,setDetail]=useState(null);
   const [confirm,setConfirm]=useState(null);
   const [formErrors,setFormErrors]=useState({});
+  // sendModal: true = open, with optional prefill object
+  const [sendModal,setSendModal]=useState(null);
 
   const enriched=useMemo(()=>commLogs.map(c=>({...c,_accName:accounts.find(a=>a.id===c.accountId)?.name||"—"})),[commLogs,accounts]);
   const filtered=useMemo(()=>{
@@ -63,6 +65,9 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
         </div>
         <div className="pg-actions">
           <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"communications")}><Download size={14}/>Export</button>
+          {/* Send Email opens the new transactional sender (Resend-backed).
+              Log Email / Log WhatsApp remain for after-the-fact records. */}
+          <button className="btn btn-primary" onClick={()=>setSendModal({})}><Send size={14}/>Send Email</button>
           <button className="btn btn-blue" onClick={()=>openAdd("Email Sent")}><Mail size={14}/>Log Email</button>
           <button className="btn btn-green" onClick={()=>openAdd("WhatsApp Sent")}><MessageSquare size={14}/>Log WhatsApp</button>
         </div>
@@ -145,6 +150,18 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
         </Modal>
       )}
       {confirm&&<Confirm title="Delete Communication" msg="Remove this log?" onConfirm={()=>del(confirm)} onCancel={()=>setConfirm(null)}/>}
+
+      {sendModal && (
+        <SendEmailModal
+          onClose={() => setSendModal(null)}
+          onSent={(entry) => { setCommLogs(p => [...p, entry]); }}
+          accounts={accounts}
+          contacts={contacts}
+          currentUser={currentUser}
+          orgUsers={orgUsers}
+          prefill={sendModal}
+        />
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE, INDIAN_STATES } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
-import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip, TypeaheadSelect } from './shared';
+import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip, TypeaheadSelect, SendEmailModal } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
@@ -557,7 +557,7 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
   );
 }
 
-function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,currentUser,orgUsers,catalog,canDelete,isManager=false}) {
+function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,commLogs,setCommLogs,currentUser,orgUsers,catalog,canDelete,isManager=false}) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search,setSearch]=useState("");
   const [statusF,setStatusF]=useState("All");
@@ -568,6 +568,9 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const [form,setForm]=useState(BLANK_QUOTE);
   const [detail,setDetail]=useState(null);
   const [confirm,setConfirm]=useState(null);
+  // sendEmailModal: when set, opens SendEmailModal pre-filled with the quote
+  // template + the quote's account contact's email + accept link.
+  const [sendEmailModal,setSendEmailModal]=useState(null);
   const [formErrors,setFormErrors]=useState({});
   const [formTab,setFormTab]=useState("details");
   const [sourceMode,setSourceMode]=useState("opportunity"); // "opportunity" | "lead" | "account"
@@ -1494,6 +1497,36 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             <button className="btn btn-sec btn-sm" title="Government format" onClick={()=>printQuote(detail,"government")}>Govt</button>
           </div>
           <button className="btn btn-sec btn-sm" onClick={()=>setDetail(null)}>Close</button>
+          {/* Email Quote — opens SendEmailModal pre-filled with the quote
+              template (subject + body interpolated against the quote, account
+              and primary contact). The customer-facing accept link is built
+              from the same hash route used elsewhere. */}
+          <button className="btn btn-blue btn-sm" onClick={()=>{
+            const acc = accounts.find(a => a.id === detail.accountId) || {};
+            const contact = contacts.find(c => c.id === detail.contactId)
+              || contacts.find(c => c.accountId === detail.accountId && c.primary)
+              || contacts.find(c => c.accountId === detail.accountId)
+              || {};
+            const cur = detail.currency || "INR";
+            const sym = cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":`${cur} `;
+            const total = `${sym}${(Number(detail.total)||0).toLocaleString()}`;
+            const acceptUrl = `${window.location.origin}${window.location.pathname}#/quote-accept/${detail.id}`;
+            setSendEmailModal({
+              templateId: "quote",
+              accountId: acc.id || "",
+              contactId: contact.id || "",
+              toEmail: contact.email || "",
+              account: acc,
+              contact: contact,
+              quote: {
+                id: detail._quoteId || detail.id,
+                title: detail.title,
+                total,
+                expiryDate: detail.expiryDate || detail.validity || "",
+                acceptUrl,
+              },
+            });
+          }}><Mail size={13}/>Email Quote</button>
           <button className="btn btn-primary btn-sm" onClick={()=>{openEdit(detail);setDetail(null);}}><Edit2 size={13}/>Edit</button>
         </>}>
           <div className="dp-grid">
@@ -2130,6 +2163,22 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         </Modal>
       )}
       {confirm&&<Confirm title="Delete Quote" msg="Remove this quotation permanently?" onConfirm={()=>del(confirm)} onCancel={()=>setConfirm(null)}/>}
+
+      {sendEmailModal && (
+        <SendEmailModal
+          onClose={() => setSendEmailModal(null)}
+          onSent={(entry) => {
+            // Persist the sent email to the global comm log so it shows up
+            // in the Communications tab + the account/contact timelines.
+            if (typeof setCommLogs === "function") setCommLogs(p => [...p, entry]);
+          }}
+          accounts={accounts}
+          contacts={contacts}
+          currentUser={currentUser}
+          orgUsers={orgUsers}
+          prefill={sendEmailModal}
+        />
+      )}
     </div>
   );
 }
