@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip } from "lucide-react";
-import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE } from '../data/constants';
+import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE, INDIAN_STATES } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip } from './shared';
@@ -30,6 +30,10 @@ const VERIFY_REQUIRED = [
   ["currency",              "Currency"],
   ["gstin",                 "GSTIN",               f => /india|domestic|sez|export/i.test(f.taxTreatment || "")],
   ["poNumber",              "PO Number",           f => /yes/i.test(f.poMandatory || "")],
+  // Place of Supply drives the per-line GST split (CGST+SGST vs IGST). Required
+  // for any India-tax treatment so quotes don't ship with the legacy lump-sum
+  // fallback when CGST+SGST/IGST is the legally-correct split.
+  ["placeOfSupply",         "Place of Supply",     f => /india|domestic|sez/i.test(f.taxTreatment || "")],
 ];
 
 export const getVerifyStatus = (f) => {
@@ -37,9 +41,6 @@ export const getVerifyStatus = (f) => {
   for (const [key, label, when] of VERIFY_REQUIRED) {
     if (when && !when(f)) continue;
     const v = f?.[key];
-    if (v === undefined || v === null || String(v).trim() === "" || Number(v) === 0 && key === "creditDays" ? false : false) {
-      // the === 0 check isn't applicable to the listed keys; fall through
-    }
     if (v === undefined || v === null || String(v).trim() === "") {
       missing.push({ key, label });
     }
@@ -58,8 +59,13 @@ const validateQuote = (f) => {
     if (v != null && v !== "" && Number(v) < 0) errs[k] = "Cannot be negative";
   }
   if (Array.isArray(f.items)) {
-    const bad = f.items.find(it => Number(it.qty) < 0 || Number(it.unitPrice) < 0 || Number(it.discount) < 0);
-    if (bad) errs.items = "Line item quantity / price / discount cannot be negative";
+    const bad = f.items.find(it =>
+      Number(it.qty) < 0 ||
+      Number(it.unitPrice) < 0 ||
+      Number(it.mrp) < 0 ||
+      Number(it.discountValue) < 0
+    );
+    if (bad) errs.items = "Line item quantity / price / MRP / discount cannot be negative";
   }
   // Verify-before-Send gate: the customer snapshot must be complete before
   // the quote can advance off Draft. The Verify tab exposes every field;
@@ -103,12 +109,29 @@ const getMonthName = (dateStr) => {
   return dt.toLocaleDateString("en-IN",{month:"long"});
 };
 
+// Per-line aggregates pulled out of the JSONB items array so finance can
+// reconcile a CSV row against GSTR-1 / GSTR-3B. We sum on the fly rather than
+// reading q.igstTotal/q.cgstTotal/q.sgstTotal so legacy quotes (saved before
+// the per-line GST split landed) still produce correct numbers.
+const sumLines = (q, key) => (Array.isArray(q.items) ? q.items : [])
+  .reduce((s, i) => s + (Number(i[key]) || 0), 0);
+
 const CSV_COLS = [
   {label:"Quote #",accessor:q=>q._quoteId||q.id},{label:"Title",accessor:q=>q.title},{label:"Customer",accessor:q=>q._accName||""},
   {label:"Sector",accessor:q=>q._sector||""},
   {label:"Product",accessor:q=>PROD_MAP[q.product]?.name||q.product},
   {label:"Products & Modules",accessor:q=>productSelectionToString(q.productSelection)},
   {label:"Date Sent",accessor:q=>q.sentDate},{label:"Quote Month",accessor:q=>getMonthName(q.sentDate||q.createdDate)},
+  // ── Tax / GST split (per-line aggregates, derived) ──
+  {label:"Place of Supply",accessor:q=>q.placeOfSupply||""},
+  {label:"Tax Mode",accessor:q=>q.taxType||""},
+  {label:"Card Rate Total",accessor:q=>(Array.isArray(q.items)?q.items:[]).reduce((s,i)=>s+(Number(i.mrp)||0)*(Number(i.qty)||0),0)},
+  {label:"Subtotal (Taxable)",accessor:q=>q.subtotal||0},
+  {label:"Discount",accessor:q=>q.discount||0},
+  {label:"IGST",accessor:q=>q.igstTotal!=null?q.igstTotal:sumLines(q,"igstAmount")},
+  {label:"CGST",accessor:q=>q.cgstTotal!=null?q.cgstTotal:sumLines(q,"cgstAmount")},
+  {label:"SGST",accessor:q=>q.sgstTotal!=null?q.sgstTotal:sumLines(q,"sgstAmount")},
+  {label:"Tax Total",accessor:q=>q.taxAmount||0},
   {label:"Order Value (INR)",accessor:q=>formatINR(q.total)},{label:"Prob %",accessor:q=>q._prob||0},
   {label:"Status",accessor:q=>q.status},{label:"Version",accessor:q=>`v${q.version}`},
 ];
@@ -145,6 +168,23 @@ const approvalReason = (q) => {
 
 // ── Currency-symbol helper (shared by composer / grid / footer) ──
 const curSym = (cur) => cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":cur==="GBP"?"£":(cur||"INR")+" ";
+
+// ── Account → Place of Supply derivation ──
+// Match the account's billing state (case- and whitespace-tolerant) against
+// INDIAN_STATES. If billing country is set and not India → "Outside India".
+// Returns "" when nothing can be inferred so the rep is forced to pick.
+const derivePOSFromAccount = (acc) => {
+  if (!acc) return "";
+  const country = String(acc.billingCountry || acc.country || "").trim().toLowerCase();
+  if (country && country !== "india") return "Outside India";
+  // Try the structured billing fields first; fall back to addresses[0].state.
+  const rawState = acc.billingState
+    || (Array.isArray(acc.addresses) ? (acc.addresses.find(a=>a.isBilling)?.state || acc.addresses[0]?.state) : "")
+    || "";
+  const norm = String(rawState).trim().toLowerCase();
+  if (!norm) return "";
+  return INDIAN_STATES.find(s => s.toLowerCase() === norm) || "";
+};
 
 // ══════════════════════════════════════════════════════════════════
 // ITEMS COMPOSER TAB
@@ -450,6 +490,9 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       billingContactEmail: f.billingContactEmail || acc.billingContactEmail || acc.primaryEmail   || "",
       financeContactEmail: f.financeContactEmail || acc.financeContactEmail || "",
       territory:         f.territory         || acc.territory         || "",
+      // Derive POS from billingState / billingCountry so the rep doesn't have to
+      // hunt for it. Form value wins (manual edits aren't overwritten).
+      placeOfSupply:     f.placeOfSupply     || derivePOSFromAccount(acc) || "",
     };
   };
 
@@ -496,8 +539,11 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           items=[{...BLANK_QUOTE_ITEM,description:opp.title||"Deal value",qty:1,unitPrice:Number(opp.value)||0,amount:Number(opp.value)||0}];
         }
       }
-      const totals=recalc(items,f.taxType,f.discount,f.placeOfSupply);
       const accSnap=snapshotAccount(acc,f);
+      // Use the freshly-derived POS so per-line GST is split correctly on the
+      // very first cascade — otherwise the rep would have to nudge POS to
+      // re-trigger recalc.
+      const totals=recalc(items,f.taxType,f.discount,accSnap.placeOfSupply||f.placeOfSupply);
       return {
         ...f,
         oppId:opp.id,
@@ -536,8 +582,9 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       if((!items||items.length===0)&&lead.estimatedValue){
         items=[{description:`${lead.product||"Solution"} – ${lead.company||""}`.trim(),qty:1,unitPrice:Number(lead.estimatedValue)||0,amount:Number(lead.estimatedValue)||0}];
       }
-      const totals=recalc(items,f.taxType,f.discount,f.placeOfSupply);
       const accSnap=snapshotAccount(acc,f);
+      // Same as opp cascade: recompute with the freshly-derived POS.
+      const totals=recalc(items,f.taxType,f.discount,accSnap.placeOfSupply||f.placeOfSupply);
       const discoveryNotes=[
         lead.painPoints&&(Array.isArray(lead.painPoints)?lead.painPoints.join("; "):lead.painPoints),
         lead.decisionTimeline&&`Decision timeline: ${lead.decisionTimeline}`,
@@ -567,12 +614,20 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   /* ── Auto-populate from a selected Account (Direct mode) ── */
   const applyAccountCascade=(accountId)=>{
     const acc=accounts.find(a=>a.id===accountId);
-    setForm(f=>({
-      ...f,
-      accountId: accountId||"",
-      ...snapshotAccount(acc,f),
-      title: f.title || (acc ? `Quote – ${acc.name}` : f.title),
-    }));
+    setForm(f=>{
+      const accSnap=snapshotAccount(acc,f);
+      // Recompute totals with the auto-derived POS so any pre-existing line
+      // items pick up the correct GST split immediately.
+      const pos=accSnap.placeOfSupply||f.placeOfSupply;
+      const totals=recalc(f.items,f.taxType,f.discount,pos);
+      return {
+        ...f,
+        accountId: accountId||"",
+        ...accSnap,
+        ...totals,
+        title: f.title || (acc ? `Quote – ${acc.name}` : f.title),
+      };
+    });
   };
 
   const enriched=useMemo(()=>quotes.map((q,idx)=>{
@@ -917,13 +972,48 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       ${isProforma?".watermark{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:80pt;color:rgba(245,158,11,0.12);font-weight:900;pointer-events:none;}":""}
       ${isInternal?".internal{background:#fef3c7;padding:10px 14px;border:1px solid #fbbf24;border-radius:4px;margin:10px 0;font-size:10pt;}":""}
       @media print{ .no-print{display:none !important;} }`;
-    const lineRows=q.items.map(it=>`<tr>
-      <td>${it.description||""}</td>
-      <td style="text-align:right">${it.qty}</td>
-      <td style="text-align:right">₹${(it.unitPrice||0).toFixed(2)}L</td>
-      ${showCost?`<td style="text-align:right;background:#fef3c7">₹${(it.unitCost||0).toFixed(2)}L</td>`:""}
-      <td style="text-align:right">₹${(it.amount||0).toFixed(2)}L</td>
-    </tr>`).join("");
+    // ── Per-line aggregates for the GST footer (also used to decide whether
+    //    to render the IGST / CGST / SGST split or the lump-sum row). ──
+    const igstTotal = q.igstTotal != null ? q.igstTotal : sumLines(q,"igstAmount");
+    const cgstTotal = q.cgstTotal != null ? q.cgstTotal : sumLines(q,"cgstAmount");
+    const sgstTotal = q.sgstTotal != null ? q.sgstTotal : sumLines(q,"sgstAmount");
+    const hasSplit  = igstTotal>0 || cgstTotal>0 || sgstTotal>0;
+    // Decide which optional per-line columns to render: only show MRP /
+    // Discount / GST when any line actually carries them, so legacy quotes
+    // keep their classic 4-column look.
+    const anyMrp      = q.items.some(it=>(Number(it.mrp)||0)>0);
+    const anyDiscount = q.items.some(it=>(Number(it.discountValue)||0)>0);
+    const anyGst      = q.items.some(it=>(Number(it.igstAmount)||0)+(Number(it.cgstAmount)||0)+(Number(it.sgstAmount)||0)>0);
+    const anyCharge   = q.items.some(it=>String(it.chargeName||"").trim()!=="");
+    const lineRows=q.items.map(it=>{
+      const sym=it.currency&&it.currency!=="INR"?it.currency+" ":"₹";
+      const mrp=Number(it.mrp)||0, dv=Number(it.discountValue)||0, dt=it.discountType||"pct";
+      const gst=(Number(it.igstAmount)||0)+(Number(it.cgstAmount)||0)+(Number(it.sgstAmount)||0);
+      return `<tr>
+        ${anyCharge?`<td style="font-family:monospace;font-size:9pt">${it.chargeName||""}</td>`:""}
+        <td>${it.description||""}</td>
+        <td style="text-align:right">${it.qty||0}</td>
+        ${anyMrp?`<td style="text-align:right">${mrp>0?`${sym}${mrp.toLocaleString()}`:"—"}</td>`:""}
+        ${anyDiscount?`<td style="text-align:right">${dv>0?(dt==="pct"?`${dv}%`:`${sym}${dv.toLocaleString()}`):"—"}</td>`:""}
+        <td style="text-align:right">${sym}${(Number(it.unitPrice)||0).toLocaleString()}</td>
+        ${showCost?`<td style="text-align:right;background:#fef3c7">${sym}${(Number(it.unitCost)||0).toLocaleString()}</td>`:""}
+        <td style="text-align:right">${sym}${(Number(it.amount)||0).toLocaleString()}</td>
+        ${anyGst?`<td style="text-align:right" title="IGST ${it.igstRate||0}% · CGST ${it.cgstRate||0}% · SGST ${it.sgstRate||0}%">${gst>0?`${sym}${gst.toLocaleString()}`:"—"}</td>`:""}
+      </tr>`;
+    }).join("");
+    // Build the table header to match the columns we actually render.
+    const headerCells = [
+      anyCharge && '<th>Charge</th>',
+      '<th>Description</th>',
+      '<th style="text-align:right">Qty</th>',
+      anyMrp && '<th style="text-align:right">MRP</th>',
+      anyDiscount && '<th style="text-align:right">Discount</th>',
+      '<th style="text-align:right">Rate</th>',
+      showCost && '<th style="text-align:right;background:#92400e">Cost</th>',
+      '<th style="text-align:right">Amount</th>',
+      anyGst && '<th style="text-align:right">GST</th>',
+    ].filter(Boolean).join("");
+    const tableColspan = headerCells.match(/<th/g)?.length || 4;
     const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${q.id} – ${q.title}</title><style>${css}</style></head>
     <body>
       ${isProforma?'<div class="watermark">PROFORMA</div>':""}
@@ -944,20 +1034,19 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       </div>
       ${isInternal?`<div class="internal"><strong>Internal copy — DO NOT SHARE</strong> · Total Cost: ₹${totalCost.toFixed(2)}L · Margin: ₹${margin.toFixed(2)}L (${marginPct}%) · Owner: ${TEAM_MAP[q.owner]?.name||q.owner}</div>`:""}
       <div style="font-size:11pt;font-weight:600;margin:6px 0">${q.title||""}</div>
+      ${q.placeOfSupply?`<div style="font-size:9.5pt;color:#475569;margin:0 0 6px"><strong>Place of Supply:</strong> ${q.placeOfSupply}${q.placeOfSupply===SELLER_HOME_STATE?" (intra-state · CGST + SGST)":q.placeOfSupply==="Outside India"?" (zero-rated)":" (inter-state · IGST)"}</div>`:""}
       <table>
-        <thead><tr>
-          <th>Description</th>
-          <th style="text-align:right">Qty</th>
-          <th style="text-align:right">Rate (₹L)</th>
-          ${showCost?'<th style="text-align:right;background:#92400e">Cost (₹L)</th>':""}
-          <th style="text-align:right">Amount (₹L)</th>
-        </tr></thead>
-        <tbody>${lineRows||'<tr><td colspan="'+(showCost?5:4)+'" style="text-align:center;color:#94a3b8">No line items</td></tr>'}</tbody>
+        <thead><tr>${headerCells}</tr></thead>
+        <tbody>${lineRows||`<tr><td colspan="${tableColspan}" style="text-align:center;color:#94a3b8">No line items</td></tr>`}</tbody>
       </table>
       <div class="totals">
         <div style="display:flex;justify-content:space-between"><span>Subtotal:</span><strong>₹${q.subtotal}L</strong></div>
         ${q.discount>0?`<div style="display:flex;justify-content:space-between"><span>Discount:</span><strong>-₹${q.discount}L</strong></div>`:""}
-        ${showTax?`<div style="display:flex;justify-content:space-between"><span>Tax (${q.taxType}):</span><strong>₹${q.taxAmount}L</strong></div>`:""}
+        ${showTax?(hasSplit
+          ? `${igstTotal>0?`<div style="display:flex;justify-content:space-between"><span>IGST:</span><strong>₹${igstTotal.toLocaleString()}</strong></div>`:""}
+             ${cgstTotal>0?`<div style="display:flex;justify-content:space-between"><span>CGST:</span><strong>₹${cgstTotal.toLocaleString()}</strong></div>`:""}
+             ${sgstTotal>0?`<div style="display:flex;justify-content:space-between"><span>SGST:</span><strong>₹${sgstTotal.toLocaleString()}</strong></div>`:""}`
+          : `<div style="display:flex;justify-content:space-between"><span>Tax (${q.taxType}):</span><strong>₹${q.taxAmount}L</strong></div>`):""}
         <div class="grand" style="display:flex;justify-content:space-between"><span>Grand Total:</span><span>₹${q.total}L</span></div>
       </div>
       ${q.terms?`<div class="terms"><strong>Terms & Conditions</strong>\n${q.terms}</div>`:""}
@@ -1290,15 +1379,71 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginBottom:8}}>PRODUCTS & MODULES</div>
             <ProductSelectionDisplay value={detail.productSelection} catalog={catalog} fallbackProducts={detail.product?[detail.product]:[]}/>
           </div>
-          <div style={{marginTop:16}}><div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginBottom:8}}>LINE ITEMS</div>
-            <table className="tbl"><thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
-              <tbody>{detail.items.map((item,i)=><tr key={i}><td style={{fontSize:12.5}}>{item.description}</td><td>{item.qty}</td><td>₹{item.unitPrice}L</td><td style={{fontWeight:600}}>₹{item.amount}L</td></tr>)}</tbody>
+          <div style={{marginTop:16}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <div style={{fontSize:12,fontWeight:700,color:"var(--text3)"}}>LINE ITEMS</div>
+              {detail.placeOfSupply && (
+                <div style={{fontSize:11,color:"var(--text3)"}}>
+                  Place of Supply: <strong style={{color:"var(--text2)"}}>{detail.placeOfSupply}</strong>
+                  {" · "}
+                  <span style={{color:detail.placeOfSupply===SELLER_HOME_STATE?"#1E40AF":detail.placeOfSupply==="Outside India"?"#065F46":"#5B21B6"}}>
+                    {detail.placeOfSupply===SELLER_HOME_STATE?"intra-state · CGST+SGST":detail.placeOfSupply==="Outside India"?"zero-rated":"inter-state · IGST"}
+                  </span>
+                </div>
+              )}
+            </div>
+            <table className="tbl">
+              <thead><tr>
+                <th>Charge</th>
+                <th>Description</th>
+                <th style={{textAlign:"right"}}>Qty</th>
+                <th style={{textAlign:"right"}}>MRP</th>
+                <th style={{textAlign:"right"}}>Discount</th>
+                <th style={{textAlign:"right"}}>Price</th>
+                <th style={{textAlign:"right"}}>Taxable</th>
+                <th style={{textAlign:"right"}}>GST</th>
+                <th style={{textAlign:"right"}}>Total</th>
+              </tr></thead>
+              <tbody>{detail.items.map((item,i)=>{
+                const s=curSym(item.currency);
+                const dv=Number(item.discountValue)||0;
+                const dt=item.discountType||"pct";
+                const gst=(Number(item.igstAmount)||0)+(Number(item.cgstAmount)||0)+(Number(item.sgstAmount)||0);
+                const gstTip=gst>0?`IGST ${item.igstRate||0}% ${s}${(Number(item.igstAmount)||0).toLocaleString()} · CGST ${item.cgstRate||0}% ${s}${(Number(item.cgstAmount)||0).toLocaleString()} · SGST ${item.sgstRate||0}% ${s}${(Number(item.sgstAmount)||0).toLocaleString()}`:"";
+                return (
+                  <tr key={i}>
+                    <td style={{fontFamily:"monospace",fontSize:11,color:"var(--text2)"}}>{item.chargeName||"—"}</td>
+                    <td style={{fontSize:12.5}}>{item.description||<em style={{color:"var(--text3)"}}>(no description)</em>}</td>
+                    <td style={{textAlign:"right"}}>{item.qty}</td>
+                    <td style={{textAlign:"right"}}>{(Number(item.mrp)||0)>0?`${s}${(Number(item.mrp)||0).toLocaleString()}`:"—"}</td>
+                    <td style={{textAlign:"right",color:dv>0?"#B91C1C":"var(--text3)"}}>{dv>0?(dt==="pct"?`${dv}%`:`${s}${dv.toLocaleString()}`):"—"}</td>
+                    <td style={{textAlign:"right"}}>{s}{(Number(item.unitPrice)||0).toLocaleString()}</td>
+                    <td style={{textAlign:"right",fontWeight:600}}>{s}{(Number(item.amount)||0).toLocaleString()}</td>
+                    <td style={{textAlign:"right",color:gst>0?"var(--text2)":"var(--text3)"}} title={gstTip}>{gst>0?`${s}${gst.toLocaleString()}`:"—"}</td>
+                    <td style={{textAlign:"right",fontWeight:700,color:"var(--brand)"}}>{s}{(Number(item.totalWithTax)||Number(item.amount)||0).toLocaleString()}</td>
+                  </tr>
+                );
+              })}</tbody>
             </table>
           </div>
+          {/* Footer totals — six-way breakdown when POS is set, lump-sum fallback otherwise. */}
           <div style={{marginTop:12,textAlign:"right",fontSize:13}}>
             <div>Subtotal: <strong>₹{detail.subtotal}L</strong></div>
             {detail.discount>0&&<div>Discount: <strong>-₹{detail.discount}L</strong></div>}
-            <div>Tax ({detail.taxType}): <strong>₹{detail.taxAmount}L</strong></div>
+            {(() => {
+              const igst=detail.igstTotal!=null?detail.igstTotal:sumLines(detail,"igstAmount");
+              const cgst=detail.cgstTotal!=null?detail.cgstTotal:sumLines(detail,"cgstAmount");
+              const sgst=detail.sgstTotal!=null?detail.sgstTotal:sumLines(detail,"sgstAmount");
+              const splitAvailable=igst>0||cgst>0||sgst>0;
+              if(splitAvailable){
+                return (<>
+                  {igst>0&&<div>IGST: <strong>₹{igst.toLocaleString()}</strong></div>}
+                  {cgst>0&&<div>CGST: <strong>₹{cgst.toLocaleString()}</strong></div>}
+                  {sgst>0&&<div>SGST: <strong>₹{sgst.toLocaleString()}</strong></div>}
+                </>);
+              }
+              return <div>Tax ({detail.taxType}): <strong>₹{detail.taxAmount}L</strong></div>;
+            })()}
             <div style={{fontSize:16,fontWeight:700,color:"var(--brand)",marginTop:4}}>Total: ₹{detail.total}L ({formatINR(detail.total)} INR)</div>
           </div>
           {detail.terms&&<div style={{marginTop:14,background:"var(--s2)",padding:"10px 12px",borderRadius:8,borderLeft:"3px solid var(--brand)",fontSize:12,color:"var(--text2)",whiteSpace:"pre-line"}}><strong>Terms:</strong><br/>{detail.terms}</div>}
