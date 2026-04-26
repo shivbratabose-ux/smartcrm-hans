@@ -1,50 +1,53 @@
-// SmartCRM Mobile — root component.
+// SmartCRM Mobile — root component (PR #103 redesign).
 // ─────────────────────────────────────────────────────────────────────────────
-// Boot order:
-//   1. SafeAreaProvider — gives screens access to notch / status-bar insets
-//   2. PersistQueryClientProvider — TanStack Query + AsyncStorage persistence
-//      so cached data is on screen the moment the app opens, even offline
-//   3. AuthProvider — session + CRM profile
-//   4. NavigationContainer with the bottom-tab navigator
+// New IA per the user-approved plan:
+//   4 tabs: Today / Plan / Pipeline / More
+//   1 persistent FAB (+ button) hovering above the tab bar with a context-
+//   aware bottom-sheet (Scan Card / Log Call / New Lead / New Contact).
 //
-// Why no expo-router file routing? Because the user's spec is a fixed
-// 4-tab IA (Dashboard / Leads / Contacts / Activity) plus modal-style
-// detail screens. Hand-rolled React Navigation gives us tighter control
-// over the cross-tab "open Lead detail from Dashboard" flow without the
-// file-system constraints of expo-router.
+// The FABProvider is mounted ONCE at the root, above the navigator. Each
+// screen uses `useFAB(actions)` to publish its action set. The FAB itself
+// re-mounts on every navigation but the provider keeps actions reactive.
 import 'react-native-gesture-handler';
-import React, { useState } from 'react';
+import React from 'react';
 import { StatusBar, View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { Home, Users, ContactRound, ListChecks } from 'lucide-react-native';
+import {
+  Home, CalendarDays, TrendingUp, Menu,
+} from 'lucide-react-native';
 import { queryClient, queryPersister } from '@/lib/queryClient';
 import { AuthProvider, useAuth } from '@/auth/AuthContext';
 import { LoginScreen } from '@/auth/LoginScreen';
-import { DashboardScreen } from '@/screens/DashboardScreen';
+import { TodayScreen } from '@/screens/TodayScreen';
+import { PlanScreen } from '@/screens/PlanScreen';
+import { PipelineScreen } from '@/screens/PipelineScreen';
+import { MoreScreen } from '@/screens/MoreScreen';
 import { LeadsScreen } from '@/screens/LeadsScreen';
 import { LeadDetailScreen } from '@/screens/LeadDetailScreen';
 import { NewLeadScreen } from '@/screens/NewLeadScreen';
 import { ContactsScreen } from '@/screens/ContactsScreen';
 import { NewContactScreen } from '@/screens/NewContactScreen';
-import { ActivityLogScreen } from '@/screens/ActivityLogScreen';
-import { colors, fontSize } from '@/theme';
+import { FAB, FABProvider } from '@/components/ui';
+import { colors, fontSize, fontWeight } from '@/theme';
 
 type RootStackParamList = {
   Tabs: undefined;
+  LeadsList: undefined;
+  ContactsList: undefined;
   LeadDetail: { id: string };
   NewLead: undefined;
   NewContact: undefined;
 };
 
 type TabParamList = {
-  Dashboard: undefined;
-  Leads: undefined;
-  Contacts: undefined;
-  Activity: undefined;
+  Today: undefined;
+  Plan: undefined;
+  Pipeline: undefined;
+  More: undefined;
 };
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
@@ -57,43 +60,55 @@ function TabNavigator() {
         headerShown: false,
         tabBarActiveTintColor: colors.brand,
         tabBarInactiveTintColor: colors.text3,
-        tabBarStyle: { borderTopColor: colors.border, height: 60, paddingTop: 6, paddingBottom: 8 },
-        tabBarLabelStyle: { fontSize: fontSize.xs, fontWeight: '600' },
+        tabBarStyle: {
+          borderTopColor: colors.border,
+          height: 64,
+          paddingTop: 6,
+          paddingBottom: 8,
+          backgroundColor: colors.surface,
+        },
+        tabBarLabelStyle: {
+          fontSize: fontSize.xs - 1,
+          fontWeight: fontWeight.semi,
+          marginTop: 2,
+        },
       }}
     >
       <Tabs.Screen
-        name="Dashboard"
+        name="Today"
         children={({ navigation }) => (
-          <DashboardScreen
-            onGoLeads={() => navigation.jumpTo('Leads')}
-            onGoActivity={() => navigation.jumpTo('Activity')}
-            onNewLead={() => navigation.getParent()?.navigate('NewLead')}
+          <TodayScreen
+            onNewLead={()    => navigation.getParent()?.navigate('NewLead')}
             onNewContact={() => navigation.getParent()?.navigate('NewContact')}
+            // Phase-2: open the in-app Log Call form (PR #105). For now we
+            // surface a clear "coming soon" dialog so users know the FAB
+            // works but that path isn't wired yet.
+            onLogCall={() => alert('Log Call form ships in PR #105.')}
+            onScanCard={() => alert('Business-card scanning ships in PR #105 with Google ML Kit.')}
+            onOpenLead={(id) => navigation.getParent()?.navigate('LeadDetail', { id })}
           />
         )}
         options={{ tabBarIcon: ({ color, size }) => <Home size={size} color={color}/> }}
       />
       <Tabs.Screen
-        name="Leads"
+        name="Plan"
+        component={PlanScreen}
+        options={{ tabBarIcon: ({ color, size }) => <CalendarDays size={size} color={color}/> }}
+      />
+      <Tabs.Screen
+        name="Pipeline"
+        component={PipelineScreen}
+        options={{ tabBarIcon: ({ color, size }) => <TrendingUp size={size} color={color}/> }}
+      />
+      <Tabs.Screen
+        name="More"
         children={({ navigation }) => (
-          <LeadsScreen
-            onOpen={(id) => navigation.getParent()?.navigate('LeadDetail', { id })}
-            onNew={() => navigation.getParent()?.navigate('NewLead')}
+          <MoreScreen
+            onOpenContacts={() => navigation.getParent()?.navigate('ContactsList')}
+            onOpenLeads={()    => navigation.getParent()?.navigate('LeadsList')}
           />
         )}
-        options={{ tabBarIcon: ({ color, size }) => <Users size={size} color={color}/> }}
-      />
-      <Tabs.Screen
-        name="Contacts"
-        children={({ navigation }) => (
-          <ContactsScreen onNew={() => navigation.getParent()?.navigate('NewContact')}/>
-        )}
-        options={{ tabBarIcon: ({ color, size }) => <ContactRound size={size} color={color}/> }}
-      />
-      <Tabs.Screen
-        name="Activity"
-        component={ActivityLogScreen}
-        options={{ tabBarIcon: ({ color, size }) => <ListChecks size={size} color={color}/> }}
+        options={{ tabBarIcon: ({ color, size }) => <Menu size={size} color={color}/> }}
       />
     </Tabs.Navigator>
   );
@@ -102,35 +117,59 @@ function TabNavigator() {
 function AuthedApp() {
   return (
     <NavigationContainer>
-      <RootStack.Navigator screenOptions={{ headerShown: false }}>
-        <RootStack.Screen name="Tabs" component={TabNavigator}/>
-        <RootStack.Screen
-          name="LeadDetail"
-          // We pass props directly via children() so the screen can take
-          // an `id` from route.params and a typed `onBack` callback.
-          options={{ presentation: 'card' }}
-          children={({ navigation, route }) => (
-            <LeadDetailScreen leadId={route.params.id} onBack={() => navigation.goBack()}/>
-          )}
-        />
-        <RootStack.Screen
-          name="NewLead"
-          options={{ presentation: 'modal' }}
-          children={({ navigation }) => <NewLeadScreen onBack={() => navigation.goBack()}/>}
-        />
-        <RootStack.Screen
-          name="NewContact"
-          options={{ presentation: 'modal' }}
-          children={({ navigation }) => <NewContactScreen onBack={() => navigation.goBack()}/>}
-        />
-      </RootStack.Navigator>
+      <FABProvider>
+        <RootStack.Navigator screenOptions={{ headerShown: false }}>
+          <RootStack.Screen name="Tabs" component={TabNavigator}/>
+
+          {/* List screens reachable via "More" — kept as stack screens
+              so they get a proper back button automatically. */}
+          <RootStack.Screen
+            name="LeadsList"
+            options={{ presentation: 'card' }}
+            children={({ navigation }) => (
+              <LeadsScreen
+                onOpen={(id) => navigation.navigate('LeadDetail', { id })}
+                onNew={() => navigation.navigate('NewLead')}
+              />
+            )}
+          />
+          <RootStack.Screen
+            name="ContactsList"
+            options={{ presentation: 'card' }}
+            children={({ navigation }) => (
+              <ContactsScreen onNew={() => navigation.navigate('NewContact')}/>
+            )}
+          />
+          <RootStack.Screen
+            name="LeadDetail"
+            options={{ presentation: 'card' }}
+            children={({ navigation, route }) => (
+              <LeadDetailScreen leadId={route.params.id} onBack={() => navigation.goBack()}/>
+            )}
+          />
+          <RootStack.Screen
+            name="NewLead"
+            options={{ presentation: 'modal' }}
+            children={({ navigation }) => <NewLeadScreen onBack={() => navigation.goBack()}/>}
+          />
+          <RootStack.Screen
+            name="NewContact"
+            options={{ presentation: 'modal' }}
+            children={({ navigation }) => <NewContactScreen onBack={() => navigation.goBack()}/>}
+          />
+        </RootStack.Navigator>
+
+        {/* Persistent FAB — hovers above the tab bar on every screen.
+            Hidden automatically when no actions are registered (so it
+            doesn't appear on Login / modal forms). */}
+        <FAB bottomOffset={80}/>
+      </FABProvider>
     </NavigationContainer>
   );
 }
 
 function Gate() {
   const { session, loading, profile } = useAuth();
-
   if (loading) {
     return (
       <View style={styles.gate}>
@@ -153,9 +192,7 @@ function Gate() {
   if (!profile.active) {
     return (
       <View style={styles.gate}>
-        <Text style={styles.gateError}>
-          Your account is deactivated. Contact your administrator.
-        </Text>
+        <Text style={styles.gateError}>Your account is deactivated. Contact your administrator.</Text>
       </View>
     );
   }
@@ -165,7 +202,7 @@ function Gate() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" backgroundColor={colors.brand}/>
       <PersistQueryClientProvider
         client={queryClient}
         persistOptions={{ persister: queryPersister, maxAge: 1000 * 60 * 60 * 24 }}
