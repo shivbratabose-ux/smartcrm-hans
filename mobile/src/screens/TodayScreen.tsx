@@ -1,0 +1,250 @@
+// TodayScreen — the home tab. The first thing the user sees on app open.
+// ─────────────────────────────────────────────────────────────────────────────
+// Layout (top → bottom):
+//   1. Gradient header — greeting (avatar + "Hi <firstname>"), date + KPI subtitle
+//   2. KPI strip — 4 small chips (Followups / Meetings / Tasks / Calls)
+//   3. AGENDA section — chronological list of today's items, each row with
+//      kind icon, title, subtitle, optional time, severity chip, action buttons
+//      (Call / WhatsApp / Map for items that have a phone or location)
+//   4. Recent activity feed — last 5 completed activities/calls
+//
+// The FAB is registered via useFAB() — pushes 4 quick actions to the global
+// FAB at the App.tsx root.
+
+import React from 'react';
+import {
+  View, Text, ScrollView, StyleSheet, RefreshControl, Pressable,
+} from 'react-native';
+import {
+  Phone, Users, Calendar, MessageSquare, Camera,
+  PhoneIncoming, UserPlus, ClipboardList,
+} from 'lucide-react-native';
+import { useAuth } from '@/auth/AuthContext';
+import {
+  Card, GradientHeader, EmptyState, SkeletonRow, SeverityChip,
+  SectionHeader, useFAB, type FABAction,
+} from '@/components/ui';
+import { useToday, type AgendaItem } from '@/hooks/useToday';
+import { callPhone, openWhatsApp, openEmail } from '@/utils/dial';
+import { initials } from '@/utils/format';
+import { colors, fontSize, fontWeight, spacing, radii } from '@/theme';
+
+type Props = {
+  onNewLead: () => void;
+  onNewContact: () => void;
+  onLogCall: () => void;        // Phase 2 — opens Log Call form (PR #105)
+  onScanCard: () => void;       // Phase 2 — Scan Card (PR #105)
+  onOpenLead: (id: string) => void;
+};
+
+export function TodayScreen({ onNewLead, onNewContact, onLogCall, onScanCard, onOpenLead }: Props) {
+  const { profile } = useAuth();
+  const { data, isLoading, refetch, isRefetching } = useToday();
+
+  // Register FAB actions for this tab
+  const fabActions: FABAction[] = React.useMemo(() => [
+    { key: 'scan',    label: 'Scan Business Card', hint: 'Coming soon — capture contact via camera', icon: <Camera size={22} color={colors.brand}/>,         onPress: onScanCard },
+    { key: 'log',     label: 'Log Call',           hint: 'Capture outcome + next action',            icon: <PhoneIncoming size={22} color={colors.brand}/>,  onPress: onLogCall },
+    { key: 'lead',    label: 'New Lead',           hint: 'Quick capture from anywhere',              icon: <UserPlus size={22} color={colors.brand}/>,       onPress: onNewLead },
+    { key: 'contact', label: 'New Contact',        hint: 'For an existing account',                  icon: <ClipboardList size={22} color={colors.brand}/>,  onPress: onNewContact },
+  ], [onScanCard, onLogCall, onNewLead, onNewContact]);
+  useFAB(fabActions);
+
+  const greeting = profile?.name?.split(' ')[0] || 'there';
+  const today = new Date();
+  const dateLabel = today.toLocaleDateString(undefined, { weekday: 'long', day: '2-digit', month: 'short' });
+  const counts = data?.counts;
+  const subtitleParts = counts
+    ? [
+        counts.followups ? `${counts.followups} follow-up${counts.followups === 1 ? '' : 's'}` : null,
+        counts.meetings  ? `${counts.meetings} meeting${counts.meetings === 1 ? '' : 's'}`     : null,
+        counts.tasks     ? `${counts.tasks} task${counts.tasks === 1 ? '' : 's'}`              : null,
+      ].filter(Boolean).join(' · ')
+    : '';
+
+  return (
+    <View style={styles.root}>
+      <GradientHeader
+        bottomInset={44}                       // make room for the KPI strip to tuck under
+        title={`Hi ${greeting}`}
+        subtitle={`${dateLabel}${subtitleParts ? ` · ${subtitleParts}` : ''}`}
+        right={
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initials(profile?.name)}</Text>
+          </View>
+        }
+      />
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: 120 }}
+        refreshControl={<RefreshControl refreshing={!!isRefetching} onRefresh={refetch} tintColor={colors.brand}/>}
+      >
+        {/* KPI strip — tucks under the gradient header (negative top margin) */}
+        <View style={styles.kpiRow}>
+          <Kpi label="Followups" value={counts?.followups ?? 0} icon={<Phone size={16} color={colors.brand}/>}/>
+          <Kpi label="Meetings"  value={counts?.meetings ?? 0}  icon={<Users size={16} color={colors.brand}/>}/>
+          <Kpi label="Tasks"     value={counts?.tasks ?? 0}     icon={<Calendar size={16} color={colors.brand}/>}/>
+          <Kpi label="Calls"     value={counts?.calls ?? 0}     icon={<MessageSquare size={16} color={colors.brand}/>}/>
+        </View>
+
+        {/* TODAY'S AGENDA */}
+        <SectionHeader title="Today's agenda" count={data?.agenda.length || 0}/>
+        <View style={styles.agendaWrap}>
+          {isLoading
+            ? <View>
+                <SkeletonRow/>
+                <SkeletonRow/>
+                <SkeletonRow/>
+              </View>
+            : (data?.agenda || []).length === 0
+              ? <EmptyState
+                  icon={<Calendar size={28} color={colors.brand}/>}
+                  title="Nothing scheduled today"
+                  sub="Add a follow-up, log a call, or schedule a meeting using the + button."
+                  cta={{ label: '+ New lead', onPress: onNewLead }}
+                />
+              : (data!.agenda).map(item => (
+                  <AgendaRow
+                    key={item.id}
+                    item={item}
+                    onPress={() => item.kind === 'followup' ? onOpenLead(item.refId) : undefined}
+                  />
+                ))
+          }
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function Kpi({ label, value, icon }: { label: string; value: number | string; icon: React.ReactNode }) {
+  return (
+    <Card style={styles.kpi} padding="sm">
+      <View style={styles.kpiHead}>
+        {icon}
+      </View>
+      <Text style={styles.kpiValue}>{value}</Text>
+      <Text style={styles.kpiLabel}>{label}</Text>
+    </Card>
+  );
+}
+
+function AgendaRow({ item, onPress }: { item: AgendaItem; onPress?: () => void }) {
+  const KIND_ICON: Record<AgendaItem['kind'], React.ReactNode> = {
+    followup: <Phone size={18} color={colors.blue}/>,
+    activity: <ClipboardList size={18} color={colors.purple}/>,
+    event:    <Users size={18} color={colors.green}/>,
+    call:     <PhoneIncoming size={18} color={colors.amber}/>,
+  };
+  const sev = item.status === 'overdue' ? 'overdue'
+            : item.status === 'done'    ? 'done'
+            : 'planned';
+
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.agendaRow, pressed && styles.agendaRowPressed]} android_ripple={{ color: colors.s3 }}>
+      <View style={styles.iconBubble}>{KIND_ICON[item.kind]}</View>
+      <View style={styles.agendaBody}>
+        <View style={styles.agendaTitleRow}>
+          <Text style={styles.agendaTitle} numberOfLines={1}>{item.title}</Text>
+          {item.time ? <Text style={styles.agendaTime}>{item.time}</Text> : null}
+        </View>
+        <View style={styles.agendaMetaRow}>
+          {item.subtitle ? <Text style={styles.agendaSub} numberOfLines={1}>{item.subtitle}</Text> : null}
+          <SeverityChip level={sev}/>
+        </View>
+      </View>
+      {item.phone ? (
+        <View style={styles.agendaActions}>
+          <Pressable
+            hitSlop={10}
+            onPress={(e) => { e.stopPropagation(); callPhone(item.phone || ''); }}
+            style={styles.iconBtn}
+          >
+            <Phone size={16} color={colors.brand}/>
+          </Pressable>
+          <Pressable
+            hitSlop={10}
+            onPress={(e) => { e.stopPropagation(); openWhatsApp(item.phone || '', `Hi ${item.title}`); }}
+            style={styles.iconBtn}
+          >
+            <MessageSquare size={16} color={colors.brand}/>
+          </Pressable>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.bg },
+  scroll: { flex: 1 },
+
+  avatar: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarText: { color: colors.textInv, fontSize: fontSize.sm, fontWeight: fontWeight.bold },
+
+  kpiRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: -32,                         // tuck under gradient
+    marginHorizontal: spacing.lg,
+  },
+  kpi: {
+    flex: 1, alignItems: 'flex-start',
+    paddingVertical: spacing.sm,
+  },
+  kpiHead: { marginBottom: spacing.xs },
+  kpiValue: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.heavy,
+    color: colors.text,
+  },
+  kpiLabel: {
+    fontSize: 10.5,
+    fontWeight: fontWeight.semi,
+    color: colors.text3,
+    marginTop: 2,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+
+  agendaWrap: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1, borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  agendaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    gap: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  agendaRowPressed: { backgroundColor: colors.s2 },
+  iconBubble: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: colors.s2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  agendaBody:  { flex: 1, minWidth: 0 },
+  agendaTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  agendaTitle: { fontSize: fontSize.md, fontWeight: fontWeight.bold, color: colors.text, flex: 1 },
+  agendaTime:  { fontSize: fontSize.xs, color: colors.text3, marginLeft: spacing.sm },
+  agendaMetaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
+  agendaSub:   { fontSize: fontSize.xs, color: colors.text2, flex: 1 },
+
+  agendaActions: { flexDirection: 'row', gap: spacing.xs },
+  iconBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.brandLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+});
