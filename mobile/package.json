@@ -13,6 +13,8 @@
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",
     "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-community/datetimepicker": "8.0.1",
+    "expo-device": "~6.0.2",
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
@@ -49,7 +51,9 @@
     "@react-native-async-storage/async-storage": "Pinned to 1.23.1 — the version that pairs with Expo SDK 51. Don't bump independently or `expo doctor` will complain.",
     "expo-linear-gradient": "Added in PR #103 for the gradient brand strips on screen headers (Today greeting, Login, etc).",
     "lucide-react-native": "Same icon set as the web app. Keeps visual parity between platforms.",
-    "expo-notifications": "Wired but inert until a server-side trigger is added (PR #104). Still needs to be installed at scaffold time so the AndroidManifest gets the right permissions.",
+    "expo-notifications": "Used by usePushSetup to register an Expo Push token; daily 9 AM follow-up reminder fired by the notify-followups edge function (PR #105).",
+    "expo-device": "Required by expo-notifications to detect simulator vs real device (push tokens only work on physical devices).",
+    "@react-native-community/datetimepicker": "Native date/time picker for Plan tab's Reschedule action. Works on iOS + Android; on web falls back to HTML5 input[type=date].",
     "react-dom + react-native-web": "Required for `expo start --web` preview. Have no effect on the Android bundle.",
     "react-native-url-polyfill": "Required by @supabase/supabase-js in React Native — its fetch/url shims fix the 'URL is not defined' runtime error you'd otherwise see on first auth call."
   }
