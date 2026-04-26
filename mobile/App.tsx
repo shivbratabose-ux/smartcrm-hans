@@ -86,6 +86,11 @@ function TabNavigator() {
             onLogCall={() => alert('Log Call form ships in PR #105.')}
             onScanCard={() => alert('Business-card scanning ships in PR #105 with Google ML Kit.')}
             onOpenLead={(id) => navigation.getParent()?.navigate('LeadDetail', { id })}
+            // Tapping any KPI tile jumps to Plan tab. The optional `filter`
+            // arg is forwarded for future use — Plan tab will read it via
+            // route params once the chip filter ships in PR #104. For now
+            // the tab simply switches focus.
+            onOpenPlan={(_filter) => navigation.jumpTo('Plan')}
           />
         )}
         options={{ tabBarIcon: ({ color, size }) => <Home size={size} color={color}/> }}
