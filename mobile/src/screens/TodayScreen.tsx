@@ -32,8 +32,8 @@ import { colors, fontSize, fontWeight, spacing, radii } from '@/theme';
 type Props = {
   onNewLead: () => void;
   onNewContact: () => void;
-  onLogCall: () => void;        // Phase 2 — opens Log Call form (PR #105)
-  onScanCard: () => void;       // Phase 2 — Scan Card (PR #105)
+  onLogCall: () => void;        // Phase 2 — opens Log Call form (PR #106)
+  onScanCard: () => void;       // Phase 2 — Scan Card (PR #106)
   onOpenLead: (id: string) => void;
   // Tap a KPI tile → jump to Plan tab (Phase 2 will accept a filter
   // string here so e.g. "calls" pre-filters the Plan view to today's

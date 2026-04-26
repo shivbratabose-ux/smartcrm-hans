@@ -6,3 +6,5 @@ export { Skeleton, SkeletonRow } from './Skeleton';
 export { SeverityChip } from './SeverityChip';
 export { FAB, FABProvider, useFAB, type FABAction } from './FAB';
 export { SectionHeader } from './SectionHeader';
+export { BottomSheet } from './BottomSheet';
+export { ChipBar, type ChipOption } from './ChipBar';

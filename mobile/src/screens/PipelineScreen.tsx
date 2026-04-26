@@ -1,4 +1,4 @@
-// PipelineScreen — STUB. Real horizontal-Kanban implementation lands in PR #106.
+// PipelineScreen — STUB. Real horizontal-Kanban implementation lands in PR #107.
 // Today: shows a simple placeholder with what's coming, plus a count of
 // open opportunities so the screen isn't completely empty.
 import React from 'react';
@@ -39,7 +39,7 @@ export function PipelineScreen() {
         <Card padding="lg" style={styles.banner}>
           <View style={styles.bannerHead}>
             <Sparkles size={20} color={colors.brand}/>
-            <Text style={styles.bannerTitle}>Coming in PR #106</Text>
+            <Text style={styles.bannerTitle}>Coming in PR #107</Text>
           </View>
           <Text style={styles.bannerBody}>
             Horizontal-swipe Kanban board · swipe deals between stages · stage-advance with auto-prompt for outcome notes · linked quotes & contracts.

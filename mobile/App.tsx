@@ -32,6 +32,7 @@ import { NewLeadScreen } from '@/screens/NewLeadScreen';
 import { ContactsScreen } from '@/screens/ContactsScreen';
 import { NewContactScreen } from '@/screens/NewContactScreen';
 import { FAB, FABProvider } from '@/components/ui';
+import { usePushSetup } from '@/hooks/usePushSetup';
 import { colors, fontSize, fontWeight } from '@/theme';
 
 type RootStackParamList = {
@@ -80,24 +81,30 @@ function TabNavigator() {
           <TodayScreen
             onNewLead={()    => navigation.getParent()?.navigate('NewLead')}
             onNewContact={() => navigation.getParent()?.navigate('NewContact')}
-            // Phase-2: open the in-app Log Call form (PR #105). For now we
+            // Phase-2: open the in-app Log Call form (PR #106). For now we
             // surface a clear "coming soon" dialog so users know the FAB
             // works but that path isn't wired yet.
-            onLogCall={() => alert('Log Call form ships in PR #105.')}
-            onScanCard={() => alert('Business-card scanning ships in PR #105 with Google ML Kit.')}
+            onLogCall={() => alert('Log Call form ships in PR #106.')}
+            onScanCard={() => alert('Business-card scanning ships in PR #106 with Google ML Kit.')}
             onOpenLead={(id) => navigation.getParent()?.navigate('LeadDetail', { id })}
-            // Tapping any KPI tile jumps to Plan tab. The optional `filter`
-            // arg is forwarded for future use — Plan tab will read it via
-            // route params once the chip filter ships in PR #104. For now
-            // the tab simply switches focus.
-            onOpenPlan={(_filter) => navigation.jumpTo('Plan')}
+            // Tap a KPI tile on Today → jump to Plan tab with the matching
+            // chip pre-selected. The mapping below converts KPI category
+            // (followups / meetings / tasks / calls) → Plan chip filter
+            // (today / today / today / today). All KPIs land on "Today"
+            // because that's what the KPI counts represent — when this
+            // changes (e.g. "Overdue followups" KPI), the mapping grows.
+            onOpenPlan={(_filter) => navigation.jumpTo('Plan', { initialFilter: 'today' })}
           />
         )}
         options={{ tabBarIcon: ({ color, size }) => <Home size={size} color={color}/> }}
       />
       <Tabs.Screen
         name="Plan"
-        component={PlanScreen}
+        // PlanScreen reads `initialFilter` from route params (set by Today's
+        // KPI tap) but defaults to 'today' when entered directly.
+        children={({ route }) => (
+          <PlanScreen initialFilter={(route.params as any)?.initialFilter}/>
+        )}
         options={{ tabBarIcon: ({ color, size }) => <CalendarDays size={size} color={color}/> }}
       />
       <Tabs.Screen
@@ -120,6 +127,9 @@ function TabNavigator() {
 }
 
 function AuthedApp() {
+  // Register this device for push notifications. Hook is no-op on web /
+  // simulator / when notification permission is denied — purely best-effort.
+  usePushSetup();
   return (
     <NavigationContainer>
       <FABProvider>
