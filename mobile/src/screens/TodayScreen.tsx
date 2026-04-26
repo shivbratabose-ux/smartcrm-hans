@@ -17,11 +17,11 @@ import {
 } from 'react-native';
 import {
   Phone, Users, Calendar, MessageSquare, Camera,
-  PhoneIncoming, UserPlus, ClipboardList,
+  PhoneIncoming, UserPlus, ClipboardList, ChevronRight,
 } from 'lucide-react-native';
 import { useAuth } from '@/auth/AuthContext';
 import {
-  Card, GradientHeader, EmptyState, SkeletonRow, SeverityChip,
+  GradientHeader, EmptyState, SkeletonRow, SeverityChip,
   SectionHeader, useFAB, type FABAction,
 } from '@/components/ui';
 import { useToday, type AgendaItem } from '@/hooks/useToday';
@@ -35,9 +35,13 @@ type Props = {
   onLogCall: () => void;        // Phase 2 — opens Log Call form (PR #105)
   onScanCard: () => void;       // Phase 2 — Scan Card (PR #105)
   onOpenLead: (id: string) => void;
+  // Tap a KPI tile → jump to Plan tab (Phase 2 will accept a filter
+  // string here so e.g. "calls" pre-filters the Plan view to today's
+  // calls; the parent ignores the arg until #104 wires the chips.)
+  onOpenPlan: (filter?: 'followups' | 'meetings' | 'tasks' | 'calls') => void;
 };
 
-export function TodayScreen({ onNewLead, onNewContact, onLogCall, onScanCard, onOpenLead }: Props) {
+export function TodayScreen({ onNewLead, onNewContact, onLogCall, onScanCard, onOpenLead, onOpenPlan }: Props) {
   const { profile } = useAuth();
   const { data, isLoading, refetch, isRefetching } = useToday();
 
@@ -80,12 +84,40 @@ export function TodayScreen({ onNewLead, onNewContact, onLogCall, onScanCard, on
         contentContainerStyle={{ paddingBottom: 120 }}
         refreshControl={<RefreshControl refreshing={!!isRefetching} onRefresh={refetch} tintColor={colors.brand}/>}
       >
-        {/* KPI strip — tucks under the gradient header (negative top margin) */}
+        {/* KPI strip — tucks under the gradient header (negative top margin).
+            Each tile is a tappable button that jumps to the Plan tab with a
+            filter hint (Phase 2). They look like compact button-cards, not
+            static labels — this was a UX miss in PR #103 that the user
+            flagged immediately. */}
         <View style={styles.kpiRow}>
-          <Kpi label="Followups" value={counts?.followups ?? 0} icon={<Phone size={16} color={colors.brand}/>}/>
-          <Kpi label="Meetings"  value={counts?.meetings ?? 0}  icon={<Users size={16} color={colors.brand}/>}/>
-          <Kpi label="Tasks"     value={counts?.tasks ?? 0}     icon={<Calendar size={16} color={colors.brand}/>}/>
-          <Kpi label="Calls"     value={counts?.calls ?? 0}     icon={<MessageSquare size={16} color={colors.brand}/>}/>
+          <Kpi
+            label="Followups"
+            value={counts?.followups ?? 0}
+            icon={<Phone size={18} color={colors.brand}/>}
+            tint={colors.brandLight}
+            onPress={() => onOpenPlan('followups')}
+          />
+          <Kpi
+            label="Meetings"
+            value={counts?.meetings ?? 0}
+            icon={<Users size={18} color={colors.green}/>}
+            tint={colors.greenBg}
+            onPress={() => onOpenPlan('meetings')}
+          />
+          <Kpi
+            label="Tasks"
+            value={counts?.tasks ?? 0}
+            icon={<Calendar size={18} color={colors.amber}/>}
+            tint={colors.amberBg}
+            onPress={() => onOpenPlan('tasks')}
+          />
+          <Kpi
+            label="Calls"
+            value={counts?.calls ?? 0}
+            icon={<MessageSquare size={18} color={colors.blue}/>}
+            tint={colors.blueBg}
+            onPress={() => onOpenPlan('calls')}
+          />
         </View>
 
         {/* TODAY'S AGENDA */}
@@ -118,15 +150,31 @@ export function TodayScreen({ onNewLead, onNewContact, onLogCall, onScanCard, on
   );
 }
 
-function Kpi({ label, value, icon }: { label: string; value: number | string; icon: React.ReactNode }) {
+// Kpi — tappable tile with icon-in-tinted-bubble + big number + uppercase
+// label. Press feedback dims slightly. Active count shown in brand-bold; a
+// 0 count is muted so the user's eye lands on the things they DO have.
+function Kpi({ label, value, icon, tint, onPress }: {
+  label: string;
+  value: number | string;
+  icon: React.ReactNode;
+  tint: string;
+  onPress?: () => void;
+}) {
+  const isZero = value === 0 || value === '0';
   return (
-    <Card style={styles.kpi} padding="sm">
-      <View style={styles.kpiHead}>
-        {icon}
+    <Pressable
+      onPress={onPress}
+      android_ripple={{ color: colors.s3, foreground: true }}
+      style={({ pressed }) => [styles.kpi, pressed && styles.kpiPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={`${value} ${label}`}
+    >
+      <View style={[styles.kpiIcon, { backgroundColor: tint }]}>{icon}</View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[styles.kpiValue, isZero && styles.kpiValueMuted]}>{value}</Text>
+        <Text style={styles.kpiLabel} numberOfLines={1}>{label}</Text>
       </View>
-      <Text style={styles.kpiValue}>{value}</Text>
-      <Text style={styles.kpiLabel}>{label}</Text>
-    </Card>
+    </Pressable>
   );
 }
 
@@ -191,24 +239,46 @@ const styles = StyleSheet.create({
   kpiRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: -32,                         // tuck under gradient
+    marginTop: -36,                         // tuck under gradient
     marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
   },
+  // Each KPI is a self-standing tappable card. Shadow + border give it
+  // visual lift so it reads as a button, not a label. Press dims slightly.
   kpi: {
-    flex: 1, alignItems: 'flex-start',
-    paddingVertical: spacing.sm,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.sm + 2,
+    minHeight: 76,
+    // Native shadow + Android elevation
+    elevation: 2,
+    shadowColor: '#0D1F2D',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 3,
   },
-  kpiHead: { marginBottom: spacing.xs },
+  kpiPressed: { opacity: 0.7 },
+  kpiIcon: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+  },
   kpiValue: {
     fontSize: fontSize.xl,
     fontWeight: fontWeight.heavy,
     color: colors.text,
+    lineHeight: fontSize.xl + 2,
   },
+  kpiValueMuted: { color: colors.text3 },   // 0-counts fade so the eye finds the active ones
   kpiLabel: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: fontWeight.semi,
     color: colors.text3,
-    marginTop: 2,
+    marginTop: 1,
     letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
