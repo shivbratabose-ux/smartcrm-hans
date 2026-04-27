@@ -31,6 +31,8 @@ import { LeadDetailScreen } from '@/screens/LeadDetailScreen';
 import { NewLeadScreen } from '@/screens/NewLeadScreen';
 import { ContactsScreen } from '@/screens/ContactsScreen';
 import { NewContactScreen } from '@/screens/NewContactScreen';
+import { LogCallScreen } from '@/screens/LogCallScreen';
+import { ScanCardScreen } from '@/screens/ScanCardScreen';
 import { FAB, FABProvider } from '@/components/ui';
 import { usePushSetup } from '@/hooks/usePushSetup';
 import { colors, fontSize, fontWeight } from '@/theme';
@@ -42,6 +44,8 @@ type RootStackParamList = {
   LeadDetail: { id: string };
   NewLead: undefined;
   NewContact: undefined;
+  LogCall: { leadId?: string } | undefined;
+  ScanCard: undefined;
 };
 
 type TabParamList = {
@@ -81,11 +85,11 @@ function TabNavigator() {
           <TodayScreen
             onNewLead={()    => navigation.getParent()?.navigate('NewLead')}
             onNewContact={() => navigation.getParent()?.navigate('NewContact')}
-            // Phase-2: open the in-app Log Call form (PR #106). For now we
-            // surface a clear "coming soon" dialog so users know the FAB
-            // works but that path isn't wired yet.
-            onLogCall={() => alert('Log Call form ships in PR #106.')}
-            onScanCard={() => alert('Business-card scanning ships in PR #106 with Google ML Kit.')}
+            // PR #107: in-app Log Call form + business-card camera capture.
+            // Both navigate to dedicated stack screens so the user gets a
+            // proper back button and we don't fight the FAB sheet for space.
+            onLogCall={() => navigation.getParent()?.navigate('LogCall')}
+            onScanCard={() => navigation.getParent()?.navigate('ScanCard')}
             onOpenLead={(id) => navigation.getParent()?.navigate('LeadDetail', { id })}
             // Tap a KPI tile on Today → jump to Plan tab with the matching
             // chip pre-selected. The mapping below converts KPI category
@@ -159,7 +163,14 @@ function AuthedApp() {
             name="LeadDetail"
             options={{ presentation: 'card' }}
             children={({ navigation, route }) => (
-              <LeadDetailScreen leadId={route.params.id} onBack={() => navigation.goBack()}/>
+              <LeadDetailScreen
+                leadId={route.params.id}
+                onBack={() => navigation.goBack()}
+                // From the lead detail page, "Log a call for this lead"
+                // jumps into the LogCall form pre-pinned to this lead so
+                // the user doesn't have to re-search it.
+                onLogCall={(id) => navigation.navigate('LogCall', { leadId: id })}
+              />
             )}
           />
           <RootStack.Screen
@@ -171,6 +182,23 @@ function AuthedApp() {
             name="NewContact"
             options={{ presentation: 'modal' }}
             children={({ navigation }) => <NewContactScreen onBack={() => navigation.goBack()}/>}
+          />
+          <RootStack.Screen
+            name="LogCall"
+            options={{ presentation: 'modal' }}
+            children={({ navigation, route }) => (
+              <LogCallScreen
+                onBack={() => navigation.goBack()}
+                preselectLeadId={route.params?.leadId}
+              />
+            )}
+          />
+          <RootStack.Screen
+            name="ScanCard"
+            options={{ presentation: 'modal' }}
+            children={({ navigation }) => (
+              <ScanCardScreen onBack={() => navigation.goBack()}/>
+            )}
           />
         </RootStack.Navigator>
 

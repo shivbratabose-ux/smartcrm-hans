@@ -16,8 +16,8 @@ import {
   View, Text, ScrollView, StyleSheet, RefreshControl, Pressable,
 } from 'react-native';
 import {
-  Phone, Users, Calendar, MessageSquare, Camera,
-  PhoneIncoming, UserPlus, ClipboardList, ChevronRight,
+  Phone, Users, Calendar, MessageSquare, Camera, MapPin,
+  PhoneIncoming, UserPlus, ClipboardList, Navigation,
 } from 'lucide-react-native';
 import { useAuth } from '@/auth/AuthContext';
 import {
@@ -25,15 +25,17 @@ import {
   SectionHeader, useFAB, type FABAction,
 } from '@/components/ui';
 import { useToday, type AgendaItem } from '@/hooks/useToday';
+import { useTodayVisits, type Visit } from '@/hooks/useTodayVisits';
 import { callPhone, openWhatsApp, openEmail } from '@/utils/dial';
+import { openMaps } from '@/utils/maps';
 import { initials } from '@/utils/format';
 import { colors, fontSize, fontWeight, spacing, radii } from '@/theme';
 
 type Props = {
   onNewLead: () => void;
   onNewContact: () => void;
-  onLogCall: () => void;        // Phase 2 — opens Log Call form (PR #106)
-  onScanCard: () => void;       // Phase 2 — Scan Card (PR #106)
+  onLogCall: () => void;        // Phase 2 — opens Log Call form (PR #107)
+  onScanCard: () => void;       // Phase 2 — Scan Card (PR #107)
   onOpenLead: (id: string) => void;
   // Tap a KPI tile → jump to Plan tab (Phase 2 will accept a filter
   // string here so e.g. "calls" pre-filters the Plan view to today's
@@ -44,10 +46,11 @@ type Props = {
 export function TodayScreen({ onNewLead, onNewContact, onLogCall, onScanCard, onOpenLead, onOpenPlan }: Props) {
   const { profile } = useAuth();
   const { data, isLoading, refetch, isRefetching } = useToday();
+  const { data: visits = [] } = useTodayVisits();
 
   // Register FAB actions for this tab
   const fabActions: FABAction[] = React.useMemo(() => [
-    { key: 'scan',    label: 'Scan Business Card', hint: 'Coming soon — capture contact via camera', icon: <Camera size={22} color={colors.brand}/>,         onPress: onScanCard },
+    { key: 'scan',    label: 'Scan Business Card', hint: 'Capture contact via camera',               icon: <Camera size={22} color={colors.brand}/>,         onPress: onScanCard },
     { key: 'log',     label: 'Log Call',           hint: 'Capture outcome + next action',            icon: <PhoneIncoming size={22} color={colors.brand}/>,  onPress: onLogCall },
     { key: 'lead',    label: 'New Lead',           hint: 'Quick capture from anywhere',              icon: <UserPlus size={22} color={colors.brand}/>,       onPress: onNewLead },
     { key: 'contact', label: 'New Contact',        hint: 'For an existing account',                  icon: <ClipboardList size={22} color={colors.brand}/>,  onPress: onNewContact },
@@ -120,6 +123,24 @@ export function TodayScreen({ onNewLead, onNewContact, onLogCall, onScanCard, on
           />
         </View>
 
+        {/* TODAY'S VISITS — horizontal strip of locations that resolve to a
+            map pin. Each card is tappable → opens Google Maps with directions
+            to that destination. Hidden when there are no visits with a
+            usable address; this isn't a "coming soon" placeholder, it's
+            additive content that shows up only when relevant. */}
+        {visits.length > 0 ? (
+          <>
+            <SectionHeader title="Today's visits" count={visits.length}/>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.visitsRow}
+            >
+              {visits.map(v => <VisitCard key={v.id} visit={v}/>)}
+            </ScrollView>
+          </>
+        ) : null}
+
         {/* TODAY'S AGENDA */}
         <SectionHeader title="Today's agenda" count={data?.agenda.length || 0}/>
         <View style={styles.agendaWrap}>
@@ -173,6 +194,34 @@ function Kpi({ label, value, icon, tint, onPress }: {
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={[styles.kpiValue, isZero && styles.kpiValueMuted]}>{value}</Text>
         <Text style={styles.kpiLabel} numberOfLines={1}>{label}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+// VisitCard — one stop on today's route. Tap → opens Google/Apple Maps with
+// directions. Width is fixed so the strip scrolls horizontally with a
+// predictable card cadence (cards aren't full-width).
+function VisitCard({ visit }: { visit: Visit }) {
+  return (
+    <Pressable
+      onPress={() => openMaps({ kind: 'address', address: visit.address })}
+      style={({ pressed }) => [styles.visitCard, pressed && styles.visitCardPressed]}
+      android_ripple={{ color: colors.s3 }}
+    >
+      <View style={styles.visitIcon}>
+        <MapPin size={18} color={colors.brand}/>
+      </View>
+      <Text style={styles.visitTitle} numberOfLines={1}>{visit.title}</Text>
+      <Text style={styles.visitAddress} numberOfLines={2}>
+        {visit.address || visit.subtitle || '—'}
+      </Text>
+      <View style={styles.visitFootRow}>
+        {visit.time ? <Text style={styles.visitTime}>{visit.time}</Text> : <View/>}
+        <View style={styles.visitGoBtn}>
+          <Navigation size={12} color={colors.brand}/>
+          <Text style={styles.visitGoText}>Directions</Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -317,4 +366,37 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandLight,
     alignItems: 'center', justifyContent: 'center',
   },
+
+  // Visits strip
+  visitsRow: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  visitCard: {
+    width: 200,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md,
+    elevation: 1,
+    shadowColor: '#0D1F2D',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 2,
+  },
+  visitCardPressed: { opacity: 0.7 },
+  visitIcon: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: colors.brandLight,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  visitTitle:   { fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: colors.text },
+  visitAddress: { fontSize: fontSize.xs, color: colors.text2, marginTop: 4, lineHeight: 16, minHeight: 32 },
+  visitFootRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
+  visitTime:    { fontSize: 11, color: colors.text3, fontWeight: fontWeight.semi },
+  visitGoBtn:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  visitGoText:  { fontSize: 11, color: colors.brand, fontWeight: fontWeight.semi },
 });
