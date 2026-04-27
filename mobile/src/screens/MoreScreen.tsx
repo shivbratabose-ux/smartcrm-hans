@@ -66,7 +66,7 @@ export function MoreScreen({ onOpenContacts, onOpenLeads }: Props) {
         </Section>
 
         <Section title="INSIGHTS">
-          <Row icon={<BarChart3 size={20} color={colors.text3}/>} label="Reports"   sub="Coming in PR #109" disabled/>
+          <Row icon={<BarChart3 size={20} color={colors.text3}/>} label="Reports"   sub="Coming next" disabled/>
         </Section>
 
         <Section title="SYSTEM">
@@ -74,7 +74,7 @@ export function MoreScreen({ onOpenContacts, onOpenLeads }: Props) {
           <Row icon={<LogOut size={20} color={colors.red}/>}      label="Sign out"  sub="" tone="danger" onPress={confirmSignOut}/>
         </Section>
 
-        <Text style={styles.versionTag}>SmartCRM Mobile · v0.4 · PR #107</Text>
+        <Text style={styles.versionTag}>SmartCRM Mobile · v0.5 · Pipeline Kanban</Text>
       </ScrollView>
     </View>
   );
