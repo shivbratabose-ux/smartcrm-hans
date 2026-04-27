@@ -89,6 +89,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+// Row — single list item in More. Always rendered as a Pressable (even
+// when disabled) so the function-style prop applies and the row's
+// flexDirection: 'row' actually takes effect. The earlier branch on
+// `disabled || !onPress ? View : Pressable` looked clean but silently
+// broke the layout for disabled rows because View doesn't accept a
+// function as `style` — the row collapsed into a column.
 function Row({ icon, label, sub, onPress, disabled, tone = 'normal' }: {
   icon: React.ReactNode;
   label: string;
@@ -97,17 +103,21 @@ function Row({ icon, label, sub, onPress, disabled, tone = 'normal' }: {
   disabled?: boolean;
   tone?: 'normal' | 'danger';
 }) {
-  const Wrap: React.ComponentType<any> = disabled || !onPress ? View : Pressable;
-  const props = disabled || !onPress ? {} : { onPress, android_ripple: { color: colors.s3 } };
+  const interactive = !disabled && !!onPress;
   return (
-    <Wrap {...props} style={({ pressed }: any) => [styles.row, pressed && styles.rowPressed, disabled && styles.rowDisabled]}>
+    <Pressable
+      onPress={interactive ? onPress : undefined}
+      android_ripple={interactive ? { color: colors.s3 } : undefined}
+      disabled={!interactive}
+      style={({ pressed }) => [styles.row, pressed && interactive && styles.rowPressed, disabled && styles.rowDisabled]}
+    >
       <View style={styles.rowIcon}>{icon}</View>
       <View style={styles.rowBody}>
         <Text style={[styles.rowLabel, tone === 'danger' && { color: colors.red }, disabled && { color: colors.text3 }]}>{label}</Text>
         {sub ? <Text style={styles.rowSub}>{sub}</Text> : null}
       </View>
-      {!disabled && onPress ? <ChevronRight size={18} color={colors.text3}/> : null}
-    </Wrap>
+      {interactive ? <ChevronRight size={18} color={colors.text3}/> : null}
+    </Pressable>
   );
 }
 
