@@ -59,9 +59,15 @@ CREATE INDEX IF NOT EXISTS idx_app_settings_catalog_gin ON public.app_settings U
 -- Read: every active CRM user needs the master lists to populate
 --   dropdowns (Stage, Vertical, Lead Source, etc.) — denying read
 --   would break the whole UI for non-admins.
--- Write: only roles that have masters:rw in PERMISSIONS_EXT
---   (admin, md). director has masters:r (read-only) per the
---   constants.js permissions matrix; honour that here.
+-- Write: management roles. Includes line_mgr because each product in
+--   the catalog (iCAFFE, WiseAMS, WiseHandling, etc.) is owned by a
+--   "Line Manager" who is responsible for adding / editing modules
+--   under that product. Bottlenecking every catalog change on
+--   admin/md isn't realistic in an internal CRM where ~10 different
+--   line managers maintain their own product lines.
+--   Excludes sales_exec, tech_lead, support, viewer — those don't
+--   manage product/master data.
+--   (Tightened from the original v1 policy in app_settings_v2_relax_rls.sql.)
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "app_settings_read" ON public.app_settings;
@@ -74,9 +80,15 @@ CREATE POLICY "app_settings_read" ON public.app_settings FOR SELECT USING (
 
 DROP POLICY IF EXISTS "app_settings_write" ON public.app_settings;
 CREATE POLICY "app_settings_write" ON public.app_settings FOR ALL USING (
-  public.get_crm_role() IN ('admin','md')
+  public.get_crm_role() IN (
+    'admin', 'md', 'director', 'vp_sales_mkt',
+    'line_mgr', 'country_mgr', 'bd_lead'
+  )
 ) WITH CHECK (
-  public.get_crm_role() IN ('admin','md')
+  public.get_crm_role() IN (
+    'admin', 'md', 'director', 'vp_sales_mkt',
+    'line_mgr', 'country_mgr', 'bd_lead'
+  )
 );
 
 -- ── Auto-update timestamp trigger ────────────────────────────────
