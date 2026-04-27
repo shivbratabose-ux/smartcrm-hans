@@ -37,7 +37,12 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
   scope       TEXT NOT NULL DEFAULT 'org',
   masters     JSONB NOT NULL DEFAULT '{}'::jsonb,
   catalog     JSONB NOT NULL DEFAULT '[]'::jsonb,
-  updated_by  UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  -- TEXT (not UUID) because public.users.id is TEXT in this schema —
+  -- see supabase/schema.sql line 8. Original v1 declared UUID and the
+  -- FK creation failed with PG 42804 ("incompatible types: uuid and
+  -- text") on real Supabase projects, leaving no table behind. Fixed
+  -- in-place since the original migration was atomic / never applied.
+  updated_by  TEXT REFERENCES public.users(id) ON DELETE SET NULL,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   -- Exactly one row per scope. Combined with the upsert in db.js this
   -- gives us safe last-write-wins without a separate primary key dance.
@@ -95,4 +100,17 @@ CREATE TRIGGER trg_app_settings_touch
 -- Subscribed by the SmartCRM client so two reps editing in two tabs
 -- don't end up looking at stale lists. Whole-row payload is fine —
 -- the JSONB blobs are small (typically 20–50KB combined).
-ALTER PUBLICATION supabase_realtime ADD TABLE public.app_settings;
+-- Idempotent: re-running the migration won't fail if the publication
+-- already includes this table (PG would otherwise raise "relation
+-- already member of publication").
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'app_settings'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.app_settings;
+  END IF;
+END $$;
