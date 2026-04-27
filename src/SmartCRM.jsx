@@ -898,6 +898,36 @@ export default function SmartCRM() {
   }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
     leads, callReports, contracts, collections, invoices, targets, quotes, commLogs, events, updates, customPermissions]);
 
+  // ── Auto-heal: backfill missing addressId on contacts ──
+  // Per company policy (PR #102) every contact must be associated with an
+  // office address from its account's address book. Existing rows from
+  // before that policy was enforced — and rows created via the Quick Add
+  // form when the account had no addresses yet — can sit with empty
+  // addressId. Whenever both sides are loaded, look for any contact
+  // missing addressId whose account now has at least one address, and
+  // backfill to the primary (or only) address.
+  // Mirrors the leadId auto-heal pattern from PR #100. Guarded by a
+  // needs-heal probe so it doesn't loop on every render.
+  useEffect(() => {
+    if (!Array.isArray(contacts) || !Array.isArray(accounts)) return;
+    const needsHeal = contacts.some(c => {
+      if (c.addressId) return false;
+      if (!c.accountId) return false;
+      const acc = accounts.find(a => a.id === c.accountId);
+      return Array.isArray(acc?.addresses) && acc.addresses.length > 0;
+    });
+    if (!needsHeal) return;
+    const updated = contacts.map(c => {
+      if (c.addressId || !c.accountId) return c;
+      const acc = accounts.find(a => a.id === c.accountId);
+      const addrs = acc?.addresses || [];
+      if (addrs.length === 0) return c;
+      const pickId = addrs.find(a => a.isPrimary)?.id || addrs[0].id;
+      return { ...c, addressId: pickId };
+    });
+    setContacts(updated);
+  }, [contacts, accounts]);
+
   // ── Debounced cloud sync for masters + catalog ──
   // Pushes the latest masters / catalog to the app_settings JSONB blob
   // every time either changes, with a 1.5s debounce so a chip-by-chip

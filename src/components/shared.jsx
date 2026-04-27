@@ -478,10 +478,56 @@ export function NotesThread({notes,onAdd,currentUser}) {
 // ═══════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════
 // INLINE CONTACT FORM (Quick Add Contact)
+// ───────────────────────────────────────────────────────────────────
+// Used inside Lead / Pipeline detail panels for "add a contact without
+// leaving the parent record". Per company policy every contact MUST be
+// associated with an office address from the linked account's address
+// book — same requirement enforced by validateContact() in the full
+// Contact form. Without this, contacts created via Quick Add would be
+// orphan-of-address rows that downstream PDF / quote generation can't
+// resolve a billing-from-address for.
+//
+// Behaviour:
+//   - accounts prop → look up the linked account's addresses array
+//   - Pre-fills addressId with the primary address (or single address
+//     if there's only one) so the rep doesn't have to pick in the 90%
+//     case where the account has one office
+//   - Multiple addresses → dropdown picker
+//   - Zero addresses → amber warning + disabled save with a clear
+//     explanation that the account needs at least one address first
+//   - Save is disabled until both name AND addressId are set
 // ═══════════════════════════════════════════════════════════════════
-export function InlineContactForm({ accountId, onSave, onCancel }) {
-  const [form, setForm] = useState({ name: "", email: "", phone: "", designation: "", department: "" });
-  const set = (k,v) => setForm(p => ({...p, [k]: v}));
+export function InlineContactForm({ accountId, accounts = [], onSave, onCancel }) {
+  // Look up the account's address book. When accounts isn't passed
+  // (older callsites), `addrs` stays empty and we surface a softer
+  // warning rather than blocking — the caller should pass accounts.
+  const account = accounts.find(a => a.id === accountId);
+  const addrs = account?.addresses || [];
+
+  // Default the address to the primary one (or the only one). This is
+  // what users almost always want — picking from a dropdown is noise
+  // for the 90% case of one-office accounts.
+  const defaultAddrId = addrs.length === 1
+    ? addrs[0].id
+    : (addrs.find(a => a.isPrimary)?.id || "");
+
+  const [form, setForm] = useState({
+    name: "", email: "", phone: "", designation: "", department: "",
+    addressId: defaultAddrId,
+  });
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  // Re-default addressId when the account / its addresses change
+  // (e.g. user adds an address on the account in another tab).
+  useEffect(() => {
+    if (!form.addressId && defaultAddrId) {
+      set("addressId", defaultAddrId);
+    }
+  }, [defaultAddrId]);
+
+  // Block save until name AND addressId are set.
+  // (When account has zero addresses we also block — see warning UI.)
+  const canSave = !!form.name.trim() && !!form.addressId && addrs.length > 0;
 
   return (
     <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, marginTop: 8 }}>
@@ -489,16 +535,48 @@ export function InlineContactForm({ accountId, onSave, onCancel }) {
         <span style={{ fontWeight: 600, fontSize: 13 }}>Quick Add Contact</span>
         <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text3)" }}>&#x2715;</button>
       </div>
+
+      {/* Zero-addresses warning — directs the user to fix the account first */}
+      {accountId && addrs.length === 0 && (
+        <div style={{ background: "#FEF3C7", border: "1px solid #FCD34D", padding: "8px 12px", borderRadius: 6, fontSize: 11.5, color: "#92400E", marginBottom: 10, display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span><strong>{account?.name || "This account"}</strong> has no office addresses yet. Open the account record and add at least one address before adding a contact — every contact must be linked to an office address.</span>
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <input placeholder="Full Name *" value={form.name} onChange={e => set("name", e.target.value)} className="f-input" style={{ gridColumn: "1/-1" }} />
         <input placeholder="Email" value={form.email} onChange={e => set("email", e.target.value)} className="f-input" />
         <input placeholder="Phone" value={form.phone} onChange={e => set("phone", e.target.value)} className="f-input" />
         <input placeholder="Designation" value={form.designation} onChange={e => set("designation", e.target.value)} className="f-input" />
         <input placeholder="Department" value={form.department} onChange={e => set("department", e.target.value)} className="f-input" />
+        {/* Office Address picker — only shown when the account has addresses.
+            For the single-address case the value is auto-pre-filled, but we
+            still render the dropdown so it's obvious which address the
+            contact will be tied to. */}
+        {addrs.length > 0 && (
+          <div style={{ gridColumn: "1/-1", display: "flex", flexDirection: "column", gap: 3 }}>
+            <label style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>Office Address *</label>
+            <select className="f-input" value={form.addressId} onChange={e => set("addressId", e.target.value)}>
+              <option value="">Select office address…</option>
+              {addrs.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.label}{a.city ? ` — ${a.city}` : ""}{a.isPrimary ? " (Primary)" : ""}{a.isBilling ? " [Billing]" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
         <button onClick={onCancel} className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 12px" }}>Cancel</button>
-        <button onClick={() => { if (!form.name.trim()) return; onSave({ ...form, accountId }); }} className="btn btn-sm" style={{ fontSize: 12, padding: "4px 12px", background: "var(--brand)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }} disabled={!form.name.trim()}>Add Contact</button>
+        <button
+          onClick={() => { if (!canSave) return; onSave({ ...form, accountId }); }}
+          className="btn btn-sm"
+          style={{ fontSize: 12, padding: "4px 12px", background: canSave ? "var(--brand)" : "var(--border2)", color: "#fff", border: "none", borderRadius: 6, cursor: canSave ? "pointer" : "not-allowed" }}
+          disabled={!canSave}
+          title={!form.name.trim() ? "Enter a name" : !form.addressId ? (addrs.length === 0 ? "Add an address on the account first" : "Pick an office address") : "Add contact"}
+        >Add Contact</button>
       </div>
     </div>
   );

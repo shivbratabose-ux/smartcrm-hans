@@ -376,6 +376,7 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
           {showInlineContact && (
             <InlineContactForm
               accountId={form.accountId || lead.accountId || ""}
+              accounts={accounts}
               onSave={handleInlineContactSave}
               onCancel={() => setShowInlineContact(false)}
             />
@@ -849,6 +850,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
               <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
                 <InlineContactForm
                   accountId={lead.accountId || ""}
+                  accounts={accounts}
                   onSave={(contactData) => {
                     const newContact = { ...contactData, id: `c-${uid()}`, accountId: lead.accountId || "", primary: false, contactId: `CON-${Date.now()}`, departments: [], products: [], branches: [], countries: [], linkedOpps: [] };
                     if (setContacts) setContacts(p => [...p, newContact]);
@@ -2318,6 +2320,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 {showFormInlineContact === true && (
                   <InlineContactForm
                     accountId={form.accountId || ""}
+                    accounts={accounts}
                     onSave={(contactData) => {
                       const newContact = {
                         ...contactData,
