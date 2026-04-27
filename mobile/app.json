@@ -26,7 +26,8 @@
       "permissions": [
         "INTERNET",
         "POST_NOTIFICATIONS",
-        "VIBRATE"
+        "VIBRATE",
+        "CAMERA"
       ]
     },
     "web": {
@@ -38,6 +39,12 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#1B6B5A"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SmartCRM to use your camera to scan business cards and capture meeting notes."
         }
       ]
     ],

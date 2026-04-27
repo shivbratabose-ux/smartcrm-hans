@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable, TextInput, Alert,
 } from 'react-native';
-import { Phone, Mail, MessageSquare, ChevronLeft } from 'lucide-react-native';
+import { Phone, Mail, MessageSquare, MapPin, ChevronLeft, PhoneIncoming } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radii, fontSize } from '@/theme';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useLead, useUpdateLead } from '@/hooks/useLeads';
+import { useAccount, accountAddressString } from '@/hooks/useAccount';
 import { callPhone, openWhatsApp, openEmail } from '@/utils/dial';
+import { openMaps } from '@/utils/maps';
 import { fmtRelativeDate } from '@/utils/format';
 
 const STAGE_OPTIONS = ['MQL', 'SQL', 'SAL', 'Converted', 'NA'];
@@ -15,10 +17,13 @@ const STAGE_OPTIONS = ['MQL', 'SQL', 'SAL', 'Converted', 'NA'];
 type Props = {
   leadId: string;
   onBack: () => void;
+  // PR #107 — open the Log Call form pinned to this lead.
+  onLogCall?: (leadId: string) => void;
 };
 
-export function LeadDetailScreen({ leadId, onBack }: Props) {
+export function LeadDetailScreen({ leadId, onBack, onLogCall }: Props) {
   const { data: lead, isLoading } = useLead(leadId);
+  const { data: account } = useAccount(lead?.account_id);
   const updateLead = useUpdateLead();
   const [stage, setStage] = useState<string>('');
   const [nextCall, setNextCall] = useState<string>('');
@@ -41,6 +46,7 @@ export function LeadDetailScreen({ leadId, onBack }: Props) {
   }
 
   const contact = lead.contact_name || lead.contact || '';
+  const mapsAddress = accountAddressString(account, lead.company || '');
 
   const saveStage = (next: string) => {
     setStage(next);
@@ -86,7 +92,39 @@ export function LeadDetailScreen({ leadId, onBack }: Props) {
           {lead.email ? (
             <ActionPill icon={<Mail size={18} color={colors.brand}/>}     label="Email" onPress={() => openEmail(lead.email || '', `Re: ${lead.company || 'our conversation'}`)}/>
           ) : null}
+          {mapsAddress ? (
+            <ActionPill icon={<MapPin size={18} color={colors.brand}/>}   label="Map"   onPress={() => openMaps({ kind: 'address', address: mapsAddress })}/>
+          ) : null}
         </View>
+
+        {/* ── Log call CTA ── */}
+        {onLogCall ? (
+          <Pressable
+            onPress={() => onLogCall(lead.id)}
+            style={({ pressed }) => [styles.logCallBar, pressed && styles.logCallBarPressed]}
+          >
+            <View style={styles.logCallIcon}>
+              <PhoneIncoming size={18} color={colors.brand}/>
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.logCallTitle}>Log a call for this lead</Text>
+              <Text style={styles.logCallSub}>Capture outcome + auto-set next follow-up</Text>
+            </View>
+          </Pressable>
+        ) : null}
+
+        {/* ── Address line (tappable) ── */}
+        {account?.address || account?.city || account?.country ? (
+          <Pressable
+            style={styles.addressRow}
+            onPress={() => openMaps({ kind: 'address', address: mapsAddress })}
+          >
+            <MapPin size={14} color={colors.brand}/>
+            <Text style={styles.addressText} numberOfLines={2}>
+              {[account?.address, account?.city, account?.country].filter(Boolean).join(', ')}
+            </Text>
+          </Pressable>
+        ) : null}
 
         {/* ── Stage update ── */}
         <Text style={styles.section}>Stage</Text>
@@ -193,11 +231,13 @@ const styles = StyleSheet.create({
 
   actionsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.lg,
   },
   pill: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '22%',
     flexDirection: 'row',
     gap: spacing.xs,
     alignItems: 'center',
@@ -205,8 +245,34 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandLight,
     borderRadius: radii.md,
     paddingVertical: 12,
+    paddingHorizontal: spacing.sm,
   },
   pillLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.brand },
+
+  logCallBar: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.brandLight,
+    borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.brand + '33',
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  logCallBarPressed: { opacity: 0.75 },
+  logCallIcon: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.brand + '33',
+  },
+  logCallTitle: { fontSize: fontSize.sm, fontWeight: '700', color: colors.text },
+  logCallSub:   { fontSize: fontSize.xs, color: colors.text2, marginTop: 2 },
+
+  addressRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.sm, paddingVertical: 6,
+  },
+  addressText: { flex: 1, fontSize: fontSize.xs, color: colors.brand, fontWeight: '600' },
 
   section: {
     fontSize: fontSize.xs,
