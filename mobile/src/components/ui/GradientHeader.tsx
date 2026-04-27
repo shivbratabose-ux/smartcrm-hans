@@ -37,7 +37,7 @@ export function GradientHeader({
       style={[styles.root, style]}
     >
       <SafeAreaView edges={['top']} style={styles.safe}>
-        <View style={[styles.content, { paddingBottom: spacing.lg + bottomInset }, contentStyle]}>
+        <View style={[styles.content, { paddingBottom: spacing.md + bottomInset }, contentStyle]}>
           <View style={styles.titleRow}>
             <View style={{ flex: 1, minWidth: 0 }}>
               {typeof title === 'string'
@@ -59,9 +59,9 @@ export function GradientHeader({
 const styles = StyleSheet.create({
   root:    { width: '100%' },
   safe:    {},
-  content: { paddingHorizontal: spacing.xl, paddingTop: spacing.md },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   titleRow:{ flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  title:   { color: colors.textInv, fontSize: fontSize.xl, fontWeight: fontWeight.heavy },
-  subtitle:{ color: 'rgba(255,255,255,0.78)', fontSize: fontSize.sm, marginTop: 2 },
+  title:   { color: colors.textInv, fontSize: fontSize.lg, fontWeight: fontWeight.heavy },
+  subtitle:{ color: 'rgba(255,255,255,0.78)', fontSize: fontSize.xs, marginTop: 2 },
   right:   { marginLeft: spacing.sm },
 });

@@ -72,7 +72,7 @@ export function TodayScreen({ onNewLead, onNewContact, onLogCall, onScanCard, on
   return (
     <View style={styles.root}>
       <GradientHeader
-        bottomInset={44}                       // make room for the KPI strip to tuck under
+        bottomInset={32}                       // tighter than v1 — was 44, header was eating too much space
         title={`Hi ${greeting}`}
         subtitle={`${dateLabel}${subtitleParts ? ` · ${subtitleParts}` : ''}`}
         right={
@@ -172,8 +172,10 @@ export function TodayScreen({ onNewLead, onNewContact, onLogCall, onScanCard, on
 }
 
 // Kpi — tappable tile with icon-in-tinted-bubble + big number + uppercase
-// label. Press feedback dims slightly. Active count shown in brand-bold; a
-// 0 count is muted so the user's eye lands on the things they DO have.
+// label. Stacked layout (icon on top, then value, then label) so all four
+// tiles fit on a 375px-wide phone without truncating the labels. The earlier
+// row layout squeezed each tile to ~80px wide and only the first letter
+// of the label fit ("F." "M." "T." "C.") — fixed in PR #110-followup.
 function Kpi({ label, value, icon, tint, onPress }: {
   label: string;
   value: number | string;
@@ -191,10 +193,8 @@ function Kpi({ label, value, icon, tint, onPress }: {
       accessibilityLabel={`${value} ${label}`}
     >
       <View style={[styles.kpiIcon, { backgroundColor: tint }]}>{icon}</View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[styles.kpiValue, isZero && styles.kpiValueMuted]}>{value}</Text>
-        <Text style={styles.kpiLabel} numberOfLines={1}>{label}</Text>
-      </View>
+      <Text style={[styles.kpiValue, isZero && styles.kpiValueMuted]}>{value}</Text>
+      <Text style={styles.kpiLabel} numberOfLines={1}>{label}</Text>
     </Pressable>
   );
 }
@@ -287,23 +287,24 @@ const styles = StyleSheet.create({
 
   kpiRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: -36,                         // tuck under gradient
-    marginHorizontal: spacing.lg,
+    gap: spacing.xs,                        // tighter gaps so 4 tiles breathe on 375px
+    marginTop: -16,                         // small tuck — icons stay fully visible
+    marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
-  // Each KPI is a self-standing tappable card. Shadow + border give it
-  // visual lift so it reads as a button, not a label. Press dims slightly.
+  // Each KPI is a self-standing tappable card. Stacked layout: icon on top,
+  // big number, then label. Lets the label show in full on narrow phones.
   kpi: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: 2,
     backgroundColor: colors.surface,
-    borderRadius: radii.lg,
+    borderRadius: radii.md,
     borderWidth: 1, borderColor: colors.border,
-    padding: spacing.sm + 2,
-    minHeight: 76,
+    paddingHorizontal: 6,
+    paddingVertical: spacing.sm,
+    minHeight: 84,
     // Native shadow + Android elevation
     elevation: 2,
     shadowColor: '#0D1F2D',
@@ -313,14 +314,16 @@ const styles = StyleSheet.create({
   },
   kpiPressed: { opacity: 0.7 },
   kpiIcon: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 30, height: 30, borderRadius: 15,
     alignItems: 'center', justifyContent: 'center',
+    marginBottom: 4,
   },
   kpiValue: {
-    fontSize: fontSize.xl,
+    fontSize: fontSize.lg,
     fontWeight: fontWeight.heavy,
     color: colors.text,
-    lineHeight: fontSize.xl + 2,
+    lineHeight: fontSize.lg + 2,
+    textAlign: 'center',
   },
   kpiValueMuted: { color: colors.text3 },   // 0-counts fade so the eye finds the active ones
   kpiLabel: {
@@ -330,6 +333,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
     letterSpacing: 0.4,
     textTransform: 'uppercase',
+    textAlign: 'center',
   },
 
   agendaWrap: {
