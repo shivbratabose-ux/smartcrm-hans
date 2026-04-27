@@ -72,7 +72,6 @@ export function TodayScreen({ onNewLead, onNewContact, onLogCall, onScanCard, on
   return (
     <View style={styles.root}>
       <GradientHeader
-        bottomInset={32}                       // tighter than v1 — was 44, header was eating too much space
         title={`Hi ${greeting}`}
         subtitle={`${dateLabel}${subtitleParts ? ` · ${subtitleParts}` : ''}`}
         right={
@@ -278,17 +277,17 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
 
   avatar: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.18)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)',
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { color: colors.textInv, fontSize: fontSize.sm, fontWeight: fontWeight.bold },
+  avatarText: { color: colors.textInv, fontSize: fontSize.xs, fontWeight: fontWeight.bold },
 
   kpiRow: {
     flexDirection: 'row',
     gap: spacing.xs,                        // tighter gaps so 4 tiles breathe on 375px
-    marginTop: -16,                         // small tuck — icons stay fully visible
+    marginTop: spacing.sm,                  // sit fully below the gradient — cleaner, no clipped icons
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
