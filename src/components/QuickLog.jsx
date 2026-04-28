@@ -486,6 +486,111 @@ export default function QuickLogFAB({
   const [errors, setErrors] = useState({});
   const fabRef = useRef(null);
 
+  // ── Draggable FAB position ────────────────────────────────────────
+  // Users complained the bottom-right FAB sometimes covered row icons
+  // (edit / delete / etc.) — visible in the AMS catalog screenshot
+  // where the green + button sits over the Consol AMS row's actions.
+  // Solution: let the user drag the FAB anywhere on the screen.
+  //
+  // Behaviour:
+  //   - Position persists across reloads via localStorage
+  //   - Drag is movement-threshold-based (>5px from mousedown) so a
+  //     plain click still opens the speed dial as before
+  //   - Position is clamped to the viewport on every move + on window
+  //     resize so the button can never get stranded off-screen
+  //   - Double-click resets the FAB back to its default bottom-right
+  //     dock position (clears the saved override)
+  //
+  // pos === null   → default bottom:24, right:24 (CSS anchored)
+  // pos === {l,t}  → fixed top/left in pixels
+  const [pos, setPos] = useState(() => {
+    try {
+      const saved = localStorage.getItem("smartcrm.fabPos");
+      if (!saved) return null;
+      const parsed = JSON.parse(saved);
+      if (typeof parsed?.left === "number" && typeof parsed?.top === "number") return parsed;
+    } catch { /* invalid JSON — ignore */ }
+    return null;
+  });
+  const dragStateRef = useRef(null);
+  // Tracks whether the most recent pointer interaction was a drag, so
+  // the click handler can suppress the speed-dial toggle when the user
+  // intended to move (not click). Reset on next pointerdown.
+  const justDraggedRef = useRef(false);
+
+  // Clamp helper — keeps the 56x56 FAB fully visible with an 8px margin.
+  const clampPos = (p) => {
+    const W = window.innerWidth, H = window.innerHeight;
+    return {
+      left: Math.max(8, Math.min(W - 64, p.left)),
+      top:  Math.max(8, Math.min(H - 64, p.top)),
+    };
+  };
+
+  // Re-clamp if window shrinks below the saved position.
+  useEffect(() => {
+    if (!pos) return;
+    const onResize = () => setPos(prev => prev ? clampPos(prev) : prev);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [pos]);
+
+  const onFabPointerDown = (e) => {
+    // Don't start a drag from the speed-dial child buttons or backdrop.
+    if (e.target.closest("[data-fab-dial-child]")) return;
+    // Only drag with primary button (left mouse / touch).
+    if (e.button != null && e.button !== 0) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    dragStateRef.current = {
+      startX: e.clientX, startY: e.clientY,
+      originLeft: rect.left, originTop: rect.top,
+      dragging: false,
+    };
+    justDraggedRef.current = false;
+
+    const onMove = (ev) => {
+      const s = dragStateRef.current;
+      if (!s) return;
+      const dx = ev.clientX - s.startX;
+      const dy = ev.clientY - s.startY;
+      if (!s.dragging && Math.hypot(dx, dy) < 5) return;
+      s.dragging = true;
+      ev.preventDefault();
+      setPos(clampPos({ left: s.originLeft + dx, top: s.originTop + dy }));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      const s = dragStateRef.current;
+      dragStateRef.current = null;
+      if (s?.dragging) {
+        justDraggedRef.current = true;
+        // Persist the latest position. setPos may have already run, but
+        // we re-read from React via a callback to be sure we save the
+        // committed value, not the closure's stale snapshot.
+        setPos(p => {
+          if (p) {
+            try { localStorage.setItem("smartcrm.fabPos", JSON.stringify(p)); } catch {}
+          }
+          return p;
+        });
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Double-click on the FAB resets it back to the default bottom-right
+  // dock and clears the saved override. Useful if a user drags the
+  // button somewhere awkward and wants to undo without finger-precision.
+  const onFabDoubleClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPos(null);
+    try { localStorage.removeItem("smartcrm.fabPos"); } catch {}
+  };
+
   // Close speed-dial on outside click
   useEffect(() => {
     if (!open) return;
@@ -616,12 +721,19 @@ export default function QuickLogFAB({
   };
 
   // ── FAB Styles ──
+  // Cursor is `grab` so the user discovers it's draggable. When pos !== null
+  // we honour the saved position; otherwise we fall back to the default
+  // bottom-right dock via `bottom`/`right` shorthand. The transition is
+  // disabled while dragging so the FAB tracks the cursor 1:1.
   const fabStyle = {
-    position:"fixed", bottom:24, right:24, zIndex:9999,
-    width:56, height:56, borderRadius:"50%", border:"none", cursor:"pointer",
+    position:"fixed", zIndex:9999,
+    width:56, height:56, borderRadius:"50%", border:"none",
+    cursor: dragStateRef.current?.dragging ? "grabbing" : "grab",
     background:"var(--brand,#1B4D3E)", color:"white", display:"flex", alignItems:"center", justifyContent:"center",
-    boxShadow:"0 4px 14px rgba(27,77,62,0.4)", transition:"transform 0.2s, box-shadow 0.2s",
+    boxShadow:"0 4px 14px rgba(27,77,62,0.4)",
+    transition: dragStateRef.current?.dragging ? "none" : "transform 0.2s, box-shadow 0.2s",
     fontSize:28, fontWeight:300, lineHeight:1,
+    touchAction:"none",   // prevent mobile scroll while dragging the FAB
   };
   const fabHoverStyle = open
     ? { transform:"rotate(45deg)", boxShadow:"0 6px 20px rgba(27,77,62,0.5)" }
@@ -658,8 +770,15 @@ export default function QuickLogFAB({
 
   return (
     <>
-      {/* FAB + Speed Dial — hide when modal is open */}
-      {!mode && <div ref={fabRef} style={{ position:"fixed", bottom:24, right:24, zIndex:9999 }}>
+      {/* FAB + Speed Dial — hide when modal is open.
+          Container uses `pos` (top/left in px) when the user has dragged
+          it, otherwise the default bottom-right dock anchor. */}
+      {!mode && <div
+        ref={fabRef}
+        style={pos
+          ? { position:"fixed", top: pos.top, left: pos.left, zIndex:9999 }
+          : { position:"fixed", bottom:24, right:24, zIndex:9999 }}
+      >
         {/* Backdrop when speed dial open */}
         {open && (
           <div style={{
@@ -667,11 +786,15 @@ export default function QuickLogFAB({
           }} onClick={() => setOpen(false)} />
         )}
 
-        {/* Speed dial options */}
+        {/* Speed dial options.
+            data-fab-dial-child marks them as "don't start a drag from
+            here" — the pointerdown handler ignores events on these
+            child buttons so the user can still tap them normally. */}
         {DIAL_OPTIONS.map((opt, i) => (
-          <div key={opt.key} style={dialStyle(i)}>
-            <span style={dialLabelStyle}>{opt.emoji} {opt.label}</span>
+          <div key={opt.key} style={dialStyle(i)} data-fab-dial-child>
+            <span style={dialLabelStyle} data-fab-dial-child>{opt.emoji} {opt.label}</span>
             <button
+              data-fab-dial-child
               style={dialBtnStyle}
               onClick={() => openMode(opt.key)}
               onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.1)"; e.currentTarget.style.background = "var(--brand-bg,#E8F5F0)"; }}
@@ -682,13 +805,26 @@ export default function QuickLogFAB({
           </div>
         ))}
 
-        {/* Main FAB button */}
+        {/* Main FAB button.
+            onPointerDown starts the threshold-based drag. If the pointer
+            moves >5px before release, justDraggedRef is set true and the
+            click handler short-circuits so the speed dial doesn't toggle
+            after a drag. Double-click resets to default position. */}
         <button
           style={{ ...fabStyle, ...fabHoverStyle }}
-          onClick={() => setOpen(o => !o)}
-          onMouseEnter={e => { if (!open) e.currentTarget.style.transform = "scale(1.08)"; }}
-          onMouseLeave={e => { if (!open) e.currentTarget.style.transform = "scale(1)"; }}
-          aria-label="Quick Log"
+          onPointerDown={onFabPointerDown}
+          onClick={() => {
+            if (justDraggedRef.current) {
+              justDraggedRef.current = false;
+              return;
+            }
+            setOpen(o => !o);
+          }}
+          onDoubleClick={onFabDoubleClick}
+          onMouseEnter={e => { if (!open && !dragStateRef.current?.dragging) e.currentTarget.style.transform = "scale(1.08)"; }}
+          onMouseLeave={e => { if (!open && !dragStateRef.current?.dragging) e.currentTarget.style.transform = "scale(1)"; }}
+          aria-label="Quick Log (drag to move, double-click to reset position)"
+          title="Drag to move · double-click to reset"
         >
           <Plus size={26} style={{ transition:"transform 0.2s" }} />
         </button>
