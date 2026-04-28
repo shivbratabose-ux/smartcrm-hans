@@ -88,6 +88,43 @@ const clearSession = () => {
 // ═══════════════════════════════════════════════════════════════════
 const DATA_VERSION = "v13"; // tracking-only; no longer triggers a reset
 
+// Internal sync-state flag. Stamped on every record once it has been
+// confirmed in the cloud (initial load, realtime echo, or a successful
+// insert/update from this tab). mergeOnLoad uses presence/absence of this
+// flag to classify local-only records on reload as either "stale ghost
+// the cloud no longer has" (drop) or "genuinely never synced" (retry insert).
+// Field name starts with "_" so toSnake (lib/db.js) strips it on outbound,
+// keeping the DB schema clean.
+const SYNC_STAMP_FIELD = "_syncedAt";
+
+// True if a Supabase write error indicates a primary-key collision — i.e.
+// the cloud already has a row with this id. We use this in mergeOnLoad's
+// retry-insert path to distinguish "ghost record the cloud has under RLS /
+// is_deleted=true / different owner" (drop locally, cloud is source of
+// truth) from "genuinely never-synced row that needs to land in cloud".
+// PostgREST surfaces unique-violations with code 23505; we also match on
+// the message text as a belt-and-braces guard against future format drift.
+const isDuplicateKeyError = (err) => {
+  if (!err) return false;
+  const code = err.code || err.details?.code || "";
+  if (String(code) === "23505") return true;
+  const msg = String(err.message || err.details || err.hint || "");
+  return /duplicate key|unique constraint|already exists/i.test(msg);
+};
+
+// Strip every "_*" key from a record before diffing prev vs. next in the
+// sync effect. Without this, stamping _syncedAt would itself look like a
+// state change and trigger a second updateRecord round-trip on every sync.
+const stripInternalFields = (rec) => {
+  if (!rec || typeof rec !== "object") return rec;
+  const out = {};
+  for (const k of Object.keys(rec)) {
+    if (k.charCodeAt(0) === 95 /* "_" */) continue;
+    out[k] = rec[k];
+  }
+  return out;
+};
+
 function migrateState(raw) {
   if (!raw) return null;
   const s = { ...raw };
@@ -668,6 +705,18 @@ export default function SmartCRM() {
   // cascades DELETEs to Supabase, wiping the cloud copy too.
   const prevRef = useRef({});
   const syncReady = useRef(false);
+  // Set to true on the FIRST sync-effect run after syncReady flipped on.
+  // That first run re-snapshots prevRef from the post-mergeOnLoad state and
+  // skips the diff — otherwise mergeOnLoad's local-state replacement would
+  // be misread as user-driven changes and cascade to Supabase.
+  const syncReadyAcknowledged = useRef(false);
+  // Ids of records we've removed from local state purely to clean up stale
+  // local cache (mergeOnLoad's duplicate-key drops). The cloud still has
+  // these rows — we just couldn't see them via RLS — so the sync effect
+  // MUST NOT interpret their disappearance as a user-initiated delete and
+  // issue a soft-delete write. Each id is consumed (one-shot) on the next
+  // diff-driven delete pass, then forgotten.
+  const dropFromSyncRef = useRef(new Set());
   // ms-epoch of the last local masters/catalog edit. Used by the realtime
   // subscription to ignore stale echoes that pre-date a user's most recent
   // local edit (see comment on the subscription effect for the exact race).
@@ -687,28 +736,78 @@ export default function SmartCRM() {
       prevRef.current = { ...syncModules };
       return;
     }
+    // First effect run after syncReady flipped to true: re-snapshot from the
+    // post-mergeOnLoad state and skip. mergeOnLoad replaces local arrays
+    // with cloud-authoritative versions (dropping stale local ghosts), and
+    // we MUST NOT diff that replacement against the pre-load snapshot or
+    // we'd cascade ghost-record soft-deletes back to Supabase for rows that
+    // already exist (or were already deleted) on the cloud.
+    if (!syncReadyAcknowledged.current) {
+      syncReadyAcknowledged.current = true;
+      prevRef.current = { ...syncModules };
+      return;
+    }
     const prev = prevRef.current;
+    // Setter map for stamping `_syncedAt` on records once Supabase has
+    // confirmed a successful insert/update. Without this, the next reload's
+    // mergeOnLoad would treat newly-created (but successfully synced)
+    // records as "never synced" and re-insert them on every load.
+    const setterMap = {
+      accounts: setAccounts, contacts: setContacts, opps: setOpps,
+      activities: setActivities, tickets: setTickets, leads: setLeads,
+      callReports: setCallReports, contracts: setContracts,
+      collections: setCollections, targets: setTargets, quotes: setQuotes,
+      commLogs: setCommLogs, events: setEvents, notes: setNotes,
+      files: setFiles, users: setOrgUsers,
+    };
+    const stampSynced = (module, id) => {
+      const setter = setterMap[module];
+      if (!setter || !id) return;
+      const stamp = new Date().toISOString();
+      setter(p => p.map(r => r.id === id ? { ...r, [SYNC_STAMP_FIELD]: stamp } : r));
+    };
     // Wrap sync ops so any rejected promise / Supabase error surfaces as a
     // throttled toast instead of disappearing into the console. Local state
     // is already saved by the time we get here, so a sync failure means
     // "cloud out of sync" — important to show, but only once per burst.
-    const track = (op, label) => Promise.resolve(op)
-      .then(res => { if (res?.error) reportSyncError(label, res.error); })
+    // On success, stamp `_syncedAt` so future mergeOnLoad runs can tell
+    // confirmed-in-cloud records apart from never-synced local writes.
+    const track = (op, label, module, id) => Promise.resolve(op)
+      .then(res => {
+        if (res?.error) reportSyncError(label, res.error);
+        else if (module && id) stampSynced(module, id);
+      })
       .catch(err => reportSyncError(label, err));
     for (const [module, next] of Object.entries(syncModules)) {
       const old = prev[module];
       if (!old || old === next || !Array.isArray(next) || !Array.isArray(old)) continue;
       const prevIds = new Set(old.map(r => r.id));
       const nextIds = new Set(next.map(r => r.id));
+      const dbModule = module === "users" ? "users" : module;
       // Inserts
-      next.forEach(r => { if (r.id && !prevIds.has(r.id)) track(insertRecord(module === "users" ? "users" : module, r), `${module} insert`); });
-      // Deletes (soft — deleteRecord now issues UPDATE is_deleted=true)
-      old.forEach(r => { if (r.id && !nextIds.has(r.id)) track(deleteRecord(module === "users" ? "users" : module, r.id, currentUser), `${module} delete`); });
-      // Updates — only compare records that exist in both
+      next.forEach(r => { if (r.id && !prevIds.has(r.id)) track(insertRecord(dbModule, r), `${module} insert`, module, r.id); });
+      // Deletes (soft — deleteRecord now issues UPDATE is_deleted=true).
+      // Suppress for ids we just dropped from local cache via mergeOnLoad's
+      // duplicate-key path — the cloud still has those rows, our local
+      // removal is housekeeping, not a user delete.
+      old.forEach(r => {
+        if (!r.id || nextIds.has(r.id)) return;
+        if (dropFromSyncRef.current.has(r.id)) {
+          dropFromSyncRef.current.delete(r.id); // one-shot: consume so a real later delete still propagates
+          return;
+        }
+        track(deleteRecord(dbModule, r.id, currentUser), `${module} delete`);
+      });
+      // Updates — only compare records that exist in both. Strip internal
+      // "_*" fields (e.g. _syncedAt) before diffing so stamping on success
+      // doesn't itself look like a state change and trigger a second
+      // updateRecord round-trip on every sync (= infinite re-sync loop).
       next.forEach(r => {
         if (r.id && prevIds.has(r.id)) {
           const o = old.find(p => p.id === r.id);
-          if (o && JSON.stringify(o) !== JSON.stringify(r)) track(updateRecord(module === "users" ? "users" : module, r.id, r), `${module} update`);
+          if (o && JSON.stringify(stripInternalFields(o)) !== JSON.stringify(stripInternalFields(r))) {
+            track(updateRecord(dbModule, r.id, r), `${module} update`, module, r.id);
+          }
         }
       });
     }
@@ -723,45 +822,103 @@ export default function SmartCRM() {
       notify.error(`Couldn't reach the cloud: ${err?.message || "network error"}. Working in local-only mode — changes won't sync.`);
       return null;
     }).then(data => {
+      // Aggregated counts of retry/drop outcomes across all modules, so the
+      // user gets a single combined toast instead of one per module.
+      const retryTotals = {}; // { [module]: number }  records we tried to push to cloud
       if (data) {
-        // ── Merge-on-load guard (anti data-loss) ──
-        // Previously: blindly replaced local state with cloud payload. If a
-        // record existed locally but never made it to the cloud (e.g., an
-        // insert that rejected because of a schema-cache error), the next
-        // refresh would load only the cloud's subset and silently drop the
-        // local-only records. Now we union by id: cloud is authoritative for
-        // records that exist in both; local-only records are kept in state
-        // and queued for a background retry-insert, with a warning toast so
-        // the user knows something didn't sync.
+        // ── Merge-on-load (recovery + ghost cleanup) ──
+        //
+        // Earlier behaviour was a blind union (cloud + local-only), which
+        // kept any local row the cloud didn't return — accumulating ghost
+        // rows over time (soft-deleted by another user, hard-deleted from
+        // the dashboard, reassigned out of RLS scope, never-synced because
+        // an earlier insert silently failed). Edge had 60 leads, Chrome
+        // 14, on the same login. Both browsers retried the ghosts every
+        // load, but the user couldn't tell what was real.
+        //
+        // New policy: be aggressive about RECOVERING data, conservative
+        // about deleting. For every local-only record:
+        //   1. Retry insert against Supabase.
+        //   2a. Success                    → record is now in cloud.
+        //                                    Stamp _syncedAt so we don't
+        //                                    redo the round-trip next load.
+        //   2b. Duplicate-key (PK 23505)   → cloud already has this id (RLS
+        //                                    is hiding it from us, or it's
+        //                                    soft-deleted, or its owner
+        //                                    moved out of our scope). The
+        //                                    cloud is authoritative; drop
+        //                                    from local cache. Use
+        //                                    dropFromSyncRef so the diff
+        //                                    pass doesn't soft-delete it.
+        //   2c. Other error (network/RLS) → keep locally, surface to user.
+        //                                    Will retry on next reload.
+        //
+        // Special case: records with `isDeleted: true` are kept in local
+        // state untouched — they're stale soft-deletes echoed via realtime
+        // and Trash needs them to render the restore list.
+        //
+        // Empty-cloud guard preserved: if the cloud returns 0 rows for a
+        // module while local has data, that's indistinguishable from
+        // "cloud unreachable" / "RLS hides everything", so we leave local
+        // alone. We only act on local-only rows when the cloud has at
+        // least one row for that module to anchor against.
+        const stampNow = new Date().toISOString();
         const mergeOnLoad = (module, cloud, localArr, setter, retryInsert = true) => {
           const cloudArr = Array.isArray(cloud) ? cloud : [];
           const local = Array.isArray(localArr) ? localArr : [];
-          const cloudIds = new Set(cloudArr.map(r => r?.id).filter(Boolean));
-          const localOnly = local.filter(r => r?.id && !cloudIds.has(r.id));
           if (cloudArr.length === 0 && local.length === 0) return;
-          // If cloud is empty but local has data, don't wipe it — just keep local.
           if (cloudArr.length === 0) { setter(local); return; }
-          const merged = [...cloudArr, ...localOnly];
+
+          // Stamp every cloud row as synced (cloud is the source of truth
+          // for ids we already have over there).
+          const cloudStamped = cloudArr.map(r =>
+            (r && typeof r === "object" && !r[SYNC_STAMP_FIELD])
+              ? { ...r, [SYNC_STAMP_FIELD]: stampNow }
+              : r
+          );
+          const cloudIds = new Set(cloudStamped.map(r => r?.id).filter(Boolean));
+          const localOnly = local.filter(r => r?.id && !cloudIds.has(r.id));
+
+          // Split: keep soft-deleted rows locally (Trash uses them); the
+          // rest are candidates for retry-insert / duplicate-key cleanup.
+          const keepSoftDeleted = localOnly.filter(r => r && r.isDeleted);
+          const retryCandidates = localOnly.filter(r => r && !r.isDeleted);
+
+          const merged = [...cloudStamped, ...keepSoftDeleted, ...retryCandidates];
           setter(merged);
-          if (localOnly.length > 0) {
-            notify.error(
-              `${localOnly.length} ${module} record(s) never reached the cloud — retrying sync in the background. Do not refresh until this clears.`,
-            );
-            if (retryInsert) {
-              localOnly.forEach(rec => {
-                insertRecord(module === "users" ? "users" : module, rec)
-                  .then(res => {
-                    if (res?.error) {
-                      // eslint-disable-next-line no-console
-                      console.error(`[recovery] ${module}/${rec.id} retry failed:`, res.error);
-                    } else {
-                      // eslint-disable-next-line no-console
-                      console.log(`[recovery] ${module}/${rec.id} re-inserted to cloud`);
-                    }
-                  });
+
+          if (retryCandidates.length === 0 || !retryInsert) return;
+
+          retryTotals[module] = (retryTotals[module] || 0) + retryCandidates.length;
+          retryCandidates.forEach(rec => {
+            insertRecord(module === "users" ? "users" : module, rec)
+              .then(res => {
+                if (!res?.error) {
+                  // Insert landed — record is now in cloud. Stamp local so
+                  // the next reload doesn't classify it as never-synced.
+                  // eslint-disable-next-line no-console
+                  console.log(`[recovery] ${module}/${rec.id} re-inserted to cloud`);
+                  setter(p => p.map(r =>
+                    r.id === rec.id ? { ...r, [SYNC_STAMP_FIELD]: new Date().toISOString() } : r
+                  ));
+                  return;
+                }
+                if (isDuplicateKeyError(res.error)) {
+                  // The id already exists in cloud — typically RLS-hidden
+                  // (different owner / soft-deleted / out of our scope).
+                  // Drop from local cache to converge with the cloud's
+                  // view, and tell the sync diff to keep its hands off.
+                  // eslint-disable-next-line no-console
+                  console.log(`[mergeOnLoad] ${module}/${rec.id} already in cloud — dropping local copy.`);
+                  dropFromSyncRef.current.add(rec.id);
+                  setter(p => p.filter(r => r.id !== rec.id));
+                  return;
+                }
+                // Any other error: keep the row locally, surface to user.
+                // eslint-disable-next-line no-console
+                console.error(`[recovery] ${module}/${rec.id} retry failed:`, res.error);
               });
-            }
-          }
+          });
         };
         mergeOnLoad("accounts",     data.accounts,    accounts,    setAccounts);
         mergeOnLoad("contacts",     data.contacts,    contacts,    setContacts);
@@ -778,6 +935,21 @@ export default function SmartCRM() {
         mergeOnLoad("events",       data.events,      events,      setEvents);
         mergeOnLoad("notes",        data.notes,       notes,       setNotes);
         mergeOnLoad("files",        data.files,       files,       setFiles);
+      }
+      // ── Recovery summary ────────────────────────────────────────
+      // Aggregated user-facing feedback. Tells the user that their local
+      // bulk-uploaded records are being pushed to the cloud now, so they
+      // know not to refresh until it clears (and so they understand why
+      // the count might shrink if some of them turn out to be ghosts the
+      // cloud already has under RLS).
+      const retrySum = Object.values(retryTotals).reduce((a, b) => a + b, 0);
+      if (retrySum > 0) {
+        const breakdown = Object.entries(retryTotals)
+          .map(([m, n]) => `${n} ${m}`)
+          .join(", ");
+        notify.info(
+          `Recovering ${retrySum} local record(s) (${breakdown}) to the cloud — keep this tab open until sync finishes.`,
+        );
       }
       // ── Masters & Catalog (org-wide settings, JSONB blob) ──
       // Stored in app_settings table (see supabase/app_settings_v1.sql).
@@ -838,10 +1010,28 @@ export default function SmartCRM() {
     const makeHandler = (setter) => ({ type, record, oldRecord }) => {
       if (type === "INSERT") {
         if (!record?.id) return;
-        setter(p => p.some(r => r.id === record.id) ? p : [...p, record]);
+        // Stamp the incoming row as cloud-confirmed (realtime → DB origin).
+        // Without this, INSERTs created by another tab/user arrive with no
+        // _syncedAt, and the next mergeOnLoad would misclassify them as
+        // never-synced local rows and fire a redundant retry-insert.
+        const stamped = { ...record, [SYNC_STAMP_FIELD]: new Date().toISOString() };
+        setter(p => {
+          const existing = p.find(r => r.id === record.id);
+          if (existing) {
+            // Already present locally (likely an echo of our own write);
+            // just stamp it as synced so the classifier sees it correctly.
+            return p.map(r => r.id === record.id
+              ? { ...r, [SYNC_STAMP_FIELD]: stamped[SYNC_STAMP_FIELD] }
+              : r);
+          }
+          return [...p, stamped];
+        });
       } else if (type === "UPDATE") {
         if (!record?.id) return;
-        setter(p => p.map(r => r.id === record.id ? { ...r, ...record } : r));
+        const stampedAt = new Date().toISOString();
+        setter(p => p.map(r => r.id === record.id
+          ? { ...r, ...record, [SYNC_STAMP_FIELD]: stampedAt }
+          : r));
       } else if (type === "DELETE") {
         const id = oldRecord?.id;
         if (!id) return;
@@ -851,14 +1041,27 @@ export default function SmartCRM() {
       }
     };
     const unsub = subscribeToAll({
-      accounts: makeHandler(setAccounts),
-      contacts: makeHandler(setContacts),
-      opps: makeHandler(setOpps),
-      activities: makeHandler(setActivities),
-      tickets: makeHandler(setTickets),
-      leads: makeHandler(setLeads),
+      // Core CRM entities
+      accounts:    makeHandler(setAccounts),
+      contacts:    makeHandler(setContacts),
+      opps:        makeHandler(setOpps),
+      activities:  makeHandler(setActivities),
+      tickets:     makeHandler(setTickets),
+      leads:       makeHandler(setLeads),
       callReports: makeHandler(setCallReports),
       collections: makeHandler(setCollections),
+      // Added in add_realtime_coverage_v1.sql — without these, contracts
+      // / quotes / targets / comms / events / notes / files / users
+      // changes from other tabs/users only became visible on manual
+      // reload, breaking horizontal sync across browsers.
+      contracts:   makeHandler(setContracts),
+      targets:     makeHandler(setTargets),
+      quotes:      makeHandler(setQuotes),
+      commLogs:    makeHandler(setCommLogs),
+      events:      makeHandler(setEvents),
+      notes:       makeHandler(setNotes),
+      files:       makeHandler(setFiles),
+      users:       makeHandler(setOrgUsers),
     });
     return unsub;
   }, []);
