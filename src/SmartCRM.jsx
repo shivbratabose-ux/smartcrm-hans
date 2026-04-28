@@ -668,6 +668,10 @@ export default function SmartCRM() {
   // cascades DELETEs to Supabase, wiping the cloud copy too.
   const prevRef = useRef({});
   const syncReady = useRef(false);
+  // ms-epoch of the last local masters/catalog edit. Used by the realtime
+  // subscription to ignore stale echoes that pre-date a user's most recent
+  // local edit (see comment on the subscription effect for the exact race).
+  const lastLocalSettingsEditRef = useRef(0);
   const syncModules = useMemo(() => ({
     accounts, contacts, opps, activities, tickets, leads, callReports,
     contracts, collections, targets, quotes, commLogs, events, notes, files,
@@ -937,9 +941,16 @@ export default function SmartCRM() {
   // the server (would race with another tab's writes).
   // localStorage write above runs unconditionally as a backup so the
   // user's work survives a transient network failure.
+  //
+  // We bump lastLocalSettingsEditRef to NOW the moment a local edit
+  // arrives (BEFORE the debounce window), so the realtime subscription
+  // can ignore stale echoes that pre-date this edit. Without this,
+  // Lotak's "Air Consol" edit would be overwritten by an in-flight
+  // echo from his own previous save (the bug reported in production).
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     if (!syncReady.current) return;
+    lastLocalSettingsEditRef.current = Date.now();
     const t = setTimeout(() => {
       saveSettings({ masters, catalog }).then(({ error }) => {
         if (error) {
@@ -955,14 +966,44 @@ export default function SmartCRM() {
   // local state. The debounced push effect above is gated on
   // syncReady.current, so this incoming write doesn't bounce back as
   // an outgoing write the moment React re-renders.
+  //
+  // Two important guards (added after Lotak's "Air Consol pricing not
+  // updating" report — the realtime echo of his own write was arriving
+  // ~1.5s later and overwriting his pending second edit, then the
+  // debounced save flushed the overwritten state to the cloud, losing
+  // the change forever):
+  //
+  //   1. Skip echoes where updatedBy === currentUser. If WE wrote it,
+  //      our local state already has it (or has something newer that
+  //      will be flushed by the next debounce). Applying the echo
+  //      can only equal-or-clobber what we have.
+  //
+  //   2. Skip echoes whose updatedAt is older than our last local edit
+  //      timestamp. Defends against the race where we make two edits
+  //      back-to-back and the echo of edit #1 arrives between our
+  //      local edit #2 and its debounced flush.
+  //
+  // Together these turn the realtime channel into a strict
+  // "updates from OTHER users only" feed, which is what users expect.
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    const unsubscribe = subscribeToSettings("org", ({ masters: m, catalog: c }) => {
+    const unsubscribe = subscribeToSettings("org", ({ masters: m, catalog: c, updatedBy, updatedAt }) => {
+      // Guard 1 — our own echo
+      if (updatedBy && currentUser && updatedBy === currentUser) {
+        return;
+      }
+      // Guard 2 — stale payload (older than our last local edit)
+      if (updatedAt && lastLocalSettingsEditRef.current) {
+        const incomingMs = Date.parse(updatedAt);
+        if (!Number.isNaN(incomingMs) && incomingMs < lastLocalSettingsEditRef.current) {
+          return;
+        }
+      }
       if (m && Object.keys(m).length > 0) setMasters(prev => ({ ...prev, ...m }));
       if (Array.isArray(c) && c.length > 0) setCatalog(c);
     });
     return unsubscribe;
-  }, []);
+  }, [currentUser]);
 
   const addNote = note => setNotes(p=>[...p,note]);
   const addFile = file => setFiles(p=>[...p,file]);
