@@ -48,6 +48,47 @@ const MODULE_ALIASES = {
   },
 };
 
+// ── DB columns typed as TEXT[] ──
+// Postgres rejects strings for array columns ("malformed array literal:
+// 'a;b;c'", SQLSTATE 22P02 → PostgREST 400). CSV bulk uploads regularly
+// land semicolon/comma-joined strings into these fields (Papa.parse
+// returns the raw cell text); without coercion every retry-insert
+// loops forever with the same 400 and the lead never reaches the cloud
+// — which is exactly the Edge-vs-Chrome 45-leads bug.
+// Coerce string → split-by-comma/semicolon array on the way out so
+// the value matches the column type. List is in *snake_case*
+// (post-toSnake), and intentionally narrow — only columns we know are
+// TEXT[] in supabase/schema.sql. JSONB columns aren't on this list
+// because Postgres JSONB accepts any JSON value (strings included).
+const TEXT_ARRAY_COLUMNS = new Set([
+  // accounts, contracts
+  "products",
+  // contacts
+  "departments", "branches", "countries", "linked_opps",
+  // leads
+  "pain_points", "contact_ids", "converted_opp_ids",
+  "additional_products", "sales_team",
+  // opportunities
+  "secondary_contact_ids", "source_lead_ids", "loss_impact_areas",
+  // quotations
+  "terms",
+  // events
+  "attendees",
+]);
+
+const coerceToTextArray = (v) => {
+  if (Array.isArray(v)) return v;
+  if (v == null) return [];
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    if (trimmed === "") return [];
+    return trimmed.split(/[;,]/).map(s => s.trim()).filter(Boolean);
+  }
+  // numbers / booleans / objects shouldn't land here — wrap as a single-element
+  // array so we don't 400; downstream UI will surface the bad value to the user.
+  return [String(v)];
+};
+
 // ── DB columns typed as DATE/TIMESTAMP ──
 // Postgres rejects empty strings for these types ("invalid input syntax for
 // type date"). The BLANK_* templates initialize every date field as "", so
@@ -168,6 +209,29 @@ const toSnake = (obj, module) => {
     sourceLeadId:"source_lead_id", preparedBy:"prepared_by",
     salesEngineer:"sales_engineer", coverLetter:"cover_letter",
     placeOfSupply:"place_of_supply",
+    // ── Account / Contact / Ticket / Event drift ──
+    // (columns added by add_missing_account_contact_ticket_fields_v1.sql)
+    // Account billing block
+    billingAddress:"billing_address", billingCity:"billing_city",
+    billingState:"billing_state", billingPincode:"billing_pincode",
+    billingCountry:"billing_country",
+    // Account primary-contact snapshot
+    primaryContact:"primary_contact", primaryEmail:"primary_email",
+    primaryPhone:"primary_phone",
+    // Account org structure / commercial defaults
+    entityType:"entity_type", groupCode:"group_code",
+    tdsApplicable:"tds_applicable",
+    // Contact qualification
+    addressId:"address_id", decisionLevel:"decision_level",
+    preferredContactMode:"preferred_contact_mode",
+    doNotContact:"do_not_contact",
+    // Ticket triage / classification
+    ticketNo:"ticket_no", subCategory:"sub_category",
+    reportedBy:"reported_by", reportedDate:"reported_date",
+    resolvedDate:"resolved_date", affectedModule:"affected_module",
+    internalNotes:"internal_notes", revisitDate:"revisit_date",
+    // Event scheduling
+    reminderMin:"reminder_min",
     // soft delete
     isDeleted:"is_deleted", deletedAt:"deleted_at", deletedBy:"deleted_by",
   };
@@ -179,9 +243,21 @@ const toSnake = (obj, module) => {
     // "Could not find the 'X' column" errors on upsert.
     if (k.startsWith("_")) continue;
     const key = alias[k] || map[k] || k;
+    let value = v;
     // Coerce empty strings → null for date/timestamp columns so Postgres
     // doesn't reject "invalid input syntax for type date".
-    out[key] = (v === "" && DATE_COLUMNS.has(key)) ? null : v;
+    if (value === "" && DATE_COLUMNS.has(key)) value = null;
+    // Coerce CSV-imported strings → arrays for TEXT[] columns. Postgres
+    // returns SQLSTATE 22P02 ("malformed array literal") for any non-array
+    // value sent to a TEXT[] column, surfacing as PostgREST 400. Bulk
+    // uploads landed semicolon/comma-joined strings into pain_points /
+    // contact_ids / etc, which made every retry-insert loop forever with
+    // the same 400 — these leads never reached the cloud, so a second
+    // browser logging in saw a smaller list ("Edge has 60, Chrome 14").
+    else if (typeof value === "string" && TEXT_ARRAY_COLUMNS.has(key)) {
+      value = coerceToTextArray(value);
+    }
+    out[key] = value;
   }
   return out;
 };
@@ -281,6 +357,29 @@ const toCamel = (obj, module) => {
     source_lead_id:"sourceLeadId", prepared_by:"preparedBy",
     sales_engineer:"salesEngineer", cover_letter:"coverLetter",
     place_of_supply:"placeOfSupply",
+    // ── Account / Contact / Ticket / Event drift ──
+    // (columns added by add_missing_account_contact_ticket_fields_v1.sql)
+    // Account billing block
+    billing_address:"billingAddress", billing_city:"billingCity",
+    billing_state:"billingState", billing_pincode:"billingPincode",
+    billing_country:"billingCountry",
+    // Account primary-contact snapshot
+    primary_contact:"primaryContact", primary_email:"primaryEmail",
+    primary_phone:"primaryPhone",
+    // Account org / commercial defaults
+    entity_type:"entityType", group_code:"groupCode",
+    tds_applicable:"tdsApplicable",
+    // Contact qualification
+    address_id:"addressId", decision_level:"decisionLevel",
+    preferred_contact_mode:"preferredContactMode",
+    do_not_contact:"doNotContact",
+    // Ticket triage / classification
+    ticket_no:"ticketNo", sub_category:"subCategory",
+    reported_by:"reportedBy", reported_date:"reportedDate",
+    resolved_date:"resolvedDate", affected_module:"affectedModule",
+    internal_notes:"internalNotes", revisit_date:"revisitDate",
+    // Event scheduling
+    reminder_min:"reminderMin",
     // soft delete
     is_deleted:"isDeleted", deleted_at:"deletedAt", deleted_by:"deletedBy",
   };
