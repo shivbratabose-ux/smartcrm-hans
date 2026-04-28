@@ -89,6 +89,50 @@ const coerceToTextArray = (v) => {
   return [String(v)];
 };
 
+// ── DB columns typed as INTEGER / NUMERIC ──
+// Postgres rejects empty strings for numeric types ("invalid input syntax
+// for type numeric: ''", SQLSTATE 22P02 → PostgREST 400). CSV bulk uploads
+// regularly leave numeric cells empty; Papa.parse returns "" for those, and
+// the spread `{...BLANK_LEAD, ...r}` lets the empty-string CSV value
+// overwrite BLANK_LEAD's numeric default. Every retry-insert then loops
+// forever with the same 400 — this is the second tier of stuck-leads bug
+// after the TEXT[] fix (first tier was 22P02 on TEXT[] columns; this one
+// is 22P02 on NUMERIC columns, same SQLSTATE different cause).
+// Coerce non-numbers (especially "" and null) → 0 so the column gets a
+// sensible default value matching the schema's `DEFAULT 0` intent.
+const NUMERIC_COLUMNS = new Set([
+  // accounts
+  "arr_revenue", "potential", "credit_days",
+  // leads
+  "score", "no_of_users", "branches", "sw_satisfaction",
+  "estimated_value", "annual_revenue",
+  // opportunities
+  "value", "probability",
+  // tickets (csat added in add_missing_account_contact_ticket_fields_v1.sql)
+  "csat",
+  // contracts
+  "gri_percentage", "no_of_branches", "warranty_months",
+  // collections
+  "billed_amount", "collected_amount", "pending_amount",
+  "gst_amount", "tds_amount", "net_payable",
+  // targets
+  "target_value", "achieved_value",
+  "target_deals", "achieved_deals",
+  "target_calls", "achieved_calls",
+  // quotations
+  "subtotal", "tax_rate", "tax_amount", "total", "discount",
+  "version", "exchange_rate",
+  // events
+  "reminder_min",
+]);
+
+const coerceToNumber = (v) => {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (v === "" || v == null) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
 // ── DB columns typed as DATE/TIMESTAMP ──
 // Postgres rejects empty strings for these types ("invalid input syntax for
 // type date"). The BLANK_* templates initialize every date field as "", so
@@ -256,6 +300,15 @@ const toSnake = (obj, module) => {
     // browser logging in saw a smaller list ("Edge has 60, Chrome 14").
     else if (typeof value === "string" && TEXT_ARRAY_COLUMNS.has(key)) {
       value = coerceToTextArray(value);
+    }
+    // Coerce empty strings / non-numbers → 0 for NUMERIC columns. Postgres
+    // returns the same SQLSTATE 22P02 ("invalid input syntax for type
+    // numeric: ''") for empty strings in numeric columns. Bulk uploads
+    // regularly leave score / no_of_users / estimated_value / etc empty,
+    // and the spread {...BLANK_LEAD, ...csvRow} overwrites BLANK_LEAD's
+    // numeric defaults with the CSV's "" string.
+    else if (NUMERIC_COLUMNS.has(key) && typeof value !== "number") {
+      value = coerceToNumber(value);
     }
     out[key] = value;
   }
