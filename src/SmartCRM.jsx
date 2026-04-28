@@ -1314,6 +1314,48 @@ export default function SmartCRM() {
           );
           return match?.id || raw;
         };
+        // ── Build structured addresses[] from CSV's flat address columns ──
+        // PR #106 requires every Contact to have an addressId resolved
+        // from its Account's addresses[] book. The Customers CSV has flat
+        // columns (address, city, state, pincode, country) but the
+        // imported account record landed with addresses:[] empty — which
+        // then blocked every contact subsequently linked to that account.
+        // This builds a primary address entry from the head-office columns
+        // (and an optional billing address if the billing* columns differ),
+        // so the auto-heal effect can link contacts cleanly.
+        const buildAddresses = (r) => {
+          const addrs = [];
+          const headHasAny = r.address || r.city || r.state || r.pincode;
+          if (headHasAny) {
+            addrs.push({
+              id: `addr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              label: "Head Office",
+              address: r.address || "",
+              city: r.city || "",
+              state: r.state || "",
+              pincode: r.pincode || "",
+              country: r.country || "",
+              isPrimary: true,
+              isBilling: !r.billingAddress && !r.billingCity, // mark head as billing only if no separate billing block
+            });
+          }
+          const billHasAny = r.billingAddress || r.billingCity || r.billingState || r.billingPincode;
+          if (billHasAny) {
+            addrs.push({
+              id: `addr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}b`,
+              label: "Billing",
+              address: r.billingAddress || "",
+              city: r.billingCity || "",
+              state: r.billingState || "",
+              pincode: r.billingPincode || "",
+              country: r.billingCountry || r.country || "",
+              isPrimary: false,
+              isBilling: true,
+            });
+          }
+          return addrs;
+        };
+
         const enrichRow = (r) => ({
           ...strip(r),
           products: resolveProducts(r.products),
@@ -1329,16 +1371,36 @@ export default function SmartCRM() {
         let insertIdx = 0;
         const enrichedInserts = inserts.map(r => {
           insertIdx++;
+          const addresses = buildAddresses(r);
           return {
             ...BLANK_ACC,
             ...enrichRow(r),
             id: r.id || `a_${uid()}`,
             accountNo: r.accountNo || `ACC-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
             status: r.status || "Prospect",
+            // Always set addresses[] from the CSV on insert. Empty array
+            // is fine if the CSV had no address columns — the user will
+            // see a directional prompt when they later add a contact.
+            addresses,
           };
         });
+        // For UPDATES, build addresses ONLY if the existing account has
+        // none AND the CSV row supplies address columns. This protects
+        // any addresses the user has manually added since the original
+        // import — re-uploading the CSV won't wipe them. It only
+        // back-fills when the existing addresses[] is empty.
+        const enrichUpdate = (r) => {
+          const existing = accounts.find(a => a.id === r.id);
+          const existingAddrs = Array.isArray(existing?.addresses) ? existing.addresses : [];
+          const enriched = enrichRow(r);
+          if (existingAddrs.length === 0) {
+            const built = buildAddresses(r);
+            if (built.length > 0) enriched.addresses = built;
+          }
+          return enriched;
+        };
         setAccounts(p => {
-          const withUpdates = applyUpdates(p, updates.map(enrichRow));
+          const withUpdates = applyUpdates(p, updates.map(enrichUpdate));
           return [...withUpdates, ...enrichedInserts];
         });
       } break;
