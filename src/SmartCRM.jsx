@@ -1567,6 +1567,25 @@ export default function SmartCRM() {
           potential:  Number(r.potential)  || 0,
         });
 
+        // ── Auto-create primary Contact from primaryContact/primaryEmail/primaryPhone ──
+        // The CSV already accepts these as Account-level denormalised fields,
+        // but until now the user had to bulk-upload Contacts.csv separately
+        // to get a *real* Contact row linked to the new account. For the most
+        // common case ("one decision-maker per account at import time") we
+        // materialise the Contact here, link it to the account's primary
+        // address (PR #102 mandate), and dedupe by email so re-uploading
+        // the same CSV doesn't double-create.
+        const newContactsFromCustomers = [];
+        const conMaxSeq = contacts.reduce((max, c) => {
+          const m = c.contactId?.match(/CON-(\d+)/);
+          return m ? Math.max(max, parseInt(m[1])) : max;
+        }, 0);
+        let conSeq = conMaxSeq;
+        // Lower-case email lookup against existing contacts so we don't
+        // duplicate. Re-checked across rows of the same upload too.
+        const contactEmailIndex = new Set();
+        contacts.forEach(c => { if (c.email) contactEmailIndex.add(c.email.toLowerCase().trim()); });
+
         const maxSeq = accounts.reduce((max, a) => {
           const m = a.accountNo?.match(/ACC-\d+-(\d+)/);
           return m ? Math.max(max, parseInt(m[1])) : max;
@@ -1575,10 +1594,47 @@ export default function SmartCRM() {
         const enrichedInserts = inserts.map(r => {
           insertIdx++;
           const addresses = buildAddresses(r);
+          const acctId = r.id || `a_${uid()}`;
+
+          const cName  = (r.primaryContact || "").trim();
+          const cEmail = (r.primaryEmail   || "").trim().toLowerCase();
+          const cPhone = (r.primaryPhone   || "").trim();
+          if (cName && cEmail && !contactEmailIndex.has(cEmail)) {
+            conSeq++;
+            const primaryAddr = addresses.find(a => a.isPrimary) || addresses[0];
+            newContactsFromCustomers.push({
+              id: `c_${uid()}`,
+              contactId: `CON-${String(conSeq).padStart(3, "0")}`,
+              accountId: acctId,
+              addressId: primaryAddr?.id || "",
+              name: cName,
+              email: cEmail,
+              phone: cPhone,
+              primary: true,
+              role: "Decision Maker/HOD",
+              designation: "",
+              department: "",
+              departments: [],
+              products: resolveProducts(r.products),
+              branches: [],
+              countries: r.country ? [r.country] : [],
+              linkedOpps: [],
+              city: r.city || "",
+              state: r.state || "",
+              country: r.country || "",
+              pincode: r.pincode || "",
+              source: "Bulk Upload",
+              influence: "Medium",
+              preferredContactMode: "Email",
+              doNotContact: "No",
+            });
+            contactEmailIndex.add(cEmail);
+          }
+
           return {
             ...BLANK_ACC,
             ...enrichRow(r),
-            id: r.id || `a_${uid()}`,
+            id: acctId,
             accountNo: r.accountNo || `ACC-${year}-${String(maxSeq + insertIdx).padStart(3, '0')}`,
             status: r.status || "Prospect",
             // Always set addresses[] from the CSV on insert. Empty array
@@ -1602,6 +1658,16 @@ export default function SmartCRM() {
           }
           return enriched;
         };
+        // Persist the auto-created Contacts before the Accounts so the
+        // sync useEffect inserts contacts first — accounts.account_id FK
+        // is on contacts (contact.account_id REFERENCES accounts.id), so
+        // ordering doesn't matter for the FK direction, but keeping local
+        // state coherent (contacts visible alongside their parent account
+        // on first render) is nicer UX. Both setters are independent —
+        // failures on one don't block the other.
+        if (newContactsFromCustomers.length) {
+          setContacts(p => [...p, ...newContactsFromCustomers]);
+        }
         setAccounts(p => {
           const withUpdates = applyUpdates(p, updates.map(enrichUpdate));
           return [...withUpdates, ...enrichedInserts];
