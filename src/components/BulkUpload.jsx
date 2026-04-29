@@ -190,12 +190,17 @@ const SCHEMAS = {
       "paymentTerms","creditDays","currency","billingFrequency",
       "entityType","groupCode","territory",
     ],
-    // Headers match Accounts export exactly — export CSV → edit in Excel → re-upload to UPDATE
+    // Headers match Accounts export exactly — export CSV → edit in Excel → re-upload to UPDATE.
+    // primaryContact / primaryEmail / primaryPhone are optional. When all three
+    // are filled, a Contact row is auto-created on insert, linked to the
+    // account's Head Office address (PR #102 mandate). Skips silently if
+    // the email already exists in your contacts table — re-link via the
+    // Contacts CSV if needed.
     sample: [
-      "accountNo,name,type,country,city,state,pincode,address,legalName,pan,gstin,taxTreatment,website,segment,status,entityType,groupCode,paymentTerms,currency,billingFrequency,products,productSelection,arrRevenue,potential,owner",
-      "ACC-2026-001,Acme Airlines,Airline,India,Mumbai,Maharashtra,400069,Andheri East Mumbai 400069,Acme Airlines Pvt Ltd,AAAAA1234A,27AAAAA1234A1Z5,Domestic,acme.com,Enterprise,Active,Head Office,GRP-ACM,Net 30,INR,Annual,iCAFFE;WiseCargo,iCAFFE[eSanchit Filing|OCR Engine]; WiseCargo[AWB Management|DG Handling],10,50,",
-      "ACC-2026-002,Delta Freight,Freight Forwarder,UAE,Dubai,,,,,,,Export,betafreight.ae,Mid-Market,Active,Head Office,,Net 45,AED,Quarterly,WiseTrax,WiseTrax[None],5,20,",
-      ",Beta Logistics,Customs Broker,India,Delhi,Delhi,110001,,Beta Logistics Pvt Ltd,BBBBB5678B,,Domestic,beta.in,SMB,Prospect,Head Office,,Net 30,INR,Annual,iCAFFE,iCAFFE[eSanchit Filing],0,15,",
+      "accountNo,name,type,country,city,state,pincode,address,legalName,pan,gstin,taxTreatment,website,segment,status,entityType,groupCode,paymentTerms,currency,billingFrequency,products,productSelection,arrRevenue,potential,owner,primaryContact,primaryEmail,primaryPhone",
+      "ACC-2026-001,Acme Airlines,Airline,India,Mumbai,Maharashtra,400069,Andheri East Mumbai 400069,Acme Airlines Pvt Ltd,AAAAA1234A,27AAAAA1234A1Z5,Domestic,acme.com,Enterprise,Active,Head Office,GRP-ACM,Net 30,INR,Annual,iCAFFE;WiseCargo,iCAFFE[eSanchit Filing|OCR Engine]; WiseCargo[AWB Management|DG Handling],10,50,,Jane Smith,jane.smith@acme.com,+91-98765-43210",
+      "ACC-2026-002,Delta Freight,Freight Forwarder,UAE,Dubai,,,,,,,Export,betafreight.ae,Mid-Market,Active,Head Office,,Net 45,AED,Quarterly,WiseTrax,WiseTrax[None],5,20,,Mark Lee,mark.lee@deltafreight.ae,+971-50-1234567",
+      ",Beta Logistics,Customs Broker,India,Delhi,Delhi,110001,,Beta Logistics Pvt Ltd,BBBBB5678B,,Domestic,beta.in,SMB,Prospect,Head Office,,Net 30,INR,Annual,iCAFFE,iCAFFE[eSanchit Filing],0,15,,,,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
@@ -808,6 +813,15 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
         {existing.length > 0 && (
           <div style={{ fontSize: 11, marginTop: 6, color: "var(--text3)" }}>
             {existing.length} existing {type.toLowerCase()} records loaded — ref IDs matched against these.
+          </div>
+        )}
+
+        {type === "Customers" && (
+          <div style={{ fontSize: 11, marginTop: 8, padding: "8px 12px", borderRadius: 6, background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0" }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Auto-create primary Contact (optional):</div>
+            <div style={{ fontSize: 11, opacity: 0.95 }}>
+              Fill <code>primaryContact</code> + <code>primaryEmail</code> + <code>primaryPhone</code> on a row and a Contact record will be created on insert, linked to the new account's <strong>Head Office address</strong> (so it satisfies the every-contact-needs-an-address rule). Marked <code>primary: true</code>, role <em>Decision Maker/HOD</em>. Skipped silently if the email is already in your contacts table — re-link via the Contacts CSV if you need to change which account owns that contact.
+            </div>
           </div>
         )}
 
