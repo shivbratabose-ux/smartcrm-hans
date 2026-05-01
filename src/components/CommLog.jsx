@@ -3,9 +3,11 @@ import { Plus, Search, Edit2, Trash2, Check, Download, Mail, MessageSquare, Send
 import { TEAM, TEAM_MAP, COMM_TYPES, COMM_STATUSES } from '../data/constants';
 import { BLANK_COMM_LOG } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
+import { Library } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect, SendEmailModal } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
+import ResourceLibrary from './ResourceLibrary';
 
 const TYPE_ICON={"Email Sent":<ArrowUpRight size={13}/>,"Email Received":<ArrowDownLeft size={13}/>,"WhatsApp Sent":<Send size={13}/>,"WhatsApp Received":<ArrowDownLeft size={13}/>,"SMS Sent":<Send size={13}/>,"SMS Received":<ArrowDownLeft size={13}/>,"Letter Sent":<Mail size={13}/>};
 const TYPE_COL={"Email Sent":"var(--blue)","Email Received":"var(--green)","WhatsApp Sent":"#25D366","WhatsApp Received":"#128C7E","SMS Sent":"var(--amber)","SMS Received":"var(--orange)","Letter Sent":"var(--purple)"};
@@ -16,7 +18,10 @@ const CSV_COLS = [
   {label:"Account",accessor:c=>c._accName||""},{label:"Owner",accessor:c=>TEAM_MAP[c.owner]?.name||""},
 ];
 
-function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDelete,orgUsers}) {
+function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDelete,orgUsers,catalog=[]}) {
+  // Tab state — Activity Log (the original CommLog table) vs the new
+  // Resource Library (sales collateral organised per product).
+  const [tab,setTab]=useState("log");
   const [search,setSearch]=useState("");
   const [typeF,setTypeF]=useState("All");
   const [modal,setModal]=useState(null);
@@ -64,15 +69,44 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
           <div className="pg-sub">{commLogs.length} total · {emailCount} emails · {waCount} WhatsApp</div>
         </div>
         <div className="pg-actions">
-          <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"communications")}><Download size={14}/>Export</button>
-          {/* Send Email opens the new transactional sender (Resend-backed).
-              Log Email / Log WhatsApp remain for after-the-fact records. */}
-          <button className="btn btn-primary" onClick={()=>setSendModal({})}><Send size={14}/>Send Email</button>
-          <button className="btn btn-blue" onClick={()=>openAdd("Email Sent")}><Mail size={14}/>Log Email</button>
-          <button className="btn btn-green" onClick={()=>openAdd("WhatsApp Sent")}><MessageSquare size={14}/>Log WhatsApp</button>
+          {tab==="log" && <>
+            <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"communications")}><Download size={14}/>Export</button>
+            {/* Send Email opens the new transactional sender (Resend-backed).
+                Log Email / Log WhatsApp remain for after-the-fact records. */}
+            <button className="btn btn-primary" onClick={()=>setSendModal({})}><Send size={14}/>Send Email</button>
+            <button className="btn btn-blue" onClick={()=>openAdd("Email Sent")}><Mail size={14}/>Log Email</button>
+            <button className="btn btn-green" onClick={()=>openAdd("WhatsApp Sent")}><MessageSquare size={14}/>Log WhatsApp</button>
+          </>}
         </div>
       </div>
 
+      {/* Tab toggle: Activity Log (legacy table) vs Resource Library */}
+      <div style={{display:"flex",gap:0,marginBottom:14,borderBottom:"1px solid var(--border)"}}>
+        {[
+          { id: "log",     label: "Activity Log", icon: Mail },
+          { id: "library", label: "Resource Library", icon: Library },
+        ].map(t => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{
+                display:"inline-flex",alignItems:"center",gap:6,
+                padding:"10px 16px",fontSize:13,fontWeight:600,
+                background:"transparent",border:"none",
+                color: active ? "var(--brand)" : "var(--text3)",
+                borderBottom: active ? "2px solid var(--brand)" : "2px solid transparent",
+                marginBottom:-1,cursor:"pointer",
+              }}>
+              <Icon size={14}/>{t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === "library" ? (
+        <ResourceLibrary catalog={catalog} orgUsers={orgUsers} currentUser={currentUser}/>
+      ) : <>
       <div className="filter-bar">
         <select className="filter-select" value={typeF} onChange={e=>setTypeF(e.target.value)}>
           <option value="All">All Types</option>
@@ -162,6 +196,7 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
           prefill={sendModal}
         />
       )}
+      </>}
     </div>
   );
 }
