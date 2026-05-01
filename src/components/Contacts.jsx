@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star, Building2, ArrowUpDown, ArrowUp, ArrowDown, Globe, Briefcase, Calendar, TrendingUp, FileText, Activity, X } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today, resolveAddress, formatAddress, lower, title } from "../utils/helpers";
 import { PRODUCTS, PROD_MAP, COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
-import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, FormError, Empty, TypeaheadSelect } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, FormError, Empty, TypeaheadSelect, LogCallModal } from "./shared";
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -181,14 +181,41 @@ function ContactDetail({ c, onClose, onEdit, accounts, opps=[], activities=[] })
 /* ── ContactsDataGrid ─────────────────────────────────────────────
    Column registry covers every BLANK_CON field. Defaults match the
    pre-DataGrid header set; everything else is opt-in via the picker. */
-function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, setConfirm, canDelete, currentUser }) {
+function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, openCallLog, setConfirm, canDelete, currentUser }) {
   const txt = (v) => <span style={{fontSize:12}}>{v || "-"}</span>;
+
+  // Click-vs-doubleclick on the contact name. React fires onClick TWICE
+  // during a native double-click; we need the single-click to wait briefly
+  // so a second click within ~250ms can cancel it and route to "log call"
+  // instead of bouncing the user into the detail panel first.
+  const clickTimer = useRef(null);
+  const handleNameClick = (c) => {
+    if (clickTimer.current) {
+      clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+      return; // double-click in progress; let onDoubleClick handle it
+    }
+    clickTimer.current = setTimeout(() => {
+      setDetail(c);
+      clickTimer.current = null;
+    }, 250);
+  };
+  const handleNameDoubleClick = (c) => {
+    if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; }
+    if (openCallLog) openCallLog(c);
+  };
+
   const COLS = useMemo(() => ([
     { key: "name", label: "Contact", defaultWidth: 240, render: c => (
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <div className="u-av" style={{width:30,height:30,borderRadius:8,fontSize:10}}>{c.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
         <div>
-          <span style={{fontWeight:600,fontSize:13,color:"var(--brand)",cursor:"pointer"}} onClick={() => setDetail(c)}>{c.name}</span>
+          <span
+            style={{fontWeight:600,fontSize:13,color:"var(--brand)",cursor:"pointer"}}
+            onClick={() => handleNameClick(c)}
+            onDoubleClick={() => handleNameDoubleClick(c)}
+            title="Click to view, double-click to log a call"
+          >{c.name}</span>
           {c.primary && <Star size={10} style={{color:"#F59E0B",marginLeft:4,verticalAlign:"middle"}}/>}
           <div style={{fontSize:10,color:"var(--text3)"}}>{c.contactId}{(c.products||[]).length > 0 && ` · ${(c.products||[]).length} products`}</div>
         </div>
@@ -311,7 +338,7 @@ function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, 
   );
 }
 
-function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], leads=[], contracts=[], activities=[], canDelete, currentUser}) {
+function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], leads=[], contracts=[], activities=[], setActivities, callReports=[], setCallReports, orgUsers, masters, canDelete, currentUser}) {
   const [search, setSearch] = useState("");
   const [accF, setAccF] = useState("All");
   const [deptF, setDeptF] = useState("All");
@@ -323,6 +350,95 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
   const [detail, setDetail] = useState(null);
   const [sortCol, setSortCol] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
+  // Prefill object when the Log Call modal is open. Set by openCallLog
+  // (triggered from a double-click on a contact name) and cleared when
+  // the modal closes or saves.
+  const [callLogModal, setCallLogModal] = useState(null);
+
+  // Open the shared LogCallModal with the contact + its account pre-selected.
+  // We don't try to auto-pick a linked Lead or Opportunity here — the modal
+  // exposes those dropdowns and the user can pick the right one for context.
+  const openCallLog = (c) => {
+    setCallLogModal({
+      accountId: c.accountId || "",
+      contactIds: [c.id],
+      participantIds: currentUser ? [currentUser] : [],
+    });
+  };
+
+  // Save handler — mirrors Leads/Pipeline shape so the same call_reports
+  // table picks up records logged from any module. Also creates a matching
+  // activity row (and an optional follow-up) so the contact's timeline
+  // reflects the call.
+  const handleSaveCall = (callForm) => {
+    if (!setCallReports) return;
+    const contactId = callForm.contactIds?.[0] || callLogModal?.contactIds?.[0] || "";
+    const c = contacts.find(x => x.id === contactId);
+    const acc = accounts.find(a => a.id === callForm.accountId);
+    const callReport = {
+      id: `cr-${uid()}`,
+      company: acc?.name || c?.company || "",
+      marketingPerson: currentUser,
+      callType: callForm.callType,
+      callDate: callForm.callDate,
+      notes: callForm.notes,
+      nextCallDate: callForm.nextCallDate,
+      objective: callForm.objective,
+      outcome: callForm.outcome,
+      duration: callForm.duration,
+      accountId: callForm.accountId,
+      contactId,
+      oppId: callForm.oppId,
+      contactIds: callForm.contactIds,
+      participantIds: callForm.participantIds,
+      callTime: callForm.callTime,
+      leadId: callForm.leadId || "",
+      nextStepDesc: callForm.nextStepDesc,
+      createdBy: currentUser || "",
+    };
+    setCallReports(p => [...p, callReport]);
+
+    if (setActivities) {
+      const actRecord = {
+        id: `act-${uid()}`,
+        accountId: callForm.accountId || "",
+        contactId,
+        leadId: callForm.leadId || "",
+        oppId: callForm.oppId || "",
+        title: `Call: ${c?.name || ""} — ${callForm.objective || ""}`.trim(),
+        type: "Call",
+        date: callForm.callDate,
+        notes: callForm.notes,
+        createdDate: today,
+        createdBy: currentUser || "",
+        owner: currentUser,
+      };
+      setActivities(p => [...p, actRecord]);
+
+      if (callForm.createFollowup && callForm.nextCallDate) {
+        const followup = {
+          id: `act-${uid()}`,
+          title: callForm.followupTitle || `Follow-up: ${c?.name || acc?.name || ""}`.trim(),
+          type: "Call",
+          status: "Planned",
+          date: callForm.followupDue || callForm.nextCallDate,
+          accountId: callForm.accountId,
+          contactId,
+          leadId: callForm.leadId || "",
+          oppId: callForm.oppId || "",
+          owner: callForm.followupAssign || currentUser,
+          notes: `Follow-up from call on ${callForm.callDate}`,
+          createdDate: today,
+          createdBy: currentUser || "",
+        };
+        setActivities(p => [...p, followup]);
+      }
+    }
+
+    // Stamp lastContactDate on the contact so the column reflects it.
+    setContacts(p => p.map(x => x.id === contactId ? { ...x, lastContactDate: callForm.callDate || today } : x));
+    setCallLogModal(null);
+  };
 
   const toggleSort = (col) => {
     if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -574,6 +690,7 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
                 SortIcon={SortIcon}
                 setDetail={setDetail}
                 openEdit={openEdit}
+                openCallLog={openCallLog}
                 setConfirm={setConfirm}
                 canDelete={canDelete}
                 currentUser={currentUser}
@@ -779,6 +896,18 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
         </Modal>
       )}
       {confirm && <DeleteConfirm title="Delete Contact" recordLabel={contacts.find(c => c.id === confirm)?.name || "this contact"} onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>}
+      {callLogModal && (
+        <LogCallModal
+          onClose={() => setCallLogModal(null)}
+          onSave={handleSaveCall}
+          accounts={accounts}
+          contacts={contacts}
+          opps={opps}
+          orgUsers={orgUsers}
+          masters={masters}
+          prefill={callLogModal}
+        />
+      )}
     </div>
   );
 }
