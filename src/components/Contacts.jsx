@@ -205,14 +205,47 @@ function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, 
         {(c.departments||[]).length > 3 && <span style={{fontSize:10,color:"var(--text3)"}}>+{(c.departments||[]).length - 3}</span>}
       </div>
     )},
-    { key: "accountId", label: "Account", defaultWidth: 200, render: c => {
+    { key: "accountId", label: "Account", defaultWidth: 220, render: c => {
       const acc = accounts.find(a => a.id === c.accountId);
-      return acc ? (
-        <>
-          <span style={{fontSize:12,color:"var(--brand)",fontWeight:500}}>{acc.name}</span>
-          {acc.accountNo && <div style={{fontSize:10,color:"var(--text3)",fontFamily:"'Courier New',monospace"}}>{acc.accountNo}</div>}
-        </>
-      ) : txt();
+      if (acc) {
+        return (
+          <>
+            <span style={{fontSize:12,color:"var(--brand)",fontWeight:500}}>{acc.name}</span>
+            {acc.accountNo && <div style={{fontSize:10,color:"var(--text3)",fontFamily:"'Courier New',monospace"}}>{acc.accountNo}</div>}
+          </>
+        );
+      }
+      // Fallback: contacts pre-dating the account-link feature, or rows imported
+      // without an accountId, often have a sibling Lead carrying the company name.
+      // Surface that so the column isn't blank for the majority of legacy rows.
+      if (c._company) {
+        return (
+          <>
+            <span style={{fontSize:12,color:"var(--text2)",fontWeight:500}}>{c._company}</span>
+            <div style={{fontSize:10,color:"var(--text3)"}}>via {c._companySource}</div>
+          </>
+        );
+      }
+      return <span style={{fontSize:11,color:"var(--text3)",fontStyle:"italic"}}>(unlinked)</span>;
+    }},
+    { key: "_stage", label: "Stage", defaultWidth: 130, render: c => {
+      // Pipeline stage rolled up from linked records: Customer (active
+      // contract or won deal) > Opportunity (open deal) > Lead (active
+      // lead) > Contact (no pipeline activity yet).
+      const s = c._stage || "Contact";
+      const styles = {
+        Customer:    { bg: "#22C55E18", color: "#16A34A", dot: "#22C55E" },
+        Opportunity: { bg: "#3B82F618", color: "#2563EB", dot: "#3B82F6" },
+        Lead:        { bg: "#F59E0B18", color: "#B45309", dot: "#F59E0B" },
+        Contact:     { bg: "var(--s2)",  color: "var(--text3)", dot: "var(--text3)" },
+      };
+      const st = styles[s];
+      return (
+        <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,background:st.bg,color:st.color}}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:st.dot,flexShrink:0}}/>
+          {s}
+        </span>
+      );
     }},
     { key: "primary", label: "Primary", defaultWidth: 80, render: c => c.primary
       ? <Star size={12} style={{color:"#F59E0B"}}/> : <span style={{fontSize:11,color:"var(--text3)"}}>-</span>
@@ -252,7 +285,7 @@ function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, 
   ]), [accounts, setDetail]);
 
   const DEFAULT_CONFIG = useMemo(() => {
-    const visibleSet = new Set(["name","designation","departments","accountId","email","phone"]);
+    const visibleSet = new Set(["name","_stage","designation","accountId","email","phone"]);
     return COLS.map(c => ({ key: c.key, visible: visibleSet.has(c.key), width: c.defaultWidth }));
   }, [COLS]);
 
@@ -278,10 +311,11 @@ function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, 
   );
 }
 
-function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], activities=[], canDelete, currentUser}) {
+function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], leads=[], contracts=[], activities=[], canDelete, currentUser}) {
   const [search, setSearch] = useState("");
   const [accF, setAccF] = useState("All");
   const [deptF, setDeptF] = useState("All");
+  const [stageF, setStageF] = useState("All");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_CON);
   const [confirm, setConfirm] = useState(null);
@@ -299,15 +333,97 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
     return sortDir === "asc" ? <ArrowUp size={11} style={{marginLeft:2}}/> : <ArrowDown size={11} style={{marginLeft:2}}/>;
   };
 
-  const filtered = useMemo(() => [...contacts].filter(c => {
+  // ── Pre-compute per-contact rollup fields ────────────────────────
+  // Two derived columns the UI shows but neither is on the contact row:
+  //   _company / _companySource — fallback when c.accountId doesn't
+  //     resolve to an account (legacy contacts pre-dating the auto-link
+  //     bulk-upload path). We pull from the linked Lead's `company`.
+  //   _stage — Customer / Opportunity / Lead / Contact, derived from
+  //     contracts → opps → leads → bare contact, in that priority.
+  // Indexed with Map lookups so this stays O(N) instead of O(N²).
+  const enriched = useMemo(() => {
+    const accById = new Map(accounts.map(a => [a.id, a]));
+    // Lead lookup: by direct contactIds membership AND by email (loose
+    // match for contacts auto-created from CSV row primaryEmail).
+    const leadsByContactId = new Map();
+    const leadsByEmail = new Map();
+    const leadsByAccountId = new Map();
+    for (const l of leads) {
+      (l.contactIds || []).forEach(cid => {
+        if (!leadsByContactId.has(cid)) leadsByContactId.set(cid, []);
+        leadsByContactId.get(cid).push(l);
+      });
+      if (l.email) {
+        const k = l.email.toLowerCase();
+        if (!leadsByEmail.has(k)) leadsByEmail.set(k, []);
+        leadsByEmail.get(k).push(l);
+      }
+      if (l.accountId) {
+        if (!leadsByAccountId.has(l.accountId)) leadsByAccountId.set(l.accountId, []);
+        leadsByAccountId.get(l.accountId).push(l);
+      }
+    }
+    const oppsByContactId = new Map();
+    const oppsByAccountId = new Map();
+    for (const o of opps) {
+      const cids = [o.primaryContactId, ...(o.secondaryContactIds || [])].filter(Boolean);
+      cids.forEach(cid => {
+        if (!oppsByContactId.has(cid)) oppsByContactId.set(cid, []);
+        oppsByContactId.get(cid).push(o);
+      });
+      if (o.accountId) {
+        if (!oppsByAccountId.has(o.accountId)) oppsByAccountId.set(o.accountId, []);
+        oppsByAccountId.get(o.accountId).push(o);
+      }
+    }
+    const contractsByAccountId = new Map();
+    for (const k of contracts) {
+      if (!k.accountId) continue;
+      if (!contractsByAccountId.has(k.accountId)) contractsByAccountId.set(k.accountId, []);
+      contractsByAccountId.get(k.accountId).push(k);
+    }
+    return contacts.map(c => {
+      const acc = accById.get(c.accountId);
+      // Stage rollup — most "advanced" pipeline state wins.
+      const linkedOpps = [
+        ...(oppsByContactId.get(c.id) || []),
+        ...(c.accountId ? (oppsByAccountId.get(c.accountId) || []) : []),
+      ];
+      const linkedContracts = c.accountId ? (contractsByAccountId.get(c.accountId) || []) : [];
+      const linkedLeads = [
+        ...(leadsByContactId.get(c.id) || []),
+        ...(c.email ? (leadsByEmail.get(c.email.toLowerCase()) || []) : []),
+        ...(c.accountId ? (leadsByAccountId.get(c.accountId) || []) : []),
+      ];
+      const hasActiveContract = linkedContracts.some(k => k.status === "Active");
+      const hasWonOpp = linkedOpps.some(o => /won|closed[\s-]*won/i.test(o.stage || ""));
+      const hasOpenOpp = linkedOpps.some(o => !/won|lost|closed/i.test(o.stage || ""));
+      const hasActiveLead = linkedLeads.some(l => !/converted|na|disqualified/i.test(l.stage || ""));
+      let _stage = "Contact";
+      if (hasActiveContract || hasWonOpp || acc?.status === "Customer" || acc?.status === "Active") _stage = "Customer";
+      else if (hasOpenOpp) _stage = "Opportunity";
+      else if (hasActiveLead) _stage = "Lead";
+
+      // Company fallback — first linked Lead with a non-empty company wins.
+      let _company = "", _companySource = "";
+      if (!acc) {
+        const fromLead = linkedLeads.find(l => l.company);
+        if (fromLead) { _company = fromLead.company; _companySource = `Lead ${fromLead.leadId || ""}`.trim(); }
+      }
+      return { ...c, _stage, _company, _companySource };
+    });
+  }, [contacts, accounts, opps, leads, contracts]);
+
+  const filtered = useMemo(() => [...enriched].filter(c => {
     if (accF !== "All" && c.accountId !== accF) return false;
     if (deptF !== "All" && !(c.departments||[]).includes(deptF) && c.department !== deptF) return false;
-    if (search && !(c.name+(c.role||"")+(c.email||"")+(c.contactId||"")+(c.designation||"")).toLowerCase().includes(search.toLowerCase())) return false;
+    if (stageF !== "All" && c._stage !== stageF) return false;
+    if (search && !(c.name+(c.role||"")+(c.email||"")+(c.contactId||"")+(c.designation||"")+(c._company||"")).toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   }).sort((a, b) => {
     const v = cmp(a, b, sortCol);
     return sortDir === "desc" ? -v : v;
-  }), [contacts, accF, deptF, search, sortCol, sortDir]);
+  }), [enriched, accF, deptF, stageF, search, sortCol, sortDir]);
 
   const bulk = useBulkSelect(filtered);
   const pg = usePagination(filtered);
@@ -431,6 +547,13 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
               options={accounts.map(a => ({ value: a.id, label: a.name, sub: a.country || a.type || "" }))}
             />
             <select className="filter-select" value={deptF} onChange={e => setDeptF(e.target.value)}><option value="All">All Departments</option>{CONTACT_DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
+            <select className="filter-select" value={stageF} onChange={e => setStageF(e.target.value)} title="Filter by pipeline stage rollup">
+              <option value="All">All Stages</option>
+              <option value="Customer">Customer</option>
+              <option value="Opportunity">Opportunity</option>
+              <option value="Lead">Lead</option>
+              <option value="Contact">Contact</option>
+            </select>
           </div>
 
           <BulkActions count={bulk.count} onClear={bulk.clear}
