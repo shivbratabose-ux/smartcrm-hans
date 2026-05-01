@@ -7,6 +7,7 @@ import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, FormError, Empty,
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
+import DataGrid from './DataGrid';
 
 const BLANK_CON={name:"",role:"",email:"",phone:"",accountId:"",addressId:"",primary:false,contactId:"",designation:"",department:"",departments:[],products:[],branches:[],countries:[],linkedOpps:[]};
 
@@ -177,7 +178,107 @@ function ContactDetail({ c, onClose, onEdit, accounts, opps=[], activities=[] })
 // ═══════════════════════════════════════════════════════════════════
 // CONTACTS PAGE
 // ═══════════════════════════════════════════════════════════════════
-function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], activities=[], canDelete}) {
+/* ── ContactsDataGrid ─────────────────────────────────────────────
+   Column registry covers every BLANK_CON field. Defaults match the
+   pre-DataGrid header set; everything else is opt-in via the picker. */
+function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, setConfirm, canDelete, currentUser }) {
+  const txt = (v) => <span style={{fontSize:12}}>{v || "-"}</span>;
+  const COLS = useMemo(() => ([
+    { key: "name", label: "Contact", defaultWidth: 240, render: c => (
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div className="u-av" style={{width:30,height:30,borderRadius:8,fontSize:10}}>{c.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}</div>
+        <div>
+          <span style={{fontWeight:600,fontSize:13,color:"var(--brand)",cursor:"pointer"}} onClick={() => setDetail(c)}>{c.name}</span>
+          {c.primary && <Star size={10} style={{color:"#F59E0B",marginLeft:4,verticalAlign:"middle"}}/>}
+          <div style={{fontSize:10,color:"var(--text3)"}}>{c.contactId}{(c.products||[]).length > 0 && ` · ${(c.products||[]).length} products`}</div>
+        </div>
+      </div>
+    )},
+    { key: "contactId", label: "Contact ID", defaultWidth: 110, render: c => (
+      <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{c.contactId || "-"}</span>
+    )},
+    { key: "designation", label: "Designation", defaultWidth: 160, render: c => txt(c.designation || c.role) },
+    { key: "department", label: "Department", defaultWidth: 140, render: c => txt(c.department) },
+    { key: "departments", label: "Departments", defaultWidth: 200, sortable: false, render: c => (
+      <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+        {(c.departments||[]).slice(0,3).map(d => <span key={d} style={{fontSize:10,padding:"1px 5px",borderRadius:3,background:"#E0E7FF",color:"#3730A3"}}>{d}</span>)}
+        {(c.departments||[]).length > 3 && <span style={{fontSize:10,color:"var(--text3)"}}>+{(c.departments||[]).length - 3}</span>}
+      </div>
+    )},
+    { key: "accountId", label: "Account", defaultWidth: 200, render: c => {
+      const acc = accounts.find(a => a.id === c.accountId);
+      return acc ? (
+        <>
+          <span style={{fontSize:12,color:"var(--brand)",fontWeight:500}}>{acc.name}</span>
+          {acc.accountNo && <div style={{fontSize:10,color:"var(--text3)",fontFamily:"'Courier New',monospace"}}>{acc.accountNo}</div>}
+        </>
+      ) : txt();
+    }},
+    { key: "primary", label: "Primary", defaultWidth: 80, render: c => c.primary
+      ? <Star size={12} style={{color:"#F59E0B"}}/> : <span style={{fontSize:11,color:"var(--text3)"}}>-</span>
+    },
+    { key: "email", label: "Email", defaultWidth: 220, render: c => c.email
+      ? <a href={`mailto:${c.email}`} style={{fontSize:12,color:"var(--blue)"}}>{c.email}</a>
+      : txt() },
+    { key: "phone", label: "Phone", defaultWidth: 140, render: c => txt(c.phone) },
+    { key: "alternateEmail", label: "Alt. Email", defaultWidth: 200, render: c => txt(c.alternateEmail) },
+    { key: "alternatePhone", label: "Alt. Phone", defaultWidth: 140, render: c => txt(c.alternatePhone) },
+    { key: "linkedInUrl", label: "LinkedIn", defaultWidth: 180, render: c => c.linkedInUrl
+      ? <a href={c.linkedInUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"var(--brand)"}}>{c.linkedInUrl}</a>
+      : txt() },
+    { key: "decisionLevel", label: "Decision Level", defaultWidth: 130, render: c => txt(c.decisionLevel) },
+    { key: "influence", label: "Influence", defaultWidth: 110, render: c => txt(c.influence) },
+    { key: "category", label: "Category", defaultWidth: 130, render: c => txt(c.category) },
+    { key: "preferredContactMode", label: "Preferred Mode", defaultWidth: 130, render: c => txt(c.preferredContactMode) },
+    { key: "doNotContact", label: "Do Not Contact", defaultWidth: 120, render: c => txt(c.doNotContact) },
+    { key: "lastContactDate", label: "Last Contact", defaultWidth: 120, render: c => txt(fmt.short(c.lastContactDate)) },
+    { key: "products", label: "Products", defaultWidth: 180, sortable: false, render: c => (
+      <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{(c.products||[]).map(p => <ProdTag key={p} pid={p}/>)}</div>
+    )},
+    { key: "branches", label: "Branches", defaultWidth: 160, sortable: false, render: c => (
+      <span style={{fontSize:11,color:"var(--text3)"}}>{(c.branches||[]).join(", ") || "-"}</span>
+    )},
+    { key: "countries", label: "Countries", defaultWidth: 160, sortable: false, render: c => (
+      <span style={{fontSize:11,color:"var(--text3)"}}>{(c.countries||[]).join(", ") || "-"}</span>
+    )},
+    { key: "linkedOpps", label: "Linked Deals", defaultWidth: 100, sortable: false, render: c => (
+      <span style={{fontSize:11,color:"var(--text3)"}}>{(c.linkedOpps||[]).length || "-"}</span>
+    )},
+    { key: "country", label: "Country", defaultWidth: 110, render: c => txt(c.country) },
+    { key: "state", label: "State", defaultWidth: 110, render: c => txt(c.state) },
+    { key: "city", label: "City", defaultWidth: 120, render: c => txt(c.city) },
+    { key: "pincode", label: "Pincode", defaultWidth: 100, render: c => txt(c.pincode) },
+    { key: "source", label: "Source", defaultWidth: 130, render: c => txt(c.source) },
+  ]), [accounts, setDetail]);
+
+  const DEFAULT_CONFIG = useMemo(() => {
+    const visibleSet = new Set(["name","designation","departments","accountId","email","phone"]);
+    return COLS.map(c => ({ key: c.key, visible: visibleSet.has(c.key), width: c.defaultWidth }));
+  }, [COLS]);
+
+  return (
+    <DataGrid
+      module="contacts_list"
+      userId={currentUser}
+      columns={COLS}
+      defaultColumnConfig={DEFAULT_CONFIG}
+      rows={rows}
+      rowKey={r => r.id}
+      sortKey={sortKey} sortDir={sortDir}
+      onSort={toggleSort}
+      SortIcon={SortIcon}
+      selection={bulk}
+      rowActions={c => (
+        <div style={{display:"flex",gap:4}}>
+          <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
+          {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
+        </div>
+      )}
+    />
+  );
+}
+
+function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], activities=[], canDelete, currentUser}) {
   const [search, setSearch] = useState("");
   const [accF, setAccF] = useState("All");
   const [deptF, setDeptF] = useState("All");
@@ -340,6 +441,22 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], ac
             {filtered.length === 0 ? (
               <Empty icon={<Users size={22}/>} title="No contacts found" sub="Try adjusting filters or add a new contact."/>
             ) : (
+              <ContactsDataGrid
+                rows={pg.paged}
+                accounts={accounts}
+                bulk={bulk}
+                toggleSort={toggleSort}
+                sortKey={sortCol}
+                sortDir={sortDir}
+                SortIcon={SortIcon}
+                setDetail={setDetail}
+                openEdit={openEdit}
+                setConfirm={setConfirm}
+                canDelete={canDelete}
+                currentUser={currentUser}
+              />
+            )}
+            {false && (
               <div className="tbl-scroll">
               <table className="tbl">
                 <thead>

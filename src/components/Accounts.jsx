@@ -9,6 +9,7 @@ import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString 
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
+import DataGrid from './DataGrid';
 
 /* ── helpers ── */
 const daysSince = (d) => d ? Math.max(0, Math.round((new Date(today) - new Date(d)) / 864e5)) : null;
@@ -491,6 +492,140 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
 // ═══════════════════════════════════════════════════════════════════
 // ACCOUNTS PAGE
 // ═══════════════════════════════════════════════════════════════════
+/* ── AccountsDataGrid ─────────────────────────────────────────────
+   Customer-view list backed by DataGrid. Column visibility/order/width
+   are persisted per-user via user_table_views. The relationships
+   column is non-sortable since it's a derived composite. */
+function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, setConfirm, canDelete, currentUser }) {
+  const txt = (val) => <span style={{fontSize: 12}}>{val || "-"}</span>;
+  // Full registry: every meaningful account field is opt-in. Different
+  // user groups (sales, finance, ops, BD) can build their own views from
+  // this set; only DEFAULT_CONFIG visible:true ones show on first visit.
+  const ACCOUNTS_COLUMNS = useMemo(() => ([
+    { key: "name", label: "Account", defaultWidth: 240, render: a => (
+      <>
+        <span className="tbl-link" onClick={() => setDetail(a)}>{a.name}</span>
+        <div style={{fontSize:11,color:"var(--text3)"}}>
+          {a.accountNo && <span style={{fontFamily:"'Courier New',monospace",marginRight:4}}>{a.accountNo}</span>}
+          {a.city}{a.hierarchyLevel !== "Parent Company" ? ` · ${a.hierarchyLevel}` : ""}
+        </div>
+      </>
+    )},
+    { key: "accountNo", label: "Account No.", defaultWidth: 130, render: a => (
+      <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{a.accountNo || "-"}</span>
+    )},
+    { key: "legalName", label: "Legal Name", defaultWidth: 200, render: a => txt(a.legalName) },
+    { key: "type", label: "Type", defaultWidth: 110, render: a => txt(a.type) },
+    { key: "segment", label: "Segment", defaultWidth: 130, render: a => txt(a.segment) },
+    { key: "industry", label: "Industry", defaultWidth: 140, render: a => txt(a.industry) },
+    { key: "entityType", label: "Entity Type", defaultWidth: 130, render: a => txt(a.entityType) },
+    { key: "hierarchyLevel", label: "Level", defaultWidth: 130, render: a => txt(a.hierarchyLevel) },
+    { key: "hierarchyPath", label: "Hierarchy Path", defaultWidth: 220, render: a => txt(a.hierarchyPath) },
+    { key: "groupCode", label: "Group Code", defaultWidth: 120, render: a => txt(a.groupCode) },
+    { key: "country", label: "Country", defaultWidth: 110, render: a => txt(a.country) },
+    { key: "state", label: "State", defaultWidth: 110, render: a => txt(a.state) },
+    { key: "city", label: "City", defaultWidth: 120, render: a => txt(a.city) },
+    { key: "pincode", label: "Pincode", defaultWidth: 100, render: a => txt(a.pincode) },
+    { key: "address", label: "Address", defaultWidth: 240, render: a => txt(a.address) },
+    { key: "territory", label: "Territory", defaultWidth: 130, render: a => txt(a.territory) },
+    { key: "website", label: "Website", defaultWidth: 180, render: a => a.website
+      ? <a href={a.website} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"var(--brand)"}}>{a.website}</a>
+      : txt() },
+    { key: "products", label: "Products", defaultWidth: 180, sortable: false, render: a => (
+      <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{(a.products||[]).map(p => <ProdTag key={p} pid={p}/>)}</div>
+    )},
+    { key: "status", label: "Status", defaultWidth: 110, render: a => <StatusBadge status={a.status}/> },
+    { key: "arrRevenue", label: "ARR", defaultWidth: 110, render: a => (
+      <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{a.arrRevenue ? fmt.inr(a.arrRevenue) : "-"}</span>
+    )},
+    { key: "potential", label: "Potential", defaultWidth: 110, render: a => (
+      <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700,color:"var(--brand)"}}>{a.potential ? fmt.inr(a.potential) : "-"}</span>
+    )},
+    { key: "relationships", label: "Relationships", defaultWidth: 220, sortable: false, render: a => (
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {a._contacts > 0 && <span style={{fontSize:10,fontWeight:600,padding:"2px 6px",borderRadius:4,background:"#8B5CF614",color:"#8B5CF6"}} title="Contacts"><Users size={9}/> {a._contacts}</span>}
+        {a._leads > 0 && <span style={{fontSize:10,fontWeight:600,padding:"2px 6px",borderRadius:4,background:"#F59E0B14",color:"#F59E0B"}} title="Active leads"><Target size={9}/> {a._leads}</span>}
+        {a._openDeals > 0 && <span style={{fontSize:10,fontWeight:600,padding:"2px 6px",borderRadius:4,background:"#3B82F614",color:"#3B82F6"}} title="Open deals"><TrendingUp size={9}/> {a._openDeals}</span>}
+        {a._openTickets > 0 && <span style={{fontSize:10,fontWeight:600,padding:"2px 6px",borderRadius:4,background:"#DC262614",color:"#DC2626"}} title="Open tickets"><AlertTriangle size={9}/> {a._openTickets}</span>}
+        {a._lastActivity && <span style={{fontSize:10,color:"var(--text3)"}} title={`Last activity: ${a._lastActivity}`}>{daysSince(a._lastActivity)}d ago</span>}
+      </div>
+    )},
+    { key: "contactsCount", label: "Contacts", defaultWidth: 90, sortable: false, render: a => (
+      <span style={{fontSize:12}}>{a._contacts || 0}</span>
+    )},
+    { key: "leadsCount", label: "Active Leads", defaultWidth: 100, sortable: false, render: a => (
+      <span style={{fontSize:12}}>{a._leads || 0}</span>
+    )},
+    { key: "openDealsCount", label: "Open Deals", defaultWidth: 100, sortable: false, render: a => (
+      <span style={{fontSize:12}}>{a._openDeals || 0}</span>
+    )},
+    { key: "openTicketsCount", label: "Open Tickets", defaultWidth: 110, sortable: false, render: a => (
+      <span style={{fontSize:12}}>{a._openTickets || 0}</span>
+    )},
+    { key: "lastActivity", label: "Last Activity", defaultWidth: 130, sortable: false, render: a => (
+      <span style={{fontSize:11,color:"var(--text3)"}}>{a._lastActivity ? `${daysSince(a._lastActivity)}d ago` : "-"}</span>
+    )},
+    { key: "owner", label: "Owner", defaultWidth: 140, render: a => <UserPill uid={a.owner}/> },
+    { key: "primaryContact", label: "Primary Contact", defaultWidth: 180, render: a => txt(a.primaryContact) },
+    { key: "primaryEmail", label: "Primary Email", defaultWidth: 200, render: a => txt(a.primaryEmail) },
+    { key: "primaryPhone", label: "Primary Phone", defaultWidth: 140, render: a => txt(a.primaryPhone) },
+    { key: "billingContactName", label: "Billing Contact", defaultWidth: 180, render: a => txt(a.billingContactName) },
+    { key: "billingContactEmail", label: "Billing Email", defaultWidth: 200, render: a => txt(a.billingContactEmail) },
+    { key: "financeContactEmail", label: "Finance Email", defaultWidth: 200, render: a => txt(a.financeContactEmail) },
+    { key: "billingAddress", label: "Billing Address", defaultWidth: 240, render: a => txt(a.billingAddress) },
+    { key: "billingCity", label: "Billing City", defaultWidth: 120, render: a => txt(a.billingCity) },
+    { key: "billingState", label: "Billing State", defaultWidth: 120, render: a => txt(a.billingState) },
+    { key: "billingPincode", label: "Billing Pincode", defaultWidth: 110, render: a => txt(a.billingPincode) },
+    { key: "billingCountry", label: "Billing Country", defaultWidth: 120, render: a => txt(a.billingCountry) },
+    { key: "currency", label: "Currency", defaultWidth: 90, render: a => txt(a.currency || "INR") },
+    { key: "paymentTerms", label: "Payment Terms", defaultWidth: 130, render: a => txt(a.paymentTerms) },
+    { key: "creditDays", label: "Credit Days", defaultWidth: 110, render: a => txt(a.creditDays) },
+    { key: "billingFrequency", label: "Billing Freq.", defaultWidth: 130, render: a => txt(a.billingFrequency) },
+    { key: "pan", label: "PAN", defaultWidth: 130, render: a => (
+      <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{a.pan || "-"}</span>
+    )},
+    { key: "gstin", label: "GSTIN", defaultWidth: 160, render: a => (
+      <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{a.gstin || "-"}</span>
+    )},
+    { key: "cin", label: "CIN", defaultWidth: 160, render: a => (
+      <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{a.cin || "-"}</span>
+    )},
+    { key: "taxTreatment", label: "Tax Treatment", defaultWidth: 130, render: a => txt(a.taxTreatment) },
+    { key: "tdsApplicable", label: "TDS Applicable", defaultWidth: 120, render: a => txt(a.tdsApplicable) },
+    { key: "poMandatory", label: "PO Mandatory", defaultWidth: 120, render: a => txt(a.poMandatory) },
+  ]), [setDetail]);
+
+  const ACCOUNTS_DEFAULT_CONFIG = useMemo(() => {
+    const visibleSet = new Set(["name","type","country","products","status","arrRevenue","potential","relationships","owner"]);
+    return ACCOUNTS_COLUMNS.map(c => ({
+      key: c.key,
+      visible: visibleSet.has(c.key),
+      width: c.defaultWidth,
+    }));
+  }, [ACCOUNTS_COLUMNS]);
+
+  return (
+    <DataGrid
+      module="accounts_list"
+      userId={currentUser}
+      columns={ACCOUNTS_COLUMNS}
+      defaultColumnConfig={ACCOUNTS_DEFAULT_CONFIG}
+      rows={rows}
+      rowKey={r => r.id}
+      sortKey={sortKey} sortDir={sortDir}
+      onSort={toggleSort}
+      SortIcon={SortIcon}
+      selection={bulk}
+      rowActions={a => (
+        <div style={{display:"flex",gap:4}}>
+          <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(a)}><Edit2 size={14}/></button>
+          {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(a.id)}><Trash2 size={14}/></button>}
+        </div>
+      )}
+    />
+  );
+}
+
 function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, setActivities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers, callReports, setCallReports, masters, catalog, canDelete}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
@@ -819,6 +954,21 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
             {filtered.length === 0 ? (
               <Empty icon={<Building2 size={22}/>} title="No accounts found" sub="Try adjusting filters or add a new account."/>
             ) : (
+              <AccountsDataGrid
+                rows={enriched}
+                bulk={bulk}
+                toggleSort={toggleSort}
+                sortKey={sortCol}
+                sortDir={sortDir}
+                SortIcon={SortIcon}
+                setDetail={setDetail}
+                openEdit={openEdit}
+                setConfirm={setConfirm}
+                canDelete={canDelete}
+                currentUser={currentUser}
+              />
+            )}
+            {false && (
               <div className="tbl-scroll">
               <table className="tbl">
                 <thead>

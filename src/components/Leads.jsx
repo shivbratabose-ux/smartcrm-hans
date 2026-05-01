@@ -9,6 +9,7 @@ import Pagination, { usePagination } from './Pagination';
 import ProductModulePicker, { validateProductSelection, primaryProductId } from './ProductModulePicker';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
+import DataGrid from './DataGrid';
 
 /* ── Date range helpers ── */
 const RANGE_PRESETS = [
@@ -1533,6 +1534,169 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
   );
 }
 
+/* ── LeadsDataGrid ─────────────────────────────────────────────────
+   Read-only Excel-like view backed by DataGrid. Column visibility,
+   order, and width are persisted per-user via user_table_views; the
+   "Grid" toggle still routes to EditableLeadsGrid for inline edits. */
+function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, openCallLog, setConfirm, handleConvert, canDelete, currentUser }) {
+  const txt = (val) => <span style={{ fontSize: 12 }}>{val || "-"}</span>;
+  // Full registry: every meaningful lead field is opt-in. Different user
+  // groups (sales reps, BD, marketing, line mgr, ops) can build their
+  // own views from this set; only DEFAULT_CONFIG visible:true ones show
+  // on first visit.
+  const LEADS_COLUMNS = useMemo(() => ([
+    { key: "leadId", label: "Lead ID", defaultWidth: 110, render: l => (
+      <span style={{fontFamily:"'Courier New',monospace", fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:4, background:"var(--s2)", color:"var(--text2)"}}>{l.leadId}</span>
+    )},
+    { key: "company", label: "Company", defaultWidth: 220, render: l => (
+      <>
+        <span style={{ fontWeight: 600, fontSize: 13, color:"var(--brand)", cursor:"pointer" }} onClick={() => setDetail(l)}>{l.company}</span>
+        <div style={{fontSize:11,color:"var(--text3)"}}>{l.source}{l.region ? ` · ${l.region}` : ""}</div>
+      </>
+    )},
+    { key: "contact", label: "Contact", defaultWidth: 200, render: l => (
+      <>
+        <div style={{ fontSize: 12.5, fontWeight: 500 }}>{l.contact}</div>
+        {l.email && <div style={{ fontSize: 11, color: "var(--text3)" }}>{l.email}</div>}
+        {(l.contactIds?.length > 0) && (
+          <span style={{fontSize:10,fontWeight:600,color:"#3B82F6",background:"#EFF6FF",padding:"1px 6px",borderRadius:4,marginTop:2,display:"inline-block"}}>+{l.contactIds.length} more</span>
+        )}
+      </>
+    )},
+    { key: "email", label: "Email", defaultWidth: 200, render: l => txt(l.email) },
+    { key: "phone", label: "Phone", defaultWidth: 140, render: l => txt(l.phone) },
+    { key: "alternateEmail", label: "Alt. Email", defaultWidth: 180, render: l => txt(l.alternateEmail) },
+    { key: "alternatePhone", label: "Alt. Phone", defaultWidth: 140, render: l => txt(l.alternatePhone) },
+    { key: "designation", label: "Designation", defaultWidth: 160, render: l => txt(l.designation) },
+    { key: "department", label: "Department", defaultWidth: 140, render: l => txt(l.department) },
+    { key: "linkedInUrl", label: "LinkedIn", defaultWidth: 180, render: l => l.linkedInUrl
+      ? <a href={l.linkedInUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"var(--brand)"}}>{l.linkedInUrl}</a>
+      : txt() },
+    { key: "companyWebsite", label: "Website", defaultWidth: 180, render: l => l.companyWebsite
+      ? <a href={l.companyWebsite} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"var(--brand)"}}>{l.companyWebsite}</a>
+      : txt() },
+    { key: "product", label: "Product", defaultWidth: 140, render: l => <ProdTag pid={l.product}/> },
+    { key: "additionalProducts", label: "Other Products", defaultWidth: 180, sortable: false, render: l => (
+      <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{(l.additionalProducts||[]).map(p => <ProdTag key={p} pid={p}/>)}</div>
+    )},
+    { key: "stage", label: "Stage", defaultWidth: 160, render: l => <LeadStageBadge stage={l.stage}/> },
+    { key: "score", label: "Score", defaultWidth: 90, render: l => <LeadScore score={l.score}/> },
+    { key: "temperature", label: "Temperature", defaultWidth: 110, render: l => txt(l.temperature) },
+    { key: "source", label: "Source", defaultWidth: 130, render: l => txt(l.source) },
+    { key: "campaignName", label: "Campaign", defaultWidth: 140, render: l => txt(l.campaignName) },
+    { key: "referredBy", label: "Referred By", defaultWidth: 140, render: l => txt(l.referredBy) },
+    { key: "vertical", label: "Vertical", defaultWidth: 130, render: l => txt(l.vertical) },
+    { key: "businessType", label: "Business Type", defaultWidth: 150, render: l => txt(l.businessType) },
+    { key: "industry", label: "Industry", defaultWidth: 140, render: l => txt(l.industry) },
+    { key: "noOfUsers", label: "Users", defaultWidth: 80, render: l => txt(l.noOfUsers) },
+    { key: "staffSize", label: "Staff Size", defaultWidth: 110, render: l => txt(l.staffSize) },
+    { key: "branches", label: "Branches", defaultWidth: 90, render: l => txt(l.branches) },
+    { key: "annualRevenue", label: "Annual Revenue", defaultWidth: 130, render: l => (
+      <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{l.annualRevenue ? fmt.inr(l.annualRevenue) : "-"}</span>
+    )},
+    { key: "estimatedValue", label: "Est. Value", defaultWidth: 110, render: l => (
+      <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700,color:"var(--brand)"}}>{l.estimatedValue ? fmt.inr(l.estimatedValue) : "-"}</span>
+    )},
+    { key: "currentSoftware", label: "Current S/W", defaultWidth: 140, render: l => txt(l.currentSoftware) },
+    { key: "swAge", label: "S/W Age", defaultWidth: 100, render: l => txt(l.swAge) },
+    { key: "swSatisfaction", label: "S/W Sat.", defaultWidth: 90, render: l => txt(l.swSatisfaction ? `${l.swSatisfaction}/5` : "") },
+    { key: "competitorName", label: "Competitor", defaultWidth: 140, render: l => txt(l.competitorName) },
+    { key: "evaluatingOthers", label: "Evaluating", defaultWidth: 110, render: l => txt(l.evaluatingOthers) },
+    { key: "painPoints", label: "Pain Points", defaultWidth: 200, sortable: false, render: l => (
+      <span style={{fontSize:11,color:"var(--text3)"}}>{(l.painPoints||[]).join(", ") || "-"}</span>
+    )},
+    { key: "budget", label: "Budget", defaultWidth: 120, render: l => txt(l.budget) },
+    { key: "budgetRange", label: "Budget Range", defaultWidth: 130, render: l => txt(l.budgetRange) },
+    { key: "decisionMaker", label: "Decision Maker", defaultWidth: 140, render: l => txt(l.decisionMaker) },
+    { key: "decisionTimeline", label: "Timeline", defaultWidth: 120, render: l => txt(l.decisionTimeline) },
+    { key: "expectedCloseDate", label: "Expected Close", defaultWidth: 130, render: l => txt(fmt.short(l.expectedCloseDate)) },
+    { key: "proposalSent", label: "Proposal Sent", defaultWidth: 110, render: l => txt(l.proposalSent) },
+    { key: "demoScheduled", label: "Demo", defaultWidth: 90, render: l => txt(l.demoScheduled) },
+    { key: "nextStep", label: "Next Step", defaultWidth: 200, render: l => txt(l.nextStep) },
+    { key: "objections", label: "Objections", defaultWidth: 200, render: l => txt(l.objections) },
+    { key: "region", label: "Region", defaultWidth: 110, render: l => txt(l.region) },
+    { key: "country", label: "Country", defaultWidth: 110, render: l => txt(l.country) },
+    { key: "state", label: "State", defaultWidth: 110, render: l => txt(l.state) },
+    { key: "city", label: "City", defaultWidth: 120, render: l => txt(l.city) },
+    { key: "branch", label: "Branch", defaultWidth: 120, render: l => txt(l.branch) },
+    { key: "location", label: "Location", defaultWidth: 130, render: l => txt(l.location) },
+    { key: "salesTeam", label: "Sales Team", defaultWidth: 140, sortable: false, render: l => (
+      <span style={{fontSize:11,color:"var(--text3)"}}>{(l.salesTeam||[]).join(", ") || "-"}</span>
+    )},
+    { key: "assignedTo", label: "Assigned To", defaultWidth: 140, render: l => <UserPill uid={l.assignedTo}/> },
+    { key: "nextCall", label: "Next Call", defaultWidth: 130, render: l => {
+      const overdue = l.nextCall && l.nextCall < today && l.stage !== "NA";
+      return overdue ? (
+        <span style={{fontSize:11,fontWeight:700,color:"#DC2626",display:"flex",alignItems:"center",gap:3}}>
+          <AlertTriangle size={11}/>{fmt.short(l.nextCall)}
+        </span>
+      ) : (
+        <span style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(l.nextCall)}</span>
+      );
+    }},
+    { key: "lastContactDate", label: "Last Contact", defaultWidth: 120, render: l => txt(fmt.short(l.lastContactDate)) },
+    { key: "age", label: "Age", defaultWidth: 80, render: l => {
+      const age = daysSince(l.createdDate);
+      return <span style={{fontSize:11,fontWeight:600,color: age > 30 ? "#DC2626" : age > 14 ? "#F59E0B" : "#22C55E"}}>{age != null ? `${age}d` : "-"}</span>;
+    }},
+    { key: "createdDate", label: "Created", defaultWidth: 110, render: l => txt(fmt.short(l.createdDate)) },
+    { key: "convertedOppIds", label: "Converted Deals", defaultWidth: 110, sortable: false, render: l => (
+      <span style={{fontSize:11,color:"var(--text3)"}}>{(l.convertedOppIds||[]).length || "-"}</span>
+    )},
+    { key: "notes", label: "Notes", defaultWidth: 240, sortable: false, render: l => (
+      <span style={{fontSize:11,color:"var(--text3)"}} title={l.notes || ""}>{(l.notes || "").slice(0, 80) || "-"}</span>
+    )},
+  ]), [setDetail]);
+
+  const LEADS_DEFAULT_CONFIG = useMemo(() => {
+    // Visible-by-default = the same shortlist users had before. All other
+    // registry columns are opt-in (visible:false) — listed here so the
+    // ordering preset matches the registry on first load.
+    const visibleSet = new Set(["leadId","company","contact","product","stage","score","assignedTo","nextCall","age"]);
+    return LEADS_COLUMNS.map(c => ({
+      key: c.key,
+      visible: visibleSet.has(c.key),
+      width: c.defaultWidth,
+    }));
+  }, [LEADS_COLUMNS]);
+
+  return (
+    <DataGrid
+      module="leads_list"
+      userId={currentUser}
+      columns={LEADS_COLUMNS}
+      defaultColumnConfig={LEADS_DEFAULT_CONFIG}
+      rows={rows}
+      rowKey={r => r.id}
+      sortKey={sortKey} sortDir={sortDir}
+      onSort={toggleSort}
+      SortIcon={SortIcon}
+      selection={bulk}
+      rowStyle={l => (l.nextCall && l.nextCall < today && l.stage !== "NA") ? { background: "#FEF2F2" } : undefined}
+      rowActions={l => (
+        <div style={{ display: "flex", gap: 4 }}>
+          <button className="icon-btn" aria-label="Log Call" title="Log Call" style={{ color: "#3B82F6" }} onClick={() => openCallLog(l)}>
+            <Phone size={14}/>
+          </button>
+          <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(l)}>
+            <Edit2 size={14}/>
+          </button>
+          {canDelete && (
+            <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(l.id)}>
+              <Trash2 size={14}/>
+            </button>
+          )}
+          {l.stage !== "Converted" && l.stage !== "NA" && (
+            <button className="icon-btn" aria-label="Convert to Opportunity" title="Convert to Opportunity" style={{ color: "var(--brand)" }} onClick={() => handleConvert(l)}>
+              <ArrowRightCircle size={14}/>
+            </button>
+          )}
+        </div>
+      )}
+    />
+  );
+}
+
 function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete }) {
   // Scope the team list to only users this logged-in user has visibility over.
   // This keeps owner filter and assignment dropdowns consistent with the scoped data.
@@ -1999,6 +2163,23 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 onOpenDetail={setDetail}
               />
             ) : (
+              <LeadsDataGrid
+                rows={pg.paged}
+                bulk={bulk}
+                toggleSort={toggleSort}
+                sortKey={sortCol}
+                sortDir={sortDir}
+                SortIcon={SortIcon}
+                setDetail={setDetail}
+                openEdit={openEdit}
+                openCallLog={openCallLog}
+                setConfirm={setConfirm}
+                handleConvert={handleConvert}
+                canDelete={canDelete}
+                currentUser={currentUser}
+              />
+            )}
+            {false && (
               <div className="tbl-scroll">
               <table className="tbl">
                 <thead>

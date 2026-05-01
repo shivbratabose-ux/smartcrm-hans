@@ -7,9 +7,93 @@ import { notify } from '../utils/toast';
 import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
+import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString, primaryProductId } from './ProductModulePicker';
+import DataGrid from './DataGrid';
+
+// Adapter: DataGrid expects a SortIcon component with shape ({col, sortKey, sortDir})
+// while Sort.jsx exposes SortHeader (a full <th> wrapper). Recreate the icon
+// portion here so DataGrid's header click handler keeps working.
+const TicketsSortIcon = ({ col, sortKey, sortDir }) => {
+  if (sortKey !== col) return <ChevronsUpDown size={11} style={{opacity:0.4,marginLeft:2}}/>;
+  return sortDir === "asc"
+    ? <ChevronUp size={11} style={{marginLeft:2}}/>
+    : <ChevronDown size={11} style={{marginLeft:2}}/>;
+};
+
+/* ── TicketsDataGrid ──────────────────────────────────────────────
+   All BLANK_TKT fields are opt-in via the column picker. Defaults
+   match the legacy hardcoded list. */
+function TicketsDataGrid({ rows, bulk, sort, openEdit, setDetail, setConfirm, canDelete, currentUser }) {
+  const txt = (v) => <span style={{fontSize:12}}>{v || "-"}</span>;
+  const COLS = useMemo(() => ([
+    { key: "title", label: "Ticket", defaultWidth: 280, render: t => (
+      <>
+        <span className="tbl-link" onClick={() => setDetail(t)}>{t.id}</span>
+        <div style={{fontSize:12,color:"var(--text2)",maxWidth:300}}>{t.title}</div>
+      </>
+    )},
+    { key: "ticketNo", label: "Ticket No.", defaultWidth: 110, render: t => (
+      <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{t.ticketNo || t.id || "-"}</span>
+    )},
+    { key: "product", label: "Product", defaultWidth: 130, render: t => <ProdTag pid={t.product}/> },
+    { key: "type", label: "Type", defaultWidth: 130, render: t => <span style={{fontSize:11.5,color:"var(--text3)"}}>{t.type || "-"}</span> },
+    { key: "priority", label: "Priority", defaultWidth: 110, render: t => <PriorityBadge priority={t.priority}/> },
+    { key: "status", label: "Status", defaultWidth: 130, render: t => <StatusBadge status={t.status}/> },
+    { key: "severity", label: "Severity", defaultWidth: 100, render: t => txt(t.severity) },
+    { key: "category", label: "Category", defaultWidth: 130, render: t => txt(t.category) },
+    { key: "subCategory", label: "Sub-Category", defaultWidth: 140, render: t => txt(t.subCategory) },
+    { key: "affectedModule", label: "Module", defaultWidth: 140, render: t => txt(t.affectedModule) },
+    { key: "environment", label: "Environment", defaultWidth: 120, render: t => txt(t.environment) },
+    { key: "assigned", label: "Assigned", defaultWidth: 140, render: t => <UserPill uid={t.assigned}/> },
+    { key: "escalation", label: "Escalation", defaultWidth: 160, render: t => txt(t.escalation) },
+    { key: "reportedBy", label: "Reported By", defaultWidth: 160, render: t => txt(t.reportedBy) },
+    { key: "reportedDate", label: "Reported Date", defaultWidth: 120, render: t => txt(fmt.date(t.reportedDate)) },
+    { key: "sla", label: "SLA", defaultWidth: 130, render: t => {
+      const overdue = t.sla && t.sla < today && !["Resolved","Closed"].includes(t.status);
+      return <span style={{fontSize:12,color:overdue?"var(--red)":"var(--text3)",fontWeight:overdue?700:400}}>{fmt.date(t.sla)}{overdue && " ⚠"}</span>;
+    }},
+    { key: "resolvedDate", label: "Resolved Date", defaultWidth: 120, render: t => txt(fmt.date(t.resolvedDate)) },
+    { key: "csat", label: "CSAT", defaultWidth: 80, render: t => txt(t.csat ? `${t.csat}/5` : "") },
+    { key: "workaround", label: "Workaround", defaultWidth: 110, render: t => txt(t.workaround) },
+    { key: "revisitDate", label: "Revisit Date", defaultWidth: 120, render: t => txt(fmt.date(t.revisitDate)) },
+    { key: "tags", label: "Tags", defaultWidth: 160, render: t => txt(t.tags) },
+    { key: "description", label: "Description", defaultWidth: 240, sortable: false, render: t => (
+      <span style={{fontSize:11,color:"var(--text3)"}} title={t.description || ""}>{(t.description || "").slice(0, 80) || "-"}</span>
+    )},
+    { key: "resolution", label: "Resolution", defaultWidth: 240, sortable: false, render: t => (
+      <span style={{fontSize:11,color:"var(--text3)"}} title={t.resolution || ""}>{(t.resolution || "").slice(0, 80) || "-"}</span>
+    )},
+  ]), [setDetail]);
+
+  const DEFAULT_CONFIG = useMemo(() => {
+    const visibleSet = new Set(["title","product","type","priority","status","assigned","sla"]);
+    return COLS.map(c => ({ key: c.key, visible: visibleSet.has(c.key), width: c.defaultWidth }));
+  }, [COLS]);
+
+  return (
+    <DataGrid
+      module="tickets_list"
+      userId={currentUser}
+      columns={COLS}
+      defaultColumnConfig={DEFAULT_CONFIG}
+      rows={rows}
+      rowKey={r => r.id}
+      sortKey={sort.key} sortDir={sort.dir}
+      onSort={sort.toggle}
+      SortIcon={TicketsSortIcon}
+      selection={bulk}
+      rowActions={t => (
+        <div style={{display:"flex",gap:4}}>
+          <button className="icon-btn" onClick={() => openEdit(t)}><Edit2 size={14}/></button>
+          {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(t.id)}><Trash2 size={14}/></button>}
+        </div>
+      )}
+    />
+  );
+}
 
 function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,catalog=[]}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
@@ -109,25 +193,16 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,cat
         onDelete={canDelete?()=>setConfirm({bulk:true,ids:[...bulk.selected]}):undefined}
         onExport={()=>exportCSV(tickets.filter(t=>bulk.isSelected(t.id)),CSV_COLS,"tickets")}/>
       <div className="card" style={{padding:0}}>
-        <table className="tbl">
-          <thead><tr><th style={{width:36}}><input type="checkbox" checked={bulk.allSelected} onChange={bulk.toggleAll}/></th><th><SortHeader sort={sort} k="title">Ticket</SortHeader></th><th><SortHeader sort={sort} k="product">Product</SortHeader></th><th><SortHeader sort={sort} k="type">Type</SortHeader></th><th><SortHeader sort={sort} k="priority">Priority</SortHeader></th><th><SortHeader sort={sort} k="status">Status</SortHeader></th><th><SortHeader sort={sort} k="assigned">Assigned</SortHeader></th><th><SortHeader sort={sort} k="sla">SLA</SortHeader></th><th></th></tr></thead>
-          <tbody>{pg.paged.map(t=>{
-            const overdue=t.sla&&t.sla<today&&!["Resolved","Closed"].includes(t.status);
-            return (
-              <tr key={t.id}>
-                <td><input type="checkbox" checked={bulk.isSelected(t.id)} onChange={()=>bulk.toggle(t.id)}/></td>
-                <td><span className="tbl-link" onClick={()=>setDetail(t)}>{t.id}</span><div style={{fontSize:12,color:"var(--text2)",maxWidth:300}}>{t.title}</div></td>
-                <td><ProdTag pid={t.product}/></td>
-                <td style={{fontSize:11.5,color:"var(--text3)"}}>{t.type}</td>
-                <td><PriorityBadge priority={t.priority}/></td>
-                <td><StatusBadge status={t.status}/></td>
-                <td><UserPill uid={t.assigned}/></td>
-                <td style={{fontSize:12,color:overdue?"var(--red)":"var(--text3)",fontWeight:overdue?700:400}}>{fmt.date(t.sla)}{overdue&&" ⚠"}</td>
-                <td><div style={{display:"flex",gap:4}}><button className="icon-btn" onClick={()=>openEdit(t)}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(t.id)}><Trash2 size={14}/></button>}</div></td>
-              </tr>
-            );
-          })}</tbody>
-        </table>
+        <TicketsDataGrid
+          rows={pg.paged}
+          bulk={bulk}
+          sort={sort}
+          openEdit={openEdit}
+          setDetail={setDetail}
+          setConfirm={setConfirm}
+          canDelete={canDelete}
+          currentUser={currentUser}
+        />
         <Pagination {...pg} />
       </div>
       {detail&&(

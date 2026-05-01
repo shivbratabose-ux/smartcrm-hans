@@ -7,7 +7,14 @@ import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip, Typea
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
+import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { exportCSV } from '../utils/csv';
+import DataGrid from './DataGrid';
+
+const QuotesSortIcon = ({ col, sortKey, sortDir }) => {
+  if (sortKey !== col) return <ChevronsUpDown size={11} style={{opacity:0.4,marginLeft:2}}/>;
+  return sortDir === "asc" ? <ChevronUp size={11} style={{marginLeft:2}}/> : <ChevronDown size={11} style={{marginLeft:2}}/>;
+};
 
 const SECTORS = ["Manufacturing","Logistics","Technology","Energy","Aviation","Government","Services"];
 
@@ -1430,7 +1437,106 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
       {/* ── Table ── */}
       <div className="card" style={{padding:0}}>
-        {filtered.length===0?<Empty icon={<FileText size={22}/>} title="No quotations" sub="Create your first quote."/>:(
+        {filtered.length===0?<Empty icon={<FileText size={22}/>} title="No quotations" sub="Create your first quote."/>:(() => {
+          const txt = (v) => <span style={{fontSize:12}}>{v || "-"}</span>;
+          // Full registry — every BLANK_QUOTE field worth surfacing in a list.
+          const COLS = [
+            { key: "_quoteId", label: "Quote ID", defaultWidth: 130, render: q => (
+              <div style={{display:"flex",alignItems:"center",gap:4,fontWeight:600,fontSize:13,color:"var(--brand)"}}>
+                <span>{q._quoteId}</span>
+                {(q.supersedesQuoteId||quoteChainMap[q.id])&&(
+                  <span title={q.supersedesQuoteId?`Revision of ${q.supersedesQuoteId}`:`Superseded by ${quoteChainMap[q.id]}`} style={{display:"inline-flex",alignItems:"center",gap:2,fontSize:10,color:"#8B5CF6",background:"#8B5CF615",padding:"1px 5px",borderRadius:4,fontWeight:600}}>
+                    <GitBranch size={10}/>v{q.version||1}
+                  </span>
+                )}
+              </div>
+            )},
+            { key: "title", label: "Title", defaultWidth: 240, render: q => txt(q.title) },
+            { key: "_accName", label: "Customer Name", defaultWidth: 220, render: q => (
+              <span className="tbl-link" onClick={()=>setDetail(q)}>{q._accName}</span>
+            )},
+            { key: "_sector", label: "Sector", defaultWidth: 130, render: q => (
+              <span style={{background:"var(--s2)",padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:500}}>{q._sector || "-"}</span>
+            )},
+            { key: "product", label: "Product", defaultWidth: 130, render: q => <ProdTag pid={q.product}/> },
+            { key: "createdDate", label: "Created", defaultWidth: 110, render: q => (
+              <span style={{fontSize:12,color:"var(--text2)"}}>{q.createdDate?fmt.date(q.createdDate):"-"}</span>
+            )},
+            { key: "sentDate", label: "Date Sent", defaultWidth: 110, render: q => (
+              <span style={{fontSize:12,color:"var(--text2)"}}>{q.sentDate?fmt.date(q.sentDate):"-"}</span>
+            )},
+            { key: "quoteMonth", label: "Quote Month", defaultWidth: 120, sortable: false, render: q => (
+              <span style={{fontSize:12,color:"var(--text2)"}}>{getMonthName(q.sentDate||q.createdDate)}</span>
+            )},
+            { key: "expiryDate", label: "Expiry", defaultWidth: 110, render: q => txt(fmt.date(q.expiryDate)) },
+            { key: "validity", label: "Validity", defaultWidth: 110, render: q => txt(q.validity) },
+            { key: "acceptedDate", label: "Accepted", defaultWidth: 110, render: q => txt(fmt.date(q.acceptedDate)) },
+            { key: "subtotal", label: "Subtotal", defaultWidth: 110, render: q => (
+              <span style={{fontFamily:"'Outfit',sans-serif"}}>{`₹${q.subtotal || 0}`}</span>
+            )},
+            { key: "discount", label: "Discount", defaultWidth: 100, render: q => (
+              <span style={{fontFamily:"'Outfit',sans-serif"}}>{q.discount ? `₹${q.discount}` : "-"}</span>
+            )},
+            { key: "taxAmount", label: "Tax", defaultWidth: 100, render: q => (
+              <span style={{fontFamily:"'Outfit',sans-serif"}}>{q.taxAmount ? `₹${q.taxAmount}` : "-"}</span>
+            )},
+            { key: "taxType", label: "Tax Type", defaultWidth: 110, render: q => txt(q.taxType) },
+            { key: "total", label: "Order Value", defaultWidth: 130, render: q => (
+              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700,fontSize:13}}>{formatINR(q.total)}</span>
+            )},
+            { key: "_prob", label: "Prob %", defaultWidth: 90, render: q => (
+              <span style={{fontWeight:600,fontSize:12,color:q._prob>=70?"#22C55E":q._prob>=40?"#F59E0B":"#EF4444"}}>{q._prob}%</span>
+            )},
+            { key: "status", label: "Status", defaultWidth: 200, render: q => (
+              <>
+                <span style={statusBadgeStyle(q.status)}>{statusLabel(q.status)}</span>
+                {q.approvalStatus==="Pending"&&<span title="Awaiting manager approval" style={{marginLeft:4,display:"inline-flex",alignItems:"center",gap:2,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#F59E0B18",color:"#F59E0B",letterSpacing:"0.5px"}}><ShieldCheck size={9}/>APPR PEND</span>}
+                {q.approvalStatus==="Approved"&&<span title="Manager approved" style={{marginLeft:4,display:"inline-flex",alignItems:"center",gap:2,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#22C55E18",color:"#22C55E",letterSpacing:"0.5px"}}><ShieldCheck size={9}/>APPROVED</span>}
+                {q.approvalStatus==="Rejected"&&<span title={q.rejectedReason} style={{marginLeft:4,display:"inline-flex",alignItems:"center",gap:2,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#EF444418",color:"#EF4444",letterSpacing:"0.5px"}}><ShieldCheck size={9}/>APPR REJ</span>}
+              </>
+            )},
+            { key: "approvalStatus", label: "Approval", defaultWidth: 110, render: q => txt(q.approvalStatus) },
+            { key: "version", label: "Version", defaultWidth: 80, render: q => txt(q.version ? `v${q.version}` : "") },
+            { key: "owner", label: "Owner", defaultWidth: 140, render: q => <UserPill uid={q.owner}/> },
+            { key: "lastReminderAt", label: "Last Reminder", defaultWidth: 130, render: q => txt(q.lastReminderAt ? fmt.date(q.lastReminderAt.slice(0,10)) : "") },
+            { key: "rejectedReason", label: "Rejected Reason", defaultWidth: 200, render: q => txt(q.rejectedReason) },
+            { key: "approvedBy", label: "Approved By", defaultWidth: 140, render: q => txt(q.approvedBy) },
+            { key: "notes", label: "Notes", defaultWidth: 240, sortable: false, render: q => (
+              <span style={{fontSize:11,color:"var(--text3)"}} title={q.notes || ""}>{(q.notes || "").slice(0, 80) || "-"}</span>
+            )},
+          ];
+          const visibleSet = new Set(["_quoteId","_accName","_sector","sentDate","quoteMonth","total","_prob","status"]);
+          const DEFAULT = COLS.map(co => ({ key: co.key, visible: visibleSet.has(co.key), width: co.defaultWidth }));
+          return (
+            <DataGrid
+              module="quotations_list"
+              userId={currentUser}
+              columns={COLS}
+              defaultColumnConfig={DEFAULT}
+              rows={pg.paged}
+              rowKey={r => r.id}
+              sortKey={sort.key} sortDir={sort.dir}
+              onSort={sort.toggle}
+              SortIcon={QuotesSortIcon}
+              rowActions={q => (
+                <div style={{display:"flex",gap:4}}>
+                  <button className="icon-btn" title="View" onClick={()=>setDetail(q)}><Eye size={14}/></button>
+                  <button className="icon-btn" title="Edit" onClick={()=>openEdit(q)}><Edit2 size={14}/></button>
+                  {q.status==="Draft"&&<button className="icon-btn" title={needsApproval(q)&&q.approvalStatus!=="Approved"?`Request approval (${approvalReason(q)})`:"Send to customer"} onClick={()=>sendQuote(q)} style={{color:needsApproval(q)&&q.approvalStatus!=="Approved"?"#F59E0B":"#3B82F6"}}><Send size={14}/></button>}
+                  {isManager && q.approvalStatus==="Pending" && (<>
+                    <button className="icon-btn" title={`Approve (${approvalReason(q)})`} onClick={()=>approveQuote(q)} style={{color:"#22C55E"}}><ThumbsUp size={14}/></button>
+                    <button className="icon-btn" title="Reject" onClick={()=>rejectQuote(q)} style={{color:"#EF4444"}}><ThumbsDown size={14}/></button>
+                  </>)}
+                  {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title={`Send reminder${q.lastReminderAt?` (last: ${fmt.date(q.lastReminderAt.slice(0,10))})`:""}`} onClick={()=>logReminder(q,"manual")} style={{color:"#F59E0B"}}><Mail size={14}/></button>}
+                  {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title="Mark as Accepted by customer" onClick={()=>acceptQuote(q)} style={{color:"#22C55E"}}><FileSignature size={14}/></button>}
+                  <button className="icon-btn" title="Duplicate/Revise" onClick={()=>duplicate(q)}><Copy size={14}/></button>
+                  {canDelete&&<button className="icon-btn" title="Delete" onClick={()=>setConfirm(q.id)}><Trash2 size={14}/></button>}
+                </div>
+              )}
+            />
+          );
+        })()}
+        {false && (
           <table className="tbl">
             <thead><tr>
               <th><SortHeader sort={sort} k="_quoteId">QUOTE ID</SortHeader></th>
