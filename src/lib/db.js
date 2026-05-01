@@ -1045,6 +1045,104 @@ export async function deleteUserTableView(viewId, userId, module) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PRODUCT RESOURCES — sales collateral library (URL-only)
+// ═══════════════════════════════════════════════════════════════════
+// Backed by supabase/product_resources_v1.sql. Files themselves live
+// in Drive/Dropbox/SharePoint — we only persist the metadata + URL.
+// Localstorage fallback keyed under a single key (org-wide visibility,
+// no per-user scoping).
+
+const LS_PRODUCT_RESOURCES_KEY = "smartcrm_product_resources";
+
+const lsLoadResources = () => {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(LS_PRODUCT_RESOURCES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+};
+const lsSaveResources = (rows) => {
+  if (typeof localStorage === "undefined") return;
+  try { localStorage.setItem(LS_PRODUCT_RESOURCES_KEY, JSON.stringify(rows)); } catch {}
+};
+
+const rowToResource = (r) => ({
+  id: r.id,
+  productId: r.product_id,
+  kind: r.kind,
+  name: r.name,
+  url: r.url,
+  description: r.description || "",
+  version: r.version || "",
+  uploadedBy: r.uploaded_by || "",
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export async function loadProductResources() {
+  if (!isSupabaseConfigured) return lsLoadResources();
+  const { data, error } = await supabase
+    .from("product_resources")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error) { dbLog('error', '[DB] loadProductResources:', error); return []; }
+  return (data || []).map(rowToResource);
+}
+
+export async function saveProductResource(resource) {
+  // resource: { id?, productId, kind, name, url, description?, version? }
+  if (!resource.productId || !resource.kind || !resource.name || !resource.url) {
+    return { error: "missing required fields" };
+  }
+  if (!isSupabaseConfigured) {
+    const all = lsLoadResources();
+    const id = resource.id || `pr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const next = {
+      id,
+      productId: resource.productId,
+      kind: resource.kind,
+      name: resource.name,
+      url: resource.url,
+      description: resource.description || "",
+      version: resource.version || "",
+      uploadedBy: resource.uploadedBy || "",
+      createdAt: resource.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const merged = [next, ...all.filter(r => r.id !== id)];
+    lsSaveResources(merged);
+    return next;
+  }
+  const payload = {
+    product_id: resource.productId,
+    kind: resource.kind,
+    name: resource.name,
+    url: resource.url,
+    description: resource.description || "",
+    version: resource.version || "",
+  };
+  let q;
+  if (resource.id) {
+    q = supabase.from("product_resources").update(payload).eq("id", resource.id).select().single();
+  } else {
+    q = supabase.from("product_resources").insert(payload).select().single();
+  }
+  const { data, error } = await q;
+  if (error) { dbLog('error', '[DB] saveProductResource:', error); return { error }; }
+  return rowToResource(data);
+}
+
+export async function deleteProductResource(id) {
+  if (!isSupabaseConfigured) {
+    lsSaveResources(lsLoadResources().filter(r => r.id !== id));
+    return { error: null };
+  }
+  const { error } = await supabase.from("product_resources").delete().eq("id", id);
+  if (error) dbLog('error', '[DB] deleteProductResource:', error);
+  return { error };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // SEED DATA MIGRATION
 // ═══════════════════════════════════════════════════════════════════
 

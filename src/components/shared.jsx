@@ -657,6 +657,7 @@ export function FilesList({files,onAdd,currentUser}) {
 // ═══════════════════════════════════════════════════════════════════
 import { EMAIL_TEMPLATES, TEMPLATES_BY_ID } from "../data/emailTemplates";
 import { interpolate, withFirstName, sendEmail } from "../utils/email";
+import { loadProductResources } from "../lib/db";
 
 export function SendEmailModal({
   onClose, onSent,
@@ -681,6 +682,22 @@ export function SendEmailModal({
   const [showHtmlSource, setShowHtmlSource] = useState(false);
   const [sending, setSending] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  // Resource Library — load org-wide once when the modal opens. Filter
+  // pre-narrows by the picked product (account.products / opp.products
+  // / lead.product) so the panel surfaces what's relevant by default;
+  // user can flip the filter to "All" to browse everything.
+  const [resources, setResources] = useState([]);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [libraryFilter, setLibraryFilter] = useState("relevant"); // 'relevant' | 'all'
+  const [pickedResourceIds, setPickedResourceIds] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const list = await loadProductResources();
+      if (!cancelled) setResources(list);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Derive the recipient contact (if picked) so {{contact.*}} resolves.
   const contact = useMemo(() => {
@@ -716,7 +733,21 @@ export function SendEmailModal({
   // every ctx change once the user starts typing).
   const lastFilledTemplateRef = useRef("");
   useEffect(() => {
-    if (!templateId) { setSubject(""); setBodyHtml(""); lastFilledTemplateRef.current = ""; return; }
+    // The empty-templateId branch must only fire when the user
+    // actually clears a previously-picked template. Without the
+    // lastFilledTemplateRef guard, this effect re-runs every time
+    // `ctx` changes identity (e.g. `meWithFirst` is a new object on
+    // each render) and silently wipes any body content the user has
+    // since composed — including resource-link blocks inserted from
+    // the Library panel.
+    if (!templateId) {
+      if (lastFilledTemplateRef.current) {
+        setSubject("");
+        setBodyHtml("");
+        lastFilledTemplateRef.current = "";
+      }
+      return;
+    }
     if (templateId === lastFilledTemplateRef.current) return;
     const t = TEMPLATES_BY_ID[templateId];
     if (!t) return;
@@ -872,10 +903,142 @@ export function SendEmailModal({
         )}
       </div>
 
+      {/* Resource Library attach panel — collapsed by default. When
+          opened, lists library items filtered by relevance to the
+          picked account/opp/lead's product set. Picking items appends
+          a styled link block to the email body. We don't try to send
+          actual binary attachments via SMTP — see PR description. */}
+      <ResourceAttachPanel
+        open={libraryOpen}
+        onToggle={() => setLibraryOpen(o => !o)}
+        resources={resources}
+        relevantProductIds={(() => {
+          const ids = new Set();
+          if (account?.products?.length) account.products.forEach(p => ids.add(p));
+          if (prefill.opp?.products?.length) prefill.opp.products.forEach(p => ids.add(p));
+          if (prefill.lead?.product) ids.add(prefill.lead.product);
+          if (prefill.opp?.product) ids.add(prefill.opp.product);
+          return ids;
+        })()}
+        filter={libraryFilter}
+        onFilterChange={setLibraryFilter}
+        picked={pickedResourceIds}
+        onPickedChange={(nextIds, pickedResources) => {
+          setPickedResourceIds(nextIds);
+          // Replace the link block in the body so re-toggling stays in
+          // sync with the picked set. We bracket the block with HTML
+          // comment markers we can find on subsequent edits.
+          // The panel passes the resolved resource objects directly so
+          // we don't depend on the parent's closure (.filter against
+          // resources was returning stale refs in some flows).
+          const START = "<!-- resource-links:start -->";
+          const END   = "<!-- resource-links:end -->";
+          const block = pickedResources.length === 0 ? "" :
+            `${START}\n<div style="margin-top:18px;padding:12px 14px;background:#F8FAFB;border:1px solid #E2E9EF;border-radius:8px;">` +
+            `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#475569;margin-bottom:8px;">Resources</div>` +
+            pickedResources.map(r => `<div style="margin:4px 0;"><a href="${r.url}" style="color:#1B6B5A;text-decoration:none;font-weight:600;">${r.name}</a> <span style="color:#94A3B8;font-size:11px;">(${r.kind}${r.version ? ` · v${r.version}` : ""})</span></div>`).join("") +
+            `</div>\n${END}`;
+          setBodyHtml(prev => {
+            // Remove any existing block then append the new one (or nothing).
+            const re = new RegExp(`${START}[\\s\\S]*?${END}`, "g");
+            const stripped = prev.replace(re, "").replace(/\n+$/,"");
+            if (!block) return stripped;
+            return stripped ? `${stripped}\n${block}` : block;
+          });
+        }}
+      />
+
       <div style={{fontSize:11,color:"var(--text3)",marginTop:6}}>
         Replies will go to <strong>{me.email || "your email on file"}</strong>. Sent via the configured outbound mail provider — see Help → Email Setup if delivery fails.
       </div>
     </Modal>
+  );
+}
+
+// ── ResourceAttachPanel — collapsible library picker for SendEmailModal ─
+
+function ResourceAttachPanel({ open, onToggle, resources, relevantProductIds, filter, onFilterChange, picked, onPickedChange }) {
+  const visible = useMemo(() => {
+    if (filter === "all" || relevantProductIds.size === 0) return resources;
+    return resources.filter(r => relevantProductIds.has(r.productId));
+  }, [resources, filter, relevantProductIds]);
+
+  const toggle = (id) => {
+    const next = picked.includes(id) ? picked.filter(x => x !== id) : [...picked, id];
+    // Resolve picked resource objects from the panel's own (always-current)
+    // `resources` prop and hand them back so the parent doesn't have to
+    // re-filter against a potentially-stale closure copy.
+    const nextResources = next.map(rid => resources.find(r => r.id === rid)).filter(Boolean);
+    onPickedChange(next, nextResources);
+  };
+
+  return (
+    <div style={{marginTop:10,border:"1px solid var(--border)",borderRadius:8,background:"var(--s2)"}}>
+      <button
+        type="button"
+        onClick={onToggle}
+        style={{
+          width:"100%",display:"flex",alignItems:"center",gap:8,
+          padding:"8px 12px",border:"none",background:"transparent",
+          fontSize:12,fontWeight:600,color:"var(--text2)",cursor:"pointer",
+        }}>
+        <Paperclip size={13}/>
+        <span>Attach from Library</span>
+        {picked.length > 0 && (
+          <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10,background:"var(--brand)",color:"white"}}>{picked.length} picked</span>
+        )}
+        <span style={{marginLeft:"auto",fontSize:11,color:"var(--text3)"}}>{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div style={{padding:"4px 12px 12px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:11}}>
+            <button
+              type="button"
+              onClick={() => onFilterChange("relevant")}
+              style={{padding:"3px 10px",borderRadius:14,border:"1px solid var(--border)",background: filter === "relevant" ? "var(--brand)" : "white",color: filter === "relevant" ? "white" : "var(--text2)",fontWeight:600,cursor:"pointer",fontSize:11}}>
+              Relevant to this email
+            </button>
+            <button
+              type="button"
+              onClick={() => onFilterChange("all")}
+              style={{padding:"3px 10px",borderRadius:14,border:"1px solid var(--border)",background: filter === "all" ? "var(--brand)" : "white",color: filter === "all" ? "white" : "var(--text2)",fontWeight:600,cursor:"pointer",fontSize:11}}>
+              All resources
+            </button>
+            <span style={{marginLeft:"auto",color:"var(--text3)"}}>{visible.length} item{visible.length === 1 ? "" : "s"}</span>
+          </div>
+          {visible.length === 0 ? (
+            <div style={{fontSize:11.5,color:"var(--text3)",padding:"8px 0",fontStyle:"italic"}}>
+              {resources.length === 0
+                ? "No resources in the library yet. Add presentations / brochures / pricing decks under Communications → Resource Library."
+                : "No resources match the picked product. Switch to 'All resources' to browse everything."}
+            </div>
+          ) : (
+            <div style={{maxHeight:200,overflowY:"auto",display:"grid",gap:4}}>
+              {visible.map(r => {
+                const isPicked = picked.includes(r.id);
+                return (
+                  <label key={r.id} style={{
+                    display:"flex",alignItems:"center",gap:8,padding:"6px 8px",
+                    background: isPicked ? "var(--brand-bg)" : "white",
+                    border: `1px solid ${isPicked ? "var(--brand)" : "var(--border)"}`,
+                    borderRadius:6,cursor:"pointer",fontSize:12,
+                  }}>
+                    <input type="checkbox" checked={isPicked} onChange={() => toggle(r.id)}/>
+                    <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      <strong>{r.name}</strong>
+                      <span style={{color:"var(--text3)",marginLeft:6}}>· {r.kind}{r.version ? ` · v${r.version}` : ""}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          <div style={{fontSize:10.5,color:"var(--text3)",marginTop:8,lineHeight:1.5}}>
+            Picked items are inserted as a "Resources" block at the bottom of the email body. Recipients click each link to open the file in your team's hosting (Drive / Dropbox / SharePoint) — make sure they have permission first.
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
