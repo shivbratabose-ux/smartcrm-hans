@@ -9,7 +9,14 @@ import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge, Typea
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
+import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { exportCSV } from '../utils/csv';
+import DataGrid from './DataGrid';
+
+const ContractsSortIcon = ({ col, sortKey, sortDir }) => {
+  if (sortKey !== col) return <ChevronsUpDown size={11} style={{opacity:0.4,marginLeft:2}}/>;
+  return sortDir === "asc" ? <ChevronUp size={11} style={{marginLeft:2}}/> : <ChevronDown size={11} style={{marginLeft:2}}/>;
+};
 
 const validateContract = (f) => {
   const errs = {};
@@ -318,7 +325,107 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
       <div className="card" style={{padding:0}}>
         {filtered.length === 0 ? (
           <Empty icon={<FileText size={22}/>} title="No contracts found" sub="Create your first contract."/>
-        ) : (
+        ) : (() => {
+          // Full registry — every BLANK_CONTRACT field is opt-in.
+          const txt = (v) => <span style={{fontSize:12}}>{v || "-"}</span>;
+          const COLS = [
+            { key: "_contractId", label: "Contract ID", defaultWidth: 130, render: c => (
+              <>
+                <span className="tbl-link" onClick={() => setDetail(c)} style={{ fontWeight: 700, fontSize: 13, fontFamily: "'Outfit',sans-serif" }}>{c._contractId}</span>
+                {c.docType && <div style={{fontSize:11,color:"var(--text3)"}}>{c.docType}</div>}
+              </>
+            )},
+            { key: "_accName", label: "Account Name", defaultWidth: 220, render: c => (
+              <>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{c._accName}</span>
+                <div style={{ fontSize: 11, color: "var(--text3)" }}>{c.title}</div>
+              </>
+            )},
+            { key: "title", label: "Title", defaultWidth: 220, render: c => txt(c.title) },
+            { key: "owner", label: "Owner", defaultWidth: 140, render: c => <UserPill uid={c.owner}/> },
+            { key: "startDate", label: "Timeline", defaultWidth: 140, render: c => {
+              const expiring = c.endDate && c.status === "Active" && ((new Date(c.endDate) - new Date(today)) / (1000*60*60*24)) <= 60;
+              return (
+                <span style={{ fontSize: 12, color: "var(--text2)" }}>
+                  <div>{c.startDate ? fmt.short(c.startDate) : "-"}</div>
+                  {c.endDate && (
+                    <div style={{ fontSize: 11, color: expiring ? "#F59E0B" : "var(--text3)" }}>
+                      {expiring ? "Exp: " : "Expiry: "}{fmtExpiry(c.endDate)}
+                    </div>
+                  )}
+                </span>
+              );
+            }},
+            { key: "endDate", label: "End Date", defaultWidth: 110, render: c => txt(fmt.short(c.endDate)) },
+            { key: "renewalDate", label: "Renewal Date", defaultWidth: 120, render: c => txt(fmt.short(c.renewalDate)) },
+            { key: "renewalType", label: "Renewal Type", defaultWidth: 130, render: c => txt(c.renewalType) },
+            { key: "autoRenewal", label: "Auto Renewal", defaultWidth: 110, render: c => txt(c.autoRenewal) },
+            { key: "billType", label: "Billing Type", defaultWidth: 130, render: c => <span style={{ fontSize: 12, color: "var(--text3)" }}>{billTypeLabel(c)}</span> },
+            { key: "billTerm", label: "Billing Term", defaultWidth: 110, render: c => txt(c.billTerm) },
+            { key: "billingFrequency", label: "Billing Freq.", defaultWidth: 130, render: c => txt(c.billingFrequency) },
+            { key: "paymentTerms", label: "Payment Terms", defaultWidth: 130, render: c => txt(c.paymentTerms) },
+            { key: "currency", label: "Currency", defaultWidth: 90, render: c => txt(c.currency || "INR") },
+            { key: "invoiceGenBasis", label: "Invoice Basis", defaultWidth: 130, render: c => txt(c.invoiceGenBasis) },
+            { key: "status", label: "Status", defaultWidth: 140, render: c => {
+              const expiring = c.endDate && c.status === "Active" && ((new Date(c.endDate) - new Date(today)) / (1000*60*60*24)) <= 60;
+              const badge = statusBadgeStyle(c.status);
+              return (
+                <span style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20,
+                  background: badge.bg, color: badge.color
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: badge.dot, flexShrink: 0 }} />
+                  {c.status === "Pending Approval" ? "Client Review" : c.status === "Draft" ? "Drafting" : c.status}
+                  {expiring && <AlertTriangle size={11}/>}
+                </span>
+              );
+            }},
+            { key: "approvalStage", label: "Approval Stage", defaultWidth: 140, render: c => txt(c.approvalStage) },
+            { key: "value", label: "Value", defaultWidth: 110, render: c => (
+              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{`₹${c.value || 0}L`}</span>
+            )},
+            { key: "product", label: "Product", defaultWidth: 130, render: c => <ProdTag pid={c.product}/> },
+            { key: "noOfUsers", label: "Users", defaultWidth: 80, render: c => txt(c.noOfUsers) },
+            { key: "noOfBranches", label: "Branches", defaultWidth: 90, render: c => txt(c.noOfBranches) },
+            { key: "commercialModel", label: "Commercial", defaultWidth: 140, render: c => txt(c.commercialModel) },
+            { key: "serviceStartDate", label: "Service Start", defaultWidth: 120, render: c => txt(fmt.short(c.serviceStartDate)) },
+            { key: "goLiveDate", label: "Go-Live", defaultWidth: 110, render: c => txt(fmt.short(c.goLiveDate)) },
+            { key: "warrantyMonths", label: "Warranty (mo)", defaultWidth: 120, render: c => txt(c.warrantyMonths) },
+            { key: "griApplicable", label: "GRI", defaultWidth: 80, render: c => txt(c.griApplicable) },
+            { key: "griPercentage", label: "GRI %", defaultWidth: 80, render: c => txt(c.griPercentage ? `${c.griPercentage}%` : "") },
+            { key: "poNumber", label: "PO Number", defaultWidth: 140, render: c => (
+              <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{c.poNumber || "-"}</span>
+            )},
+            { key: "territory", label: "Territory", defaultWidth: 130, render: c => txt(c.territory) },
+            { key: "docType", label: "Doc Type", defaultWidth: 110, render: c => txt(c.docType) },
+            { key: "signedDocUrl", label: "Signed Doc", defaultWidth: 140, render: c => c.signedDocUrl
+              ? <a href={c.signedDocUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"var(--brand)"}}>View</a>
+              : txt() },
+          ];
+          const visibleSet = new Set(["_contractId","_accName","owner","startDate","billType","status","value"]);
+          const DEFAULT = COLS.map(co => ({ key: co.key, visible: visibleSet.has(co.key), width: co.defaultWidth }));
+          return (
+            <DataGrid
+              module="contracts_list"
+              userId={currentUser}
+              columns={COLS}
+              defaultColumnConfig={DEFAULT}
+              rows={pg.paged}
+              rowKey={r => r.id}
+              sortKey={sort.key} sortDir={sort.dir}
+              onSort={sort.toggle}
+              SortIcon={ContractsSortIcon}
+              rowActions={c => (
+                <div style={{display:"flex",gap:4}}>
+                  <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
+                  {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
+                </div>
+              )}
+            />
+          );
+        })()}
+        {false && (
           <table className="tbl">
             <thead>
               <tr>

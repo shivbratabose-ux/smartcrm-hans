@@ -906,6 +906,145 @@ export async function logAudit(userId, action, tableName, recordId, oldData, new
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// USER TABLE VIEWS — per-user saved column presets
+// ═══════════════════════════════════════════════════════════════════
+// Storage for the column-picker / saved-views feature on Pipeline,
+// Leads, and Accounts lists. See supabase/user_table_views_v1.sql
+// for the schema and the "no auto-rearrange" rationale.
+//
+// All helpers degrade gracefully when Supabase isn't configured —
+// they fall back to localStorage so dev/offline still works. The
+// localStorage fallback is keyed by (userId, module) so two users on
+// the same browser can't see each other's views.
+
+const LS_USER_VIEWS_KEY = (userId, module) =>
+  `smartcrm_user_views::${userId}::${module}`;
+
+const lsLoadViews = (userId, module) => {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(LS_USER_VIEWS_KEY(userId, module));
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+};
+
+const lsSaveViews = (userId, module, views) => {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(LS_USER_VIEWS_KEY(userId, module), JSON.stringify(views));
+  } catch {}
+};
+
+/**
+ * Return all saved views for a (user, module) pair, ordered with the
+ * default first then by name. Empty array means "no saved views" — the
+ * caller should fall back to its built-in default column registry.
+ */
+export async function loadUserTableViews(userId, module) {
+  if (!userId || !module) return [];
+  if (!isSupabaseConfigured) return lsLoadViews(userId, module);
+  const { data, error } = await supabase
+    .from("user_table_views")
+    .select("id, user_id, module, name, is_default, column_config, updated_at")
+    .eq("user_id", userId)
+    .eq("module", module)
+    .order("is_default", { ascending: false })
+    .order("name", { ascending: true });
+  if (error) { dbLog('error', '[DB] loadUserTableViews:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    userId: r.user_id,
+    module: r.module,
+    name: r.name,
+    isDefault: r.is_default,
+    columnConfig: r.column_config || [],
+    updatedAt: r.updated_at,
+  }));
+}
+
+/**
+ * Upsert a saved view by (user_id, module, name). Saving the same name
+ * again overwrites — that's the intended "save changes" behaviour. To
+ * create a copy under a new label, the caller passes a fresh `name`.
+ *
+ * If `isDefault` is true the DB trigger transparently flips every
+ * other view for the same (user, module) to is_default = false, so
+ * the caller doesn't need a separate "unset default" round-trip.
+ *
+ * Returns the saved view (with id) or `{ error }` on failure.
+ */
+export async function saveUserTableView({ userId, module, name, columnConfig, isDefault = false }) {
+  if (!userId || !module || !name) return { error: "missing required fields" };
+  if (!isSupabaseConfigured) {
+    // Local-only fallback. Mirror the trigger's "single default" rule.
+    const all = lsLoadViews(userId, module);
+    const existing = all.find(v => v.name === name);
+    const id = existing?.id || `lv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const next = { id, userId, module, name, isDefault, columnConfig, updatedAt: new Date().toISOString() };
+    let merged = all.filter(v => v.name !== name);
+    if (isDefault) merged = merged.map(v => ({ ...v, isDefault: false }));
+    merged.push(next);
+    lsSaveViews(userId, module, merged);
+    return next;
+  }
+  const { data, error } = await supabase
+    .from("user_table_views")
+    .upsert({
+      user_id: userId,
+      module,
+      name,
+      is_default: isDefault,
+      column_config: columnConfig,
+    }, { onConflict: "user_id,module,name" })
+    .select()
+    .single();
+  if (error) { dbLog('error', '[DB] saveUserTableView:', error); return { error }; }
+  return {
+    id: data.id, userId: data.user_id, module: data.module, name: data.name,
+    isDefault: data.is_default, columnConfig: data.column_config || [],
+    updatedAt: data.updated_at,
+  };
+}
+
+/**
+ * Mark a view as the default for its (user, module). The DB trigger
+ * unsets the previous default in the same transaction.
+ */
+export async function setDefaultUserTableView(viewId, userId, module) {
+  if (!isSupabaseConfigured) {
+    const all = lsLoadViews(userId, module).map(v => ({ ...v, isDefault: v.id === viewId }));
+    lsSaveViews(userId, module, all);
+    return { error: null };
+  }
+  const { error } = await supabase
+    .from("user_table_views")
+    .update({ is_default: true })
+    .eq("id", viewId);
+  if (error) dbLog('error', '[DB] setDefaultUserTableView:', error);
+  return { error };
+}
+
+/**
+ * Hard-delete a saved view. RLS guarantees the caller can only delete
+ * their own (the policy filters by user_id = get_crm_user_id()), so
+ * we don't need to pass userId for safety — but we accept it for the
+ * localStorage fallback path.
+ */
+export async function deleteUserTableView(viewId, userId, module) {
+  if (!isSupabaseConfigured) {
+    const all = lsLoadViews(userId, module).filter(v => v.id !== viewId);
+    lsSaveViews(userId, module, all);
+    return { error: null };
+  }
+  const { error } = await supabase
+    .from("user_table_views")
+    .delete()
+    .eq("id", viewId);
+  if (error) dbLog('error', '[DB] deleteUserTableView:', error);
+  return { error };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // SEED DATA MIGRATION
 // ═══════════════════════════════════════════════════════════════════
 

@@ -7,7 +7,14 @@ import { notify } from '../utils/toast';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
+import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { exportCSV } from '../utils/csv';
+import DataGrid from './DataGrid';
+
+const CollectionsSortIcon = ({ col, sortKey, sortDir }) => {
+  if (sortKey !== col) return <ChevronsUpDown size={11} style={{opacity:0.4,marginLeft:2}}/>;
+  return sortDir === "asc" ? <ChevronUp size={11} style={{marginLeft:2}}/> : <ChevronDown size={11} style={{marginLeft:2}}/>;
+};
 
 const validateCollection = (f) => {
   const errs = {};
@@ -171,7 +178,92 @@ function Collections({ collections, setCollections, accounts, contracts, current
       <div className="card" style={{padding:0}}>
         {filtered.length === 0 ? (
           <Empty icon={<DollarSign size={22}/>} title="No invoices found" sub="Add an invoice to start tracking collections."/>
-        ) : (
+        ) : (() => {
+          const txt = (v) => <span style={{fontSize:12}}>{v || "-"}</span>;
+          // Full registry — every BLANK_COLLECTION field is opt-in.
+          const COLS = [
+            { key: "invoiceNo", label: "Invoice #", defaultWidth: 130, render: c => (
+              <span style={{fontWeight:600,fontSize:13}}>{c.invoiceNo}</span>
+            )},
+            { key: "_accName", label: "Account", defaultWidth: 220, render: c => (
+              <span style={{fontSize:12.5}}>{c._accName}</span>
+            )},
+            { key: "invoiceType", label: "Invoice Type", defaultWidth: 130, render: c => txt(c.invoiceType) },
+            { key: "product", label: "Product", defaultWidth: 130, render: c => txt(c.product) },
+            { key: "invoiceDate", label: "Invoice Date", defaultWidth: 110, render: c => (
+              <span style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(c.invoiceDate)}</span>
+            )},
+            { key: "dueDate", label: "Due Date", defaultWidth: 110, render: c => (
+              <span style={{fontSize:12,color:c.pendingAmount>0&&c._ageing!=="Current"?"var(--red)":"var(--text3)",fontWeight:c.pendingAmount>0&&c._ageing!=="Current"?700:400}}>{fmt.short(c.dueDate)}</span>
+            )},
+            { key: "billPeriodFrom", label: "Bill Period From", defaultWidth: 130, render: c => txt(fmt.short(c.billPeriodFrom)) },
+            { key: "billPeriodTo", label: "Bill Period To", defaultWidth: 130, render: c => txt(fmt.short(c.billPeriodTo)) },
+            { key: "billedAmount", label: "Billed", defaultWidth: 100, render: c => (
+              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{`₹${c.billedAmount || 0}L`}</span>
+            )},
+            { key: "collectedAmount", label: "Collected", defaultWidth: 100, render: c => (
+              <span style={{fontFamily:"'Outfit',sans-serif",color:"var(--green)"}}>{`₹${c.collectedAmount || 0}L`}</span>
+            )},
+            { key: "pendingAmount", label: "Pending", defaultWidth: 100, render: c => (
+              <span style={{fontFamily:"'Outfit',sans-serif",color:c.pendingAmount>0?"var(--red)":"var(--text3)"}}>{`₹${c.pendingAmount || 0}L`}</span>
+            )},
+            { key: "gstAmount", label: "GST", defaultWidth: 90, render: c => (
+              <span style={{fontFamily:"'Outfit',sans-serif"}}>{c.gstAmount ? `₹${c.gstAmount}L` : "-"}</span>
+            )},
+            { key: "tdsAmount", label: "TDS", defaultWidth: 90, render: c => (
+              <span style={{fontFamily:"'Outfit',sans-serif"}}>{c.tdsAmount ? `₹${c.tdsAmount}L` : "-"}</span>
+            )},
+            { key: "netPayable", label: "Net Payable", defaultWidth: 110, render: c => (
+              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{c.netPayable ? `₹${c.netPayable}L` : "-"}</span>
+            )},
+            { key: "currency", label: "Currency", defaultWidth: 90, render: c => txt(c.currency || "INR") },
+            { key: "_ageing", label: "Ageing", defaultWidth: 110, sortable: true, render: c => {
+              const ac = ageingColor(c._ageing);
+              return c.pendingAmount > 0 ? (
+                <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:5,background:ac+"18",color:ac}}>
+                  {c._ageing} {c._ageing !== "Current" && "days"}
+                </span>
+              ) : <span style={{fontSize:11,color:"var(--green)"}}>Paid</span>;
+            }},
+            { key: "agingBucket", label: "Aging Bucket", defaultWidth: 130, render: c => txt(c.agingBucket) },
+            { key: "status", label: "Status", defaultWidth: 110, render: c => (
+              <span className={`badge ${c.status==="Current"?"bs-active":c.status==="Overdue"?"bs-lost":"bs-prospect"}`}>{c.status}</span>
+            )},
+            { key: "paymentMode", label: "Payment Mode", defaultWidth: 120, render: c => txt(c.paymentMode) },
+            { key: "paymentDate", label: "Payment Date", defaultWidth: 120, render: c => txt(fmt.short(c.paymentDate)) },
+            { key: "chequeRef", label: "Cheque/Ref", defaultWidth: 130, render: c => (
+              <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{c.chequeRef || "-"}</span>
+            )},
+            { key: "followUpDate", label: "Follow-Up", defaultWidth: 120, render: c => txt(fmt.short(c.followUpDate)) },
+            { key: "approvedBy", label: "Approved By", defaultWidth: 140, render: c => txt(c.approvedBy) },
+            { key: "owner", label: "Owner", defaultWidth: 140, render: c => <UserPill uid={c.owner}/> },
+            { key: "remarks", label: "Remarks", defaultWidth: 240, sortable: false, render: c => (
+              <span style={{fontSize:11,color:"var(--text3)"}} title={c.remarks || ""}>{(c.remarks || "").slice(0, 80) || "-"}</span>
+            )},
+          ];
+          const visibleSet = new Set(["invoiceNo","_accName","invoiceDate","dueDate","billedAmount","collectedAmount","pendingAmount","_ageing","status","owner"]);
+          const DEFAULT = COLS.map(co => ({ key: co.key, visible: visibleSet.has(co.key), width: co.defaultWidth }));
+          return (
+            <DataGrid
+              module="collections_list"
+              userId={currentUser}
+              columns={COLS}
+              defaultColumnConfig={DEFAULT}
+              rows={pg.paged}
+              rowKey={r => r.id}
+              sortKey={sort.key} sortDir={sort.dir}
+              onSort={sort.toggle}
+              SortIcon={CollectionsSortIcon}
+              rowActions={c => (
+                <div style={{display:"flex",gap:4}}>
+                  <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
+                  {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
+                </div>
+              )}
+            />
+          );
+        })()}
+        {false && (
           <table className="tbl">
             <thead>
               <tr>

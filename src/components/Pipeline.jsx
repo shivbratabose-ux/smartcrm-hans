@@ -28,6 +28,7 @@ import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, g
 import { exportCSV } from "../utils/csv";
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect } from "./shared";
 import ProductModulePicker, { validateProductSelection, primaryProductId } from "./ProductModulePicker";
+import DataGrid from "./DataGrid";
 
 /* ───────── stages context ─────────
    Pipeline stages were hardcoded in constants.js; they're now editable in
@@ -1275,8 +1276,153 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
         </div>
       )}
 
-      {/* ═════════ LIST VIEW ═════════ */}
-      {view === "list" && (
+      {/* ═════════ LIST VIEW ═════════
+          Excel-like table powered by DataGrid: per-user column visibility,
+          order, width, and saved views are persisted to user_table_views.
+          Ordering of columns here defines the *initial* order any user
+          sees on first visit; never auto-rearranged after that. */}
+      {view === "list" && (() => {
+        // Helper for plain text columns — keeps the registry compact.
+        const txt = (val) => <span style={{ fontSize: 12 }}>{val || "-"}</span>;
+        // Full column registry: every meaningful opp field is opt-in. Different
+        // user groups (sales, BD, line mgr, finance) can build their own views
+        // from this set; only the columns marked visible:true in DEFAULT_CONFIG
+        // show on first visit.
+        const PIPELINE_COLUMNS = [
+          { key: "title", label: "Deal", defaultWidth: 240, render: o => (
+            <>
+              <span className="tbl-link" onClick={() => setDetail(o)}>{o.title}</span>
+              {o.oppNo && <div style={{ fontSize: 10, fontFamily: "'Courier New',monospace", color: "#1B6B5A", marginTop: 2 }}>{o.oppNo}</div>}
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>{(o.products||[]).slice(0, 2).map(p => <ProdTag key={p} pid={p} />)}</div>
+            </>
+          )},
+          { key: "oppNo", label: "Opp No.", defaultWidth: 120, render: o => (
+            <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{o.oppNo || "-"}</span>
+          )},
+          { key: "account", label: "Account", defaultWidth: 200, render: o => txt(accounts.find(a => a.id === o.accountId)?.name) },
+          { key: "stage", label: "Stage", defaultWidth: 140, render: o => <StatusBadge status={o.stage} /> },
+          { key: "value", label: "Value", defaultWidth: 100, render: o => (
+            <span style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700 }}>{`₹${o.value || 0}L`}</span>
+          )},
+          { key: "probability", label: "Prob%", defaultWidth: 80, render: o => (
+            <span style={{ fontSize: 12, color: "var(--text3)" }}>{o.probability}%</span>
+          )},
+          { key: "weightedValue", label: "Weighted ₹L", defaultWidth: 110, sortable: false, render: o => (
+            <span style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700, color: "var(--brand)" }}>
+              {`₹${(((o.value||0) * (o.probability||0)) / 100).toFixed(1)}L`}
+            </span>
+          )},
+          { key: "closeDate", label: "Close Date", defaultWidth: 120, render: o => (
+            <span style={{ fontSize: 12, color: isOverdue(o.closeDate) ? "#DC2626" : "var(--text3)" }}>{fmt.short(o.closeDate)}</span>
+          )},
+          { key: "decisionDate", label: "Decision Date", defaultWidth: 120, render: o => txt(fmt.short(o.decisionDate)) },
+          { key: "createdDate", label: "Created", defaultWidth: 110, render: o => txt(fmt.short(o.createdDate)) },
+          { key: "owner", label: "Owner", defaultWidth: 140, render: o => <UserPill uid={o.owner} /> },
+          { key: "health", label: "Status", defaultWidth: 110, render: o => <HealthBadge health={getDealHealth(o.id, activities)} /> },
+          { key: "lastActivity", label: "Last Activity", defaultWidth: 120, sortable: false, render: o => {
+            const lastAct = getLastActivity(o.id, activities);
+            return <span style={{ fontSize: 11, color: "var(--text3)" }}>{lastAct ? fmt.short(lastAct.date) : "-"}</span>;
+          }},
+          { key: "nextAction", label: "Next Action", defaultWidth: 120, sortable: false, render: o => {
+            const nextAct = getNextAction(o.id, activities);
+            return <span style={{ fontSize: 11, color: "var(--text3)" }}>{nextAct ? fmt.short(nextAct.date) : "-"}</span>;
+          }},
+          { key: "nextStep", label: "Next Step", defaultWidth: 200, render: o => txt(o.nextStep) },
+          { key: "products", label: "Products", defaultWidth: 200, sortable: false, render: o => (
+            <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>{(o.products||[]).map(p => <ProdTag key={p} pid={p}/>)}</div>
+          )},
+          { key: "lob", label: "LOB", defaultWidth: 120, render: o => txt(o.lob) },
+          { key: "dealSize", label: "Deal Size", defaultWidth: 110, render: o => txt(o.dealSize) },
+          { key: "forecastCat", label: "Forecast", defaultWidth: 110, render: o => txt(o.forecastCat) },
+          { key: "source", label: "Source", defaultWidth: 130, render: o => txt(o.source) },
+          { key: "campaignSource", label: "Campaign", defaultWidth: 140, render: o => txt(o.campaignSource) },
+          { key: "country", label: "Country", defaultWidth: 110, render: o => txt(o.country) },
+          { key: "territory", label: "Territory", defaultWidth: 130, render: o => txt(o.territory) },
+          { key: "hierarchyLevel", label: "Hierarchy", defaultWidth: 130, render: o => txt(o.hierarchyLevel) },
+          { key: "currency", label: "Currency", defaultWidth: 90, render: o => txt(o.currency || "INR") },
+          { key: "budget", label: "Budget", defaultWidth: 120, render: o => txt(o.budget) },
+          { key: "primaryContact", label: "Primary Contact", defaultWidth: 180, sortable: false, render: o => {
+            const c = contacts?.find?.(x => x.id === o.primaryContactId);
+            return <span style={{fontSize:12}}>{c?.name || "-"}</span>;
+          }},
+          { key: "secondaryContacts", label: "Other Contacts", defaultWidth: 100, sortable: false, render: o => (
+            <span style={{fontSize:11,color:"var(--text3)"}}>{(o.secondaryContactIds||[]).length || "-"}</span>
+          )},
+          { key: "leadId", label: "Source Lead", defaultWidth: 120, render: o => (
+            <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{o.leadId || "-"}</span>
+          )},
+          { key: "competitors", label: "Competitors", defaultWidth: 160, render: o => txt(o.competitors) },
+          { key: "lossReason", label: "Loss Reason", defaultWidth: 160, render: o => txt(o.lossReason) },
+          { key: "lostToCompetitor", label: "Lost To", defaultWidth: 140, render: o => txt(o.lostToCompetitor) },
+          { key: "upsellFlag", label: "Upsell", defaultWidth: 80, render: o => (
+            <span style={{fontSize:11,fontWeight:600,color:o.upsellFlag?"#22C55E":"var(--text3)"}}>{o.upsellFlag ? "Yes" : "-"}</span>
+          )},
+          { key: "notes", label: "Notes", defaultWidth: 240, sortable: false, render: o => (
+            <span style={{fontSize:11,color:"var(--text3)"}} title={o.notes || ""}>{(o.notes || "").slice(0, 80) || "-"}</span>
+          )},
+        ];
+        const PIPELINE_DEFAULT_CONFIG = [
+          { key: "title", visible: true, width: 240 },
+          { key: "oppNo", visible: false, width: 120 },
+          { key: "account", visible: true, width: 200 },
+          { key: "stage", visible: true, width: 140 },
+          { key: "value", visible: true, width: 100 },
+          { key: "probability", visible: true, width: 80 },
+          { key: "weightedValue", visible: false, width: 110 },
+          { key: "closeDate", visible: true, width: 120 },
+          { key: "decisionDate", visible: false, width: 120 },
+          { key: "createdDate", visible: false, width: 110 },
+          { key: "owner", visible: true, width: 140 },
+          { key: "health", visible: true, width: 110 },
+          { key: "lastActivity", visible: true, width: 120 },
+          { key: "nextAction", visible: true, width: 120 },
+          { key: "nextStep", visible: false, width: 200 },
+          { key: "products", visible: false, width: 200 },
+          { key: "lob", visible: false, width: 120 },
+          { key: "dealSize", visible: false, width: 110 },
+          { key: "forecastCat", visible: false, width: 110 },
+          { key: "source", visible: false, width: 130 },
+          { key: "campaignSource", visible: false, width: 140 },
+          { key: "country", visible: false, width: 110 },
+          { key: "territory", visible: false, width: 130 },
+          { key: "hierarchyLevel", visible: false, width: 130 },
+          { key: "currency", visible: false, width: 90 },
+          { key: "budget", visible: false, width: 120 },
+          { key: "primaryContact", visible: false, width: 180 },
+          { key: "secondaryContacts", visible: false, width: 100 },
+          { key: "leadId", visible: false, width: 120 },
+          { key: "competitors", visible: false, width: 160 },
+          { key: "lossReason", visible: false, width: 160 },
+          { key: "lostToCompetitor", visible: false, width: 140 },
+          { key: "upsellFlag", visible: false, width: 80 },
+          { key: "notes", visible: false, width: 240 },
+        ];
+        return (
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <DataGrid
+              module="pipeline_list"
+              userId={currentUser}
+              columns={PIPELINE_COLUMNS}
+              defaultColumnConfig={PIPELINE_DEFAULT_CONFIG}
+              rows={sorted}
+              rowKey={r => r.id}
+              sortKey={sortKey} sortDir={sortDir}
+              onSort={toggleSort}
+              SortIcon={SortIcon}
+              emptyState={<Empty icon={<List size={36} />} title="No deals found" sub="Adjust your filters or add a new deal" />}
+              rowActions={o => (
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(o)}><Edit2 size={14} /></button>
+                  {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(o.id)}><Trash2 size={14} /></button>}
+                </div>
+              )}
+            />
+          </div>
+        );
+      })()}
+
+      {/* ═════════ LIST VIEW (LEGACY — disabled, replaced by DataGrid block) ═════════ */}
+      {false && (
         <div className="card" style={{ padding: 0, overflow: "auto" }}>
           <table className="tbl">
             <thead>
