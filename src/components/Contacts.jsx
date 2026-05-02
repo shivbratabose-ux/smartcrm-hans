@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star,
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today, resolveAddress, formatAddress, lower, title } from "../utils/helpers";
 import { PRODUCTS, PROD_MAP, COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
-import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, FormError, Empty, TypeaheadSelect, LogCallModal } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, TypeaheadSelect, LogCallModal } from "./shared";
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -584,7 +584,7 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
     else setContacts(p => p.map(c => c.id === clean.id ? {...clean} : c));
     setModal(null); setFormErrors({});
   };
-  const del = id => { onDeleteContact(id); setConfirm(null); setDetail(null); };
+  const del = (id, meta = {}) => { onDeleteContact(id, meta); setConfirm(null); setDetail(null); };
 
   const CSV_COLS = [
     {label:"contactId",             accessor:c=>c.contactId||""},
@@ -895,7 +895,7 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
           </div>
         </Modal>
       )}
-      {confirm && <DeleteConfirm title="Delete Contact" recordLabel={contacts.find(c => c.id === confirm)?.name || "this contact"} onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>}
+      {confirm && <DeleteWithReasonModal title="Delete Contact" recordLabel={contacts.find(c => c.id === confirm)?.name || "this contact"} onConfirm={(meta) => del(confirm, meta)} onCancel={() => setConfirm(null)}/>}
       {callLogModal && (
         <LogCallModal
           onClose={() => setCallLogModal(null)}

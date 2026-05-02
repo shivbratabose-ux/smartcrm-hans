@@ -573,7 +573,11 @@ export async function updateRecord(module, id, updates) {
  * Soft-delete a record (sets is_deleted=true + logs audit).
  * Hard DELETEs that bypass the app are also intercepted by the DB trigger.
  */
-export async function deleteRecord(module, id, userId) {
+export async function deleteRecord(module, id, userId, meta = {}) {
+  // meta: { category, reason } — both optional in the function signature
+  // so legacy call sites still work, but enforced at the UI level via
+  // DeleteWithReasonModal. The audit_log row preserves them forever
+  // even after the entity row is hard-purged at the 90-day mark.
   if (!isSupabaseConfigured) return { error: null };
   const table = TABLE_MAP[module];
   if (!table) return { error: "Unknown module" };
@@ -581,10 +585,43 @@ export async function deleteRecord(module, id, userId) {
     is_deleted: true,
     deleted_at: new Date().toISOString(),
     deleted_by: userId || null,
+    delete_reason: meta.reason || null,
+    delete_reason_category: meta.category || null,
   }).eq("id", id);
   if (error) { dbLog('error', `[DB] softDelete ${module}:`, error); return { error }; }
-  await logAudit(userId, "DELETE", table, id, null, { is_deleted: true });
+  await logAudit(userId, "DELETE", table, id, null, {
+    is_deleted: true,
+    delete_reason: meta.reason || null,
+    delete_reason_category: meta.category || null,
+  });
   return { error: null };
+}
+
+/**
+ * Permanently remove a single trashed record. Calls the SQL function
+ * purge_trash_record() which double-checks the caller's role and only
+ * deletes rows already flagged is_deleted = true. Use this for the
+ * "Permanently delete now" admin action in Trash.
+ */
+export async function purgeTrashRecord(module, id) {
+  if (!isSupabaseConfigured) return { error: null, purged: true };
+  const table = TABLE_MAP[module];
+  if (!table) return { error: "Unknown module" };
+  const { data, error } = await supabase.rpc("purge_trash_record", { p_table: table, p_id: id });
+  if (error) { dbLog('error', `[DB] purgeTrashRecord ${module}:`, error); return { error, purged: false }; }
+  return { error: null, purged: !!data };
+}
+
+/**
+ * Hard-delete every trashed row past the 90-day retention window
+ * across every soft-deletable table. Returns an array of
+ * { table_name, purged_count } so the caller can surface a summary.
+ */
+export async function purgeExpiredTrash() {
+  if (!isSupabaseConfigured) return { error: null, results: [] };
+  const { data, error } = await supabase.rpc("purge_expired_trash");
+  if (error) { dbLog('error', '[DB] purgeExpiredTrash:', error); return { error, results: [] }; }
+  return { error: null, results: data || [] };
 }
 
 /**
