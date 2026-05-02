@@ -1470,8 +1470,20 @@ export default function SmartCRM() {
           return m ? Math.max(max, parseInt(m[1])) : max;
         }, 0);
 
+        // CSV-column alias: the bulk-upload schema exposes the friendly
+        // header `contactName`, but the lead model stores it under
+        // `contact`. Without this copy, the contact column stays blank
+        // post-import (which broke the FL-2026-106..113 batch).
+        const aliasContactName = (r) => {
+          if (!r.contact && r.contactName) {
+            const { contactName, ...rest } = r;
+            return { ...rest, contact: contactName };
+          }
+          return r;
+        };
+
         let insertIdx = 0;
-        const enrichedInserts = inserts.map(r => {
+        const enrichedInserts = inserts.map(aliasContactName).map(r => {
           const matchedAccount = accounts.find(a => a.name?.toLowerCase().trim() === r.company?.toLowerCase().trim());
           const acctId = r.accountId || matchedAccount?.id || "";
           let matchedContact = r.email ? contacts.find(c => c.email?.toLowerCase() === r.email?.toLowerCase()) : null;
@@ -1510,7 +1522,9 @@ export default function SmartCRM() {
 
         if (newContacts.length) setContacts(p => [...p, ...newContacts]);
         setLeads(p => {
-          const withUpdates = applyUpdates(p, updates.map(strip));
+          // Same alias on update path so editing a row's `contactName`
+          // via CSV writes through to the model's `contact` field.
+          const withUpdates = applyUpdates(p, updates.map(aliasContactName).map(strip));
           return [...withUpdates, ...enrichedInserts];
         });
       } break;
