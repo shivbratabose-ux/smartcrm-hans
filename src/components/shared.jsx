@@ -156,6 +156,106 @@ export function DeleteConfirm({title, recordLabel, onConfirm, onCancel}) {
 }
 
 /**
+ * DeleteWithReasonModal — required-reason variant of DeleteConfirm.
+ * Used for soft-deleting Lead / Opportunity / Account / Contact / etc.
+ * Captures both a controlled category (Duplicate / Test data / GDPR
+ * request / Mistake / Other) and a free-text justification, both of
+ * which get persisted to the row and to the immutable audit_log so
+ * "why was this deleted?" is answerable months later.
+ *
+ * Validation:
+ *   - category must be picked
+ *   - reason free text must be ≥ 10 chars (avoids drive-by "ok"/"x"
+ *     that defeats the audit purpose)
+ *   - typed "DELETE" still required as the typo-resistant gate
+ */
+export const DELETE_REASON_CATEGORIES = [
+  "Duplicate",
+  "Test data",
+  "GDPR request",
+  "Mistake",
+  "Other",
+];
+
+export function DeleteWithReasonModal({ title, recordLabel, onConfirm, onCancel }) {
+  const [category, setCategory] = useState("");
+  const [reason, setReason] = useState("");
+  const [typed, setTyped] = useState("");
+  const reasonOk = reason.trim().length >= 10;
+  const ready = typed.trim() === "DELETE" && !!category && reasonOk;
+  return (
+    <Modal title={title || "Confirm Delete"} onClose={onCancel}
+      footer={<>
+        <button className="btn btn-sec btn-sm" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-danger btn-sm"
+          onClick={() => onConfirm({ category, reason: reason.trim() })}
+          disabled={!ready}
+          style={{opacity: ready ? 1 : 0.45, cursor: ready ? "pointer" : "not-allowed"}}>
+          Delete{recordLabel ? ` "${recordLabel}"` : ""}
+        </button>
+      </>}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 14px",background:"#FEF3C7",border:"1px solid #F59E0B",borderRadius:8,marginBottom:14}}>
+        <AlertTriangle size={16} style={{color:"#D97706",flexShrink:0,marginTop:1}}/>
+        <div style={{fontSize:12.5,color:"#92400E",lineHeight:1.5}}>
+          <strong>Soft delete with audit trail.</strong><br/>
+          The record will be hidden from all users for 90 days, then permanently removed. The reason you give here is recorded and cannot be edited later.
+        </div>
+      </div>
+
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.06em",textTransform:"uppercase",display:"block",marginBottom:6}}>Reason category *</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {DELETE_REASON_CATEGORIES.map(c => {
+            const active = category === c;
+            return (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCategory(c)}
+                style={{
+                  fontSize:12,fontWeight:600,padding:"6px 12px",borderRadius:14,
+                  border: `1.5px solid ${active ? "#EF4444" : "var(--border)"}`,
+                  background: active ? "#FEF2F2" : "white",
+                  color: active ? "#991B1B" : "var(--text2)",
+                  cursor:"pointer",
+                }}>
+                {c}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.06em",textTransform:"uppercase",display:"block",marginBottom:6}}>What happened? *</label>
+        <textarea
+          rows={3}
+          autoFocus
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          placeholder="Be specific so an auditor can understand later. e.g. 'Duplicate of FL-2026-088 — same email + company; merged contact history into surviving record.'"
+          style={{width:"100%",boxSizing:"border-box",padding:"8px 12px",border:`1.5px solid ${reasonOk ? "#22C55E" : "var(--border)"}`,borderRadius:8,fontSize:13,fontFamily:"inherit",outline:"none",resize:"vertical"}}
+        />
+        <div style={{fontSize:11,color: reasonOk ? "#16A34A" : "var(--text3)",marginTop:4}}>
+          {reasonOk ? "✓ Looks good." : `${reason.trim().length}/10 chars minimum`}
+        </div>
+      </div>
+
+      <p style={{fontSize:13,color:"var(--text2)",marginBottom:6}}>
+        Type <code style={{background:"#F3F4F6",padding:"1px 6px",borderRadius:4,fontWeight:700}}>DELETE</code> to confirm:
+      </p>
+      <input
+        value={typed}
+        onChange={e => setTyped(e.target.value)}
+        onKeyDown={e => e.key === "Enter" && ready && onConfirm({ category, reason: reason.trim() })}
+        placeholder="Type DELETE"
+        style={{width:"100%",boxSizing:"border-box",padding:"8px 12px",border:`1.5px solid ${typed.trim()==="DELETE"?"#EF4444":"var(--border)"}`,borderRadius:8,fontSize:13,fontFamily:"inherit",outline:"none"}}
+      />
+    </Modal>
+  );
+}
+
+/**
  * RestoreConfirm — simple confirmation for admin restoring a soft-deleted record.
  */
 export function RestoreConfirm({recordLabel, onConfirm, onCancel}) {

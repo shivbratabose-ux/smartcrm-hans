@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId } from '../utils/helpers';
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect } from './shared';
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import ProductModulePicker, { validateProductSelection, primaryProductId } from './ProductModulePicker';
 import BulkActions, { useBulkSelect } from './BulkActions';
@@ -1874,9 +1874,16 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     setFormErrors({});
   };
 
-  const del = (id) => {
+  const del = (id, meta = {}) => {
     const now = new Date().toISOString();
-    setLeads(p => p.map(l => l.id === id ? { ...l, isDeleted: true, deletedAt: now, deletedBy: currentUser } : l));
+    setLeads(p => p.map(l => l.id === id ? {
+      ...l,
+      isDeleted: true,
+      deletedAt: now,
+      deletedBy: currentUser,
+      deleteReason: meta.reason || null,
+      deleteReasonCategory: meta.category || null,
+    } : l));
     setConfirm(null);
   };
 
@@ -2672,12 +2679,13 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
         </Modal>
       )}
 
-      {/* Delete Confirmation */}
+      {/* Delete Confirmation — captures category + free-text reason
+          for the audit trail (90-day retention before hard-purge). */}
       {confirm && (
-        <DeleteConfirm
+        <DeleteWithReasonModal
           title="Delete Lead"
           recordLabel={leads.find(l => l.id === confirm)?.company || "this lead"}
-          onConfirm={() => del(confirm)}
+          onConfirm={(meta) => del(confirm, meta)}
           onCancel={() => setConfirm(null)}
         />
       )}

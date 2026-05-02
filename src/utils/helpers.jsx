@@ -279,10 +279,22 @@ export const hasErrors = (errs) => Object.keys(errs).length > 0;
 
 // ── Soft-delete helper ──
 // Mark a record as deleted in place (preserves audit trail + Supabase parity).
-// Use as: setX(p => softDeleteById(p, id, currentUser))
-export const softDeleteById = (arr, id, currentUser) =>
+// Optional 4th arg captures the deletion reason as { category, reason }
+// — required by the front-end DeleteWithReasonModal but kept optional in
+// the helper signature so legacy call sites (and tests / fixtures) keep
+// working without churn. Reason fields land on the row alongside
+// deletedAt/deletedBy so they round-trip through Supabase + restore.
+// Use as: setX(p => softDeleteById(p, id, currentUser, { category, reason }))
+export const softDeleteById = (arr, id, currentUser, meta = {}) =>
   (arr || []).map(r => r.id === id
-    ? { ...r, isDeleted: true, deletedAt: new Date().toISOString(), deletedBy: currentUser || null }
+    ? {
+        ...r,
+        isDeleted: true,
+        deletedAt: new Date().toISOString(),
+        deletedBy: currentUser || null,
+        deleteReason: meta.reason || null,
+        deleteReasonCategory: meta.category || null,
+      }
     : r);
 
 // ── Restore helper ──

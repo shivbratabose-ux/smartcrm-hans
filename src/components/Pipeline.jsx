@@ -26,7 +26,7 @@ import {
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds } from "../utils/helpers";
 import { exportCSV } from "../utils/csv";
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect } from "./shared";
 import ProductModulePicker, { validateProductSelection, primaryProductId } from "./ProductModulePicker";
 import DataGrid from "./DataGrid";
 
@@ -881,7 +881,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     }
     setModal(null); setDetail(null); setFormErrors({});
   };
-  const del = id => { onDeleteOpp(id); setConfirm(null); setDetail(null); };
+  const del = (id, meta = {}) => { onDeleteOpp(id, meta); setConfirm(null); setDetail(null); };
   const toggleProd = pid => {
     const pp = form.products.includes(pid) ? form.products.filter(x => x !== pid) : [...form.products, pid];
     setForm(f => ({ ...f, products: pp }));
@@ -1750,7 +1750,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       )}
 
       {/* ═════════ CONFIRM DELETE ═════════ */}
-      {confirm && <DeleteConfirm title="Delete Deal" recordLabel={opps.find(o => o.id === confirm)?.title || "this deal"} onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)} />}
+      {confirm && <DeleteWithReasonModal title="Delete Deal" recordLabel={opps.find(o => o.id === confirm)?.title || "this deal"} onConfirm={(meta) => del(confirm, meta)} onCancel={() => setConfirm(null)} />}
 
       {/* ═════════ LOG CALL MODAL ═════════ */}
       {logCallPrefill && (

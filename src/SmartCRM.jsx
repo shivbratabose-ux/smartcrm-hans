@@ -569,18 +569,26 @@ export default function SmartCRM() {
     setPage("quotations");
   }, [currentUser]);
 
-  // Roles allowed to soft-delete records; all others can only archive (same action, UI label differs)
+  // Roles allowed to soft-delete records. Tightened from the previous
+  // (admin/md/director/vp_sales_mkt/line_mgr) per audit — irreversible
+  // operations now require top-tier authority. Matches the *_delete RLS
+  // policies in supabase/delete_reason_retention_v1.sql.
   const canDelete = useMemo(() => {
     const role = normalizeRole(orgUsers.find(u => u.id === currentUser)?.role);
-    return ["admin","md","director","vp_sales_mkt","line_mgr"].includes(role);
+    return ["admin","md","director"].includes(role);
   }, [currentUser, orgUsers]);
 
-  // Only admins can restore soft-deleted records (VP S&M too — needed to
-  // recover from accidental deletes by their downline)
+  // Only the same top-tier roles can restore from Trash — keeping the
+  // restore gate aligned with the delete gate so the same people own
+  // the irreversible side of the lifecycle.
   const canRestore = useMemo(() => {
     const role = normalizeRole(orgUsers.find(u => u.id === currentUser)?.role);
-    return ["admin","md","director","vp_sales_mkt"].includes(role);
+    return ["admin","md","director"].includes(role);
   }, [currentUser, orgUsers]);
+
+  // canPurge — same set as canDelete; permanent (hard) deletion of
+  // trashed rows is at least as sensitive as the original soft-delete.
+  const canPurge = canDelete;
 
   // Exclude soft-deleted records from all visible arrays.
   //
@@ -1212,24 +1220,31 @@ export default function SmartCRM() {
   const addFile = file => setFiles(p=>[...p,file]);
   const logout  = () => { if(isSupabaseConfigured) supabaseSignOut(); clearSession(); setCurrentUser(null); setPage("dashboard"); };
 
-  // Cascade delete: remove all linked records when an account is deleted
-  const cascadeDeleteAccount = useCallback((accId) => {
+  // Cascade delete: remove all linked records when an account is deleted.
+  // Accepts a meta arg `{ category, reason }` from the front-end
+  // DeleteWithReasonModal — only the primary entity (the account /
+  // opp / contact the user actually deleted) records the reason. The
+  // dependent rows just get the soft-delete flag; their reason is
+  // implicit via the parent. Default to {} so legacy callers (older
+  // tests or programmatic flows) still work.
+  const cascadeDeleteAccount = useCallback((accId, meta = {}) => {
     const now = new Date().toISOString();
-    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
-    setAccounts(p => p.map(a => a.id === accId ? {...a, ...sd} : (a.parentId === accId ? {...a, parentId: ""} : a)));
-    setContacts(p => p.map(c => c.accountId === accId ? {...c, ...sd} : c));
-    setOpps(p => p.map(o => o.accountId === accId ? {...o, ...sd} : o));
-    setActivities(p => p.map(a => a.accountId === accId ? {...a, ...sd} : a));
-    setTickets(p => p.map(t => t.accountId === accId ? {...t, ...sd} : t));
-    setContracts(p => p.map(c => c.accountId === accId ? {...c, ...sd} : c));
-    setCollections(p => p.map(c => c.accountId === accId ? {...c, ...sd} : c));
-    setCallReports(p => p.map(r => r.accountId === accId ? {...r, ...sd} : r));
+    const sdPrimary = { isDeleted: true, deletedAt: now, deletedBy: currentUser, deleteReason: meta.reason || null, deleteReasonCategory: meta.category || null };
+    const sdChild   = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
+    setAccounts(p => p.map(a => a.id === accId ? {...a, ...sdPrimary} : (a.parentId === accId ? {...a, parentId: ""} : a)));
+    setContacts(p => p.map(c => c.accountId === accId ? {...c, ...sdChild} : c));
+    setOpps(p => p.map(o => o.accountId === accId ? {...o, ...sdChild} : o));
+    setActivities(p => p.map(a => a.accountId === accId ? {...a, ...sdChild} : a));
+    setTickets(p => p.map(t => t.accountId === accId ? {...t, ...sdChild} : t));
+    setContracts(p => p.map(c => c.accountId === accId ? {...c, ...sdChild} : c));
+    setCollections(p => p.map(c => c.accountId === accId ? {...c, ...sdChild} : c));
+    setCallReports(p => p.map(r => r.accountId === accId ? {...r, ...sdChild} : r));
     // notes/files: orphan rather than soft-delete (they carry content)
   }, [currentUser]);
 
-  const cascadeDeleteOpp = useCallback((oppId) => {
+  const cascadeDeleteOpp = useCallback((oppId, meta = {}) => {
     const now = new Date().toISOString();
-    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
+    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser, deleteReason: meta.reason || null, deleteReasonCategory: meta.category || null };
     setOpps(p => p.map(o => o.id === oppId ? {...o, ...sd} : o));
     // Dependent records: clear the broken FK rather than soft-delete so
     // the user-authored content (activity notes, contract terms, quote
@@ -1241,9 +1256,9 @@ export default function SmartCRM() {
     setCommLogs(p => p.map(c => c.oppId === oppId ? {...c, oppId: ""} : c));
   }, [currentUser]);
 
-  const cascadeDeleteContact = useCallback((conId) => {
+  const cascadeDeleteContact = useCallback((conId, meta = {}) => {
     const now = new Date().toISOString();
-    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
+    const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser, deleteReason: meta.reason || null, deleteReasonCategory: meta.category || null };
     setContacts(p => p.map(c => c.id === conId ? {...c, ...sd} : c));
     setActivities(p => p.map(a => a.contactId === conId ? {...a, contactId: ""} : a));
     setCallReports(p => p.map(cr => cr.contactId === conId ? {...cr, contactId: ""} : cr));
@@ -1929,7 +1944,7 @@ export default function SmartCRM() {
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
             {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
             {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers}/>}
-            {page==="trash"      && <Trash canRestore={canRestore} currentUser={currentUser} orgUsers={orgUsers} sources={[
+            {page==="trash"      && <Trash canRestore={canRestore} canPurge={canPurge} currentUser={currentUser} orgUsers={orgUsers} sources={[
               { key:"leads",       label:"Leads",        items:leads,        setter:setLeads,        getName:r=>r.company||r.contact||r.name, getMeta:r=>[r.contact, r.email].filter(Boolean).join(" · ") },
               { key:"accounts",    label:"Accounts",     items:accounts,     setter:setAccounts,     getName:r=>r.name,                       getMeta:r=>[r.industry, r.country].filter(Boolean).join(" · ") },
               { key:"contacts",    label:"Contacts",     items:contacts,     setter:setContacts,     getName:r=>r.name,                       getMeta:r=>[r.designation, r.email].filter(Boolean).join(" · ") },

@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LEVELS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_ACC } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today, migrateAccountAddresses, formatAddress, upper, lower, title } from '../utils/helpers';
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, FormError, NotesThread, FilesList, Empty, LogCallModal, TypeaheadSelect } from './shared';
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, TypeaheadSelect } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
@@ -830,7 +830,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     else setAccounts(p => p.map(a => a.id === clean.id ? {...clean} : a));
     setModal(null); setDetail(null); setFormErrors({});
   };
-  const del = id => { onDeleteAccount(id); setConfirm(null); setDetail(null); };
+  const del = (id, meta = {}) => { onDeleteAccount(id, meta); setConfirm(null); setDetail(null); };
   const toggleProd = pid => {
     const pp = form.products.includes(pid) ? form.products.filter(x => x !== pid) : [...form.products, pid];
     setForm(f => ({...f, products: pp}));
@@ -1219,7 +1219,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           <div className="form-row"><div className="form-group"><label>Territory / Region</label><input value={form.territory||""} onChange={e => setForm(f => ({...f,territory:e.target.value}))} placeholder="Territory or region"/></div></div>
         </Modal>
       )}
-      {confirm && <DeleteConfirm title="Delete Account" recordLabel={accounts.find(a => a.id === confirm)?.name || "this account"} onConfirm={() => del(confirm)} onCancel={() => setConfirm(null)}/>}
+      {confirm && <DeleteWithReasonModal title="Delete Customer / Account" recordLabel={accounts.find(a => a.id === confirm)?.name || "this account"} onConfirm={(meta) => del(confirm, meta)} onCancel={() => setConfirm(null)}/>}
 
       {/* ═════════ LOG CALL MODAL ═════════ */}
       {logCallPrefill && (
