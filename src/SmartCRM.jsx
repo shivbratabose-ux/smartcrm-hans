@@ -1708,19 +1708,90 @@ export default function SmartCRM() {
           const m = c.contactId?.match(/CON-(\d+)/);
           return m ? Math.max(max, parseInt(m[1])) : max;
         }, 0);
+        // ── Coercion helpers ─────────────────────────────────────────
+        // BLANK_CON has products / branches / countries / departments
+        // as arrays and `primary` as boolean — but CSV passes everything
+        // as strings. Without these coercions:
+        //   - array .map / .length calls downstream silently fail or
+        //     show wrong counts (the Contacts list "+ N products" badge
+        //     read 24 instead of 2 because it's reading string length)
+        //   - the string "false" is truthy in JS, so every contact
+        //     uploaded with `primary,false` showed up flagged primary
+        //   - account lookups that walked a string array produced
+        //     misleading results
+        // Splitting on comma OR semicolon mirrors the convention used
+        // by Customers / Pipeline (resolveProducts).
+        const toArr = (v) => {
+          if (Array.isArray(v)) return v;
+          if (!v) return [];
+          return String(v).split(/[;,]/).map(s => s.trim()).filter(Boolean);
+        };
+        const toBool = (v) => {
+          if (typeof v === "boolean") return v;
+          if (v == null) return false;
+          const s = String(v).trim().toLowerCase();
+          return s === "true" || s === "yes" || s === "1" || s === "primary";
+        };
         let insertIdx = 0;
         const enrichedInserts = inserts.map(r => {
-          const matchedAccount = !r.accountId && r.company
-            ? accounts.find(a => a.name?.toLowerCase().trim() === r.company?.toLowerCase().trim()) : null;
+          // Account lookup: CSV exposes both `accountId` (FK / accountNo)
+          // AND `accountName` (friendly column). Previously the lookup
+          // only consulted `r.company`, leaving every accountName-only
+          // row unlinked. Match against accountNo first (the documented
+          // way to reference an account in CSVs), then fall back to
+          // name matching from accountName / company / accountName_alias.
+          const acctRef = (r.accountId || "").trim();
+          const acctName = (r.accountName || r.company || "").trim();
+          const matchedByRef = acctRef
+            ? accounts.find(a => a.id === acctRef || a.accountNo === acctRef)
+            : null;
+          const matchedByName = !matchedByRef && acctName
+            ? accounts.find(a => a.name?.toLowerCase().trim() === acctName.toLowerCase())
+            : null;
           insertIdx++;
+          const { accountName, ...rest } = r;
           return {
-            ...strip(r),
+            ...rest,
+            // strip's BulkUpload-internal fields are already gone, but
+            // we also need the contactName-style alias removed so it
+            // doesn't pollute the row.
             contactId: r.contactId || `CON-${String(maxSeq + insertIdx).padStart(3, '0')}`,
-            accountId: r.accountId || matchedAccount?.id || "",
+            accountId: matchedByRef?.id || matchedByName?.id || acctRef || "",
+            primary:    toBool(r.primary),
+            products:   toArr(r.products),
+            branches:   toArr(r.branches),
+            countries:  toArr(r.countries),
+            departments: toArr(r.departments || r.department),
           };
-        });
+        }).map(strip);
+        // Updates get the same coercion + alias so a CSV edit that
+        // touches accountName / products / etc. writes through cleanly.
+        const enrichUpdate = (r) => {
+          const acctRef = (r.accountId || "").trim();
+          const acctName = (r.accountName || r.company || "").trim();
+          const matchedByRef = acctRef
+            ? accounts.find(a => a.id === acctRef || a.accountNo === acctRef)
+            : null;
+          const matchedByName = !matchedByRef && acctName
+            ? accounts.find(a => a.name?.toLowerCase().trim() === acctName.toLowerCase())
+            : null;
+          const { accountName: _aN, ...rest } = r;
+          const out = { ...rest };
+          // Only override accountId on the update row when the CSV
+          // actually provided one of the lookup signals — never wipe a
+          // valid existing accountId because the CSV cell was blank.
+          if (matchedByRef || matchedByName) out.accountId = matchedByRef?.id || matchedByName?.id;
+          if (r.primary !== undefined)     out.primary     = toBool(r.primary);
+          if (r.products !== undefined)    out.products    = toArr(r.products);
+          if (r.branches !== undefined)    out.branches    = toArr(r.branches);
+          if (r.countries !== undefined)   out.countries   = toArr(r.countries);
+          if (r.departments !== undefined || r.department !== undefined) {
+            out.departments = toArr(r.departments || r.department);
+          }
+          return out;
+        };
         setContacts(p => {
-          const withUpdates = applyUpdates(p, updates.map(strip));
+          const withUpdates = applyUpdates(p, updates.map(enrichUpdate).map(strip));
           return [...withUpdates, ...enrichedInserts];
         });
       } break;
