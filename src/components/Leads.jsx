@@ -166,7 +166,11 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
     title: `${PROD_MAP[lead.product]?.name || lead.product} – ${lead.company}`,
     accountId: lead.accountId || "",
     primaryContactId: "",
-    value: 0,
+    // Carry the lead's Est. Value through to the opportunity by default.
+    // The user can still edit the field — if they change it, their value
+    // wins. Previously defaulted to 0, which silently dropped any value
+    // the rep had already entered on the lead.
+    value: Number(lead.estimatedValue) || 0,
     closeDate: "",
     owner: lead.assignedTo,
     secondaryOwners: [],
