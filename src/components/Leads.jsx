@@ -2152,6 +2152,19 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
               CSV_COLS,
               "leads"
             )}
+            // Reassign restricted to canDelete (admin/md/director) — same
+            // top-tier roles. Mass-changing ownership is at least as
+            // sensitive as deletion: it can route a lead away from its
+            // current rep without their knowledge.
+            onReassignOwner={canDelete ? (newOwnerId) => {
+              const selectedIds = [...bulk.selected];
+              if (!selectedIds.length) return;
+              setLeads(p => p.map(l => selectedIds.includes(l.id)
+                ? { ...l, assignedTo: newOwnerId }
+                : l));
+              bulk.clear();
+            } : undefined}
+            orgUsers={orgUsers}
           />
 
           {/* Table / Grid */}

@@ -624,14 +624,34 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
     // Fuzzy-resolve user references (assignedTo / owner / marketingPerson /
     // assigned). If the cell already holds a known user id, this is a no-op.
     // Unmatched names produce a warning, not an error — the row still imports.
+    //
+    // Resolution metadata is also stashed under `_resolvedUsers` so the
+    // validation grid can render "Lalchand Prasad Pal (sales_exec)" next
+    // to the cell — the previous warning text just showed the opaque user
+    // id (e.g. "Resolved assignedTo "Lalchand" → u_v7hX3"), which made it
+    // impossible to spot when a fuzzy match latched onto the wrong person.
+    // That was the root cause of the FL-2026-106..113 misassignment.
     const userFields = ["assignedTo", "owner", "marketingPerson", "assigned"];
+    const resolvedUsers = {};
     for (const uf of userFields) {
       if (work[uf]?.trim()) {
-        const { id, warning } = resolveUserRef(work[uf], orgUsers);
-        if (id && id !== work[uf]) {
-          warnings.push(`Resolved ${uf} "${work[uf]}" → ${id}`);
+        const raw = String(work[uf]).trim();
+        const { id, warning } = resolveUserRef(raw, orgUsers);
+        if (id) {
+          const matched = (orgUsers || []).find(u => u.id === id);
+          resolvedUsers[uf] = {
+            raw,
+            id,
+            name: matched?.name || id,
+            role: matched?.role || "",
+            email: matched?.email || "",
+          };
+          if (id !== raw) {
+            warnings.push(`Resolved ${uf} "${raw}" → ${matched?.name || id}${matched?.role ? ` (${matched.role})` : ""}`);
+          }
           work[uf] = id;
         } else if (warning) {
+          resolvedUsers[uf] = { raw, id: null, unmatched: true };
           warnings.push(warning);
           work[uf] = ""; // strip so we don't import a garbage owner string
         }
@@ -655,6 +675,7 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
       _mode: mode,
       _matchedId: matched?.id || null,
       _productSelection: parsedSelection,
+      _resolvedUsers: resolvedUsers,
     };
   };
 
@@ -701,6 +722,7 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
       // Remove internal tracking fields
       delete clean._row; delete clean._errors; delete clean._valid;
       delete clean._mode; delete clean._matchedId; delete clean._productSelection;
+      delete clean._resolvedUsers; delete clean._warnings;
 
       if (r._mode === "update") {
         // Preserve the existing internal id so SmartCRM can match and merge
@@ -962,7 +984,14 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
                           <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "var(--red-bg)", color: "var(--red-t)" }}>ERROR</span>
                         )}
                       </td>
-                      {fileData.headers.map(h => (
+                      {fileData.headers.map(h => {
+                        // For user-reference columns (assignedTo, owner, etc.)
+                        // surface the resolved org user (name + role) directly
+                        // beneath the cell so wrong fuzzy matches are obvious
+                        // before import. Without this, the cell shows an
+                        // opaque user.id and misassignments slip through.
+                        const ru = r._resolvedUsers?.[h];
+                        return (
                         <td key={h} style={{ padding: 2 }}>
                           <input
                             value={r[h] ?? ""}
@@ -980,8 +1009,25 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
                             onFocus={(e) => e.target.style.border = "1px solid var(--brand)"}
                             onBlur={(e) => e.target.style.border = "1px solid transparent"}
                           />
+                          {ru && ru.id && (
+                            <div title={`Original CSV value: "${ru.raw}"`} style={{
+                              fontSize: 10, color: "#16A34A", marginTop: 2, padding: "0 6px",
+                              fontWeight: 600, lineHeight: 1.3,
+                            }}>
+                              ✓ {ru.name}{ru.role ? ` · ${ru.role}` : ""}
+                            </div>
+                          )}
+                          {ru && ru.unmatched && (
+                            <div title={`No org user matched "${ru.raw}" — will land unassigned`} style={{
+                              fontSize: 10, color: "#DC2626", marginTop: 2, padding: "0 6px",
+                              fontWeight: 600, lineHeight: 1.3,
+                            }}>
+                              ✗ no match — will be unassigned
+                            </div>
+                          )}
                         </td>
-                      ))}
+                        );
+                      })}
                       <td style={{ fontSize: 11 }}>
                         {r._errors.length > 0 && (
                           <div style={{ color: "var(--red)" }}>{r._errors.join("; ")}</div>

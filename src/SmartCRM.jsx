@@ -1450,8 +1450,11 @@ export default function SmartCRM() {
         return upd ? { ...ex, ...cleanFn(upd) } : ex;
       });
 
-    // Strip BulkUpload-internal meta fields before saving
-    const strip = ({ _bulkMode, _matchedId, _rowErrors, _mode, ...rest }) => rest;
+    // Strip BulkUpload-internal meta fields before saving. The list grew as
+    // BulkUpload accumulated diagnostic helpers (_resolvedUsers, _warnings,
+    // etc.) — keeping them out of the entity row protects downstream
+    // serialisation (Supabase JSONB columns + CSV exports).
+    const strip = ({ _bulkMode, _matchedId, _rowErrors, _mode, _row, _errors, _valid, _warnings, _productSelection, _resolvedUsers, ...rest }) => rest;
 
     const year = new Date().getFullYear();
 

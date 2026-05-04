@@ -948,7 +948,15 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
 
           <BulkActions count={bulk.count} onClear={bulk.clear}
             onDelete={() => { if(window.confirm("Delete " + bulk.count + " accounts and all linked data?")) { bulk.selected.forEach(id => onDeleteAccount(id)); bulk.clear(); }}}
-            onExport={() => exportCSV(accounts.filter(a => bulk.isSelected(a.id)), CSV_COLS, "accounts")}/>
+            onExport={() => exportCSV(accounts.filter(a => bulk.isSelected(a.id)), CSV_COLS, "accounts")}
+            onReassignOwner={canDelete ? (newOwnerId) => {
+              const ids = [...bulk.selected];
+              if (!ids.length) return;
+              setAccounts(p => p.map(a => ids.includes(a.id) ? { ...a, owner: newOwnerId } : a));
+              bulk.clear();
+            } : undefined}
+            orgUsers={orgUsers}
+          />
 
           <div className="card" style={{padding:0}}>
             {filtered.length === 0 ? (
