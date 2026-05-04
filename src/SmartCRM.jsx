@@ -1359,7 +1359,12 @@ export default function SmartCRM() {
       // so downstream conversions (opp → quote/contract) inherit the same picks.
       productSelection: Array.isArray(lead.productSelection) ? lead.productSelection : [],
       stage: "Prospect",
-      value: data.value || 0,
+      // Inherit Est. Value from the source lead unless the conversion
+      // modal carried a different number through. ConvertToOppModal
+      // already pre-fills `data.value` from `lead.estimatedValue`, so
+      // this fallback only matters for code paths that bypass the
+      // modal (programmatic/scripted conversions).
+      value: Number(data.value) || Number(lead.estimatedValue) || 0,
       probability: 10,
       owner: data.owner || lead.assignedTo,
       closeDate: data.closeDate || "",
