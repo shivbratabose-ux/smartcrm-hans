@@ -1989,7 +1989,24 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const salCount = filtered.filter(l => l.stage === "SAL").length;
   const mqlCount = filtered.filter(l => l.stage === "MQL").length;
   const sqlCount = filtered.filter(l => l.stage === "SQL").length;
-  const pipelineValue = filtered.reduce((s, l) => s + (clampScore(l.score) * 0.5), 0);
+  // Pipeline Value rollup. Two changes from the original:
+  //   1. Use the lead's actual `estimatedValue` (in ₹L, set by the rep
+  //      or via bulk import) when present. Fall back to `score × 0.5`
+  //      only when the rep hasn't entered a value — that placeholder
+  //      previously won unconditionally, so the card showed wildly
+  //      inflated figures for accounts with high-score, low-revenue
+  //      leads (the FL-2026-106..113 batch read ₹255L when the actual
+  //      sum of entered values was ~₹32L).
+  //   2. Exclude `Converted` and `NA` stages — converted leads are
+  //      now opportunities (counted in the Pipeline module's value),
+  //      and NA is junked. Counting them here double-counts pipeline
+  //      and inflates the funnel.
+  const pipelineValue = filtered
+    .filter(l => l.stage !== "Converted" && l.stage !== "NA")
+    .reduce((s, l) => {
+      const ev = Number(l.estimatedValue) || 0;
+      return s + (ev > 0 ? ev : clampScore(l.score) * 0.5);
+    }, 0);
   const overdueLeads = filtered.filter(l => l.nextCall && l.nextCall < today && l.stage !== "NA").length;
   const hotLeads = filtered.filter(l => l.score >= 70 && l.stage !== "NA").length;
   const avgAge = filtered.length > 0 ? Math.round(filtered.reduce((s, l) => s + (daysSince(l.createdDate) || 0), 0) / filtered.length) : 0;
@@ -2075,7 +2092,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
         <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>PIPELINE VALUE</div>
           <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>₹{pipelineValue.toFixed(1)}L</div>
-          <div style={{fontSize:11,opacity:0.7}}>Estimated from scores</div>
+          <div style={{fontSize:11,opacity:0.7}} title="Sum of Est. Value across active leads (Converted / NA excluded). Falls back to score×0.5 when a lead has no Est. Value entered.">Active leads · Est. Value</div>
         </div>
         <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>CONVERSION</div>
