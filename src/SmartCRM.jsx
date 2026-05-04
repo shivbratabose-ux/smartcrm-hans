@@ -1419,6 +1419,10 @@ export default function SmartCRM() {
       accountId: newOpp.accountId,
       contactId: primaryContact,
       oppId: newOpp.id,
+      // Also stamp leadId so the source lead's timeline can surface the
+      // "Lead Conversion" event under the strict-per-lead filter applied
+      // in the LeadDetail panel.
+      leadId: lead.id,
       owner: newOpp.owner,
       title: `Lead Conversion – ${lead.company}`,
       notes: `Lead ${lead.leadId} converted to opportunity. Qualification: ${data.notes || lead.notes || "Initial qualification complete."}`,

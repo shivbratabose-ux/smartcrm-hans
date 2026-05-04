@@ -468,8 +468,18 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
   const TEAM_ROLES = ["Sales Owner","Account Manager","Pre-sales","Inside Sales","Support"];
 
   // ── Activities / Timeline ──
-  const leadActivities = (allActivities||[]).filter(a => a.accountId === lead.accountId || (lead.contactIds||[]).includes(a.contactId) || a.leadId === lead.id);
-  const leadCalls = (callReports||[]).filter(cr => cr.accountId === lead.accountId || cr.leadId === lead.id);
+  // Strict per-lead filter. Previously matched on `a.accountId === lead.accountId`
+  // too, which silently leaked every activity in the system to every lead
+  // detail panel whenever both accountIds were empty strings — a common
+  // case for fresh bulk-imported leads with no Account yet linked. The
+  // FEDEX detail panel showed SHIV / JKS / ASIATIC's lead-conversion
+  // activities through this hole.
+  //
+  // Now: timeline shows ONLY activities/calls explicitly linked to THIS
+  // lead via `leadId`. Account-wide rollup is the Account detail panel's
+  // job (it scopes by account.id which is never empty, so no leak there).
+  const leadActivities = (allActivities||[]).filter(a => a.leadId === lead.id);
+  const leadCalls = (callReports||[]).filter(cr => cr.leadId === lead.id);
   const combinedTimeline = [
     ...leadActivities.map(a => ({ type: "activity", date: a.date || a.createdDate || "", icon: <MessageSquare size={13}/>, title: a.title || a.type || "Activity", desc: a.notes || a.description || "", time: a.date || a.createdDate || "" })),
     ...leadCalls.map(cr => ({ type: "call", date: cr.date || cr.callDate || "", icon: <Phone size={13}/>, title: cr.callType || "Call", desc: cr.notes || cr.outcome || "", time: cr.date || cr.callDate || "" })),
