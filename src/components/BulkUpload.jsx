@@ -622,21 +622,32 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
     }
 
     // Fuzzy-resolve user references (assignedTo / owner / marketingPerson /
-    // assigned). If the cell already holds a known user id, this is a no-op.
-    // Unmatched names produce a warning, not an error — the row still imports.
+    // assigned). Behaviour:
+    //   - cell empty                        → no-op, row imports unassigned
+    //                                          (intentional, never blocks)
+    //   - cell holds a known user.id        → no-op
+    //   - cell resolves to a user via fuzzy → green ✓ subtitle, warning text
+    //                                          shows what we matched
+    //   - cell holds an UNRESOLVED string   → ERROR (blocks import for the
+    //                                          row, was previously a warning
+    //                                          that silently dropped the
+    //                                          field to "" and let the row
+    //                                          land unassigned)
     //
-    // Resolution metadata is also stashed under `_resolvedUsers` so the
+    // The error path forces the uploader to fix the CSV — either correct
+    // the spelling, add the user to the org, or clear the cell to land the
+    // row deliberately unassigned. Lands a row with a real owner, never a
+    // silent "couldn't match → unassigned" surprise.
+    //
+    // Resolution metadata is stashed under `_resolvedUsers` so the
     // validation grid can render "Lalchand Prasad Pal (sales_exec)" next
-    // to the cell — the previous warning text just showed the opaque user
-    // id (e.g. "Resolved assignedTo "Lalchand" → u_v7hX3"), which made it
-    // impossible to spot when a fuzzy match latched onto the wrong person.
-    // That was the root cause of the FL-2026-106..113 misassignment.
+    // to the cell.
     const userFields = ["assignedTo", "owner", "marketingPerson", "assigned"];
     const resolvedUsers = {};
     for (const uf of userFields) {
       if (work[uf]?.trim()) {
         const raw = String(work[uf]).trim();
-        const { id, warning } = resolveUserRef(raw, orgUsers);
+        const { id } = resolveUserRef(raw, orgUsers);
         if (id) {
           const matched = (orgUsers || []).find(u => u.id === id);
           resolvedUsers[uf] = {
@@ -650,10 +661,13 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
             warnings.push(`Resolved ${uf} "${raw}" → ${matched?.name || id}${matched?.role ? ` (${matched.role})` : ""}`);
           }
           work[uf] = id;
-        } else if (warning) {
+        } else {
+          // Unresolved — block the row. Keep the raw text on `work[uf]` so
+          // the user can see what they typed in the editable grid cell;
+          // the row's _valid:false also disables the Apply button until
+          // the cell is fixed (correct spelling) or cleared (deliberate).
           resolvedUsers[uf] = { raw, id: null, unmatched: true };
-          warnings.push(warning);
-          work[uf] = ""; // strip so we don't import a garbage owner string
+          errs.push(`User "${raw}" in ${uf} doesn't match any active org user — fix the spelling, add the user, or clear the cell to leave the row unassigned`);
         }
       }
     }
@@ -956,6 +970,55 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
             <span>💡 <strong>Tip:</strong> Click any cell to fix it inline — validation re-runs as you type.</span>
             <span style={{ color: "#D97706" }}>● Yellow rows have warnings (auto-fixed) but will still import.</span>
           </div>
+
+          {/* User-resolution summary banner — counts how many of the rows
+              have a non-empty user reference (assignedTo / owner /
+              marketingPerson / assigned), how many resolved successfully,
+              and how many are blocked. The Apply button is already
+              disabled per-row by _valid:false, but this banner gives a
+              single-glance summary so the uploader doesn't have to count
+              red rows by hand. */}
+          {(() => {
+            const stats = (results || []).reduce((acc, r) => {
+              const ru = r._resolvedUsers || {};
+              const fields = Object.keys(ru);
+              if (fields.length === 0) return acc;
+              for (const f of fields) {
+                acc.total += 1;
+                if (ru[f].unmatched) acc.unresolved += 1;
+                else if (ru[f].id) acc.resolved += 1;
+              }
+              return acc;
+            }, { total: 0, resolved: 0, unresolved: 0 });
+            if (stats.total === 0) return null;
+            const allOk = stats.unresolved === 0;
+            return (
+              <div style={{
+                fontSize: 12, padding: "10px 14px", borderRadius: 8,
+                marginBottom: 10, display: "flex", alignItems: "center", gap: 10,
+                background: allOk ? "#ECFDF5" : "#FEF2F2",
+                border: `1px solid ${allOk ? "#A7F3D0" : "#FECACA"}`,
+                color: allOk ? "#065F46" : "#991B1B",
+              }}>
+                {allOk
+                  ? <Check size={16} style={{ flexShrink: 0 }}/>
+                  : <AlertCircle size={16} style={{ flexShrink: 0 }}/>}
+                <div style={{ flex: 1 }}>
+                  {allOk ? (
+                    <>
+                      <strong>All {stats.total} user reference{stats.total === 1 ? "" : "s"} resolved.</strong>
+                      {" "}Every row's owner/assignee maps to an active org user — safe to import.
+                    </>
+                  ) : (
+                    <>
+                      <strong>{stats.unresolved} of {stats.total} user reference{stats.total === 1 ? "" : "s"} unresolved.</strong>
+                      {" "}Fix the red cells (correct the spelling, add the user to the org, or clear the cell to leave the row unassigned) before importing — those rows are blocked.
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ maxHeight: 480, overflow: "auto", border: "1px solid var(--border)", borderRadius: 6 }}>
             <table className="tbl" style={{ minWidth: "100%" }}>
               <thead style={{ position: "sticky", top: 0, background: "var(--s2)", zIndex: 1 }}>
