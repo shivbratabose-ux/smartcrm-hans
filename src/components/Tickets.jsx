@@ -191,7 +191,16 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,cat
       </div>
       <BulkActions count={bulk.count} onClear={bulk.clear}
         onDelete={canDelete?()=>setConfirm({bulk:true,ids:[...bulk.selected]}):undefined}
-        onExport={()=>exportCSV(tickets.filter(t=>bulk.isSelected(t.id)),CSV_COLS,"tickets")}/>
+        onExport={()=>exportCSV(tickets.filter(t=>bulk.isSelected(t.id)),CSV_COLS,"tickets")}
+        onReassignOwner={canDelete ? (newOwnerId) => {
+          const ids = [...bulk.selected];
+          if (!ids.length) return;
+          // Tickets store the owner under `assigned` (not `owner`).
+          setTickets(p => p.map(t => ids.includes(t.id) ? { ...t, assigned: newOwnerId } : t));
+          bulk.clear();
+        } : undefined}
+        orgUsers={orgUsers}
+      />
       <div className="card" style={{padding:0}}>
         <TicketsDataGrid
           rows={pg.paged}
