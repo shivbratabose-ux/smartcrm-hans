@@ -133,6 +133,33 @@ const coerceToNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// Coerce DD-MM-YYYY / DD/MM/YYYY (Indian convention) to YYYY-MM-DD.
+// Postgres rejects "30-05-2026" with SQLSTATE 22008 ("date/time field
+// value out of range") because it treats the leading 30 as the month.
+// Reps in India + sales-collateral CSVs routinely use the local format,
+// so silently fixing it at the serialisation boundary saves a manual
+// re-edit per row. ISO-shaped strings (YYYY-MM-DD or with timestamp T)
+// pass through untouched. Anything we can't recognise is returned as-is
+// so Postgres surfaces a clear error instead of us masking it.
+const coerceToDate = (v) => {
+  if (v == null || v === "") return null;
+  if (typeof v !== "string") return v;
+  const s = v.trim();
+  if (!s) return null;
+  // Already YYYY-MM-DD (or with T timestamp suffix) — leave alone.
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s;
+  // DD-MM-YYYY / DD/MM/YYYY → YYYY-MM-DD. Pads single-digit day/month.
+  // If the first segment is > 12 we know it's DD-MM-YYYY for sure
+  // (otherwise it's ambiguous — assume Indian convention).
+  const m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (m) {
+    const dd = m[1].padStart(2, "0");
+    const mm = m[2].padStart(2, "0");
+    return `${m[3]}-${mm}-${dd}`;
+  }
+  return s;
+};
+
 // ── DB columns typed as DATE/TIMESTAMP ──
 // Postgres rejects empty strings for these types ("invalid input syntax for
 // type date"). The BLANK_* templates initialize every date field as "", so
@@ -310,9 +337,14 @@ const toSnake = (obj, module) => {
     if (STALE_FIELDS.has(k)) continue;
     const key = alias[k] || map[k] || k;
     let value = v;
-    // Coerce empty strings → null for date/timestamp columns so Postgres
-    // doesn't reject "invalid input syntax for type date".
-    if (value === "" && DATE_COLUMNS.has(key)) value = null;
+    // Coerce date/timestamp values: empty string → null (so Postgres
+    // doesn't reject "invalid input syntax for type date"), and Indian
+    // DD-MM-YYYY / DD/MM/YYYY strings → ISO YYYY-MM-DD (so SQLSTATE
+    // 22008 "date/time field value out of range" stops blocking
+    // resync/upload of rows reps entered with the local convention).
+    if (DATE_COLUMNS.has(key) && (value === "" || typeof value === "string")) {
+      value = coerceToDate(value);
+    }
     // Coerce CSV-imported strings → arrays for TEXT[] columns. Postgres
     // returns SQLSTATE 22P02 ("malformed array literal") for any non-array
     // value sent to a TEXT[] column, surfacing as PostgREST 400. Bulk
