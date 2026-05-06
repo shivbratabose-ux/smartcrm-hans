@@ -170,9 +170,15 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
   const openEditUser=u=>{setForm({...u});setModal({mode:"edituser"});};
   const saveUser=async()=>{
     if(modal.mode==="adduser"){
-      const f=modal.form;
+      // Strip the form-only password fields by destructuring them OUT of the
+      // payload — `{...f, password: undefined}` keeps the keys (with value
+      // undefined) on the object, which toSnake used to forward to Supabase
+      // as non-existent columns. Belt-and-braces with the undefined-skip
+      // guard added in lib/db.js, but explicit here too so the intent is
+      // obvious and field reviewers don't reintroduce the bug.
+      const { password: _pw, confirmPassword: _cpw, ...formClean } = modal.form;
       const newId=`u${uid()}`;
-      const newUser={...f,id:newId,password:undefined,confirmPassword:undefined};
+      const newUser={...formClean,id:newId};
       setOrgUsers(p=>[...p,newUser]);
     } else {
       setOrgUsers(p=>p.map(u=>u.id===form.id?{...form}:u));

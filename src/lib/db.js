@@ -335,6 +335,13 @@ const toSnake = (obj, module) => {
     if (k.startsWith("_")) continue;
     // Skip known-stale legacy fields (see STALE_FIELDS above).
     if (STALE_FIELDS.has(k)) continue;
+    // Skip undefined values. Several call sites use the
+    // `{...form, password: undefined}` idiom thinking it removes the key —
+    // it doesn't, the key stays with value `undefined`. Without this guard
+    // toSnake emits the column to Supabase and the upsert fails with
+    // "Could not find the 'password' column of 'users'" (or similar).
+    // Affected the user-creation flow in Team & Users.
+    if (v === undefined) continue;
     const key = alias[k] || map[k] || k;
     let value = v;
     // Coerce date/timestamp values: empty string → null (so Postgres
