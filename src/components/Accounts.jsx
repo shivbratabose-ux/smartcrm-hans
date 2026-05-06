@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { Plus, Search, Edit2, Trash2, Check, TrendingUp, Activity, Download, ArrowUpDown, ArrowUp, ArrowDown, Users, Phone, Mail, FileText, Calendar, AlertTriangle, Shield, Globe, Building2, Target, DollarSign, Package, Clock, Star, BarChart3, Layers, ExternalLink, X } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, TrendingUp, Activity, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown, Users, Phone, Mail, FileText, Calendar, AlertTriangle, Shield, Globe, Building2, Target, DollarSign, Package, Clock, Star, BarChart3, Layers, ExternalLink, X } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LEVELS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_ACC } from '../data/seed';
@@ -10,6 +10,8 @@ import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
+import { batchUpsert } from '../lib/db';
+import { notify } from '../utils/toast';
 
 /* ── helpers ── */
 const daysSince = (d) => d ? Math.max(0, Math.round((new Date(today) - new Date(d)) / 864e5)) : null;
@@ -904,6 +906,36 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           <div className="pg-sub">{accounts.length} total · {activeCount} active · {prospectCount} prospects</div>
         </div>
         <div className="pg-actions">
+          {/* Resync to Cloud — admin-only safety button. The CRM uses dual
+              state (React + localStorage cache + Supabase). When rows live
+              only in the browser cache (e.g. the bulk customer master
+              import that hit FK/RLS errors mid-flight), other users can't
+              see them. This forces a batch upsert of every live account
+              in local state to Supabase — re-running is safe. */}
+          {(() => {
+            const me = (orgUsers || []).find(u => u.id === currentUser);
+            const isAdmin = me && ["admin","md","director"].includes(String(me.role || "").toLowerCase());
+            if (!isAdmin) return null;
+            return (
+              <button
+                className="btn btn-sec"
+                title="Push every account in this browser to Supabase. Use when rows you can see locally aren't visible to other users."
+                onClick={async () => {
+                  const live = (accounts || []).filter(a => !a.isDeleted);
+                  if (!live.length) { notify.info("No live accounts to resync."); return; }
+                  if (!window.confirm(`Push ${live.length} accounts to Supabase? Existing rows with the same id will be updated; new ones will be inserted.`)) return;
+                  notify.info(`Resyncing ${live.length} accounts…`);
+                  const { error } = await batchUpsert("accounts", live);
+                  if (error) {
+                    notify.error(`Resync failed: ${error.message || error}`);
+                  } else {
+                    notify.success(`Resynced ${live.length} accounts to Supabase.`);
+                  }
+                }}>
+                <Upload size={14}/>Resync to Cloud
+              </button>
+            );
+          })()}
           <button className="btn btn-sec" onClick={() => exportCSV(filtered, CSV_COLS, "accounts")}><Download size={14}/>Export</button>
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>Add Account</button>
         </div>
