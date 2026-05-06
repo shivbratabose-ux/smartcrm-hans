@@ -196,7 +196,11 @@ const toSnake = (obj, module) => {
     // any time a legacy row in localStorage still carries the old field
     // — toSnake emits `converted_opp_id`, Supabase rejects with "Could
     // not find the column", and the entire upsert fails. Drop it.
-    convertedOppIds:"converted_opp_ids", convertedOppRefId:"converted_opp_ref_id",
+    convertedOppIds:"converted_opp_ids",
+    // convertedOppRefId was also planned but never landed on the schema —
+    // same story as convertedOppId. Removing the mapping; the field is
+    // also added to STALE_FIELDS so legacy rows in localStorage don't
+    // poison the upsert.
     convertedDate:"converted_date", qualificationChecklist:"qualification_checklist",
     // Opportunity fields
     sourceLeadIds:"source_lead_ids", forecastCategory:"forecast_category", dealSize:"deal_size",
@@ -294,7 +298,8 @@ const toSnake = (obj, module) => {
   // the whole upsert fail with "Could not find the column 'X'", so we drop
   // them here. List grows only when we observe a real failure in the field.
   const STALE_FIELDS = new Set([
-    "convertedOppId",  // → convertedOppIds (plural array)
+    "convertedOppId",     // → convertedOppIds (plural array)
+    "convertedOppRefId",  // never landed on schema; removed from mapping
   ]);
   for (const [k, v] of Object.entries(obj)) {
     // Skip transient app-only fields (e.g. _warnings, _valid, _mode, _matchedId
@@ -366,7 +371,8 @@ const toCamel = (obj, module) => {
     // converted_opp_id (singular) intentionally omitted — see toSnake
     // header for context. The column doesn't exist in the schema, so
     // it can never come back in a Supabase response either.
-    converted_opp_ids:"convertedOppIds", converted_opp_ref_id:"convertedOppRefId",
+    converted_opp_ids:"convertedOppIds",
+    // converted_opp_ref_id intentionally omitted — see toSnake.
     converted_date:"convertedDate", qualification_checklist:"qualificationChecklist",
     // Opportunity fields
     source_lead_ids:"sourceLeadIds", forecast_category:"forecastCategory", deal_size:"dealSize",

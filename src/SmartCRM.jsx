@@ -1406,7 +1406,13 @@ export default function SmartCRM() {
     if (data.keepLeadOpen) {
       setLeads(p => p.map(l => l.id === lead.id ? { ...l, convertedOppIds: [...(l.convertedOppIds||[]), newOpp.id], stageHistory: [...(l.stageHistory||[]), {from:l.stage,to:"Partial Convert",date:today}] } : l));
     } else {
-      setLeads(p => p.map(l => l.id === lead.id ? { ...l, stage: "Converted", convertedDate: today, convertedOppId: newOpp.id, convertedOppIds: [...(l.convertedOppIds||[]), newOpp.id], convertedOppRefId: newOpp.oppId, stageHistory: [...(l.stageHistory||[]), {from:l.stage,to:"Converted",date:today}] } : l));
+      // convertedOppId (singular) and convertedOppRefId were never added
+      // to the leads schema — only convertedOppIds (plural array) lives
+      // in the DB. Writing the singular fields onto the lead row poisons
+      // the next batch upsert with "Could not find the column 'X' in the
+      // schema cache". The opportunity's display-id (newOpp.oppId) can be
+      // derived from convertedOppIds[0] at render time if needed.
+      setLeads(p => p.map(l => l.id === lead.id ? { ...l, stage: "Converted", convertedDate: today, convertedOppIds: [...(l.convertedOppIds||[]), newOpp.id], stageHistory: [...(l.stageHistory||[]), {from:l.stage,to:"Converted",date:today}] } : l));
     }
     // Create initial activity for the new opportunity
     const initialAct = {
