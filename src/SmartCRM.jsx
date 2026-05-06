@@ -1554,9 +1554,14 @@ export default function SmartCRM() {
           if (Array.isArray(raw)) return raw;
           return String(raw).split(/[;,]/).map(s => s.trim()).filter(Boolean);
         };
-        // Resolve owner: name or email → user ID; falls back to raw value
+        // Resolve owner: name or email → user ID. Returns null when the
+        // input is blank — important because accounts.owner is a FK to
+        // users(id), and the empty string "" fails the FK whereas NULL
+        // satisfies it. Returning "" here was the reason 2,929 rows
+        // failed with accounts_owner_fkey on the master customers
+        // upload.
         const resolveOwner = (raw) => {
-          if (!raw?.trim()) return "";
+          if (!raw?.trim()) return null;
           const match = orgUsers.find(u =>
             u.name?.toLowerCase() === raw.toLowerCase() ||
             u.email?.toLowerCase() === raw.toLowerCase() ||
@@ -1609,7 +1614,13 @@ export default function SmartCRM() {
         const enrichRow = (r) => ({
           ...strip(r),
           products: resolveProducts(r.products),
-          owner:    resolveOwner(r.owner),
+          // If the CSV doesn't supply an owner, fall back to the admin
+          // running this upload. Accounts you upload land owned by you,
+          // matching the behaviour reps expect for inline-created rows.
+          // If for some reason currentUser is also unavailable (rare —
+          // bulk upload requires admin login), leave NULL so the FK
+          // constraint passes.
+          owner:    resolveOwner(r.owner) || currentUser || null,
           arrRevenue: Number(r.arrRevenue) || 0,
           potential:  Number(r.potential)  || 0,
         });
@@ -1922,7 +1933,9 @@ export default function SmartCRM() {
           return String(raw).split(/[;,]/).map(s => s.trim()).filter(Boolean);
         };
         const resolveOwner = (raw) => {
-          if (!raw?.trim()) return "";
+          // Same fix as Customers case — return null (not "") for blank
+          // input so the opportunities.owner FK passes.
+          if (!raw?.trim()) return null;
           const match = orgUsers.find(u =>
             u.name?.toLowerCase() === raw.toLowerCase() ||
             u.email?.toLowerCase() === raw.toLowerCase() ||
@@ -1939,7 +1952,7 @@ export default function SmartCRM() {
         const enrichOpp = (r) => ({
           ...strip(r),
           products:    resolveProducts(r.products),
-          owner:       resolveOwner(r.owner),
+          owner:       resolveOwner(r.owner) || currentUser || null,
           accountId:   resolveAccount(r),
           value:       Number(r.value)       || 0,
           probability: Number(r.probability) || 0,
