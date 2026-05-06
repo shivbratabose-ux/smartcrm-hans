@@ -183,6 +183,23 @@ const DATE_COLUMNS = new Set([
   "follow_up_date", "bill_period_from", "bill_period_to",
 ]);
 
+// ── DB columns typed as foreign keys ──
+// Postgres rejects an empty string against an FK constraint ("insert or
+// update on table X violates foreign key constraint X_Y_fkey") because
+// "" isn't a valid id in the parent table. NULL is allowed (FK skipped),
+// so we coerce empty FK values to NULL at the serialisation boundary.
+//
+// Hit on the first attempt to bulk-upload 2,929 customers with empty
+// owner cells — every row failed with accounts_owner_fkey. Same gate
+// applies to parent_id / account_id / contact_id / opp_id / lead_id and
+// any other id-shaped column we introduce.
+const FK_COLUMNS = new Set([
+  "owner", "assigned",
+  "parent_id", "account_id", "contact_id", "opp_id", "lead_id",
+  "contract_id", "address_id", "primary_contact_id",
+  "auth_user_id", "reports_to",
+]);
+
 // ── Field mapping: JS camelCase ↔ DB snake_case ──
 const toSnake = (obj, module) => {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
@@ -345,6 +362,15 @@ const toSnake = (obj, module) => {
     if (v === undefined) continue;
     const key = alias[k] || map[k] || k;
     let value = v;
+    // Coerce empty FK values → null. Postgres rejects "" against a
+    // foreign key with "insert or update on table X violates foreign
+    // key constraint X_Y_fkey" because "" isn't a valid parent id.
+    // NULL satisfies the FK (constraint skipped). Bit Customers bulk
+    // upload — 2,929 rows with no owner failed accounts_owner_fkey
+    // until this guard landed.
+    if (FK_COLUMNS.has(key) && (value === "" || value == null)) {
+      value = null;
+    }
     // Coerce date/timestamp values: empty string → null (so Postgres
     // doesn't reject "invalid input syntax for type date"), and Indian
     // DD-MM-YYYY / DD/MM/YYYY strings → ISO YYYY-MM-DD (so SQLSTATE
