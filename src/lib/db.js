@@ -187,7 +187,15 @@ const toSnake = (obj, module) => {
     // Lead fields
     assignedTo:"assigned_to", contactIds:"contact_ids", contactRoles:"contact_roles",
     additionalProducts:"additional_products", estimatedValue:"estimated_value",
-    stageHistory:"stage_history", convertedOppId:"converted_opp_id",
+    stageHistory:"stage_history",
+    // convertedOppId (singular) was renamed to convertedOppIds (plural,
+    // array) when the schema started supporting partial conversions to
+    // multiple opps. The singular column was never created on the DB
+    // (only the plural converted_opp_ids exists). The mapping for the
+    // singular form was kept here for years as dead code, but it bites
+    // any time a legacy row in localStorage still carries the old field
+    // — toSnake emits `converted_opp_id`, Supabase rejects with "Could
+    // not find the column", and the entire upsert fails. Drop it.
     convertedOppIds:"converted_opp_ids", convertedOppRefId:"converted_opp_ref_id",
     convertedDate:"converted_date", qualificationChecklist:"qualification_checklist",
     // Opportunity fields
@@ -281,11 +289,20 @@ const toSnake = (obj, module) => {
   };
   const alias = MODULE_ALIASES[module]?.toSnake || {};
   const out = {};
+  // Legacy fields that were renamed in the schema but may still exist on
+  // rows in long-lived localStorage caches. Sending them to Supabase makes
+  // the whole upsert fail with "Could not find the column 'X'", so we drop
+  // them here. List grows only when we observe a real failure in the field.
+  const STALE_FIELDS = new Set([
+    "convertedOppId",  // → convertedOppIds (plural array)
+  ]);
   for (const [k, v] of Object.entries(obj)) {
     // Skip transient app-only fields (e.g. _warnings, _valid, _mode, _matchedId
     // from BulkUpload) — they don't exist in the DB schema and would cause
     // "Could not find the 'X' column" errors on upsert.
     if (k.startsWith("_")) continue;
+    // Skip known-stale legacy fields (see STALE_FIELDS above).
+    if (STALE_FIELDS.has(k)) continue;
     const key = alias[k] || map[k] || k;
     let value = v;
     // Coerce empty strings → null for date/timestamp columns so Postgres
@@ -345,7 +362,10 @@ const toCamel = (obj, module) => {
     // Lead fields
     assigned_to:"assignedTo", contact_ids:"contactIds", contact_roles:"contactRoles",
     additional_products:"additionalProducts", estimated_value:"estimatedValue",
-    stage_history:"stageHistory", converted_opp_id:"convertedOppId",
+    stage_history:"stageHistory",
+    // converted_opp_id (singular) intentionally omitted — see toSnake
+    // header for context. The column doesn't exist in the schema, so
+    // it can never come back in a Supabase response either.
     converted_opp_ids:"convertedOppIds", converted_opp_ref_id:"convertedOppRefId",
     converted_date:"convertedDate", qualification_checklist:"qualificationChecklist",
     // Opportunity fields
