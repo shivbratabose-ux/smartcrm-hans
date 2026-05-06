@@ -514,6 +514,13 @@ function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, 
     { key: "accountNo", label: "Account No.", defaultWidth: 130, render: a => (
       <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{a.accountNo || "-"}</span>
     )},
+    // ERP cross-reference. CRM owns accountNo (ACC-YYYY-NNN); the ERP
+    // (Hans's billing/operations system) issues codes like SHP/2881 and
+    // CTM/1952 that reps already use day-to-day. We carry both so cross-
+    // system reports and rep searches both work.
+    { key: "erpAccountNo", label: "ERP Code", defaultWidth: 120, render: a => (
+      <span style={{fontFamily:"'Courier New',monospace",fontSize:11,color:"var(--text2)"}}>{a.erpAccountNo || "-"}</span>
+    )},
     { key: "legalName", label: "Legal Name", defaultWidth: 200, render: a => txt(a.legalName) },
     { key: "type", label: "Type", defaultWidth: 110, render: a => txt(a.type) },
     { key: "segment", label: "Segment", defaultWidth: 130, render: a => txt(a.segment) },
@@ -700,7 +707,13 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     if (countryF !== "All" && a.country !== countryF) return false;
     if (statusF !== "All" && a.status !== statusF) return false;
     if (ownerF !== "All" && a.owner !== ownerF) return false;
-    if (search && !a.name.toLowerCase().includes(search.toLowerCase())) return false;
+    // Search across name, CRM accountNo, AND ERP code so reps who think in
+    // "SHP/2881" find the same record as reps who think in "ACC-2026-001".
+    if (search) {
+      const q = search.toLowerCase();
+      const haystack = [a.name, a.accountNo, a.erpAccountNo].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
     return true;
   }).sort((a, b) => {
     let v;
