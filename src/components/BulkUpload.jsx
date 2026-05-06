@@ -196,11 +196,16 @@ const SCHEMAS = {
     // account's Head Office address (PR #102 mandate). Skips silently if
     // the email already exists in your contacts table — re-link via the
     // Contacts CSV if needed.
+    // Sample includes erpAccountNo column (added 2026-05) so users
+    // downloading the template see the ERP↔CRM cross-reference field.
+    // Leave accountNo blank in your CSV — the CRM auto-generates
+    // ACC-YYYY-NNN on import. Put your existing ERP code (SHP/2881,
+    // CTM/1952, etc.) in erpAccountNo so cross-system reports work.
     sample: [
-      "accountNo,name,type,country,city,state,pincode,address,legalName,pan,gstin,taxTreatment,website,segment,status,entityType,groupCode,paymentTerms,currency,billingFrequency,products,productSelection,arrRevenue,potential,owner,primaryContact,primaryEmail,primaryPhone",
-      "ACC-2026-001,Acme Airlines,Airline,India,Mumbai,Maharashtra,400069,Andheri East Mumbai 400069,Acme Airlines Pvt Ltd,AAAAA1234A,27AAAAA1234A1Z5,Domestic,acme.com,Enterprise,Active,Head Office,GRP-ACM,Net 30,INR,Annual,iCAFFE;WiseCargo,iCAFFE[eSanchit Filing|OCR Engine]; WiseCargo[AWB Management|DG Handling],10,50,,Jane Smith,jane.smith@acme.com,+91-98765-43210",
-      "ACC-2026-002,Delta Freight,Freight Forwarder,UAE,Dubai,,,,,,,Export,betafreight.ae,Mid-Market,Active,Head Office,,Net 45,AED,Quarterly,WiseTrax,WiseTrax[None],5,20,,Mark Lee,mark.lee@deltafreight.ae,+971-50-1234567",
-      ",Beta Logistics,Customs Broker,India,Delhi,Delhi,110001,,Beta Logistics Pvt Ltd,BBBBB5678B,,Domestic,beta.in,SMB,Prospect,Head Office,,Net 30,INR,Annual,iCAFFE,iCAFFE[eSanchit Filing],0,15,,,,",
+      "accountNo,erpAccountNo,name,type,country,city,state,pincode,address,legalName,pan,gstin,taxTreatment,website,segment,status,entityType,groupCode,paymentTerms,currency,billingFrequency,products,productSelection,arrRevenue,potential,owner,primaryContact,primaryEmail,primaryPhone",
+      ",SHP/2881,Acme Airlines,Airline,India,Mumbai,Maharashtra,400069,Andheri East Mumbai 400069,Acme Airlines Pvt Ltd,AAAAA1234A,27AAAAA1234A1Z5,Domestic,acme.com,Enterprise,Active,Head Office,GRP-ACM,Net 30,INR,Annual,iCAFFE;WiseCargo,iCAFFE[eSanchit Filing|OCR Engine]; WiseCargo[AWB Management|DG Handling],10,50,,Jane Smith,jane.smith@acme.com,+91-98765-43210",
+      ",CTM/1952,Delta Freight,Freight Forwarder,UAE,Dubai,,,,,,,Export,betafreight.ae,Mid-Market,Active,Head Office,,Net 45,AED,Quarterly,WiseTrax,WiseTrax[None],5,20,,Mark Lee,mark.lee@deltafreight.ae,+971-50-1234567",
+      ",,Beta Logistics,Customs Broker,India,Delhi,Delhi,110001,,Beta Logistics Pvt Ltd,BBBBB5678B,,Domestic,beta.in,SMB,Prospect,Head Office,,Net 30,INR,Annual,iCAFFE,iCAFFE[eSanchit Filing],0,15,,,,",
     ].join("\n"),
     validate: (row) => {
       const e = [];
