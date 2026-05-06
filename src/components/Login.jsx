@@ -118,7 +118,17 @@ function Login({onLogin, orgUsers}) {
 
   const handle = () => {
     if (!isSupabaseConfigured) { setErr("Authentication is not configured. Contact your administrator."); return; }
-    if (mode === "signup") handleSupabaseSignup();
+    if (mode === "signup") {
+      // Defense-in-depth: even if the Sign Up tab is forced visible (DOM
+      // tampering / restored mode state / etc.), don't actually create an
+      // auth user unless the request originated from an admin invite link.
+      // Internal CRM has no use case for unsolicited self-signup.
+      if (!invitedFromAdmin) {
+        setErr("Self-service sign-up is disabled. Ask your administrator to invite you.");
+        return;
+      }
+      handleSupabaseSignup();
+    }
     else if (mode === "forgot") handleForgot();
     else handleSupabaseLogin();
   };
@@ -217,14 +227,21 @@ function Login({onLogin, orgUsers}) {
           {mode==="login" ? "Sign in to your account to continue" : mode==="signup" ? "Set up your SmartCRM account" : "We'll send you a reset link"}
         </div>
 
-        {/* Tab switcher */}
+        {/* Tab switcher — public Sign Up is hidden by default. The Sign Up
+            tab only appears when the user arrived via an admin invite link
+            (?invite=... — see useEffect above). For self-service-blocked
+            internal CRMs, this means strangers can't create accounts; only
+            admins provisioning users through Team & Users (which fires off
+            an invite link) reach the Sign Up flow. */}
         <div style={s.tabRow}>
           <button style={s.tab(mode==="login")} onClick={()=>{setMode("login");setErr("");setSuccess("");}}>
             <LogIn size={14}/>Sign In
           </button>
-          <button style={s.tab(mode==="signup")} onClick={()=>{setMode("signup");setErr("");setSuccess("");}}>
-            <UserPlus size={14}/>Sign Up
-          </button>
+          {invitedFromAdmin && (
+            <button style={s.tab(mode==="signup")} onClick={()=>{setMode("signup");setErr("");setSuccess("");}}>
+              <UserPlus size={14}/>Sign Up
+            </button>
+          )}
         </div>
 
         {/* Back link for forgot mode */}
@@ -330,7 +347,7 @@ function Login({onLogin, orgUsers}) {
         <div style={s.hint}>
           {mode==="signup"
             ? "Your account will be created with default Sales Executive access. Your admin can update your role and permissions."
-            : "Use your registered work email and password to sign in. Contact your administrator if you need access."
+            : "Use your registered work email and password to sign in. New accounts are created by your administrator — they'll send you an invite link."
           }
         </div>
 
