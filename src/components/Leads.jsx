@@ -10,6 +10,8 @@ import ProductModulePicker, { validateProductSelection, primaryProductId } from 
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
+import { batchUpsert } from '../lib/db';
+import { notify } from '../utils/toast';
 
 /* ── Date range helpers ── */
 const RANGE_PRESETS = [
@@ -2058,6 +2060,38 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
         </div>
         <div className="pg-actions">
           {overdueLeads > 0 && <button onClick={() => setOverdueOnly(v => !v)} style={{background:overdueOnly?"#DC2626":"var(--red-bg)",color:overdueOnly?"#fff":"var(--red-t)",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,display:"flex",alignItems:"center",gap:4,border:"none",cursor:"pointer",transition:"all 0.15s"}} title={overdueOnly ? "Click to show all leads" : "Click to filter overdue only"}><AlertTriangle size={12}/>{overdueOnly ? `Showing ${overdueLeads} overdue` : `${overdueLeads} overdue`}</button>}
+          {/* Resync to Cloud — admin-only safety button. The CRM uses dual
+              state (React + localStorage cache + Supabase). When rows live
+              only in the browser cache (e.g. an early bulk import that
+              never persisted server-side), other users can't see them.
+              This button forces a batch upsert of every live lead in local
+              state to Supabase, so anyone with the right role/scope sees
+              them on next refresh. Idempotent (upsert on conflict id) so
+              re-running is safe. */}
+          {(() => {
+            const me = (orgUsers || []).find(u => u.id === currentUser);
+            const isAdmin = me && ["admin","md","director"].includes(String(me.role || "").toLowerCase());
+            if (!isAdmin) return null;
+            return (
+              <button
+                className="btn btn-sec"
+                title="Push every lead in this browser to Supabase. Use when rows you can see locally aren't visible to other users."
+                onClick={async () => {
+                  const live = (leads || []).filter(l => !l.isDeleted);
+                  if (!live.length) { notify.info("No live leads to resync."); return; }
+                  if (!window.confirm(`Push ${live.length} leads to Supabase? Existing rows with the same id will be updated; new ones will be inserted.`)) return;
+                  notify.info(`Resyncing ${live.length} leads…`);
+                  const { error } = await batchUpsert("leads", live);
+                  if (error) {
+                    notify.error(`Resync failed: ${error.message || error}`);
+                  } else {
+                    notify.success(`Resynced ${live.length} leads to Supabase.`);
+                  }
+                }}>
+                <Upload size={14}/>Resync to Cloud
+              </button>
+            );
+          })()}
           <button className="btn btn-sec" onClick={() => exportCSV(filtered, CSV_COLS, "leads")}>
             <Download size={14}/>Export
           </button>
