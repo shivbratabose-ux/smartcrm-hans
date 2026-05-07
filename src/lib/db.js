@@ -347,6 +347,14 @@ const toSnake = (obj, module) => {
     "convertedOppRefId",  // never landed on schema; removed from mapping
   ]);
   for (const [k, v] of Object.entries(obj)) {
+    // Skip blank or whitespace-only keys. These leak in from bulk CSV
+    // uploads with trailing commas in the header line (parseCSV produces
+    // `obj[""] = ...`), then ride along on every subsequent edit of that
+    // row. Postgres fails the upsert with "Could not find the ' ' column
+    // of '<table>' in the schema cache" — a single space or empty string
+    // between the quotes is the tell. Drop them at the boundary so the
+    // poison row can be edited+saved without manual cleanup.
+    if (typeof k !== "string" || k.trim() === "") continue;
     // Skip transient app-only fields (e.g. _warnings, _valid, _mode, _matchedId
     // from BulkUpload) — they don't exist in the DB schema and would cause
     // "Could not find the 'X' column" errors on upsert.

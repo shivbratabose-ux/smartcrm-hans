@@ -395,11 +395,23 @@ function parseCSVLine(line) {
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
   if (lines.length < 2) return { headers: [], rows: [] };
-  const headers = parseCSVLine(lines[0]).map(h => h.trim());
+  // Trim each header AND drop blank ones. A trailing comma on the header
+  // row produces an empty-string header which would later become an
+  // `obj[""] = ...` field on every parsed row — that empty key rides into
+  // the upsert and Supabase rejects the whole write with "Could not find
+  // the ' ' column of 'leads' in the schema cache". Filter out at the
+  // source so the cells at those positions are dropped too (we only keep
+  // values whose corresponding header survived).
+  const rawHeaders = parseCSVLine(lines[0]).map(h => h.trim());
+  const keptIndices = [];
+  const headers = [];
+  rawHeaders.forEach((h, i) => {
+    if (h) { headers.push(h); keptIndices.push(i); }
+  });
   const rows = lines.slice(1).map((line, idx) => {
     const vals = parseCSVLine(line);
     const obj = {};
-    headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
+    headers.forEach((h, hIdx) => { obj[h] = vals[keptIndices[hIdx]] ?? ""; });
     obj._row = idx + 2;
     return obj;
   });
