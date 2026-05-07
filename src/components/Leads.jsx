@@ -6,7 +6,7 @@ import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect } from './shared';
 import Pagination, { usePagination } from './Pagination';
-import ProductModulePicker, { validateProductSelection, primaryProductId } from './ProductModulePicker';
+import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from './ProductModulePicker';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
@@ -1873,17 +1873,20 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   };
 
   const save = () => {
-    const errs = validateLead(form);
+    // Normalise productSelection BEFORE validating so half-filled lines
+    // (product picked, no module ticked, no explicit "None") don't block save.
+    const normalisedForm = { ...form, productSelection: normaliseProductSelection(form.productSelection) };
+    const errs = validateLead(normalisedForm);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     // Duplicate check
     const isDup = leads.some(existing =>
-      existing.id !== form.id && (
-        (form.email && existing.email && existing.email.toLowerCase() === form.email.toLowerCase()) ||
-        (form.phone && existing.phone && existing.phone === form.phone)
+      existing.id !== normalisedForm.id && (
+        (normalisedForm.email && existing.email && existing.email.toLowerCase() === normalisedForm.email.toLowerCase()) ||
+        (normalisedForm.phone && existing.phone && existing.phone === normalisedForm.phone)
       )
     );
     if (isDup && !window.confirm("A lead with the same email or phone already exists. Continue anyway?")) return;
-    const clean = sanitizeObj(form);
+    const clean = sanitizeObj(normalisedForm);
     if (modal.mode === "add") setLeads(p => [...p, { ...clean }]);
     else setLeads(p => p.map(l => l.id === clean.id ? { ...clean } : l));
     setModal(null);
