@@ -1,5 +1,7 @@
 import { useState, useMemo, useRef } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star, Building2, ArrowUpDown, ArrowUp, ArrowDown, Globe, Briefcase, Calendar, TrendingUp, FileText, Activity, X } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star, Building2, ArrowUpDown, ArrowUp, ArrowDown, Globe, Briefcase, Calendar, TrendingUp, FileText, Activity, X, Link2 } from "lucide-react";
+import { batchUpsert } from '../lib/db';
+import { notify } from '../utils/toast';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today, resolveAddress, formatAddress, lower, title } from "../utils/helpers";
 import { PRODUCTS, PROD_MAP, COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
@@ -338,6 +340,77 @@ function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, 
   );
 }
 
+// ─── Auto-link helpers ────────────────────────────────────────────────────
+// Bulk-uploaded contacts often land with no accountId (CSV had no account
+// column, OR the accountName didn't case-exact-match an account.name). The
+// "Link Accounts" rescue button below uses these helpers to back-fill the
+// link by inferring from email domain, linked opps, or fuzzy name match.
+//
+// Strategy (first hit wins per contact):
+//   1. linkedOpps[]  -> opps[id].accountId (most reliable; the contact is
+//                       already attached to an opp on this account)
+//   2. email domain  -> match against account.website or primaryEmail
+//                       domain. e.g. shipper@fedex.com → "FedEx Express"
+//                       account whose website is "fedex.com".
+//   3. fuzzy name    -> if the contact's `company` field survived stripping
+//                       on bulk upload, normalise both sides (lowercase,
+//                       strip Pvt./Ltd./Inc/punctuation) and substring-match.
+const ACCOUNT_NAME_NOISE = /\b(pvt|private|ltd|limited|inc|llc|llp|co\.|company|corp|corporation|gmbh|sa|ag)\b|[.,&'"\-()]/gi;
+function normaliseAccountName(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(ACCOUNT_NAME_NOISE, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function emailDomain(email) {
+  const m = String(email || "").trim().toLowerCase().match(/@([^@\s]+)$/);
+  return m ? m[1] : "";
+}
+function websiteDomain(url) {
+  if (!url) return "";
+  return String(url).trim().toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split(/[/?#]/)[0];
+}
+// Returns the best-match account.id for a single contact, or "".
+function inferAccountForContact(contact, accounts, opps) {
+  // 1. via opps the contact is already linked to
+  if (Array.isArray(contact.linkedOpps) && contact.linkedOpps.length) {
+    for (const oid of contact.linkedOpps) {
+      const o = (opps || []).find(x => x.id === oid);
+      if (o?.accountId) return o.accountId;
+    }
+  }
+  // 2. via email domain → account website / primaryEmail
+  const eDom = emailDomain(contact.email);
+  if (eDom) {
+    // Skip generic free-mail providers — they're not company-specific
+    const generic = new Set(["gmail.com","yahoo.com","hotmail.com","outlook.com","rediffmail.com","icloud.com","aol.com","live.com","ymail.com","protonmail.com"]);
+    if (!generic.has(eDom)) {
+      const byWeb = (accounts || []).find(a => websiteDomain(a.website) === eDom);
+      if (byWeb) return byWeb.id;
+      const byEmail = (accounts || []).find(a => emailDomain(a.primaryEmail) === eDom);
+      if (byEmail) return byEmail.id;
+    }
+  }
+  // 3. fuzzy match against contact.company (if the field survived legacy uploads)
+  const co = normaliseAccountName(contact.company);
+  if (co) {
+    // exact normalised match first
+    const exact = (accounts || []).find(a => normaliseAccountName(a.name) === co);
+    if (exact) return exact.id;
+    // contains match (CSV name is shorter/longer than account name)
+    const contains = (accounts || []).find(a => {
+      const an = normaliseAccountName(a.name);
+      return an && (an.includes(co) || co.includes(an));
+    });
+    if (contains) return contains.id;
+  }
+  return "";
+}
+
 function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], leads=[], contracts=[], activities=[], setActivities, callReports=[], setCallReports, orgUsers, masters, canDelete, currentUser}) {
   const [search, setSearch] = useState("");
   const [accF, setAccF] = useState("All");
@@ -622,6 +695,62 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
           <div className="pg-sub">{totalContacts} contacts across {uniqueAccounts} accounts</div>
         </div>
         <div className="pg-actions">
+          {/* Auto-link Accounts — admin-only rescue button. Scans every
+              unlinked contact, infers an account via opp linkage / email
+              domain / fuzzy name match (see inferAccountForContact above),
+              shows a preview, and back-fills accountId on confirm. Pushes
+              the change to Supabase via batchUpsert so other users see it. */}
+          {(() => {
+            const me = (orgUsers || []).find(u => u.id === currentUser);
+            const isAdmin = me && ["admin","md","director"].includes(String(me.role || "").toLowerCase());
+            if (!isAdmin) return null;
+            return (
+              <button
+                className="btn btn-sec"
+                title="Find accounts for unlinked contacts using email domain, linked opps, and fuzzy name match."
+                onClick={async () => {
+                  const live = (contacts || []).filter(c => !c.isDeleted);
+                  const unlinked = live.filter(c => !c.accountId);
+                  if (!unlinked.length) { notify.info("No unlinked contacts to fix."); return; }
+                  // Compute proposals
+                  const proposals = unlinked.map(c => ({
+                    contact: c,
+                    proposedAccountId: inferAccountForContact(c, accounts, opps),
+                  }));
+                  const matched = proposals.filter(p => p.proposedAccountId);
+                  const stillUnmatched = proposals.length - matched.length;
+                  if (!matched.length) {
+                    notify.info(`Scanned ${unlinked.length} unlinked contacts — no confident matches found.`);
+                    return;
+                  }
+                  const ok = window.confirm(
+                    `Auto-link ${matched.length} contacts to accounts?\n\n` +
+                    `Scanned: ${unlinked.length} unlinked\n` +
+                    `Will link: ${matched.length}\n` +
+                    `Will stay unmatched: ${stillUnmatched}\n\n` +
+                    `Matching uses (in order): existing opp linkage, email domain → account website, fuzzy name match.\n\n` +
+                    `Re-runnable safely. Continue?`
+                  );
+                  if (!ok) return;
+                  notify.info(`Linking ${matched.length} contacts…`);
+                  // Apply locally
+                  const idToAccount = new Map(matched.map(p => [p.contact.id, p.proposedAccountId]));
+                  const next = (contacts || []).map(c => idToAccount.has(c.id) ? { ...c, accountId: idToAccount.get(c.id) } : c);
+                  setContacts(next);
+                  // Push to Supabase so the link survives a refresh and lands
+                  // for other users. Only the touched rows.
+                  const touched = next.filter(c => idToAccount.has(c.id));
+                  const { error } = await batchUpsert("contacts", touched);
+                  if (error) {
+                    notify.error(`Linked locally — cloud push failed: ${error.message || error}. Will retry on next edit.`);
+                  } else {
+                    notify.success(`Linked ${matched.length} contacts to accounts.${stillUnmatched ? ` ${stillUnmatched} still unmatched.` : ""}`);
+                  }
+                }}>
+                <Link2 size={14}/>Link Accounts
+              </button>
+            );
+          })()}
           <button className="btn btn-sec" onClick={() => exportCSV(filtered, CSV_COLS, "contacts")}><Download size={14}/>Export</button>
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>Add Contact</button>
         </div>

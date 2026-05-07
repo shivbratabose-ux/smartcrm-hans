@@ -1761,22 +1761,36 @@ export default function SmartCRM() {
           const s = String(v).trim().toLowerCase();
           return s === "true" || s === "yes" || s === "1" || s === "primary";
         };
-        let insertIdx = 0;
-        const enrichedInserts = inserts.map(r => {
-          // Account lookup: CSV exposes both `accountId` (FK / accountNo)
-          // AND `accountName` (friendly column). Previously the lookup
-          // only consulted `r.company`, leaving every accountName-only
-          // row unlinked. Match against accountNo first (the documented
-          // way to reference an account in CSVs), then fall back to
-          // name matching from accountName / company / accountName_alias.
-          const acctRef = (r.accountId || "").trim();
+        // Fuzzy account matcher — shared by insert + update paths so a CSV
+        // saying "FedEx Express" links to "FedEx Express Pvt Ltd",
+        // "M/s. DHL" to "DHL", etc. Without normalisation the strict
+        // case-insensitive equality below dropped every row whose CSV name
+        // didn't byte-exactly match the account.name in the system, and
+        // the contacts list filled up with "(unlinked)".
+        const ACCT_NOISE = /\b(pvt|private|ltd|limited|inc|llc|llp|co\.|company|corp|corporation|gmbh|sa|ag)\b|[.,&'"\-()]/gi;
+        const normAcct = (s) => String(s || "").toLowerCase().replace(ACCT_NOISE, " ").replace(/\s+/g, " ").trim();
+        const matchAccount = (r) => {
+          const acctRef  = (r.accountId || "").trim();
           const acctName = (r.accountName || r.company || "").trim();
           const matchedByRef = acctRef
-            ? accounts.find(a => a.id === acctRef || a.accountNo === acctRef)
+            ? accounts.find(a => a.id === acctRef || a.accountNo === acctRef || a.erpAccountNo === acctRef)
             : null;
-          const matchedByName = !matchedByRef && acctName
-            ? accounts.find(a => a.name?.toLowerCase().trim() === acctName.toLowerCase())
-            : null;
+          if (matchedByRef) return { matchedByRef, matchedByName: null, acctRef, acctName };
+          const acctN = normAcct(acctName);
+          if (!acctN) return { matchedByRef: null, matchedByName: null, acctRef, acctName };
+          const matchedByName =
+            accounts.find(a => normAcct(a.name) === acctN) ||
+            accounts.find(a => {
+              const an = normAcct(a.name);
+              return an && (an.includes(acctN) || acctN.includes(an));
+            }) || null;
+          return { matchedByRef: null, matchedByName, acctRef, acctName };
+        };
+
+        let insertIdx = 0;
+        const enrichedInserts = inserts.map(r => {
+          // Account lookup uses fuzzy normalisation (see matchAccount above).
+          const { matchedByRef, matchedByName, acctRef } = matchAccount(r);
           insertIdx++;
           const { accountName, ...rest } = r;
           return {
@@ -1796,14 +1810,8 @@ export default function SmartCRM() {
         // Updates get the same coercion + alias so a CSV edit that
         // touches accountName / products / etc. writes through cleanly.
         const enrichUpdate = (r) => {
-          const acctRef = (r.accountId || "").trim();
-          const acctName = (r.accountName || r.company || "").trim();
-          const matchedByRef = acctRef
-            ? accounts.find(a => a.id === acctRef || a.accountNo === acctRef)
-            : null;
-          const matchedByName = !matchedByRef && acctName
-            ? accounts.find(a => a.name?.toLowerCase().trim() === acctName.toLowerCase())
-            : null;
+          // Same fuzzy matcher as inserts (see matchAccount above).
+          const { matchedByRef, matchedByName } = matchAccount(r);
           const { accountName: _aN, ...rest } = r;
           const out = { ...rest };
           // Only override accountId on the update row when the CSV
