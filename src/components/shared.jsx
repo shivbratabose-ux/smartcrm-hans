@@ -1159,15 +1159,46 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
     duration: 15, accountId: "", leadId: "", oppId: "", contactIds: [], participantIds: [],
     notes: "", outcome: "Completed", nextCallDate: "", nextStepDesc: "", createFollowup: false,
     followupTitle: "", followupAssign: "", followupDue: "",
+    // leadContactIds: optional hint passed by caller when opening from a Lead row.
+    // When present we use it to scope the Contacts multi-select strictly to the
+    // contacts already attached to that lead (since Contacts don't carry a
+    // leadId column, the lead is the source of truth for its contact list).
+    leadContactIds: undefined,
     ...prefill,
   });
   const [errors, setErrors] = useState({});
 
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: undefined })); };
 
-  const filteredContacts = useMemo(() =>
-    form.accountId ? (contacts || []).filter(c => c.accountId === form.accountId) : (contacts || []),
-  [contacts, form.accountId]);
+  // Scope contacts to the record the call is being logged against.
+  // Priority: lead-attached contacts > opp-linked contacts > account contacts.
+  // We deliberately do NOT fall through to "show every contact in the system"
+  // — that's noise and was confusing users (#bugfix).
+  const filteredContacts = useMemo(() => {
+    const all = contacts || [];
+    // Lead context — caller passed the lead's contactIds[] in prefill
+    if (form.leadId && Array.isArray(form.leadContactIds) && form.leadContactIds.length > 0) {
+      const idSet = new Set(form.leadContactIds);
+      return all.filter(c => idSet.has(c.id));
+    }
+    // Opp context — pull primary + secondary + any contact that has this opp in linkedOpps[]
+    if (form.oppId) {
+      const opp = (opps || []).find(o => o.id === form.oppId);
+      if (opp) {
+        const direct = new Set([opp.primaryContactId, ...(opp.secondaryContactIds || [])].filter(Boolean));
+        return all.filter(c => direct.has(c.id) || (c.linkedOpps || []).includes(form.oppId));
+      }
+    }
+    // Account context — every contact tagged to this account
+    if (form.accountId) {
+      return all.filter(c => c.accountId === form.accountId);
+    }
+    // No record context selected — show nothing rather than the entire org
+    // address book. Once the user picks an Account from the dropdown, this
+    // recomputes to that account's contacts.
+    return [];
+  }, [contacts, opps, form.leadId, form.leadContactIds, form.oppId, form.accountId]);
+
   const filteredOpps = useMemo(() =>
     form.accountId ? (opps || []).filter(o => o.accountId === form.accountId) : (opps || []),
   [opps, form.accountId]);
@@ -1248,7 +1279,17 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
       <div className="form-group" style={{ marginBottom: 12 }}>
         <label>Contacts</label>
         <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 4, background: "white" }}>
-          {filteredContacts.length === 0 && <div style={{ fontSize: 11, color: "var(--text3)", padding: 8, textAlign: "center" }}>No contacts</div>}
+          {filteredContacts.length === 0 && (
+            <div style={{ fontSize: 11, color: "var(--text3)", padding: 8, textAlign: "center" }}>
+              {form.leadId
+                ? "No contacts attached to this lead. Add one on the lead, or pick an Account above to see its contacts."
+                : form.oppId
+                  ? "No contacts linked to this opportunity. Pick an Account to see its contacts."
+                  : form.accountId
+                    ? "No contacts on this account yet."
+                    : "Pick an Account above to see its contacts."}
+            </div>
+          )}
           {filteredContacts.map(c => (
             <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>
               <input type="checkbox" checked={(form.contactIds||[]).includes(c.id)}

@@ -1923,6 +1923,10 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     setCallLogModal({
       accountId: lead.accountId || "",
       leadId: lead.id,
+      // Hand the lead's contactIds straight to the modal so its Contacts
+      // multi-select shows only contacts attached to THIS lead (not the
+      // entire org address book).
+      leadContactIds: Array.isArray(lead.contactIds) ? lead.contactIds : [],
       participantIds: currentUser ? [currentUser] : [],
     });
   };
