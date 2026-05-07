@@ -11,9 +11,10 @@
 //
 // Validation contract (enforced by caller via validateProductSelection):
 //   - At least one product line selected
-//   - For each selected line: either ≥1 module checked, OR noAddons === true
-//     (the explicit "None" choice the user must make to acknowledge there
-//      are no add-ons being scoped — prevents accidentally-empty selections)
+//   That's it. Modules-vs-None is no longer mandatory at validation time —
+//   normaliseProductSelection() auto-sets noAddons=true on any line that has
+//   no modules picked, so Save never gets blocked by a half-filled picker.
+//   Users can still explicitly tick "None" or pick modules; both are honoured.
 import { useState } from "react";
 import { Check, ChevronDown, ChevronRight, Plus, X } from "lucide-react";
 
@@ -27,13 +28,20 @@ const TYPE_STYLE = {
 export function validateProductSelection(value) {
   const list = Array.isArray(value) ? value : [];
   if (list.length === 0) return "Select at least one product line";
-  for (const entry of list) {
-    const mods = entry.moduleIds || [];
-    if (mods.length === 0 && !entry.noAddons) {
-      return `Pick at least one module for ${entry.productId} — or choose "None" if no add-ons apply`;
-    }
-  }
   return null;
+}
+
+// Defensive normaliser — call from caller's save() right before persisting.
+// Guarantees every line has a coherent (modules || noAddons) shape so
+// downstream consumers (ProductSelectionDisplay, productSelectionToString,
+// quote generation, etc.) never have to special-case half-filled lines.
+export function normaliseProductSelection(value) {
+  const list = Array.isArray(value) ? value : [];
+  return list.map(entry => {
+    const mods = Array.isArray(entry.moduleIds) ? entry.moduleIds : [];
+    if (mods.length > 0) return { ...entry, moduleIds: mods, noAddons: false };
+    return { ...entry, moduleIds: [], noAddons: true };
+  });
 }
 
 // Convenience: derive the legacy single `product` field (first selected line)

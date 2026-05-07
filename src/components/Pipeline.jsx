@@ -27,7 +27,7 @@ import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds } from "../utils/helpers";
 import { exportCSV } from "../utils/csv";
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect } from "./shared";
-import ProductModulePicker, { validateProductSelection, primaryProductId } from "./ProductModulePicker";
+import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from "./ProductModulePicker";
 import DataGrid from "./DataGrid";
 
 /* ───────── stages context ─────────
@@ -864,11 +864,14 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     setModal({ mode: "edit" });
   };
   const save = () => {
-    const errs = validateOpp(form);
-    const psErr = validateProductSelection(form.productSelection);
+    // Normalise productSelection BEFORE validating so half-filled lines
+    // (product picked, no module ticked, no explicit "None") don't block save.
+    const normalisedForm = { ...form, productSelection: normaliseProductSelection(form.productSelection) };
+    const errs = validateOpp(normalisedForm);
+    const psErr = validateProductSelection(normalisedForm.productSelection);
     if (psErr) errs.productSelection = psErr;
     if (hasErrors(errs)) { setFormErrors(errs); return; }
-    const clean = sanitizeObj(form);
+    const clean = sanitizeObj(normalisedForm);
     /* duplicate check */
     if (modal.mode === "add") {
       const dup = opps.find(o => o.accountId === clean.accountId && o.products.length > 0 && clean.products.length > 0 && o.products.some(p => clean.products.includes(p)) && o.id !== clean.id);
