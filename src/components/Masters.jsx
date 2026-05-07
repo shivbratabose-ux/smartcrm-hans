@@ -1,8 +1,10 @@
 import { useState, useMemo } from "react";
-import { Plus, Edit2, Trash2, Check, X, ChevronDown, Search, ArrowUp, ArrowDown, GitBranch } from "lucide-react";
+import { Plus, Edit2, Trash2, Check, X, ChevronDown, Search, ArrowUp, ArrowDown, GitBranch, Upload } from "lucide-react";
 import { PROD_MAP } from '../data/constants';
 import { uid } from '../utils/helpers';
 import { Modal, Confirm, HelpTooltip, PageTip } from './shared';
+import { saveSettings } from '../lib/db';
+import { notify } from '../utils/toast';
 
 // ═══════════════════════════════════════════════════════════════════
 // MASTERS PAGE — compact, chip-style, grouped into category tabs
@@ -491,6 +493,38 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
       />
       <div className="pg-head">
         <div><div className="pg-title">Masters</div><div className="pg-sub">Reference data &amp; product catalogue · {totalItems} items across {Object.keys(SECTIONS).reduce((s,k)=>s+SECTIONS[k].length,0)} masters</div></div>
+        {/* Resync to Cloud — admin-only safety button. Masters / Catalog
+            already auto-save (1.5s debounce) but if a save errored silently
+            (network blip, RLS, JSONB shape) the local state can drift from
+            Supabase. This forces a one-shot push of the entire masters +
+            catalog blob, identical to PR #133 / #142 patterns for leads /
+            accounts. Re-running is safe — whole-blob upsert. */}
+        <div className="pg-actions">
+          {(() => {
+            const me = (orgUsers || []).find(u => u.id === currentUser);
+            const isAdmin = me && ["admin","md","director"].includes(String(me.role || "").toLowerCase());
+            if (!isAdmin) return null;
+            return (
+              <button
+                className="btn btn-sec"
+                title="Push Masters + Catalogue to Supabase. Use when local edits don't appear for other users."
+                onClick={async () => {
+                  const mastersCount = Object.values(masters || {}).reduce((s, a) => s + (Array.isArray(a) ? a.length : 0), 0);
+                  const catalogCount = (catalog || []).length;
+                  if (!window.confirm(`Push Masters (${mastersCount} items) and Product Catalogue (${catalogCount} products) to Supabase?\n\nThis overwrites the cloud copy with what's in this browser. Other users will see the change after their next refresh.`)) return;
+                  notify.info("Resyncing Masters & Catalogue…");
+                  const { error } = await saveSettings({ masters, catalog });
+                  if (error) {
+                    notify.error(`Resync failed: ${error.message || error}`);
+                  } else {
+                    notify.success("Masters & Catalogue resynced to Supabase.");
+                  }
+                }}>
+                <Upload size={14}/>Resync to Cloud
+              </button>
+            );
+          })()}
+        </div>
       </div>
 
       <div style={{display:"flex",gap:8,marginBottom:18}}>
