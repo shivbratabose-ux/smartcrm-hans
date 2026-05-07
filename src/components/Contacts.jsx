@@ -520,11 +520,34 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
       else if (hasOpenOpp) _stage = "Opportunity";
       else if (hasActiveLead) _stage = "Lead";
 
-      // Company fallback — first linked Lead with a non-empty company wins.
+      // Company fallback — when the contact has no accountId, surface the
+      // best company-name signal we have so the ACCOUNT column never reads
+      // "(unlinked)" for a contact that's actually attached to pipeline
+      // activity. Priority order (first hit wins):
+      //   1. Linked OPP -> opp's account.name (most authoritative — the
+      //      contact is on a real deal already pointing at an account)
+      //   2. Linked LEAD with company text (lead might not have an account
+      //      yet, but its company string is still meaningful)
+      //   3. Linked OPP without an account -> opp.title as a hint
       let _company = "", _companySource = "";
       if (!acc) {
-        const fromLead = linkedLeads.find(l => l.company);
-        if (fromLead) { _company = fromLead.company; _companySource = `Lead ${fromLead.leadId || ""}`.trim(); }
+        // 1) opp -> account
+        const oppWithAcct = linkedOpps.find(o => o.accountId && accById.get(o.accountId));
+        if (oppWithAcct) {
+          const linkedAcc = accById.get(oppWithAcct.accountId);
+          _company = linkedAcc.name;
+          _companySource = `Opp ${oppWithAcct.oppNo || oppWithAcct.title || ""}`.trim();
+        }
+        // 2) lead with company
+        if (!_company) {
+          const fromLead = linkedLeads.find(l => l.company);
+          if (fromLead) { _company = fromLead.company; _companySource = `Lead ${fromLead.leadId || ""}`.trim(); }
+        }
+        // 3) opp without account — last-resort hint
+        if (!_company) {
+          const oppNoAcct = linkedOpps.find(o => o.title);
+          if (oppNoAcct) { _company = oppNoAcct.title; _companySource = `Opp ${oppNoAcct.oppNo || ""}`.trim(); }
+        }
       }
       return { ...c, _stage, _company, _companySource };
     });
