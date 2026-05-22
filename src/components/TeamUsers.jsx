@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shield, AlertTriangle, Lock, Unlock, ChevronDown, ChevronRight, Users, GitBranch } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { updateUserProfile } from '../lib/db';
+import { updateUserProfile, insertRecord } from '../lib/db';
 import { uid, fmt, today, normalizeRole } from '../utils/helpers';
 import { notify } from '../utils/toast';
 import { Modal, Confirm } from './shared';
@@ -179,6 +179,24 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
       const { password: _pw, confirmPassword: _cpw, ...formClean } = modal.form;
       const newId=`u${uid()}`;
       const newUser={...formClean,id:newId};
+
+      // PERSIST the new user to Supabase. Previously this only added the
+      // row to local React state, which meant:
+      //   - other admins couldn't see the new user
+      //   - the user disappeared on cache clear
+      //   - "Reset Temp Password" had nothing in `users` to target
+      //     (admin-set-temp-password Edge Function looks up by id first)
+      // Now we insert the CRM row up front. Auth account is still created
+      // lazily — admin clicks "Reset Temp Password" on the new row and
+      // the Edge Function creates auth.users + links auth_user_id.
+      if(isSupabaseConfigured){
+        const { error } = await insertRecord("users", newUser);
+        if(error){
+          notify.error(`Couldn't save user to cloud: ${error.message || error}. User is in this browser only — try again or contact the admin.`);
+          return;
+        }
+        notify.success(`User '${newUser.name}' created. Click the key icon on their row to set a temp password they can sign in with.`);
+      }
       setOrgUsers(p=>[...p,newUser]);
     } else {
       setOrgUsers(p=>p.map(u=>u.id===form.id?{...form}:u));
