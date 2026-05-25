@@ -429,10 +429,10 @@ export const CSS = `
   .detail-tabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:20px; }
   .detail-tab { padding:9px 18px; font-size:13px; font-weight:500; color:var(--text3); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:color 0.12s, border-color 0.12s; }
   .detail-tab.active { color:var(--brand); border-bottom-color:var(--brand); font-weight:600; }
-  .dp-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 20px; }
-  .dp-row { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--s3); }
-  .dp-key { font-size:12px; color:var(--text3); font-weight:500; flex-shrink:0; }
-  .dp-val { font-size:13px; color:var(--text); font-weight:500; text-align:right; }
+  .dp-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px 24px; }
+  .dp-row { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid var(--s3); }
+  .dp-key { font-size:11.5px; color:var(--text3); font-weight:500; flex-shrink:0; }
+  .dp-val { font-size:12.5px; color:var(--text); font-weight:500; text-align:right; }
 
   /* ── KANBAN ── */
   .kanban { display:flex; gap:12px; overflow-x:auto; padding-bottom:8px; }

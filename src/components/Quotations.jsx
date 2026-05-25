@@ -1830,7 +1830,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
       {/* Detail Modal */}
       {detail&&(
-        <Modal title={`${detail._quoteId} – ${detail.title}`} onClose={()=>setDetail(null)} lg footer={<>
+        <Modal title={`${detail._quoteId} – ${detail.title}`} onClose={()=>setDetail(null)} size="xl" footer={<>
           <div style={{display:"flex",gap:6,marginRight:"auto"}}>
             <button className="btn btn-sec btn-sm" title="Customer-facing PDF" onClick={()=>printQuote(detail,"customer")}><FileText size={13}/>Customer PDF</button>
             <button className="btn btn-sec btn-sm" title="Proforma invoice (no GST)" onClick={()=>printQuote(detail,"proforma")}>Proforma</button>
@@ -1873,12 +1873,24 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           }}><Mail size={13}/>Email Quote</button>
           <button className="btn btn-primary btn-sm" onClick={()=>{openEdit(detail);setDetail(null);}}><Edit2 size={13}/>Edit</button>
         </>}>
-          <div className="dp-grid">
-            {[["Quote ID",detail._quoteId],["Account",detail._accName],["Sector",detail._sector],["Status",detail.status],["Probability",`${detail._prob}%`],["Version",`v${detail.version}`],["Created",fmt.date(detail.createdDate)],["Sent",detail.sentDate?fmt.date(detail.sentDate):"—"],["Expiry",detail.expiryDate?fmt.date(detail.expiryDate):"—"],["Validity",detail.validity],["Owner",TEAM_MAP[detail.owner]?.name||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
-          </div>
-          <div style={{marginTop:16}}>
-            <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginBottom:8}}>PRODUCTS & MODULES</div>
-            <ProductSelectionDisplay value={detail.productSelection} catalog={catalog} fallbackProducts={detail.product?[detail.product]:[]}/>
+          {/* ── Top band: meta (left 60%) + Products (right 40%) ── */}
+          <div style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:20,marginBottom:16}}>
+            <div className="dp-grid">
+              {[["Quote ID",detail._quoteId],["Account",detail._accName],["Sector",detail._sector],["Status",detail.status],["Probability",`${detail._prob}%`],["Version",`v${detail.version}`],["Created",fmt.date(detail.createdDate)],["Sent",detail.sentDate?fmt.date(detail.sentDate):"—"],["Expiry",detail.expiryDate?fmt.date(detail.expiryDate):"—"],["Validity",detail.validity],["Owner",TEAM_MAP[detail.owner]?.name||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
+            </div>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:8}}>PRODUCTS & MODULES</div>
+              <ProductSelectionDisplay value={detail.productSelection} catalog={catalog} fallbackProducts={detail.product?[detail.product]:[]}/>
+              {/* CC Contacts */}
+              {(detail.ccContactIds||[]).length>0&&(
+                <div style={{marginTop:10}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:5}}>CC CONTACTS</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                    {(detail.ccContactIds||[]).map(id=>{const c=contacts.find(x=>x.id===id);return c?<span key={id} style={{fontSize:11,background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:12,padding:"2px 8px",color:"#1E40AF"}}>{c.name}{c.designation?` · ${c.designation}`:""}</span>:null;})}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div style={{marginTop:16}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
