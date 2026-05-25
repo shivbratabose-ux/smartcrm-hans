@@ -697,8 +697,16 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       // 1. opp.primaryContactId — but ONLY if that contact belongs to the same account
       // 2. Primary-flagged contact from the opp's account
       // 3. First contact from the opp's account
-      // 4. Leave blank — never use a cross-account contact
-      const oppAccContacts=contacts.filter(c=>c.accountId===opp.accountId);
+      // 4. Fallback: match by account name in case of ID mismatch (e.g. duplicate account records)
+      // 5. Leave blank — never use a cross-account contact
+      let oppAccContacts=contacts.filter(c=>c.accountId===opp.accountId);
+      if(oppAccContacts.length===0&&acc?.name){
+        const normName=acc.name.trim().toLowerCase();
+        oppAccContacts=contacts.filter(c=>{
+          const cAcc=accounts.find(a=>a.id===c.accountId);
+          return cAcc&&cAcc.name.trim().toLowerCase()===normName;
+        });
+      }
       const oppPrimary=contacts.find(c=>c.id===opp.primaryContactId);
       const primaryFromSameAcc=oppPrimary?.accountId===opp.accountId?opp.primaryContactId:null;
       const bestContactId=primaryFromSameAcc
@@ -930,7 +938,15 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     if(!contactId && q.oppId){
       const opp=opps.find(o=>o.id===q.oppId);
       if(opp){
-        const oppAccContacts=contacts.filter(c=>c.accountId===opp.accountId);
+        const oppAcc=accounts.find(a=>a.id===opp.accountId);
+        let oppAccContacts=contacts.filter(c=>c.accountId===opp.accountId);
+        if(oppAccContacts.length===0&&oppAcc?.name){
+          const normName=oppAcc.name.trim().toLowerCase();
+          oppAccContacts=contacts.filter(c=>{
+            const cAcc=accounts.find(a=>a.id===c.accountId);
+            return cAcc&&cAcc.name.trim().toLowerCase()===normName;
+          });
+        }
         const oppPrimary=contacts.find(c=>c.id===opp.primaryContactId);
         const primaryFromSameAcc=oppPrimary?.accountId===opp.accountId?opp.primaryContactId:null;
         contactId=primaryFromSameAcc
