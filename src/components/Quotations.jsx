@@ -59,7 +59,9 @@ export const getVerifyStatus = (f) => {
 const validateQuote = (f) => {
   const errs = {};
   if (!f.title?.trim()) errs.title = "Quote title is required";
-  if (!f.accountId) errs.accountId = "Account is required";
+  // Account is optional when the quote is linked to an opportunity or lead —
+  // the account context is inferred from the linked record at display/PDF time.
+  if (!f.accountId && !f.oppId && !f.sourceLeadId) errs.accountId = "Account is required (or link an Opportunity / Lead)";
   if (f.items.length === 0) errs.items = "At least one line item is required";
   // Negative-value guards on totals + per-line numeric fields
   for (const k of ["subtotal","tax","discount","total"]) {
@@ -1174,8 +1176,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     }
     const errs=validateQuote(form);
     if(hasErrors(errs)){setFormErrors(errs);return;}
-    const totals=recalc(form.items,form.taxType,form.discount,form.placeOfSupply);
-    const clean=sanitizeObj({...form,...totals});
+    // Auto-resolve accountId from linked opp or lead if still blank
+    let resolvedForm={...form};
+    if(!resolvedForm.accountId){
+      const linkedOpp=opps.find(o=>o.id===resolvedForm.oppId);
+      if(linkedOpp?.accountId) resolvedForm.accountId=linkedOpp.accountId;
+    }
+    const totals=recalc(resolvedForm.items,resolvedForm.taxType,resolvedForm.discount,resolvedForm.placeOfSupply);
+    const clean=sanitizeObj({...resolvedForm,...totals});
     if(modal.mode==="add"){
       const created={...clean,changeLog:[{id:uid(),at:new Date().toISOString(),by:currentUser,field:"",from:"",to:"created",note:""}]};
       setQuotes(p=>[...p,created]);
