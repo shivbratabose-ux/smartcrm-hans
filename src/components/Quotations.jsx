@@ -2217,10 +2217,19 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               {sourceMode==="opportunity"&&(
                 <div className="form-group" style={{marginBottom:0}}>
                   <label>Opportunity</label>
-                  <select value={form.oppId} onChange={e=>applyOppCascade(e.target.value)}>
-                    <option value="">Select opportunity to auto-fill...</option>
-                    {opps.map(o=>{const a=accounts.find(x=>x.id===o.accountId);return <option key={o.id} value={o.id}>{o.title} {a?`— ${a.name}`:""} ({o.stage})</option>;})}
-                  </select>
+                  <TypeaheadSelect
+                    value={form.oppId}
+                    onChange={(id)=>applyOppCascade(id)}
+                    options={opps.map(o=>{
+                      const a=accounts.find(x=>x.id===o.accountId);
+                      return {
+                        value: o.id,
+                        label: o.title,
+                        sub: [a?.name, o.stage].filter(Boolean).join(" · "),
+                      };
+                    })}
+                    placeholder="Search opportunity to auto-fill…"
+                  />
                 </div>
               )}
               {sourceMode==="lead"&&(
