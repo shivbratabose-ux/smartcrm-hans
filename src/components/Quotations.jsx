@@ -105,8 +105,17 @@ const statusBadgeStyle = s => {
 };
 
 
-// Format a value already in INR (not crores) to locale string
-const formatINR = (val) => Math.round(Number(val) || 0).toLocaleString('en-IN');
+// Values are stored in Lakhs (1L = ₹1,00,000).
+// formatINR converts to actual rupees for CSV export & detail totals.
+const formatINR = (lakhVal) =>
+  Math.round((Number(lakhVal) || 0) * 100000).toLocaleString('en-IN');
+
+// Human-readable Lakh label: 0.42 → "₹0.42L", 12.5 → "₹12.5L", 0 → "—"
+const fmtL = (lakhVal, sym="₹") => {
+  const v = Number(lakhVal) || 0;
+  if (!v) return "—";
+  return `${sym}${v % 1 === 0 ? v : parseFloat(v.toFixed(2))}L`;
+};
 
 const getMonthName = (dateStr) => {
   if (!dateStr) return "—";
@@ -1770,9 +1779,16 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               <span style={{fontFamily:"'Outfit',sans-serif"}}>{q.taxAmount ? `₹${q.taxAmount}` : "-"}</span>
             )},
             { key: "taxType", label: "Tax Type", defaultWidth: 110, render: q => txt(q.taxType) },
-            { key: "total", label: "Order Value", defaultWidth: 130, render: q => (
-              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700,fontSize:13}}>{formatINR(q.total)}</span>
-            )},
+            { key: "total", label: "Order Value", defaultWidth: 140, render: q => {
+              const v = Number(q.total)||0;
+              const sym = q.currency==="USD"?"$":q.currency==="EUR"?"€":q.currency==="GBP"?"£":"₹";
+              return v > 0
+                ? <span style={{display:"inline-flex",flexDirection:"column",alignItems:"flex-end"}}>
+                    <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700,fontSize:13,color:"var(--brand)"}}>{fmtL(v,sym)}</span>
+                    <span style={{fontSize:10,color:"var(--text3)",fontFamily:"monospace"}}>{sym}{formatINR(v)}</span>
+                  </span>
+                : <span style={{color:"var(--text3)",fontSize:12}}>—</span>;
+            }},
             { key: "_prob", label: "Prob %", defaultWidth: 90, render: q => (
               <span style={{fontWeight:600,fontSize:12,color:q._prob>=70?"#22C55E":q._prob>=40?"#F59E0B":"#EF4444"}}>{q._prob}%</span>
             )},
@@ -1953,25 +1969,35 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               })}</tbody>
             </table>
           </div>
-          {/* Footer totals — six-way breakdown when POS is set, lump-sum fallback otherwise. */}
-          <div style={{marginTop:12,textAlign:"right",fontSize:13}}>
-            <div>Subtotal: <strong>₹{detail.subtotal}L</strong></div>
-            {detail.discount>0&&<div>Discount: <strong>-₹{detail.discount}L</strong></div>}
-            {(() => {
+          {/* Footer totals */}
+          <div style={{marginTop:12,background:"var(--s2)",borderRadius:8,padding:"10px 14px",fontSize:13}}>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid var(--s3)"}}>
+              <span style={{color:"var(--text3)"}}>Subtotal</span>
+              <strong>{fmtL(detail.subtotal)} <span style={{fontWeight:400,fontSize:11,color:"var(--text3)"}}>₹{formatINR(detail.subtotal)}</span></strong>
+            </div>
+            {detail.discount>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid var(--s3)",color:"#B91C1C"}}>
+              <span>Discount</span><strong>− {fmtL(detail.discount)}</strong>
+            </div>}
+            {(()=>{
               const igst=detail.igstTotal!=null?detail.igstTotal:sumLines(detail,"igstAmount");
               const cgst=detail.cgstTotal!=null?detail.cgstTotal:sumLines(detail,"cgstAmount");
               const sgst=detail.sgstTotal!=null?detail.sgstTotal:sumLines(detail,"sgstAmount");
-              const splitAvailable=igst>0||cgst>0||sgst>0;
-              if(splitAvailable){
-                return (<>
-                  {igst>0&&<div>IGST: <strong>₹{igst.toLocaleString()}</strong></div>}
-                  {cgst>0&&<div>CGST: <strong>₹{cgst.toLocaleString()}</strong></div>}
-                  {sgst>0&&<div>SGST: <strong>₹{sgst.toLocaleString()}</strong></div>}
-                </>);
-              }
-              return <div>Tax ({detail.taxType}): <strong>₹{detail.taxAmount}L</strong></div>;
+              if(igst>0||cgst>0||sgst>0) return (<>
+                {igst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>IGST</span><span>₹{igst.toLocaleString()}</span></div>}
+                {cgst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>CGST</span><span>₹{cgst.toLocaleString()}</span></div>}
+                {sgst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>SGST</span><span>₹{sgst.toLocaleString()}</span></div>}
+              </>);
+              return <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid var(--s3)",fontSize:12,color:"var(--text2)"}}>
+                <span>Tax ({detail.taxType})</span><span>{fmtL(detail.taxAmount)}</span>
+              </div>;
             })()}
-            <div style={{fontSize:16,fontWeight:700,color:"var(--brand)",marginTop:4}}>Total: ₹{detail.total}L ({formatINR(detail.total)} INR)</div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 0",marginTop:4,borderTop:"2px solid var(--brand)"}}>
+              <span style={{fontWeight:700,fontSize:14,color:"var(--brand)"}}>Grand Total</span>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontWeight:800,fontSize:16,color:"var(--brand)"}}>{fmtL(detail.total)}</div>
+                <div style={{fontSize:11,color:"var(--text3)"}}>₹{formatINR(detail.total)} · {detail.currency||"INR"}</div>
+              </div>
+            </div>
           </div>
           {detail.terms&&<div style={{marginTop:14,background:"var(--s2)",padding:"10px 12px",borderRadius:8,borderLeft:"3px solid var(--brand)",fontSize:12,color:"var(--text2)",whiteSpace:"pre-line"}}><strong>Terms:</strong><br/>{detail.terms}</div>}
           {(() => {
