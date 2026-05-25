@@ -762,19 +762,23 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const enriched=useMemo(()=>quotes.map((q,idx)=>{
     const acc=accounts.find(a=>a.id===q.accountId);
     const opp=opps.find(o=>o.id===q.oppId);
+    // Fallback to opp's account, then lead's company, then the billing snapshot taken at quote creation
+    const oppAcc=opp&&!acc?accounts.find(a=>a.id===opp.accountId):null;
+    const lead=leads.find(l=>l.id===q.sourceLeadId);
+    const resolvedAcc=acc||oppAcc;
     const yr=q.createdDate?new Date(q.createdDate).getFullYear():2024;
-    // Derive a stable human-readable ID from the stored q.id (e.g. "QT-007" → "#FL-2024-007").
-    // Falling back to array index only for legacy records that predate the QT- scheme.
     const seqStr=q.id?.match(/QT-(\d+)/)?.[1]||String(idx+1).padStart(3,"0");
+    // Customer name: account → opp account → legalName snapshot → lead company → "—"
+    const _accName=resolvedAcc?.name||q.legalName||lead?.company||opp?.title?.split("–")[0]?.trim()||"—";
     return {
       ...q,
-      _accName:acc?.name||"—",
-      _sector:SECTOR_MAP_FROM_TYPE[acc?.type]||acc?.type||"Services",
+      _accName,
+      _sector:SECTOR_MAP_FROM_TYPE[resolvedAcc?.type]||resolvedAcc?.type||acc?.type||"Services",
       _quoteId:`#FL-${yr}-${seqStr.padStart(3,"0")}`,
       _prob:opp?.probability||({"Draft":20,"Sent":50,"Under Review":65,"Accepted":100,"Rejected":0,"Expired":0,"Revised":30}[q.status]||0),
       _ownerName:TEAM_MAP[q.owner]?.name||"—",
     };
-  }),[quotes,accounts,opps]);
+  }),[quotes,accounts,opps,leads]);
 
   const filtered=useMemo(()=>{
     let list=[...enriched];
