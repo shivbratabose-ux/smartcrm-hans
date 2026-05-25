@@ -697,16 +697,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       // 1. opp.primaryContactId — but ONLY if that contact belongs to the same account
       // 2. Primary-flagged contact from the opp's account
       // 3. First contact from the opp's account
-      // 4. opp.primaryContactId regardless of account (last resort — intentionally linked)
-      // 5. Keep existing value
+      // 4. Leave blank — never use a cross-account contact
       const oppAccContacts=contacts.filter(c=>c.accountId===opp.accountId);
       const oppPrimary=contacts.find(c=>c.id===opp.primaryContactId);
       const primaryFromSameAcc=oppPrimary?.accountId===opp.accountId?opp.primaryContactId:null;
       const bestContactId=primaryFromSameAcc
         ||(oppAccContacts.find(c=>c.primary)?.id)
         ||(oppAccContacts[0]?.id)
-        ||opp.primaryContactId
-        ||f.contactId;
+        ||"";
       return {
         ...f,
         oppId:opp.id,
@@ -938,7 +936,6 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         contactId=primaryFromSameAcc
           ||(oppAccContacts.find(c=>c.primary)?.id)
           ||(oppAccContacts[0]?.id)
-          ||opp.primaryContactId
           ||"";
       }
     }
