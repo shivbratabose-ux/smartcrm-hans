@@ -32,13 +32,16 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
   // sendModal: true = open, with optional prefill object
   const [sendModal,setSendModal]=useState(null);
 
+  const [sourceF,setSourceF]=useState("All"); // "All" | "quotation" | "direct"
   const enriched=useMemo(()=>commLogs.map(c=>({...c,_accName:accounts.find(a=>a.id===c.accountId)?.name||"—"})),[commLogs,accounts]);
   const filtered=useMemo(()=>{
     let list=[...enriched];
     if(typeF!=="All") list=list.filter(c=>c.type===typeF);
-    if(search) list=list.filter(c=>(c.subject+c.from+c.to+c.body).toLowerCase().includes(search.toLowerCase()));
+    if(sourceF==="quotation") list=list.filter(c=>c.source==="quotation"||c.quoteId);
+    if(sourceF==="direct") list=list.filter(c=>!c.source||c.source!=="quotation");
+    if(search) list=list.filter(c=>(c.subject+c.from+c.to+(c.body||"")).toLowerCase().includes(search.toLowerCase()));
     return list.sort((a,b)=>b.date.localeCompare(a.date));
-  },[enriched,typeF,search]);
+  },[enriched,typeF,sourceF,search]);
 
   const pg=usePagination(filtered);
   const emailCount=commLogs.filter(c=>c.type.includes("Email")).length;
@@ -112,13 +115,18 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
           <option value="All">All Types</option>
           {COMM_TYPES.map(t=><option key={t}>{t}</option>)}
         </select>
+        <select className="filter-select" value={sourceF} onChange={e=>setSourceF(e.target.value)}>
+          <option value="All">All Sources</option>
+          <option value="quotation">From Quotations</option>
+          <option value="direct">Direct / Manual</option>
+        </select>
         <div className="filter-search" style={{maxWidth:280}}><Search size={14} style={{color:"var(--text3)",flexShrink:0}}/><input placeholder="Search subject, from, to..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
       </div>
 
       <div className="card" style={{padding:0}}>
         {filtered.length===0?<Empty icon={<Mail size={22}/>} title="No communications" sub="Log your first email or WhatsApp message."/>:(
           <table className="tbl">
-            <thead><tr><th style={{width:32}}></th><th>Type</th><th>Subject</th><th>From / To</th><th>Account</th><th>Date</th><th>Status</th><th>Owner</th><th></th></tr></thead>
+            <thead><tr><th style={{width:32}}></th><th>Type</th><th>Subject</th><th>From / To</th><th>Account</th><th>Source</th><th>Date</th><th>Status</th><th>Owner</th><th></th></tr></thead>
             <tbody>{pg.paged.map(c=>{
               const col=TYPE_COL[c.type]||"var(--text3)";
               const isInbound=c.type.includes("Received");
@@ -130,6 +138,12 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
                   <div>{isInbound?"From":"To"}: <strong>{isInbound?c.from:c.to}</strong></div>
                 </td>
                 <td style={{fontSize:12}}>{c._accName}</td>
+                <td style={{fontSize:12}}>
+                  {c.quoteId
+                    ? <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:5,background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE"}}>📄 {c.quoteRef||c.quoteId}</span>
+                    : <span style={{fontSize:11,color:"var(--text3)"}}>Direct</span>
+                  }
+                </td>
                 <td style={{fontSize:12,color:"var(--text3)"}}>{c.date}</td>
                 <td><span className={`badge ${c.status==="Delivered"||c.status==="Read"?"bs-active":c.status==="Bounced"||c.status==="Failed"?"bs-lost":"bs-planned"}`}>{c.status}</span></td>
                 <td><UserPill uid={c.owner}/></td>
@@ -142,11 +156,25 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
       </div>
 
       {detail&&(
-        <Modal title={detail.subject} onClose={()=>setDetail(null)} lg footer={<button className="btn btn-sec btn-sm" onClick={()=>setDetail(null)}>Close</button>}>
-          <div className="dp-grid">
-            {[["Type",detail.type],["From",detail.from],["To",detail.to],["Date",detail.date],["Status",detail.status],["Account",detail._accName],["Owner",TEAM_MAP[detail.owner]?.name||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
+        <Modal title={detail.subject} onClose={()=>setDetail(null)} size="xl" footer={<button className="btn btn-sec btn-sm" onClick={()=>setDetail(null)}>Close</button>}>
+          <div className="dp-grid" style={{marginBottom:14}}>
+            {[
+              ["Type",detail.type],["From",detail.from],["To",detail.to],
+              ["Date",detail.date],["Status",detail.status],["Account",detail._accName],
+              ["Owner",TEAM_MAP[detail.owner]?.name||"—"],
+              ...(detail.quoteRef||detail.quoteId?[["Quote",detail.quoteRef||detail.quoteId]]:[] ),
+            ].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>
-          {detail.body&&<div style={{marginTop:14,background:"var(--s2)",padding:"12px 14px",borderRadius:8,fontSize:13,color:"var(--text2)",lineHeight:1.6,whiteSpace:"pre-line"}}>{detail.body}</div>}
+          {detail.body&&(
+            detail.body.trim().startsWith("<")
+              ? <iframe
+                  srcDoc={detail.body}
+                  title="Email preview"
+                  style={{width:"100%",height:480,border:"1px solid var(--border)",borderRadius:8}}
+                  sandbox="allow-same-origin"
+                />
+              : <div style={{background:"var(--s2)",padding:"12px 14px",borderRadius:8,fontSize:13,color:"var(--text2)",lineHeight:1.6,whiteSpace:"pre-line"}}>{detail.body}</div>
+          )}
         </Modal>
       )}
 

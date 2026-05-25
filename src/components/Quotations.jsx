@@ -933,10 +933,34 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     });
   };
 
+  /* ── Build a commLog entry for a quote email action ── */
+  const _quoteCommEntry=(q,subject,kind)=>{
+    const con=contacts.find(c=>c.id===q.contactId);
+    const me=orgUsers?.find(u=>u.id===currentUser)||{email:""};
+    const eq=enriched.find(e=>e.id===q.id)||q;
+    return {
+      id:`cm_${uid()}`,
+      type:"Email Sent",
+      subject,
+      body:"",
+      from:me.email||"",
+      to:con?.email||"",
+      accountId:q.accountId||"",
+      contactId:q.contactId||"",
+      oppId:q.oppId||"",
+      quoteId:q.id,
+      quoteRef:eq._quoteId||q.id,
+      source:"quotation",
+      kind,
+      date:new Date().toISOString().slice(0,16).replace("T"," "),
+      status:"Sent",
+      owner:currentUser,
+    };
+  };
+
   /* ── Send action: Draft → Sent + stamp sentDate (gated by approval matrix) ── */
   const sendQuote=(q)=>{
     if(needsApproval(q) && q.approvalStatus!=="Approved"){
-      // Request approval instead of sending
       setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Pending",approvalRequestedAt:new Date().toISOString()}:r));
       alert(`This quote needs manager approval before sending — ${approvalReason(q)}.\nApproval has been requested.`);
       return;
@@ -948,9 +972,11 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const con=contacts.find(c=>c.id===q.contactId);
     const acc=accounts.find(a=>a.id===q.accountId);
     const ccEmails=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean).join(", ");
-    const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:ccEmails,subject:`Quote ${q.id} – ${q.title||acc?.name||""}`.trim(),kind:"initial"};
+    const subject=`Quote ${q.id} – ${q.title||acc?.name||""}`.trim();
+    const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:ccEmails,subject,kind:"initial"};
     const ce={id:uid(),at:new Date().toISOString(),by:currentUser,field:"status",from:q.status,to:"Sent",note:"sent to customer"};
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Sent",sentDate,expiryDate:r.expiryDate||expiryDate,emailLog:[...(r.emailLog||[]),logEntry],changeLog:[...(r.changeLog||[]),ce]}:r));
+    if(typeof setCommLogs==="function") setCommLogs(p=>[...(p||[]),_quoteCommEntry(q,subject,"initial")]);
   };
 
   /* ── Manual resend / send reminder action ── */
@@ -958,8 +984,10 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const con=contacts.find(c=>c.id===q.contactId);
     const acc=accounts.find(a=>a.id===q.accountId);
     const ccEmails=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean).join(", ");
-    const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:ccEmails,subject:`Reminder: Quote ${q.id} – ${q.title||acc?.name||""}`.trim(),kind};
+    const subject=`Reminder: Quote ${q.id} – ${q.title||acc?.name||""}`.trim();
+    const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:ccEmails,subject,kind};
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,emailLog:[...(r.emailLog||[]),logEntry],lastReminderAt:logEntry.sentAt}:r));
+    if(typeof setCommLogs==="function") setCommLogs(p=>[...(p||[]),_quoteCommEntry(q,subject,kind)]);
   };
 
   /* ── Open SendEmailModal pre-filled for a quote ── */
@@ -2745,10 +2773,12 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         <SendEmailModal
           onClose={() => setSendEmailModal(null)}
           onSent={(entry) => {
-            // 1. Persist to global comm log (Communications tab + account timelines)
-            if (typeof setCommLogs === "function") setCommLogs(p => [...p, entry]);
-            // 2. Update the source quote: stamp Sent status + emailLog entry
+            // 1. Persist to global comm log with quote context
             const qid = sendEmailModal?.quoteId;
+            const eq = qid ? enriched.find(e=>e.id===qid) : null;
+            const enrichedEntry = {...entry, quoteId:qid||"", quoteRef:eq?._quoteId||"", source:"quotation"};
+            if (typeof setCommLogs === "function") setCommLogs(p => [...p, enrichedEntry]);
+            // 2. Update the source quote: stamp Sent status + emailLog entry
             if (qid) {
               setQuotes(p => p.map(r => {
                 if (r.id !== qid) return r;
