@@ -693,11 +693,19 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       // very first cascade — otherwise the rep would have to nudge POS to
       // re-trigger recalc.
       const totals=recalc(items,f.taxType,f.discount,accSnap.placeOfSupply||f.placeOfSupply);
-      // Best contact: opp.primaryContactId → primary contact of opp account → first contact of opp account → keep existing
+      // Best contact priority:
+      // 1. opp.primaryContactId — but ONLY if that contact belongs to the same account
+      // 2. Primary-flagged contact from the opp's account
+      // 3. First contact from the opp's account
+      // 4. opp.primaryContactId regardless of account (last resort — intentionally linked)
+      // 5. Keep existing value
       const oppAccContacts=contacts.filter(c=>c.accountId===opp.accountId);
-      const bestContactId=opp.primaryContactId
+      const oppPrimary=contacts.find(c=>c.id===opp.primaryContactId);
+      const primaryFromSameAcc=oppPrimary?.accountId===opp.accountId?opp.primaryContactId:null;
+      const bestContactId=primaryFromSameAcc
         ||(oppAccContacts.find(c=>c.primary)?.id)
         ||(oppAccContacts[0]?.id)
+        ||opp.primaryContactId
         ||f.contactId;
       return {
         ...f,
