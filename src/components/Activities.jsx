@@ -397,7 +397,7 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
                 <TypeaheadSelect
                   value={form.contactId}
                   onChange={(id) => setForm(f => ({...f, contactId: id}))}
-                  options={contacts.filter(c => !form.accountId || c.accountId === form.accountId).map(c => ({ value: c.id, label: c.name, sub: c.role || c.designation || "" }))}
+                  options={(()=>{const effAcc=form.accountId||(opps.find(o=>o.id===form.oppId)?.accountId)||"";return contacts.filter(c=>!effAcc||c.accountId===effAcc);})().map(c=>({ value: c.id, label: c.name, sub: c.role || c.designation || "" }))}
                   placeholder={form.accountId ? "Search contacts…" : "Search contacts (or pick an account first)…"}
                 />
               </div></div>

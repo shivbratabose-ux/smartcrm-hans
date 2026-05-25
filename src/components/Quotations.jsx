@@ -931,7 +931,16 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     let contactId=q.contactId||"";
     if(!contactId && q.oppId){
       const opp=opps.find(o=>o.id===q.oppId);
-      contactId=opp?.primaryContactId||(opp?.secondaryContactIds?.[0])||"";
+      if(opp){
+        const oppAccContacts=contacts.filter(c=>c.accountId===opp.accountId);
+        const oppPrimary=contacts.find(c=>c.id===opp.primaryContactId);
+        const primaryFromSameAcc=oppPrimary?.accountId===opp.accountId?opp.primaryContactId:null;
+        contactId=primaryFromSameAcc
+          ||(oppAccContacts.find(c=>c.primary)?.id)
+          ||(oppAccContacts[0]?.id)
+          ||opp.primaryContactId
+          ||"";
+      }
     }
     if(!contactId && q.accountId){
       const accContact=contacts.find(c=>c.accountId===q.accountId&&c.primary)||contacts.find(c=>c.accountId===q.accountId);

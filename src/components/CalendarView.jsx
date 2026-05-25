@@ -365,7 +365,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
               <TypeaheadSelect
                 value={form.contactId}
                 onChange={(id) => setForm(f => ({...f, contactId: id}))}
-                options={contacts.filter(c => !form.accountId || c.accountId === form.accountId).map(c => ({ value: c.id, label: c.name, sub: c.designation || c.role || "" }))}
+                options={(()=>{const effAcc=form.accountId||(opps.find(o=>o.id===form.oppId)?.accountId)||"";return contacts.filter(c=>!effAcc||c.accountId===effAcc);})().map(c=>({ value: c.id, label: c.name, sub: c.designation || c.role || "" }))}
                 placeholder="Search contacts…"
               />
             </div>
