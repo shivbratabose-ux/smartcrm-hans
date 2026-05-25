@@ -241,7 +241,7 @@ export const INIT_CONTRACTS = [];
 export const INIT_COLLECTIONS = [];
 export const INIT_TARGETS = [];
 
-export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:"",emailLog:[],lastReminderAt:"",changeLog:[],attachments:[],
+export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",ccContactIds:[],product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:"",emailLog:[],lastReminderAt:"",changeLog:[],attachments:[],
   // ── Customer billing snapshot (taken at quote creation; editable on quote) ──
   currency:"INR",exchangeRate:1,legalName:"",billingAddressSnapshot:"",shippingAddressSnapshot:"",gstin:"",pan:"",taxTreatment:"",poMandatory:"",poNumber:"",paymentTerms:"",creditDays:0,billingContactName:"",billingContactEmail:"",financeContactEmail:"",
   // ── Place of Supply (drives intra-state CGST+SGST vs inter-state IGST split per line) ──

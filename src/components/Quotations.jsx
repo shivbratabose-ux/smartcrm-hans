@@ -681,6 +681,10 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         lob:          opp.lob          || f.lob,
         dealSize:     opp.dealSize     || f.dealSize,
         secondaryContactIds: (Array.isArray(opp.secondaryContactIds)&&opp.secondaryContactIds.length)?[...opp.secondaryContactIds]:f.secondaryContactIds,
+        // CC contacts = opp's secondary contacts, minus whoever is already primary
+        ccContactIds: (Array.isArray(opp.secondaryContactIds)&&opp.secondaryContactIds.length)
+          ? opp.secondaryContactIds.filter(id=>id!==(opp.primaryContactId||f.contactId))
+          : (f.ccContactIds||[]),
         contactRoles:        (Array.isArray(opp.contactRoles)&&opp.contactRoles.length)?[...opp.contactRoles]:f.contactRoles,
         sourceLeadId: (Array.isArray(opp.sourceLeadIds)&&opp.sourceLeadIds[0])||opp.leadId||f.sourceLeadId,
         expiryDate:   f.expiryDate || opp.decisionDate || opp.closeDate || "",
@@ -906,7 +910,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const expiryDate=exp.toISOString().slice(0,10);
     const con=contacts.find(c=>c.id===q.contactId);
     const acc=accounts.find(a=>a.id===q.accountId);
-    const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:"",subject:`Quote ${q.id} – ${q.title||acc?.name||""}`.trim(),kind:"initial"};
+    const ccEmails=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean).join(", ");
+    const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:ccEmails,subject:`Quote ${q.id} – ${q.title||acc?.name||""}`.trim(),kind:"initial"};
     const ce={id:uid(),at:new Date().toISOString(),by:currentUser,field:"status",from:q.status,to:"Sent",note:"sent to customer"};
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Sent",sentDate,expiryDate:r.expiryDate||expiryDate,emailLog:[...(r.emailLog||[]),logEntry],changeLog:[...(r.changeLog||[]),ce]}:r));
   };
@@ -915,7 +920,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const logReminder=(q,kind="manual")=>{
     const con=contacts.find(c=>c.id===q.contactId);
     const acc=accounts.find(a=>a.id===q.accountId);
-    const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:"",subject:`Reminder: Quote ${q.id} – ${q.title||acc?.name||""}`.trim(),kind};
+    const ccEmails=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean).join(", ");
+    const logEntry={id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:con?.email||"",cc:ccEmails,subject:`Reminder: Quote ${q.id} – ${q.title||acc?.name||""}`.trim(),kind};
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,emailLog:[...(r.emailLog||[]),logEntry],lastReminderAt:logEntry.sentAt}:r));
   };
 
@@ -1338,6 +1344,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     </div>
     ${q.placeOfSupply?`<div class="ref-line">Place of Supply: <strong>${q.placeOfSupply}</strong>${q.placeOfSupply===SELLER_HOME_STATE?" (intra-state · CGST+SGST)":q.placeOfSupply==="Outside India"?" (zero-rated / export)":" (inter-state · IGST)"}</div>`:""}
     ${con?`<div class="ref-line">Attn: <strong>${con.name}</strong>${con.designation?` — ${con.designation}`:""} · ${con.email||""} ${con.phone?`· ${con.phone}`:""}</div>`:""}
+    ${(()=>{const ccCons=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)).filter(Boolean);return ccCons.length>0?`<div class="ref-line" style="color:#475569">CC: ${ccCons.map(c=>`<strong>${c.name}</strong>${c.email?` &lt;${c.email}&gt;`:""}`).join(" · ")}</div>`:"";})()}
 
     <!-- Opening paragraph -->
     <p style="text-align:justify;font-size:10pt;line-height:1.6;margin:10px 0">
@@ -1841,11 +1848,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             const sym = cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":`${cur} `;
             const total = `${sym}${(Number(detail.total)||0).toLocaleString()}`;
             const acceptUrl = `${window.location.origin}${window.location.pathname}#/quote-accept/${detail.id}`;
+            // Build CC email list from ccContactIds
+            const ccEmails=(detail.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean).join(", ");
             setSendEmailModal({
               templateId: "quote",
               accountId: acc.id || "",
               contactId: contact.id || "",
               toEmail: contact.email || "",
+              ccEmail: ccEmails,
               account: acc,
               contact: contact,
               quote: {
@@ -2183,13 +2193,64 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                   });
                   return <TypeaheadSelect
                     value={form.contactId}
-                    onChange={(id) => setForm(f => ({...f, contactId: id}))}
+                    onChange={(id) => setForm(f => ({...f, contactId: id,
+                      // Remove from CC if promoted to primary
+                      ccContactIds:(f.ccContactIds||[]).filter(c=>c!==id)
+                    }))}
                     options={contactOpts}
                     placeholder={form.accountId||form.oppId ? "Search contacts…" : "Pick account/opp first…"}
                   />;
                 })()}
               </div>
             </div>
+
+            {/* ── CC Contacts (multiple) ── */}
+            {(()=>{
+              const opp=opps.find(o=>o.id===form.oppId);
+              const ccIds=form.ccContactIds||[];
+              // Build options: same broadened list minus the primary contact
+              const relevantIds=new Set([
+                ...(opp?.secondaryContactIds||[]),
+                ...(leads?.find?.(l=>l.id===sourceLeadId)?.contactIds||[]),
+                ...ccIds,
+              ].filter(Boolean));
+              const ccOpts=contacts
+                .filter(c=>c.id!==form.contactId&&((form.accountId&&c.accountId===form.accountId)||relevantIds.has(c.id)))
+                .map(c=>({value:c.id,label:c.name,sub:[c.designation,c.email].filter(Boolean).join(" · ")}));
+              return (
+                <div className="form-group" style={{marginBottom:14}}>
+                  <label style={{display:"flex",alignItems:"center",gap:6}}>
+                    CC Contacts
+                    <span style={{fontSize:10,fontWeight:500,color:"var(--text3)",background:"var(--s2)",padding:"1px 6px",borderRadius:4}}>
+                      receive email copy · shown on PDF
+                    </span>
+                  </label>
+                  {/* Selected CC badges */}
+                  {ccIds.length>0&&(
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
+                      {ccIds.map(id=>{
+                        const c=contacts.find(x=>x.id===id);
+                        if(!c) return null;
+                        return (
+                          <span key={id} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:20,padding:"3px 10px",fontSize:12,fontWeight:500,color:"#1E40AF"}}>
+                            {c.name}{c.designation?` — ${c.designation}`:""}
+                            <button type="button" onClick={()=>setForm(f=>({...f,ccContactIds:(f.ccContactIds||[]).filter(x=>x!==id)}))}
+                              style={{background:"none",border:"none",cursor:"pointer",color:"#93C5FD",fontSize:14,lineHeight:1,padding:0,display:"flex",alignItems:"center"}}>×</button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* Add CC typeahead */}
+                  <TypeaheadSelect
+                    value=""
+                    onChange={(id)=>{if(id&&!ccIds.includes(id))setForm(f=>({...f,ccContactIds:[...(f.ccContactIds||[]),id]}));}}
+                    options={ccOpts.filter(o=>!ccIds.includes(o.value))}
+                    placeholder={ccOpts.length>0?"Add CC contact…":"No other contacts available"}
+                  />
+                </div>
+              );
+            })()}
 
             {/* ── Auto-populated context panel ── */}
             {(() => {
