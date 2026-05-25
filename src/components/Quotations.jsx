@@ -1001,7 +1001,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const sym=cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":`${cur} `;
     const totalDisp=`${sym}${(Number(q.total)||0).toFixed(2)}L`;
     const acceptUrl=`${window.location.origin}${window.location.pathname}#/quote-accept/${q.id}`;
-    const ccEmails=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean).join(", ");
+    // Build CC list: quote CC contacts + account owner (if different from sender + contact)
+    const ccContactEmails=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean);
+    const accOwner=orgUsers?.find(u=>u.id===acc.owner);
+    const senderEmail=(orgUsers?.find(u=>u.id===currentUser))?.email||"";
+    if(accOwner?.email && accOwner.email!==contact.email && accOwner.email!==senderEmail){
+      ccContactEmails.push(accOwner.email);
+    }
+    const ccEmails=[...new Set(ccContactEmails)].filter(Boolean).join(", ");
     setSendEmailModal({
       templateId,
       accountId:acc.id||"",

@@ -775,6 +775,7 @@ export function SendEmailModal({
 
   const [templateId, setTemplateId] = useState(prefill.templateId || "");
   const [toEmail, setToEmail] = useState(prefill.toEmail || "");
+  const [ccEmail, setCcEmail] = useState(prefill.ccEmail || "");
   const [contactId, setContactId] = useState(prefill.contactId || "");
   const [accountId, setAccountId] = useState(prefill.accountId || "");
   const [subject, setSubject] = useState("");
@@ -875,6 +876,7 @@ export function SendEmailModal({
     setSending(true);
     const res = await sendEmail({
       to: toEmail.trim(),
+      cc: ccEmail.trim() || undefined,
       subject: subject.trim(),
       html: bodyHtml,
     });
@@ -893,6 +895,7 @@ export function SendEmailModal({
       body: bodyHtml,
       from: res.from || me.email,
       to: toEmail.trim(),
+      cc: ccEmail.trim() || "",
       accountId: account?.id || accountId || "",
       contactId: contact?.id || contactId || "",
       oppId: prefill.opp?.id || "",
@@ -960,7 +963,16 @@ export function SendEmailModal({
         <div className="form-group"><label>To *</label>
           <input value={toEmail} onChange={e => setToEmail(e.target.value)} placeholder="recipient@example.com" type="email"/>
         </div>
-        <div className="form-group"><label>Template</label>
+        <div className="form-group">
+          <label style={{display:"flex",alignItems:"center",gap:6}}>
+            CC
+            <span style={{fontSize:10,fontWeight:500,color:"var(--text3)",background:"var(--s2)",padding:"1px 6px",borderRadius:4}}>account owner auto-added</span>
+          </label>
+          <input value={ccEmail} onChange={e => setCcEmail(e.target.value)} placeholder="cc@example.com, another@example.com" type="text"/>
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group" style={{flex:"1 1 100%"}}><label>Template</label>
           <TypeaheadSelect
             value={templateId}
             onChange={(id) => setTemplateId(id || "")}
