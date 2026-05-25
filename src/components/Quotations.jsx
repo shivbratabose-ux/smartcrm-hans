@@ -804,8 +804,10 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const pg=usePagination(sorted);
 
   /* ── KPI computations ── */
-  const nonDraftQuotes=enriched.filter(q=>q.status!=="Draft");
-  const totalQuoteValue=nonDraftQuotes.reduce((s,q)=>s+q.total,0);
+  const pipelineQuotes=enriched.filter(q=>q.status!=="Rejected"&&q.status!=="Expired");
+  const totalQuoteValue=pipelineQuotes.reduce((s,q)=>s+q.total,0);
+  const draftCount=enriched.filter(q=>q.status==="Draft").length;
+  const sentCount=enriched.filter(q=>q.status==="Sent").length;
   const sentAndReviewedCount=enriched.filter(q=>["Sent","Under Review","Accepted","Rejected"].includes(q.status)).length;
   const acceptedCount=enriched.filter(q=>q.status==="Accepted").length;
   const conversionRate=sentAndReviewedCount>0?((acceptedCount/sentAndReviewedCount)*100).toFixed(1):0;
@@ -1628,21 +1630,21 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       <div style={{display:"flex",gap:16,marginBottom:24,flexWrap:"wrap"}}>
         <KpiCard
           icon={<TrendingUp size={18} color="#fff"/>}
-          label="TOTAL QUOTE VALUE"
+          label="PIPELINE VALUE"
           value={`\u20B9 ${totalQuoteValue.toFixed(1)} L`}
-          sub={`+14.2% vs last month`}
+          sub={`${draftCount} draft \u00B7 ${sentCount} sent \u00B7 ${acceptedCount} accepted`}
         />
         <KpiCard
           icon={<BarChart3 size={18} color="#fff"/>}
-          label="AVERAGE CONVERSION RATE"
+          label="CONVERSION RATE"
           value={`${conversionRate}%`}
-          sub="Industry leading benchmark"
+          sub={sentAndReviewedCount>0?`${acceptedCount} of ${sentAndReviewedCount} sent quotes`:"No quotes sent yet"}
         />
         <KpiCard
           icon={<Activity size={18} color="#fff"/>}
           label="ACTIVE QUOTES"
           value={String(activeQuotes)}
-          sub={`${negotiationCount} awaiting negotiation`}
+          sub={negotiationCount>0?`${negotiationCount} under negotiation`:"All quotes up to date"}
         />
       </div>
 
