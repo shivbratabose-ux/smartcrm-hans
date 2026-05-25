@@ -63,15 +63,21 @@ const genContractId = (index) => {
   return `#FL-${yr}-${String(index + 1).padStart(3, '0')}`;
 };
 
-/* Timeline chart mock data for Q3/Q4 */
-const timelineData = [
-  { month: "Jul", contracts: 18 },
-  { month: "Aug", contracts: 25 },
-  { month: "Sep", contracts: 32 },
-  { month: "Oct", contracts: 22 },
-  { month: "Nov", contracts: 28 },
-  { month: "Dec", contracts: 15 },
-];
+const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+/* Build last-6-months timeline from real contracts data */
+const buildTimelineData = (contracts) => {
+  const now = new Date();
+  return Array.from({length:6},(_,i)=>{
+    const d = new Date(now.getFullYear(), now.getMonth()-5+i, 1);
+    const yr = d.getFullYear(), mo = d.getMonth();
+    const count = contracts.filter(c=>{
+      const sd = c.startDate ? new Date(c.startDate) : null;
+      return sd && sd.getFullYear()===yr && sd.getMonth()===mo;
+    }).length;
+    return { month: MONTH_LABELS[mo], contracts: count };
+  });
+};
 
 function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete, onGenerateRenewal }) {
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
@@ -104,6 +110,13 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
     }, 0);
     return Math.round(total / withRenewal.length);
   }, [contracts]);
+
+  const timelineData = useMemo(() => buildTimelineData(contracts), [contracts]);
+  const timelineSub = useMemo(() => {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth()-5, 1);
+    return `${MONTH_LABELS[from.getMonth()]} ${from.getFullYear()} \u2013 ${MONTH_LABELS[now.getMonth()]} ${now.getFullYear()}`;
+  }, []);
 
   const enriched = useMemo(() => contracts.map((c, idx) => ({
     ...c,
@@ -222,7 +235,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text1)" }}>Contract Timeline</div>
-              <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>Q3 2024 / Q4 2024</div>
+              <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{timelineSub}</div>
             </div>
             <Calendar size={16} style={{ color: "var(--text3)" }} />
           </div>
@@ -254,8 +267,9 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
             </div>
             <span style={{
               fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
-              background: "#DCFCE7", color: "#15803D"
-            }}>Passed</span>
+              background: riskAlerts>0?"#FEF3C7":"#DCFCE7",
+              color: riskAlerts>0?"#D97706":"#15803D"
+            }}>{riskAlerts>0?"Review Needed":"Passed"}</span>
           </div>
 
           <div style={{ borderTop: "1px solid var(--border)", margin: 0 }} />
@@ -268,7 +282,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
                 <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--text3)" }}>Pending Review</div>
               </div>
             </div>
-            <span style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Outfit',sans-serif", color: "#F59E0B" }}>{pendingCount || 12}</span>
+            <span style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Outfit',sans-serif", color: "#F59E0B" }}>{String(pendingCount).padStart(2,'0')}</span>
           </div>
 
           {/* Risk Alerts */}
