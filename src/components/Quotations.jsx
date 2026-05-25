@@ -162,6 +162,23 @@ const KpiCard = ({icon,label,value,sub}) => (
   </div>
 );
 
+/* ── Status Summary Tile ── */
+const StatusTile = ({label,count,value,color,dot,onClick,active}) => (
+  <div onClick={onClick} style={{
+    flex:1,minWidth:100,borderRadius:10,padding:"12px 14px",cursor:"pointer",
+    background:active?"#fff":dot+"18",
+    border:`1.5px solid ${active?color:dot+"44"}`,
+    transition:"all 0.15s",position:"relative",
+  }}>
+    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+      <span style={{width:8,height:8,borderRadius:"50%",background:dot,display:"inline-block",flexShrink:0}}/>
+      <span style={{fontSize:10,fontWeight:700,color:active?color:"#64748B",letterSpacing:"0.5px",textTransform:"uppercase",whiteSpace:"nowrap"}}>{label}</span>
+    </div>
+    <div style={{fontSize:22,fontWeight:800,color:active?color:"#1e293b",fontFamily:"'Outfit',sans-serif",lineHeight:1}}>{count}</div>
+    <div style={{fontSize:11,color:active?color+"cc":"#94A3B8",marginTop:3,fontWeight:500}}>{value||"—"}</div>
+  </div>
+);
+
 /* ── Approval helpers ── */
 const computeDiscountPct = (q) => {
   const sub = Number(q.subtotal)||0;
@@ -804,15 +821,20 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const pg=usePagination(sorted);
 
   /* ── KPI computations ── */
+  const ALL_STATUSES=["Draft","Sent","Under Review","Accepted","Rejected","Expired","Revised"];
+  const byStatus=Object.fromEntries(ALL_STATUSES.map(s=>[s,{
+    count:enriched.filter(q=>q.status===s).length,
+    value:enriched.filter(q=>q.status===s).reduce((acc,q)=>acc+q.total,0),
+  }]));
   const pipelineQuotes=enriched.filter(q=>q.status!=="Rejected"&&q.status!=="Expired");
   const totalQuoteValue=pipelineQuotes.reduce((s,q)=>s+q.total,0);
-  const draftCount=enriched.filter(q=>q.status==="Draft").length;
-  const sentCount=enriched.filter(q=>q.status==="Sent").length;
+  const draftCount=byStatus["Draft"].count;
+  const sentCount=byStatus["Sent"].count;
   const sentAndReviewedCount=enriched.filter(q=>["Sent","Under Review","Accepted","Rejected"].includes(q.status)).length;
-  const acceptedCount=enriched.filter(q=>q.status==="Accepted").length;
+  const acceptedCount=byStatus["Accepted"].count;
   const conversionRate=sentAndReviewedCount>0?((acceptedCount/sentAndReviewedCount)*100).toFixed(1):0;
   const activeQuotes=enriched.filter(q=>["Sent","Under Review","Draft"].includes(q.status)).length;
-  const negotiationCount=enriched.filter(q=>q.status==="Under Review").length;
+  const negotiationCount=byStatus["Under Review"].count;
 
   // Keep old values for backward compat
   const totalValue=quotes.filter(q=>["Sent","Under Review"].includes(q.status)).reduce((s,q)=>s+q.total,0);
@@ -1626,7 +1648,31 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
   return (
     <div>
-      {/* ── KPI Summary Cards ── */}
+      {/* ── Status Summary Row ── */}
+      <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"nowrap",overflowX:"auto",paddingBottom:2}}>
+        {[
+          {s:"Draft",       dot:"#94A3B8"},
+          {s:"Sent",        dot:"#3B82F6"},
+          {s:"Under Review",dot:"#F59E0B"},
+          {s:"Accepted",    dot:"#22C55E"},
+          {s:"Rejected",    dot:"#EF4444"},
+          {s:"Expired",     dot:"#DC2626"},
+          {s:"Revised",     dot:"#8B5CF6"},
+        ].map(({s,dot})=>{
+          const {count,value}=byStatus[s]||{count:0,value:0};
+          const isActive=statusF===s;
+          return (
+            <StatusTile key={s} label={s} count={count}
+              value={value>0?fmtL(value):count===0?"No quotes":"\u20B90"}
+              dot={dot} color={dot}
+              active={isActive}
+              onClick={()=>setStatusF(isActive?"":s)}
+            />
+          );
+        })}
+      </div>
+
+      {/* ── KPI Metric Cards ── */}
       <div style={{display:"flex",gap:16,marginBottom:24,flexWrap:"wrap"}}>
         <KpiCard
           icon={<TrendingUp size={18} color="#fff"/>}
