@@ -962,6 +962,37 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,emailLog:[...(r.emailLog||[]),logEntry],lastReminderAt:logEntry.sentAt}:r));
   };
 
+  /* ── Open SendEmailModal pre-filled for a quote ── */
+  const openEmailModal=(q, templateId="quote")=>{
+    const eq=enriched.find(e=>e.id===q.id)||q;
+    const acc=accounts.find(a=>a.id===q.accountId)||{};
+    const contact=contacts.find(c=>c.id===q.contactId)
+      ||contacts.find(c=>c.accountId===q.accountId&&c.primary)
+      ||contacts.find(c=>c.accountId===q.accountId)||{};
+    const cur=q.currency||"INR";
+    const sym=cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":`${cur} `;
+    const totalDisp=`${sym}${(Number(q.total)||0).toFixed(2)}L`;
+    const acceptUrl=`${window.location.origin}${window.location.pathname}#/quote-accept/${q.id}`;
+    const ccEmails=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean).join(", ");
+    setSendEmailModal({
+      templateId,
+      accountId:acc.id||"",
+      contactId:contact.id||"",
+      toEmail:contact.email||"",
+      ccEmail:ccEmails,
+      account:acc,
+      contact:contact,
+      quoteId:q.id,
+      quote:{
+        id:eq._quoteId||eq.id,
+        title:q.title,
+        total:totalDisp,
+        expiryDate:q.expiryDate||q.validity||"",
+        acceptUrl,
+      },
+    });
+  };
+
   /* ── Approval actions (manager only) ── */
   const approveQuote=(q)=>{
     const at=new Date().toISOString();
@@ -1875,12 +1906,12 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                 <div style={{display:"flex",gap:4}}>
                   <button className="icon-btn" title="View" onClick={()=>setDetail(q)}><Eye size={14}/></button>
                   <button className="icon-btn" title="Edit" onClick={()=>openEdit(q)}><Edit2 size={14}/></button>
-                  {q.status==="Draft"&&<button className="icon-btn" title={needsApproval(q)&&q.approvalStatus!=="Approved"?`Request approval (${approvalReason(q)})`:"Send to customer"} onClick={()=>sendQuote(q)} style={{color:needsApproval(q)&&q.approvalStatus!=="Approved"?"#F59E0B":"#3B82F6"}}><Send size={14}/></button>}
+                  {q.status==="Draft"&&<button className="icon-btn" title={needsApproval(q)&&q.approvalStatus!=="Approved"?`Request approval (${approvalReason(q)})`:"Email quote to customer"} onClick={()=>{if(needsApproval(q)&&q.approvalStatus!=="Approved"){sendQuote(q);}else{openEmailModal(q);}}} style={{color:needsApproval(q)&&q.approvalStatus!=="Approved"?"#F59E0B":"#3B82F6"}}><Send size={14}/></button>}
                   {isManager && q.approvalStatus==="Pending" && (<>
                     <button className="icon-btn" title={`Approve (${approvalReason(q)})`} onClick={()=>approveQuote(q)} style={{color:"#22C55E"}}><ThumbsUp size={14}/></button>
                     <button className="icon-btn" title="Reject" onClick={()=>rejectQuote(q)} style={{color:"#EF4444"}}><ThumbsDown size={14}/></button>
                   </>)}
-                  {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title={`Send reminder${q.lastReminderAt?` (last: ${fmt.date(q.lastReminderAt.slice(0,10))})`:""}`} onClick={()=>logReminder(q,"manual")} style={{color:"#F59E0B"}}><Mail size={14}/></button>}
+                  {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title={`Send follow-up email${q.lastReminderAt?` (last: ${fmt.date(q.lastReminderAt.slice(0,10))})`:""}`} onClick={()=>openEmailModal(q,"follow-up")} style={{color:"#F59E0B"}}><Mail size={14}/></button>}
                   {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title="Mark as Accepted by customer" onClick={()=>acceptQuote(q)} style={{color:"#22C55E"}}><FileSignature size={14}/></button>}
                   <button className="icon-btn" title="Duplicate/Revise" onClick={()=>duplicate(q)}><Copy size={14}/></button>
                   {canDelete&&<button className="icon-btn" title="Delete" onClick={()=>setConfirm(q.id)}><Trash2 size={14}/></button>}
@@ -1906,35 +1937,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               template (subject + body interpolated against the quote, account
               and primary contact). The customer-facing accept link is built
               from the same hash route used elsewhere. */}
-          <button className="btn btn-blue btn-sm" onClick={()=>{
-            const acc = accounts.find(a => a.id === detail.accountId) || {};
-            const contact = contacts.find(c => c.id === detail.contactId)
-              || contacts.find(c => c.accountId === detail.accountId && c.primary)
-              || contacts.find(c => c.accountId === detail.accountId)
-              || {};
-            const cur = detail.currency || "INR";
-            const sym = cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":`${cur} `;
-            const total = `${sym}${(Number(detail.total)||0).toLocaleString()}`;
-            const acceptUrl = `${window.location.origin}${window.location.pathname}#/quote-accept/${detail.id}`;
-            // Build CC email list from ccContactIds
-            const ccEmails=(detail.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean).join(", ");
-            setSendEmailModal({
-              templateId: "quote",
-              accountId: acc.id || "",
-              contactId: contact.id || "",
-              toEmail: contact.email || "",
-              ccEmail: ccEmails,
-              account: acc,
-              contact: contact,
-              quote: {
-                id: detail._quoteId || detail.id,
-                title: detail.title,
-                total,
-                expiryDate: detail.expiryDate || detail.validity || "",
-                acceptUrl,
-              },
-            });
-          }}><Mail size={13}/>Email Quote</button>
+          <button className="btn btn-blue btn-sm" onClick={()=>openEmailModal(detail,detail.status==="Draft"?"quote":"follow-up")}><Mail size={13}/>Email Quote</button>
           <button className="btn btn-primary btn-sm" onClick={()=>{openEdit(detail);setDetail(null);}}><Edit2 size={13}/>Edit</button>
         </>}>
           {/* ── Top band: meta (left 60%) + Products (right 40%) ── */}
@@ -2742,9 +2745,25 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         <SendEmailModal
           onClose={() => setSendEmailModal(null)}
           onSent={(entry) => {
-            // Persist the sent email to the global comm log so it shows up
-            // in the Communications tab + the account/contact timelines.
+            // 1. Persist to global comm log (Communications tab + account timelines)
             if (typeof setCommLogs === "function") setCommLogs(p => [...p, entry]);
+            // 2. Update the source quote: stamp Sent status + emailLog entry
+            const qid = sendEmailModal?.quoteId;
+            if (qid) {
+              setQuotes(p => p.map(r => {
+                if (r.id !== qid) return r;
+                const logEntry = {id:uid(),sentAt:new Date().toISOString(),sentBy:currentUser,to:entry.to,cc:entry.cc||"",subject:entry.subject,kind:r.status==="Draft"?"initial":"reminder"};
+                if (r.status === "Draft") {
+                  const sentDate = today;
+                  const days = parseInt(String(r.validity||"30"),10)||30;
+                  const exp = new Date(sentDate); exp.setDate(exp.getDate()+days);
+                  const expiryDate = exp.toISOString().slice(0,10);
+                  const ce = {id:uid(),at:new Date().toISOString(),by:currentUser,field:"status",from:"Draft",to:"Sent",note:"emailed to customer"};
+                  return {...r,status:"Sent",sentDate,expiryDate:r.expiryDate||expiryDate,emailLog:[...(r.emailLog||[]),logEntry],changeLog:[...(r.changeLog||[]),ce]};
+                }
+                return {...r,emailLog:[...(r.emailLog||[]),logEntry],lastReminderAt:logEntry.sentAt};
+              }));
+            }
           }}
           accounts={accounts}
           contacts={contacts}
