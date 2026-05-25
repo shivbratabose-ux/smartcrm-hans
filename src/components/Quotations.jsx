@@ -693,11 +693,17 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       // very first cascade — otherwise the rep would have to nudge POS to
       // re-trigger recalc.
       const totals=recalc(items,f.taxType,f.discount,accSnap.placeOfSupply||f.placeOfSupply);
+      // Best contact: opp.primaryContactId → primary contact of opp account → first contact of opp account → keep existing
+      const oppAccContacts=contacts.filter(c=>c.accountId===opp.accountId);
+      const bestContactId=opp.primaryContactId
+        ||(oppAccContacts.find(c=>c.primary)?.id)
+        ||(oppAccContacts[0]?.id)
+        ||f.contactId;
       return {
         ...f,
         oppId:opp.id,
         accountId:opp.accountId||f.accountId,
-        contactId:opp.primaryContactId||f.contactId,
+        contactId:bestContactId,
         product:sel[0]?.productId||f.product,
         productSelection:sel,
         title:f.title||`${opp.title||"Quote"} – ${acc?.name||""}`.trim(),
@@ -2321,6 +2327,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                 {(()=>{
                   const opp=opps.find(o=>o.id===form.oppId);
                   const lead=leads?.find?.(l=>l.id===sourceLeadId);
+                  const effectiveAccId=form.accountId||opp?.accountId||"";
                   const relevantIds=new Set([
                     ...(opp?.secondaryContactIds||[]),
                     opp?.primaryContactId,
@@ -2328,7 +2335,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                     form.contactId,
                   ].filter(Boolean));
                   const contactOpts=contacts
-                    .filter(c=>(form.accountId&&c.accountId===form.accountId)||relevantIds.has(c.id))
+                    .filter(c=>(effectiveAccId&&c.accountId===effectiveAccId)||relevantIds.has(c.id))
                     .map(c=>({value:c.id,label:c.name,sub:[c.designation,c.email].filter(Boolean).join(" · ")}));
                   // Sort: account-linked first, then opp/lead contacts, then rest
                   contactOpts.sort((a,b)=>{
@@ -2353,6 +2360,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             {(()=>{
               const opp=opps.find(o=>o.id===form.oppId);
               const ccIds=form.ccContactIds||[];
+              const effectiveCcAccId=form.accountId||opp?.accountId||"";
               // Build options: same broadened list minus the primary contact
               const relevantIds=new Set([
                 ...(opp?.secondaryContactIds||[]),
@@ -2360,7 +2368,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                 ...ccIds,
               ].filter(Boolean));
               const ccOpts=contacts
-                .filter(c=>c.id!==form.contactId&&((form.accountId&&c.accountId===form.accountId)||relevantIds.has(c.id)))
+                .filter(c=>c.id!==form.contactId&&((effectiveCcAccId&&c.accountId===effectiveCcAccId)||relevantIds.has(c.id)))
                 .map(c=>({value:c.id,label:c.name,sub:[c.designation,c.email].filter(Boolean).join(" · ")}));
               return (
                 <div className="form-group" style={{marginBottom:14}}>
