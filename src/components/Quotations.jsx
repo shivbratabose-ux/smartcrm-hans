@@ -735,6 +735,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   /* ── Auto-populate from a selected Account (Direct mode) ── */
   const applyAccountCascade=(accountId)=>{
     const acc=accounts.find(a=>a.id===accountId);
+    // Auto-pick the primary contact for this account (primary flag, then first available)
+    const accContact=contacts.find(c=>c.accountId===accountId&&c.primary)||contacts.find(c=>c.accountId===accountId);
     setForm(f=>{
       const accSnap=snapshotAccount(acc,f);
       // Recompute totals with the auto-derived POS so any pre-existing line
@@ -744,6 +746,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       return {
         ...f,
         accountId: accountId||"",
+        // Only auto-fill contact when there is none yet — don't overwrite a manual pick
+        contactId: f.contactId || accContact?.id || "",
         ...accSnap,
         ...totals,
         title: f.title || (acc ? `Quote – ${acc.name}` : f.title),
@@ -865,8 +869,19 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   };
   const openEdit=(q)=>{
     const seeded=(Array.isArray(q.productSelection)&&q.productSelection.length>0)?q.productSelection:(q.product?[{productId:q.product,moduleIds:[],noAddons:false}]:[]);
-    setForm({...q,items:[...q.items.map(i=>({...i}))],productSelection:seeded});
-    setFormErrors({});setFormTab("details");setSourceMode(q.oppId?"opportunity":"account");setSourceLeadId("");setModal({mode:"edit",lockedFinal:!!q.isFinal});
+    // Auto-derive the best contactId if not yet stored on the quote:
+    // priority: stored q.contactId → opp.primaryContactId → lead.contactIds[0] → first account contact
+    let contactId=q.contactId||"";
+    if(!contactId && q.oppId){
+      const opp=opps.find(o=>o.id===q.oppId);
+      contactId=opp?.primaryContactId||(opp?.secondaryContactIds?.[0])||"";
+    }
+    if(!contactId && q.accountId){
+      const accContact=contacts.find(c=>c.accountId===q.accountId&&c.primary)||contacts.find(c=>c.accountId===q.accountId);
+      contactId=accContact?.id||"";
+    }
+    setForm({...q,items:[...q.items.map(i=>({...i}))],productSelection:seeded,contactId});
+    setFormErrors({});setFormTab("details");setSourceMode(q.oppId?"opportunity":q.accountId?"account":"opportunity");setSourceLeadId("");setModal({mode:"edit",lockedFinal:!!q.isFinal});
   };
   const duplicate=(q)=>{
     const id=`QT-${String(quotes.length+1).padStart(3,"0")}`;
@@ -2141,13 +2156,38 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                 <FormError error={formErrors.accountId}/>
               </div>
               <div className="form-group"><label>Contact</label>
-                <TypeaheadSelect
-                  value={form.contactId}
-                  onChange={(id) => setForm(f => ({...f, contactId: id}))}
-                  options={contacts.filter(c => !form.accountId || c.accountId === form.accountId).map(c => ({ value: c.id, label: c.name, sub: c.designation || "" }))}
-                  placeholder={form.accountId ? "Search contacts…" : "Pick an account first…"}
-                  disabled={!form.accountId && contacts.length > 0 ? false : false}
-                />
+                {/* Build a broadened contact options list:
+                    1. All contacts linked to the selected account (primary source)
+                    2. Contacts referenced by the linked opp (primary + secondary)
+                    3. Contacts referenced by the linked lead
+                    4. The currently-set contactId (so existing quotes always show the name)
+                    This prevents the field from going blank when a contact is linked via opp
+                    but doesn't have the account's accountId on it. */}
+                {(()=>{
+                  const opp=opps.find(o=>o.id===form.oppId);
+                  const lead=leads?.find?.(l=>l.id===sourceLeadId);
+                  const relevantIds=new Set([
+                    ...(opp?.secondaryContactIds||[]),
+                    opp?.primaryContactId,
+                    ...(lead?.contactIds||[]),
+                    form.contactId,
+                  ].filter(Boolean));
+                  const contactOpts=contacts
+                    .filter(c=>(form.accountId&&c.accountId===form.accountId)||relevantIds.has(c.id))
+                    .map(c=>({value:c.id,label:c.name,sub:[c.designation,c.email].filter(Boolean).join(" · ")}));
+                  // Sort: account-linked first, then opp/lead contacts, then rest
+                  contactOpts.sort((a,b)=>{
+                    const aAcc=contacts.find(c=>c.id===a.value)?.accountId===form.accountId;
+                    const bAcc=contacts.find(c=>c.id===b.value)?.accountId===form.accountId;
+                    return (bAcc?1:0)-(aAcc?1:0)||(a.label).localeCompare(b.label);
+                  });
+                  return <TypeaheadSelect
+                    value={form.contactId}
+                    onChange={(id) => setForm(f => ({...f, contactId: id}))}
+                    options={contactOpts}
+                    placeholder={form.accountId||form.oppId ? "Search contacts…" : "Pick account/opp first…"}
+                  />;
+                })()}
               </div>
             </div>
 
