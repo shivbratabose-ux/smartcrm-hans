@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE, INDIAN_STATES } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
+import { getQuoteTemplate, STANDARD_TERMS_SECTIONS, STANDARD_PAYMENT_MILESTONES, STANDARD_EXTRA_NOTES } from '../data/quoteTemplates';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip, TypeaheadSelect, SendEmailModal } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
@@ -103,12 +104,9 @@ const statusBadgeStyle = s => {
   return {fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:5,letterSpacing:"0.5px",textTransform:"uppercase",...(map[s]||{background:"#94A3B818",color:"#94A3B8"})};
 };
 
-const genQuoteId = (idx, year) => `#FL-${year}-${String(idx).padStart(3,"0")}`;
 
-const formatINR = (crValue) => {
-  const inr = Math.round(crValue * 10000000);
-  return inr.toLocaleString('en-IN');
-};
+// Format a value already in INR (not crores) to locale string
+const formatINR = (val) => Math.round(Number(val) || 0).toLocaleString('en-IN');
 
 const getMonthName = (dateStr) => {
   if (!dateStr) return "—";
@@ -221,10 +219,11 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
   const sym=curSym(composer.currency);
   const insert=()=>{
     if(!composerLive.description?.trim() && !composerLive.chargeName?.trim()){
-      // Block insert if both blank — gives the user an obvious error
-      window.alert("Charge Name or Description is required.");
+      // Block insert if both blank — show inline error instead of native alert
+      setFormErrors(e=>({...e,_composer:"Charge Name or Description is required."}));
       return;
     }
+    setFormErrors(e=>{const{_composer:_,...rest}=e;return rest;});
     setForm(f=>{
       const items=[...f.items];
       if(editingIdx>=0) items[editingIdx]=composerLive;
@@ -354,6 +353,7 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
             {editingIdx>=0?<><Check size={14}/>Update</>:<><Plus size={14}/>Insert</>}
           </button>
         </div>
+        {formErrors._composer&&<div style={{color:"#DC2626",fontSize:12,fontWeight:600,margin:"4px 0 0",display:"flex",alignItems:"center",gap:5}}><span>⚠</span>{formErrors._composer}</div>}
 
         {/* ── Row 4: Pricing & Billing context (snapshot from Masters) ──
             Auto-populated when the line is added from the catalogue — a quote
@@ -582,6 +582,12 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const [formTab,setFormTab]=useState("details");
   const [sourceMode,setSourceMode]=useState("opportunity"); // "opportunity" | "lead" | "account"
   const [sourceLeadId,setSourceLeadId]=useState("");
+  // Inline modals replacing window.prompt / window.alert / window.confirm
+  const [rejectModal,setRejectModal]=useState(null);   // {quote} — rejection reason input
+  const [acceptModal,setAcceptModal]=useState(null);   // {quote} — signed URL + accept
+  const [attachModal,setAttachModal]=useState(null);   // {quoteId, name, url} — add attachment
+  const [toast,setToast]=useState(null);               // {msg} — transient success notification
+  const [termsConfirm,setTermsConfirm]=useState(null); // {template} | "clear"
 
   /* ── Snapshot an Account's billing/legal context onto the quote ──
      We copy into the form (editable) so a later account edit doesn't
@@ -729,6 +735,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   /* ── Auto-populate from a selected Account (Direct mode) ── */
   const applyAccountCascade=(accountId)=>{
     const acc=accounts.find(a=>a.id===accountId);
+    // Auto-pick the primary contact for this account (primary flag, then first available)
+    const accContact=contacts.find(c=>c.accountId===accountId&&c.primary)||contacts.find(c=>c.accountId===accountId);
     setForm(f=>{
       const accSnap=snapshotAccount(acc,f);
       // Recompute totals with the auto-derived POS so any pre-existing line
@@ -738,6 +746,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       return {
         ...f,
         accountId: accountId||"",
+        // Only auto-fill contact when there is none yet — don't overwrite a manual pick
+        contactId: f.contactId || accContact?.id || "",
         ...accSnap,
         ...totals,
         title: f.title || (acc ? `Quote – ${acc.name}` : f.title),
@@ -749,11 +759,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const acc=accounts.find(a=>a.id===q.accountId);
     const opp=opps.find(o=>o.id===q.oppId);
     const yr=q.createdDate?new Date(q.createdDate).getFullYear():2024;
+    // Derive a stable human-readable ID from the stored q.id (e.g. "QT-007" → "#FL-2024-007").
+    // Falling back to array index only for legacy records that predate the QT- scheme.
+    const seqStr=q.id?.match(/QT-(\d+)/)?.[1]||String(idx+1).padStart(3,"0");
     return {
       ...q,
       _accName:acc?.name||"—",
       _sector:SECTOR_MAP_FROM_TYPE[acc?.type]||acc?.type||"Services",
-      _quoteId:genQuoteId(idx+1,yr),
+      _quoteId:`#FL-${yr}-${seqStr.padStart(3,"0")}`,
       _prob:opp?.probability||({"Draft":20,"Sent":50,"Under Review":65,"Accepted":100,"Rejected":0,"Expired":0,"Revised":30}[q.status]||0),
       _ownerName:TEAM_MAP[q.owner]?.name||"—",
     };
@@ -856,8 +869,19 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   };
   const openEdit=(q)=>{
     const seeded=(Array.isArray(q.productSelection)&&q.productSelection.length>0)?q.productSelection:(q.product?[{productId:q.product,moduleIds:[],noAddons:false}]:[]);
-    setForm({...q,items:[...q.items.map(i=>({...i}))],productSelection:seeded});
-    setFormErrors({});setFormTab("details");setSourceMode(q.oppId?"opportunity":"account");setSourceLeadId("");setModal({mode:"edit",lockedFinal:!!q.isFinal});
+    // Auto-derive the best contactId if not yet stored on the quote:
+    // priority: stored q.contactId → opp.primaryContactId → lead.contactIds[0] → first account contact
+    let contactId=q.contactId||"";
+    if(!contactId && q.oppId){
+      const opp=opps.find(o=>o.id===q.oppId);
+      contactId=opp?.primaryContactId||(opp?.secondaryContactIds?.[0])||"";
+    }
+    if(!contactId && q.accountId){
+      const accContact=contacts.find(c=>c.accountId===q.accountId&&c.primary)||contacts.find(c=>c.accountId===q.accountId);
+      contactId=accContact?.id||"";
+    }
+    setForm({...q,items:[...q.items.map(i=>({...i}))],productSelection:seeded,contactId});
+    setFormErrors({});setFormTab("details");setSourceMode(q.oppId?"opportunity":q.accountId?"account":"opportunity");setSourceLeadId("");setModal({mode:"edit",lockedFinal:!!q.isFinal});
   };
   const duplicate=(q)=>{
     const id=`QT-${String(quotes.length+1).padStart(3,"0")}`;
@@ -901,17 +925,18 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const ce={id:uid(),at,by:currentUser,field:"approvalStatus",from:q.approvalStatus||"Pending",to:"Approved",note:""};
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Approved",approvedBy:currentUser,approvedAt:at,rejectedReason:"",changeLog:[...(r.changeLog||[]),ce]}:r));
   };
-  const rejectQuote=(q)=>{
-    const reason=window.prompt("Reason for rejection (visible to quote owner):","");
-    if(reason==null) return;
+  const rejectQuote=(q)=>setRejectModal({quote:q});
+  const _doRejectQuote=(q,reason)=>{
     const at=new Date().toISOString();
     const ce={id:uid(),at,by:currentUser,field:"approvalStatus",from:q.approvalStatus||"Pending",to:"Rejected",note:reason||"No reason given"};
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Rejected",approvedBy:currentUser,approvedAt:at,rejectedReason:reason||"No reason given",changeLog:[...(r.changeLog||[]),ce]}:r));
+    setRejectModal(null);
   };
 
   /* ── Customer Accept: Sent/Under Review → Accepted + stamp + auto-create Contract draft ── */
-  const acceptQuote=(q)=>{
-    const url=window.prompt("Optional: paste signed quote URL (Drive/SharePoint link). Leave blank to skip.","")||"";
+  const acceptQuote=(q)=>setAcceptModal({quote:q});
+  const _doAcceptQuote=(q,url="")=>{
+    setAcceptModal(null);
     const acceptedDate=today;
     // Auto-create a Contract draft linking back to this quote
     let contractId="";
@@ -942,7 +967,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     }
     const ce={id:uid(),at:new Date().toISOString(),by:currentUser,field:"status",from:q.status,to:"Accepted",note:contractId?`contract ${contractId} created`:"customer accepted"};
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Accepted",acceptedDate,signedQuoteUrl:url,contractId,isFinal:true,changeLog:[...(r.changeLog||[]),ce]}:r));
-    if(contractId) alert(`Quote accepted. Contract draft ${contractId} created — open Contracts to finalise terms.`);
+    if(contractId) setToast({msg:`Quote accepted ✓  Contract draft ${contractId} created — open Contracts to finalise terms.`});
   };
 
   /* ── Reminder cadence: queue follow-up nudges at QUOTE_REMINDER_OFFSETS days after sentDate ── */
@@ -1055,71 +1080,73 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     setModal(null);setFormErrors({});setDetail(null);
   };
 
-  /* ── Multi-template PDF: opens a print-ready window the user can save as PDF ── */
+  /* ── Multi-template PDF: professional multi-section quotation document ──
+     Matches the iCAFFE_Quotation DOCX format with full sections:
+       Header · Addressee · Subject · Opening · Product Overview ·
+       Feature Highlights · Pricing · Notes · Implementation ·
+       System Requirements · Payment Terms · T&C · Signature · Footer
+     template: "customer" | "proforma" | "internal" | "government"    */
   const printQuote=(q,template="customer")=>{
-    const acc=accounts.find(a=>a.id===q.accountId);
-    const con=contacts.find(c=>c.id===q.contactId);
-    const billingAddr=(acc?.addresses||[]).find(a=>a.isBilling)||(acc?.addresses||[])[0];
-    const isInternal=template==="internal";
-    const isProforma=template==="proforma";
-    const isGovt=template==="government";
-    const showCost=isInternal && isManager;
-    const showTax=!isProforma;
-    const acceptUrl=`${window.location.origin}${window.location.pathname}#/quote-accept/${q.id}`;
-    const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(acceptUrl)}`;
-    const totalCost=q.items.reduce((s,i)=>s+(Number(i.unitCost||0)*Number(i.qty||0)),0);
-    const margin=q.subtotal-totalCost;
-    const marginPct=q.subtotal>0?((margin/q.subtotal)*100).toFixed(1):0;
-    const css=`body{font-family:Arial,sans-serif;color:#1f2937;font-size:11pt;margin:32px;}
-      h1{margin:0 0 4px;color:#1B6B5A;font-size:22pt;}
-      .meta{display:flex;justify-content:space-between;margin-bottom:16px;border-bottom:2px solid #1B6B5A;padding-bottom:10px;}
-      .meta .right{text-align:right;font-size:10pt;color:#475569;}
-      table{width:100%;border-collapse:collapse;margin:14px 0;font-size:10pt;}
-      th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;}
-      th{background:#1B6B5A;color:#fff;font-size:9pt;letter-spacing:0.5px;}
-      .totals{margin-left:auto;width:300px;border:1px solid #cbd5e1;padding:8px 12px;font-size:10pt;}
-      .totals .grand{border-top:2px solid #1B6B5A;margin-top:6px;padding-top:6px;font-size:13pt;font-weight:700;color:#1B6B5A;}
-      .terms{margin-top:18px;background:#f8fafc;padding:10px 14px;border-left:3px solid #1B6B5A;font-size:10pt;white-space:pre-line;}
-      .badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:9pt;font-weight:700;letter-spacing:1px;color:#fff;}
-      .footer{margin-top:30px;display:flex;justify-content:space-between;align-items:flex-end;font-size:9pt;color:#475569;border-top:1px solid #cbd5e1;padding-top:14px;}
-      .stamp{font-size:8pt;color:#94a3b8;}
-      ${isGovt?".meta{border-bottom-color:#1f2937;}h1{color:#1f2937;}th{background:#1f2937;}.totals .grand{color:#1f2937;border-top-color:#1f2937;}.terms{border-left-color:#1f2937;}":""}
-      ${isProforma?".watermark{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:80pt;color:rgba(245,158,11,0.12);font-weight:900;pointer-events:none;}":""}
-      ${isInternal?".internal{background:#fef3c7;padding:10px 14px;border:1px solid #fbbf24;border-radius:4px;margin:10px 0;font-size:10pt;}":""}
-      @media print{ .no-print{display:none !important;} }`;
-    // ── Per-line aggregates for the GST footer (also used to decide whether
-    //    to render the IGST / CGST / SGST split or the lump-sum row). ──
-    const igstTotal = q.igstTotal != null ? q.igstTotal : sumLines(q,"igstAmount");
-    const cgstTotal = q.cgstTotal != null ? q.cgstTotal : sumLines(q,"cgstAmount");
-    const sgstTotal = q.sgstTotal != null ? q.sgstTotal : sumLines(q,"sgstAmount");
-    const hasSplit  = igstTotal>0 || cgstTotal>0 || sgstTotal>0;
-    // Decide which optional per-line columns to render: only show MRP /
-    // Discount / GST when any line actually carries them, so legacy quotes
-    // keep their classic 4-column look.
+    const acc     = accounts.find(a=>a.id===q.accountId);
+    const con     = contacts.find(c=>c.id===q.contactId);
+    const isInternal = template==="internal";
+    const isProforma = template==="proforma";
+    const isGovt     = template==="government";
+    const showCost   = isInternal && isManager;
+
+    // ── Product template (marketing content) ──
+    const tmpl    = getQuoteTemplate(q.product || (q.productSelection?.[0]?.productId));
+    const accent  = isGovt ? "#1a2744" : (tmpl.color || "#1B4F8A");
+
+    // ── Currency symbol ──
+    const cur = q.currency || "INR";
+    const sym = cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":cur==="GBP"?"£":`${cur} `;
+
+    // ── GST split ──
+    const igstTotal = q.igstTotal!=null?q.igstTotal:sumLines(q,"igstAmount");
+    const cgstTotal = q.cgstTotal!=null?q.cgstTotal:sumLines(q,"cgstAmount");
+    const sgstTotal = q.sgstTotal!=null?q.sgstTotal:sumLines(q,"sgstAmount");
+    const hasSplit  = igstTotal>0||cgstTotal>0||sgstTotal>0;
+
+    // ── Pricing line columns — show only what's used ──
     const anyMrp      = q.items.some(it=>(Number(it.mrp)||0)>0);
     const anyDiscount = q.items.some(it=>(Number(it.discountValue)||0)>0);
     const anyGst      = q.items.some(it=>(Number(it.igstAmount)||0)+(Number(it.cgstAmount)||0)+(Number(it.sgstAmount)||0)>0);
     const anyCharge   = q.items.some(it=>String(it.chargeName||"").trim()!=="");
-    const lineRows=q.items.map(it=>{
-      const sym=it.currency&&it.currency!=="INR"?it.currency+" ":"₹";
-      const mrp=Number(it.mrp)||0, dv=Number(it.discountValue)||0, dt=it.discountType||"pct";
-      const gst=(Number(it.igstAmount)||0)+(Number(it.cgstAmount)||0)+(Number(it.sgstAmount)||0);
-      return `<tr>
-        ${anyCharge?`<td style="font-family:monospace;font-size:9pt">${it.chargeName||""}</td>`:""}
-        <td>${it.description||""}</td>
+
+    // ── Line item rows ──
+    const totalCost=q.items.reduce((s,i)=>s+(Number(i.unitCost||0)*Number(i.qty||0)),0);
+    const margin=Number(q.subtotal||0)-totalCost;
+    const marginPct=Number(q.subtotal||0)>0?((margin/Number(q.subtotal||0))*100).toFixed(1):0;
+
+    const lineRows = q.items.map((it,idx)=>{
+      const lsym = it.currency&&it.currency!=="INR"?`${it.currency} `:"₹";
+      const mrp  = Number(it.mrp)||0;
+      const dv   = Number(it.discountValue)||0;
+      const dt   = it.discountType||"pct";
+      const gst  = (Number(it.igstAmount)||0)+(Number(it.cgstAmount)||0)+(Number(it.sgstAmount)||0);
+      const discStr = dv>0?(dt==="pct"?`${dv}%`:`${lsym}${dv.toLocaleString()}`):"—";
+      return `<tr style="background:${idx%2===0?"#fff":"#F8FAFC"}">
+        <td style="text-align:center;color:#94a3b8;font-size:9pt">${idx+1}</td>
+        ${anyCharge?`<td style="font-family:monospace;font-size:9pt;color:#475569">${it.chargeName||""}</td>`:""}
+        <td>${it.description||""}${it.licenseType?`<br/><span style="font-size:8pt;color:#6D28D9;background:#EEF2FF;padding:1px 5px;border-radius:4px">${it.licenseType}</span>`:""}${it.billingFrequency?`<span style="font-size:8pt;color:#1D4ED8;background:#EFF6FF;padding:1px 5px;border-radius:4px;margin-left:3px">${it.billingFrequency}</span>`:""}</td>
+        <td style="text-align:center">${it.unit||""}</td>
         <td style="text-align:right">${it.qty||0}</td>
-        ${anyMrp?`<td style="text-align:right">${mrp>0?`${sym}${mrp.toLocaleString()}`:"—"}</td>`:""}
-        ${anyDiscount?`<td style="text-align:right">${dv>0?(dt==="pct"?`${dv}%`:`${sym}${dv.toLocaleString()}`):"—"}</td>`:""}
-        <td style="text-align:right">${sym}${(Number(it.unitPrice)||0).toLocaleString()}</td>
-        ${showCost?`<td style="text-align:right;background:#fef3c7">${sym}${(Number(it.unitCost)||0).toLocaleString()}</td>`:""}
-        <td style="text-align:right">${sym}${(Number(it.amount)||0).toLocaleString()}</td>
-        ${anyGst?`<td style="text-align:right" title="IGST ${it.igstRate||0}% · CGST ${it.cgstRate||0}% · SGST ${it.sgstRate||0}%">${gst>0?`${sym}${gst.toLocaleString()}`:"—"}</td>`:""}
+        ${anyMrp?`<td style="text-align:right;color:#64748b">${mrp>0?`${lsym}${mrp.toLocaleString()}`:"—"}</td>`:""}
+        ${anyDiscount?`<td style="text-align:right;color:#DC2626">${discStr}</td>`:""}
+        <td style="text-align:right;font-weight:600">${lsym}${(Number(it.unitPrice)||0).toLocaleString()}</td>
+        ${showCost?`<td style="text-align:right;background:#FEF3C7;color:#92400E">${lsym}${(Number(it.unitCost)||0).toLocaleString()}</td>`:""}
+        <td style="text-align:right;font-weight:600">${lsym}${(Number(it.amount)||0).toLocaleString()}</td>
+        ${anyGst?`<td style="text-align:right;font-size:9pt" title="IGST ${it.igstRate||0}% · CGST ${it.cgstRate||0}% · SGST ${it.sgstRate||0}%">${gst>0?`${lsym}${gst.toLocaleString()}`:"—"}</td>`:""}
+        <td style="text-align:right;font-weight:700;color:${accent}">${lsym}${(Number(it.totalWithTax)||Number(it.amount)||0).toLocaleString()}</td>
       </tr>`;
     }).join("");
-    // Build the table header to match the columns we actually render.
+
     const headerCells = [
+      '<th style="text-align:center;width:28px">#</th>',
       anyCharge && '<th>Charge</th>',
-      '<th>Description</th>',
+      '<th>Description / Service</th>',
+      '<th style="text-align:center">Unit</th>',
       '<th style="text-align:right">Qty</th>',
       anyMrp && '<th style="text-align:right">MRP</th>',
       anyDiscount && '<th style="text-align:right">Discount</th>',
@@ -1127,76 +1154,327 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       showCost && '<th style="text-align:right;background:#92400e">Cost</th>',
       '<th style="text-align:right">Amount</th>',
       anyGst && '<th style="text-align:right">GST</th>',
+      '<th style="text-align:right">Total</th>',
     ].filter(Boolean).join("");
-    const tableColspan = headerCells.match(/<th/g)?.length || 4;
-    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${q.id} – ${q.title}</title><style>${css}</style></head>
-    <body>
-      ${isProforma?'<div class="watermark">PROFORMA</div>':""}
-      <button class="no-print" onclick="window.print()" style="position:fixed;top:10px;right:10px;padding:8px 16px;background:#1B6B5A;color:#fff;border:none;border-radius:4px;cursor:pointer">Print / Save as PDF</button>
-      <div class="meta">
+
+    // ── Pillar HTML (3-column feature boxes) ──
+    const pillarsHtml = (tmpl.overview?.pillars||[]).length>0 ? `
+      <div style="display:grid;grid-template-columns:repeat(${tmpl.overview.pillars.length},1fr);gap:12px;margin:14px 0">
+        ${tmpl.overview.pillars.map(p=>`
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#f8fafc">
+          <div style="font-size:18pt;margin-bottom:6px">${p.icon||""}</div>
+          <div style="font-weight:700;color:${accent};font-size:10.5pt;margin-bottom:8px;border-bottom:2px solid ${accent};padding-bottom:4px">${p.title}</div>
+          <ul style="margin:0;padding-left:16px;font-size:9.5pt;color:#374151;line-height:1.6">
+            ${(p.bullets||[]).map(b=>`<li>${b}</li>`).join("")}
+          </ul>
+        </div>`).join("")}
+      </div>` : "";
+
+    // ── Feature sections ──
+    const featureHtml = (tmpl.featureSections||[]).map(sec=>`
+      <h3 style="color:${accent};font-size:11pt;margin:16px 0 8px;border-bottom:1px solid #e2e8f0;padding-bottom:4px">${sec.title}</h3>
+      ${(sec.features||[]).map(f=>`
+        <div style="margin-bottom:8px">
+          <strong style="font-size:10pt;color:#1e293b">${f.title}</strong>
+          <span style="color:#64748b;font-size:9.5pt"> — </span>
+          <span style="font-size:9.5pt;color:#374151">${f.body}</span>
+        </div>`).join("")}`).join("");
+
+    // ── Notes table ──
+    const notesRows = STANDARD_EXTRA_NOTES.map(n=>`
+      <tr>
+        <td style="text-align:center;vertical-align:top;font-weight:700;width:28px;color:${accent}">${n.no}</td>
+        <td style="font-size:9.5pt;color:#374151">${n.text}</td>
+      </tr>`).join("");
+
+    // ── Implementation rows ──
+    const implRows = (tmpl.implementation?.rows||[]).map(r=>`
+      <tr>
+        <td style="font-weight:600;color:#1e293b;width:28%;vertical-align:top;white-space:nowrap">${r.label}</td>
+        <td style="font-size:9.5pt;color:#374151">${r.value}</td>
+      </tr>`).join("");
+
+    // ── System requirements ──
+    const sysReqs = tmpl.systemReqs || {};
+    const serverRows  = (sysReqs.server||[]).map(([l,v])=>`<tr><td style="font-weight:600;white-space:nowrap;color:#1e293b;width:30%">${l}</td><td style="font-size:9.5pt">${v}</td></tr>`).join("");
+    const wsRows      = (sysReqs.workstation||[]).map(([l,v])=>`<tr><td style="font-weight:600;white-space:nowrap;color:#1e293b;width:30%">${l}</td><td style="font-size:9.5pt">${v}</td></tr>`).join("");
+
+    // ── Payment milestones ──
+    const payRows = STANDARD_PAYMENT_MILESTONES.map(m=>`
+      <tr>
+        <td style="text-align:center;font-weight:700;color:${accent};width:28px">${m.no}</td>
+        <td style="font-size:9.5pt;color:#374151">${m.milestone}</td>
+        <td style="font-weight:600;text-align:right;white-space:nowrap">${m.amount}</td>
+      </tr>`).join("");
+
+    // ── Terms & Conditions ──
+    const termsHtml = STANDARD_TERMS_SECTIONS.map(t=>`
+      <div style="margin-bottom:12px">
+        <div style="font-weight:700;color:${accent};font-size:10pt;margin-bottom:4px">${t.title}</div>
+        <div style="font-size:9.5pt;color:#374151;line-height:1.6">${t.body}</div>
+      </div>`).join("");
+
+    // ── Accept QR ──
+    const acceptUrl = `${window.location.origin}${window.location.pathname}#/quote-accept/${q.id}`;
+    const qrUrl     = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(acceptUrl)}`;
+    const logoUrl   = `${window.location.origin}/hans-logo.png`;
+
+    // ── Billing address display ──
+    const billAddr  = q.billingAddressSnapshot || (acc?.billingAddress||"") || "";
+    const validDate = q.expiryDate || "";
+    const quoteDate = q.sentDate || q.createdDate || today;
+
+    // ── GST totals display ──
+    const gstDisplay = !isProforma ? (hasSplit
+      ? [igstTotal>0?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>IGST:</span><strong>${sym}${igstTotal.toLocaleString()}</strong></div>`:"",
+         cgstTotal>0?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>CGST:</span><strong>${sym}${cgstTotal.toLocaleString()}</strong></div>`:"",
+         sgstTotal>0?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>SGST:</span><strong>${sym}${sgstTotal.toLocaleString()}</strong></div>`:""].join("")
+      : `<div style="display:flex;justify-content:space-between;padding:3px 0"><span>Tax (${q.taxType||""}):</span><strong>${sym}${(q.taxAmount||0).toLocaleString()}</strong></div>`) : "";
+
+    const html = `<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8"/>
+  <title>${q.id} – ${q.title}</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:Calibri,Arial,sans-serif;color:#1f2937;font-size:10.5pt;margin:0;padding:0;background:#fff}
+    .page{max-width:800px;margin:0 auto;padding:28px 36px}
+    /* Page header */
+    .doc-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${accent};padding-bottom:10px;margin-bottom:18px}
+    .company-name{font-size:16pt;font-weight:700;color:${accent};letter-spacing:-0.5px;margin:0}
+    .company-tagline{font-size:9pt;color:#64748b;margin:2px 0 0}
+    .quote-ref{text-align:right;font-size:9.5pt}
+    .quote-ref .q-label{font-size:8pt;font-weight:700;color:#64748b;letter-spacing:1px;text-transform:uppercase}
+    .quote-ref .q-num{font-size:13pt;font-weight:700;color:${accent}}
+    /* Addressee strip */
+    .addr-strip{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;padding:12px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:9.5pt}
+    .addr-label{font-size:8pt;font-weight:700;color:#64748b;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:3px}
+    .addr-val{font-size:10.5pt;font-weight:600;color:#1e293b}
+    /* Subject */
+    .subject-line{font-size:11pt;font-weight:700;color:#1e293b;margin:14px 0 6px;padding:8px 12px;background:#EFF6FF;border-left:3px solid ${accent};border-radius:0 4px 4px 0}
+    .ref-line{font-size:9pt;color:#64748b;margin-bottom:12px}
+    /* Section headings */
+    h2{font-size:12pt;font-weight:700;color:${accent};margin:22px 0 10px;padding-bottom:4px;border-bottom:2px solid ${accent}}
+    h3{font-size:10.5pt;font-weight:700;color:${accent};margin:14px 0 6px;border-bottom:1px solid #e2e8f0;padding-bottom:3px}
+    /* Tables */
+    table.std{width:100%;border-collapse:collapse;margin:10px 0;font-size:9.5pt}
+    table.std th{background:${accent};color:#fff;padding:7px 8px;font-size:8.5pt;font-weight:600;letter-spacing:0.3px}
+    table.std td{border:1px solid #e2e8f0;padding:6px 8px;vertical-align:top}
+    table.std tr:hover td{background:#f1f5f9}
+    table.notes td{border:1px solid #e2e8f0;padding:7px 9px;font-size:9.5pt;vertical-align:top}
+    table.notes{width:100%;border-collapse:collapse;margin:10px 0}
+    table.plain{width:100%;border-collapse:collapse;font-size:9.5pt}
+    table.plain td{padding:5px 6px;vertical-align:top;border:1px solid #e2e8f0}
+    /* Totals box */
+    .totals-box{margin:10px 0 10px auto;max-width:320px;border:1.5px solid ${accent};border-radius:6px;overflow:hidden}
+    .totals-box-inner{padding:10px 14px;font-size:9.5pt}
+    .totals-grand{display:flex;justify-content:space-between;font-size:14pt;font-weight:700;color:${accent};border-top:2px solid ${accent};padding:8px 14px}
+    /* Internal banner */
+    .internal-banner{background:#FEF3C7;border:1px solid #FCD34D;padding:8px 12px;border-radius:4px;margin:10px 0;font-size:9.5pt;font-weight:600;color:#92400E}
+    /* Proforma watermark */
+    .watermark{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:80pt;color:rgba(245,158,11,0.10);font-weight:900;pointer-events:none;z-index:0}
+    /* Signature block */
+    .sig-block{margin-top:30px;display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:flex-end}
+    .sig-line{margin-top:40px;border-top:1px solid #94a3b8;padding-top:4px;font-size:9pt;color:#475569;width:220px}
+    /* Footer (printed) */
+    .doc-footer{margin-top:20px;padding-top:10px;border-top:2px solid ${accent};display:flex;justify-content:space-between;align-items:center;font-size:8.5pt;color:#64748b}
+    /* Print button */
+    .print-btn{position:fixed;top:12px;right:12px;padding:8px 18px;background:${accent};color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10pt;font-weight:600;z-index:999;box-shadow:0 2px 8px rgba(0,0,0,0.2)}
+    @media print{
+      .print-btn{display:none!important}
+      .page{padding:14px 20px}
+      body{font-size:9.5pt}
+    }
+    @page{size:A4;margin:15mm 15mm 18mm 15mm}
+    .page-break{page-break-after:always;margin:0;height:0}
+  </style>
+</head>
+<body>
+  ${isProforma?'<div class="watermark">PROFORMA</div>':""}
+  <button class="print-btn" onclick="window.print()">🖨 Print / Save PDF</button>
+
+  <div class="page">
+
+    <!-- ═══ DOCUMENT HEADER ═══ -->
+    <div class="doc-header">
+      <div style="display:flex;align-items:center;gap:14px">
+        <img src="${logoUrl}" height="70" alt="Hans Infomatic" onerror="this.style.display='none'"/>
         <div>
-          <h1>${isProforma?"Proforma Invoice":isGovt?"Quotation (Government)":"Quotation"}</h1>
-          <div style="font-size:10pt;color:#475569">Quote ID: <strong>${q.id}</strong> · Version: v${q.version||1}${q.supersedesQuoteId?` (revises ${q.supersedesQuoteId})`:""}</div>
-          ${isInternal?'<span class="badge" style="background:#dc2626">INTERNAL COPY</span>':""}
-        </div>
-        <div class="right">
-          <div><strong>${acc?.name||"—"}</strong></div>
-          ${billingAddr?`<div>${formatAddress(billingAddr)}</div>`:""}
-          ${acc?.gstin?`<div>GSTIN: ${acc.gstin}</div>`:""}
-          ${con?`<div>Attn: ${con.name}${con.email?` · ${con.email}`:""}</div>`:""}
-          <div style="margin-top:6px">Date: ${q.sentDate||q.createdDate||today}${q.expiryDate?` · Valid till: ${q.expiryDate}`:""}</div>
+          <div class="company-name">HANS INFOMATIC PVT. LTD.</div>
+          <div class="company-tagline">Technology Solutions for India&#x2019;s Logistics &amp; Customs Industry</div>
+          <div style="font-size:8.5pt;color:#94a3b8;margin-top:2px">New Delhi · Mumbai · Bangalore · Chennai · Kolkata · www.hansinfomatic.com</div>
         </div>
       </div>
-      ${isInternal?`<div class="internal"><strong>Internal copy — DO NOT SHARE</strong> · Total Cost: ₹${totalCost.toFixed(2)}L · Margin: ₹${margin.toFixed(2)}L (${marginPct}%) · Owner: ${TEAM_MAP[q.owner]?.name||q.owner}</div>`:""}
-      <div style="font-size:11pt;font-weight:600;margin:6px 0">${q.title||""}</div>
-      ${q.placeOfSupply?`<div style="font-size:9.5pt;color:#475569;margin:0 0 6px"><strong>Place of Supply:</strong> ${q.placeOfSupply}${q.placeOfSupply===SELLER_HOME_STATE?" (intra-state · CGST + SGST)":q.placeOfSupply==="Outside India"?" (zero-rated)":" (inter-state · IGST)"}</div>`:""}
-      <table>
-        <thead><tr>${headerCells}</tr></thead>
-        <tbody>${lineRows||`<tr><td colspan="${tableColspan}" style="text-align:center;color:#94a3b8">No line items</td></tr>`}</tbody>
-      </table>
-      <div class="totals">
-        <div style="display:flex;justify-content:space-between"><span>Subtotal:</span><strong>₹${q.subtotal}L</strong></div>
-        ${q.discount>0?`<div style="display:flex;justify-content:space-between"><span>Discount:</span><strong>-₹${q.discount}L</strong></div>`:""}
-        ${showTax?(hasSplit
-          ? `${igstTotal>0?`<div style="display:flex;justify-content:space-between"><span>IGST:</span><strong>₹${igstTotal.toLocaleString()}</strong></div>`:""}
-             ${cgstTotal>0?`<div style="display:flex;justify-content:space-between"><span>CGST:</span><strong>₹${cgstTotal.toLocaleString()}</strong></div>`:""}
-             ${sgstTotal>0?`<div style="display:flex;justify-content:space-between"><span>SGST:</span><strong>₹${sgstTotal.toLocaleString()}</strong></div>`:""}`
-          : `<div style="display:flex;justify-content:space-between"><span>Tax (${q.taxType}):</span><strong>₹${q.taxAmount}L</strong></div>`):""}
-        <div class="grand" style="display:flex;justify-content:space-between"><span>Grand Total:</span><span>₹${q.total}L</span></div>
+      <div class="quote-ref">
+        <div class="q-label">Software Quotation</div>
+        <div class="q-num">${q.id}</div>
+        ${isInternal?'<div style="background:#DC2626;color:#fff;font-size:8pt;font-weight:700;padding:2px 8px;border-radius:3px;margin-top:4px;letter-spacing:1px">INTERNAL COPY</div>':""}
+        ${isProforma?'<div style="background:#F59E0B;color:#fff;font-size:8pt;font-weight:700;padding:2px 8px;border-radius:3px;margin-top:4px;letter-spacing:1px">PROFORMA INVOICE</div>':""}
       </div>
-      ${q.terms?`<div class="terms"><strong>Terms & Conditions</strong>\n${q.terms}</div>`:""}
-      <div class="footer">
-        <div>
-          <div><strong>For ${acc?.name||"the customer"}:</strong></div>
-          <div style="margin-top:30px;border-top:1px solid #1f2937;padding-top:4px;width:200px">Authorised Signatory</div>
+    </div>
+
+    <!-- ═══ ADDRESSEE + QUOTE DETAILS STRIP ═══ -->
+    <div class="addr-strip">
+      <div>
+        <div class="addr-label">To</div>
+        <div class="addr-val">M/s ${q.legalName||acc?.name||acc?.legalName||"—"}</div>
+        ${billAddr?`<div style="font-size:9pt;color:#475569;margin-top:3px;white-space:pre-line">${billAddr}</div>`:""}
+        ${q.gstin?`<div style="font-size:9pt;color:#475569;margin-top:3px">GSTIN: ${q.gstin}</div>`:""}
+      </div>
+      <div style="text-align:right">
+        <div style="margin-bottom:6px">
+          <div class="addr-label">Quotation No.</div>
+          <div style="font-weight:700;color:${accent};font-size:11pt">${q.id}</div>
         </div>
-        ${!isInternal?`<div style="text-align:center">
-          <img src="${qrUrl}" width="100" height="100" alt="Accept QR"/>
-          <div style="font-size:8pt;margin-top:4px">Scan to accept this quote</div>
+        <div style="margin-bottom:4px"><div class="addr-label">Date</div><div style="font-size:9.5pt">${quoteDate}</div></div>
+        ${validDate?`<div style="margin-bottom:4px"><div class="addr-label">Valid Until</div><div style="font-size:9.5pt;font-weight:600;color:#B91C1C">${validDate}</div></div>`:""}
+        <div><div class="addr-label">Product</div><div style="font-size:9.5pt;font-weight:600">${tmpl.productName}</div></div>
+      </div>
+    </div>
+
+    <!-- ═══ SUBJECT ═══ -->
+    <div class="subject-line">
+      Subject: ${isProforma?"Proforma Invoice":isGovt?"Quotation (Government Format)":"Software Quotation"} — ${tmpl.productName.replace(/®.*$/,"®")} ${tmpl.subtitle}
+    </div>
+    ${q.placeOfSupply?`<div class="ref-line">Place of Supply: <strong>${q.placeOfSupply}</strong>${q.placeOfSupply===SELLER_HOME_STATE?" (intra-state · CGST+SGST)":q.placeOfSupply==="Outside India"?" (zero-rated / export)":" (inter-state · IGST)"}</div>`:""}
+    ${con?`<div class="ref-line">Attn: <strong>${con.name}</strong>${con.designation?` — ${con.designation}`:""} · ${con.email||""} ${con.phone?`· ${con.phone}`:""}</div>`:""}
+
+    <!-- Opening paragraph -->
+    <p style="text-align:justify;font-size:10pt;line-height:1.6;margin:10px 0">
+      Dear Sir / Ma&#x2019;am,
+    </p>
+    <p style="text-align:justify;font-size:10pt;line-height:1.6;margin:0 0 14px">${tmpl.opening}</p>
+
+    ${isInternal?`<div class="internal-banner">⚠ Internal Copy — DO NOT SHARE · Total Cost: ${sym}${totalCost.toLocaleString()} · Margin: ${sym}${margin.toLocaleString()} (${marginPct}%) · Owner: ${TEAM_MAP[q.owner]?.name||q.owner}</div>`:""}
+
+    <!-- ═══ SECTION 1: PRODUCT OVERVIEW ═══ -->
+    <h2>1. Product Overview — ${tmpl.productName}</h2>
+    <p style="font-size:10pt;line-height:1.6;margin:0 0 10px;color:#374151">${tmpl.overview?.description||""}</p>
+    ${pillarsHtml}
+
+    <!-- ═══ SECTION 2: KEY FEATURE HIGHLIGHTS ═══ -->
+    ${(tmpl.featureSections||[]).length>0?`<h2>2. Key Feature Highlights</h2>${featureHtml}`:""}
+
+    <!-- ═══ SECTION 3: PROPOSED PRICING ═══ -->
+    <h2>3. Proposed Pricing — ${isProforma?"Proforma":isGovt?"Government":"SaaS Subscription Model"}</h2>
+    <p style="font-size:9pt;color:#64748b;margin:0 0 8px;font-style:italic">** ${tmpl.pricingNote||"All rates are under a SaaS model. Quarterly billing in advance."} ${q.currency&&q.currency!=="INR"?`All amounts in ${q.currency}.`:""}</p>
+
+    <table class="std" style="font-size:9.5pt">
+      <thead><tr>${headerCells}</tr></thead>
+      <tbody>
+        ${lineRows||`<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:20px">No line items added to this quote.</td></tr>`}
+      </tbody>
+    </table>
+
+    <!-- Totals box -->
+    <div class="totals-box">
+      <div class="totals-box-inner">
+        <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Subtotal (Taxable):</span><strong>${sym}${(q.subtotal||0).toLocaleString()}</strong></div>
+        ${(q.discount||0)>0?`<div style="display:flex;justify-content:space-between;padding:3px 0;color:#DC2626"><span>Discount:</span><strong>− ${sym}${(q.discount||0).toLocaleString()}</strong></div>`:""}
+        ${gstDisplay}
+      </div>
+      <div class="totals-grand"><span>Grand Total${cur!=="INR"?` (${cur})`:""}:</span><span>${sym}${(q.total||0).toLocaleString()}</span></div>
+    </div>
+
+    <!-- ── Notes table ── -->
+    <p style="font-size:10pt;font-weight:700;margin:18px 0 6px">NOTES</p>
+    <table class="notes">
+      <thead><tr style="background:#F8FAFC">
+        <th style="text-align:center;width:28px;padding:6px 8px;font-size:8.5pt;color:#64748b;font-weight:700;border:1px solid #e2e8f0">No.</th>
+        <th style="padding:6px 8px;font-size:8.5pt;color:#64748b;font-weight:700;border:1px solid #e2e8f0;text-align:left">Particulars</th>
+      </tr></thead>
+      <tbody>${notesRows}</tbody>
+    </table>
+
+    <div class="page-break"></div>
+
+    <!-- ═══ SECTION 4: IMPLEMENTATION ═══ -->
+    <div class="doc-header" style="margin-top:20px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <img src="${logoUrl}" height="50" alt="Hans Infomatic" onerror="this.style.display='none'"/>
+        <div>
+          <div style="font-size:11pt;font-weight:700;color:${accent}">HANS INFOMATIC PVT. LTD.</div>
+          <div style="font-size:8.5pt;color:#94a3b8">Continued — ${q.id}</div>
+        </div>
+      </div>
+      <div class="quote-ref"><div class="q-num" style="font-size:11pt">${q.id}</div></div>
+    </div>
+
+    <h2>4. Implementation, Training &amp; Support</h2>
+    <table class="plain">
+      <tbody>${implRows}</tbody>
+    </table>
+
+    <!-- ═══ SECTION 5: SYSTEM REQUIREMENTS ═══ -->
+    ${(sysReqs.server||[]).length>0?`
+    <h2>5. Minimum System Requirements (Client End — SaaS Mode)</h2>
+    <p style="font-size:9.5pt;color:#64748b;margin:0 0 8px">Since the platform is hosted on client servers under the SaaS model, client-side infrastructure requirements are minimal:</p>
+
+    <h3>Client Server</h3>
+    <table class="plain"><tbody>${serverRows}</tbody></table>
+
+    <h3>Client Workstation / User Device</h3>
+    <table class="plain"><tbody>${wsRows}</tbody></table>`:""}
+
+    <!-- ═══ SECTION 6: PAYMENT TERMS ═══ -->
+    <h2>6. Payment Terms</h2>
+    <table class="std">
+      <thead><tr>
+        <th style="width:30px">Milestone</th>
+        <th>Description</th>
+        <th style="text-align:right">Amount</th>
+      </tr></thead>
+      <tbody>${payRows}</tbody>
+    </table>
+    <p style="font-size:9pt;color:#475569;margin:6px 0">All payments by account payee cheque / RTGS / NEFT in favour of <strong>Hans Infomatic Pvt. Ltd.</strong>, payable at New Delhi. TDS deductions permissible as per applicable law; no other deductions allowed. All fees once received are non-refundable.</p>
+
+    <!-- ═══ SECTION 7: TERMS & CONDITIONS ═══ -->
+    <h2>7. Terms &amp; Conditions</h2>
+    ${termsHtml}
+
+    <!-- ═══ SIGNATURE BLOCK ═══ -->
+    <div class="sig-block">
+      <div>
+        <p style="font-size:10pt;line-height:1.6;margin:0 0 12px">We look forward to a long and mutually beneficial partnership. Please feel free to contact us for any clarifications or a product demonstration at your premises.</p>
+        <p style="font-size:10pt;margin:0">Thanking you.</p>
+        <p style="font-size:10pt;font-weight:600;margin:8px 0 0">With warm regards,</p>
+        <img src="${window.location.origin}/hans-sign.png" height="40" alt="Signature" style="display:block;margin:8px 0" onerror="this.style.display='none'"/>
+        <div class="sig-line">Authorised Signatory</div>
+        <div style="font-size:10pt;font-weight:700;margin-top:6px">For HANS INFOMATIC PVT. LTD.</div>
+        <div style="font-size:9pt;color:#64748b">Freight &amp; Customs Technology Solutions · New Delhi</div>
+      </div>
+      <div style="text-align:right">
+        ${!isInternal?`<div style="text-align:center;display:inline-block">
+          <img src="${qrUrl}" width="100" height="100" alt="Scan to Accept" onerror="this.style.display='none'"/>
+          <div style="font-size:8pt;color:#64748b;margin-top:4px">Scan to accept this quote digitally</div>
+          <div style="font-size:7.5pt;color:#94a3b8;margin-top:2px">${acceptUrl}</div>
         </div>`:""}
-        <div class="stamp" style="text-align:right">
-          Generated ${new Date().toLocaleString("en-IN")}<br/>
-          Owner: ${TEAM_MAP[q.owner]?.name||q.owner}<br/>
-          Template: ${template.toUpperCase()}
-        </div>
       </div>
-    </body></html>`;
-    const w=window.open("","_blank");
+    </div>
+
+    <!-- ═══ DOCUMENT FOOTER ═══ -->
+    <div class="doc-footer">
+      <span>Hans Infomatic Pvt. Ltd. · New Delhi · www.hansinfomatic.com</span>
+      <span>${q.id} · v${q.version||1} · Generated ${new Date().toLocaleString("en-IN")} · ${template.toUpperCase()}</span>
+    </div>
+
+  </div><!-- /page -->
+</body></html>`;
+
+    const w = window.open("","_blank");
     if(!w){alert("Popup blocked — please allow popups for this site to print quotes.");return;}
     w.document.write(html);
     w.document.close();
   };
 
   /* ── Attachment helpers (manage from detail modal) ── */
-  const addAttachment=(quoteId)=>{
-    const name=window.prompt("Attachment label (e.g. 'Customer RFP', 'Signed Quote'):","");
-    if(!name) return;
-    const url=window.prompt("Paste URL (Google Drive / SharePoint / public link):","");
-    if(!url) return;
+  const addAttachment=(quoteId)=>setAttachModal({quoteId,name:"",url:""});
+  const _doAddAttachment=(quoteId,name,url)=>{
     const entry={id:uid(),name,url,kind:"document",addedBy:currentUser,addedAt:new Date().toISOString()};
     setQuotes(p=>p.map(q=>q.id===quoteId?{...q,attachments:[...(q.attachments||[]),entry],changeLog:[...(q.changeLog||[]),{id:uid(),at:entry.addedAt,by:currentUser,field:"attachments",from:"",to:`+ ${name}`,note:url}]}:q));
     // Refresh detail view if open
     setDetail(d=>d&&d.id===quoteId?{...d,attachments:[...(d.attachments||[]),entry]}:d);
+    setAttachModal(null);
   };
   const removeAttachment=(quoteId,attId)=>{
     setQuotes(p=>p.map(q=>q.id===quoteId?{...q,attachments:(q.attachments||[]).filter(a=>a.id!==attId),changeLog:[...(q.changeLog||[]),{id:uid(),at:new Date().toISOString(),by:currentUser,field:"attachments",from:(q.attachments||[]).find(a=>a.id===attId)?.name||"",to:"removed",note:""}]}:q));
@@ -1536,60 +1814,6 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             />
           );
         })()}
-        {false && (
-          <table className="tbl">
-            <thead><tr>
-              <th><SortHeader sort={sort} k="_quoteId">QUOTE ID</SortHeader></th>
-              <th><SortHeader sort={sort} k="_accName">CUSTOMER NAME</SortHeader></th>
-              <th><SortHeader sort={sort} k="_sector">SECTOR</SortHeader></th>
-              <th><SortHeader sort={sort} k="sentDate">DATE SENT</SortHeader></th>
-              <th>QUOTE MONTH</th>
-              <th style={{textAlign:"right"}}><SortHeader sort={sort} k="total" align="right">ORDER VALUE (INR)</SortHeader></th>
-              <th style={{textAlign:"center"}}><SortHeader sort={sort} k="_prob" align="center">PROB (%)</SortHeader></th>
-              <th><SortHeader sort={sort} k="status">STATUS</SortHeader></th>
-              <th></th>
-            </tr></thead>
-            <tbody>{pg.paged.map(q=>(
-              <tr key={q.id}>
-                <td style={{fontWeight:600,fontSize:13,color:"var(--brand)"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:4}}>
-                    <span>{q._quoteId}</span>
-                    {(q.supersedesQuoteId||quoteChainMap[q.id])&&(
-                      <span title={q.supersedesQuoteId?`Revision of ${q.supersedesQuoteId}`:`Superseded by ${quoteChainMap[q.id]}`} style={{display:"inline-flex",alignItems:"center",gap:2,fontSize:10,color:"#8B5CF6",background:"#8B5CF615",padding:"1px 5px",borderRadius:4,fontWeight:600}}>
-                        <GitBranch size={10}/>v{q.version||1}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td><span className="tbl-link" onClick={()=>setDetail(q)}>{q._accName}</span></td>
-                <td style={{fontSize:12}}><span style={{background:"var(--s2)",padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:500}}>{q._sector}</span></td>
-                <td style={{fontSize:12,color:"var(--text2)"}}>{q.sentDate?fmt.date(q.sentDate):"—"}</td>
-                <td style={{fontSize:12,color:"var(--text2)"}}>{getMonthName(q.sentDate||q.createdDate)}</td>
-                <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700,textAlign:"right",fontSize:13}}>{formatINR(q.total)}</td>
-                <td style={{textAlign:"center"}}><span style={{fontWeight:600,fontSize:12,color:q._prob>=70?"#22C55E":q._prob>=40?"#F59E0B":"#EF4444"}}>{q._prob}%</span></td>
-                <td>
-                  <span style={statusBadgeStyle(q.status)}>{statusLabel(q.status)}</span>
-                  {q.approvalStatus==="Pending"&&<span title="Awaiting manager approval" style={{marginLeft:4,display:"inline-flex",alignItems:"center",gap:2,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#F59E0B18",color:"#F59E0B",letterSpacing:"0.5px"}}><ShieldCheck size={9}/>APPR PEND</span>}
-                  {q.approvalStatus==="Approved"&&<span title="Manager approved" style={{marginLeft:4,display:"inline-flex",alignItems:"center",gap:2,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#22C55E18",color:"#22C55E",letterSpacing:"0.5px"}}><ShieldCheck size={9}/>APPROVED</span>}
-                  {q.approvalStatus==="Rejected"&&<span title={q.rejectedReason} style={{marginLeft:4,display:"inline-flex",alignItems:"center",gap:2,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#EF444418",color:"#EF4444",letterSpacing:"0.5px"}}><ShieldCheck size={9}/>APPR REJ</span>}
-                </td>
-                <td><div style={{display:"flex",gap:4}}>
-                  <button className="icon-btn" title="View" onClick={()=>setDetail(q)}><Eye size={14}/></button>
-                  <button className="icon-btn" title="Edit" onClick={()=>openEdit(q)}><Edit2 size={14}/></button>
-                  {q.status==="Draft"&&<button className="icon-btn" title={needsApproval(q)&&q.approvalStatus!=="Approved"?`Request approval (${approvalReason(q)})`:"Send to customer"} onClick={()=>sendQuote(q)} style={{color:needsApproval(q)&&q.approvalStatus!=="Approved"?"#F59E0B":"#3B82F6"}}><Send size={14}/></button>}
-                  {isManager && q.approvalStatus==="Pending" && (<>
-                    <button className="icon-btn" title={`Approve (${approvalReason(q)})`} onClick={()=>approveQuote(q)} style={{color:"#22C55E"}}><ThumbsUp size={14}/></button>
-                    <button className="icon-btn" title="Reject" onClick={()=>rejectQuote(q)} style={{color:"#EF4444"}}><ThumbsDown size={14}/></button>
-                  </>)}
-                  {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title={`Send reminder${q.lastReminderAt?` (last: ${fmt.date(q.lastReminderAt.slice(0,10))})`:""}`} onClick={()=>logReminder(q,"manual")} style={{color:"#F59E0B"}}><Mail size={14}/></button>}
-                  {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title="Mark as Accepted by customer" onClick={()=>acceptQuote(q)} style={{color:"#22C55E"}}><FileSignature size={14}/></button>}
-                  <button className="icon-btn" title="Duplicate/Revise" onClick={()=>duplicate(q)}><Copy size={14}/></button>
-                  {canDelete&&<button className="icon-btn" title="Delete" onClick={()=>setConfirm(q.id)}><Trash2 size={14}/></button>}
-                </div></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        )}
         <Pagination {...pg}/>
       </div>
 
@@ -1734,7 +1958,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                   {chain.map((c,i)=>(
                     <span key={c.id} style={{display:"inline-flex",alignItems:"center",gap:4}}>
                       {i>0&&<span style={{color:"#8B5CF6"}}>→</span>}
-                      <span onClick={()=>c.id!==detail.id&&setDetail({...c,_quoteId:genQuoteId(quotes.findIndex(q=>q.id===c.id)+1,c.createdDate?new Date(c.createdDate).getFullYear():2024),_accName:accounts.find(a=>a.id===c.accountId)?.name||"—",_sector:detail._sector,_prob:detail._prob})} style={{cursor:c.id===detail.id?"default":"pointer",fontWeight:c.id===detail.id?700:500,padding:"2px 8px",borderRadius:4,background:c.id===detail.id?"#8B5CF6":"#fff",color:c.id===detail.id?"#fff":"#6D28D9",border:"1px solid #DDD6FE",fontSize:11}}>
+                      <span onClick={()=>{if(c.id===detail.id) return; const enrichedC=enriched.find(e=>e.id===c.id)||{...c,_quoteId:c.id,_accName:accounts.find(a=>a.id===c.accountId)?.name||"—",_sector:detail._sector,_prob:detail._prob}; setDetail(enrichedC);}} style={{cursor:c.id===detail.id?"default":"pointer",fontWeight:c.id===detail.id?700:500,padding:"2px 8px",borderRadius:4,background:c.id===detail.id?"#8B5CF6":"#fff",color:c.id===detail.id?"#fff":"#6D28D9",border:"1px solid #DDD6FE",fontSize:11}}>
                         v{c.version||1} · {c.status}
                       </span>
                     </span>
@@ -1843,11 +2067,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           <div style={{display:"flex",alignItems:"center",gap:8,width:"100%"}}>
             {/* Left cluster: secondary actions */}
             {!modal.lockedFinal && (
-              <button className="btn btn-sec btn-sm" type="button" title="Reset all fields to blank (does not delete saved quote)" onClick={()=>{
-                if(!window.confirm("Clear all fields on this form? Saved data is not affected until you click Save.")) return;
-                setForm(f=>({...BLANK_QUOTE,id:f.id,owner:f.owner,createdDate:f.createdDate}));
-                setFormErrors({});
-              }}><X size={13}/>Clear</button>
+              <button className="btn btn-sec btn-sm" type="button" title="Reset all fields to blank (does not delete saved quote)" onClick={()=>setTermsConfirm("clearForm")}><X size={13}/>Clear</button>
             )}
             {modal.mode!=="add" && (
               <button className="btn btn-sec btn-sm" type="button" title="Clone as a new draft (next version) — original stays untouched" onClick={()=>{duplicate(form);setModal(null);}}><Copy size={13}/>Revise</button>
@@ -1936,13 +2156,38 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                 <FormError error={formErrors.accountId}/>
               </div>
               <div className="form-group"><label>Contact</label>
-                <TypeaheadSelect
-                  value={form.contactId}
-                  onChange={(id) => setForm(f => ({...f, contactId: id}))}
-                  options={contacts.filter(c => !form.accountId || c.accountId === form.accountId).map(c => ({ value: c.id, label: c.name, sub: c.designation || "" }))}
-                  placeholder={form.accountId ? "Search contacts…" : "Pick an account first…"}
-                  disabled={!form.accountId && contacts.length > 0 ? false : false}
-                />
+                {/* Build a broadened contact options list:
+                    1. All contacts linked to the selected account (primary source)
+                    2. Contacts referenced by the linked opp (primary + secondary)
+                    3. Contacts referenced by the linked lead
+                    4. The currently-set contactId (so existing quotes always show the name)
+                    This prevents the field from going blank when a contact is linked via opp
+                    but doesn't have the account's accountId on it. */}
+                {(()=>{
+                  const opp=opps.find(o=>o.id===form.oppId);
+                  const lead=leads?.find?.(l=>l.id===sourceLeadId);
+                  const relevantIds=new Set([
+                    ...(opp?.secondaryContactIds||[]),
+                    opp?.primaryContactId,
+                    ...(lead?.contactIds||[]),
+                    form.contactId,
+                  ].filter(Boolean));
+                  const contactOpts=contacts
+                    .filter(c=>(form.accountId&&c.accountId===form.accountId)||relevantIds.has(c.id))
+                    .map(c=>({value:c.id,label:c.name,sub:[c.designation,c.email].filter(Boolean).join(" · ")}));
+                  // Sort: account-linked first, then opp/lead contacts, then rest
+                  contactOpts.sort((a,b)=>{
+                    const aAcc=contacts.find(c=>c.id===a.value)?.accountId===form.accountId;
+                    const bAcc=contacts.find(c=>c.id===b.value)?.accountId===form.accountId;
+                    return (bAcc?1:0)-(aAcc?1:0)||(a.label).localeCompare(b.label);
+                  });
+                  return <TypeaheadSelect
+                    value={form.contactId}
+                    onChange={(id) => setForm(f => ({...f, contactId: id}))}
+                    options={contactOpts}
+                    placeholder={form.accountId||form.oppId ? "Search contacts…" : "Pick account/opp first…"}
+                  />;
+                })()}
               </div>
             </div>
 
@@ -2230,13 +2475,13 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                 {TC_TEMPLATES.map(t=>(
                   <button key={t.id} className="btn btn-sec btn-xs" style={{fontSize:11}} onClick={()=>{
-                    if(form.terms && !window.confirm(`Replace existing terms with "${t.name}" template?`)) return;
-                    setForm(f=>({...f,terms:t.body}));
+                    if(form.terms) setTermsConfirm({template:t});
+                    else setForm(f=>({...f,terms:t.body}));
                   }}>{t.name}</button>
                 ))}
                 <button className="btn btn-xs" style={{fontSize:11,background:"#FEF2F2",color:"#B91C1C",border:"1px solid #FECACA"}} onClick={()=>{
-                  if(form.terms && !window.confirm("Clear all terms?")) return;
-                  setForm(f=>({...f,terms:""}));
+                  if(form.terms) setTermsConfirm("clearTerms");
+                  else setForm(f=>({...f,terms:""}));
                 }}>Clear</button>
               </div>
             </div>
@@ -2269,6 +2514,69 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         </Modal>
       )}
       {confirm&&<Confirm title="Delete Quote" msg="Remove this quotation permanently?" onConfirm={()=>del(confirm)} onCancel={()=>setConfirm(null)}/>}
+
+      {/* ── Reject Quote modal ── */}
+      {rejectModal&&(()=>{
+        let [reason,setReason_]=[rejectModal._reason||"",v=>setRejectModal(m=>({...m,_reason:v}))];
+        return <Modal title="Reject Quote — Enter Reason" onClose={()=>setRejectModal(null)}
+          footer={<><button className="btn btn-sec btn-sm" onClick={()=>setRejectModal(null)}>Cancel</button>
+            <button className="btn btn-danger btn-sm" onClick={()=>_doRejectQuote(rejectModal.quote,rejectModal._reason||"")}>Reject Quote</button></>}>
+          <p style={{fontSize:13,color:"var(--text2)",marginBottom:8}}>This reason will be visible to the quote owner in the change log.</p>
+          <textarea autoFocus rows={3} placeholder="e.g. Pricing above budget, not in current FY plan…"
+            value={rejectModal._reason||""} onChange={e=>setRejectModal(m=>({...m,_reason:e.target.value}))}
+            style={{width:"100%",boxSizing:"border-box",padding:"8px 12px",border:"1.5px solid var(--border)",borderRadius:8,fontSize:13,fontFamily:"inherit",resize:"vertical"}}/>
+        </Modal>;
+      })()}
+
+      {/* ── Accept Quote modal ── */}
+      {acceptModal&&<Modal title="Accept Quote" onClose={()=>setAcceptModal(null)}
+        footer={<><button className="btn btn-sec btn-sm" onClick={()=>setAcceptModal(null)}>Cancel</button>
+          <button className="btn btn-sm" style={{background:"#22C55E",color:"#fff",border:"none"}}
+            onClick={()=>_doAcceptQuote(acceptModal.quote,acceptModal._url||"")}>Mark Accepted</button></>}>
+        <p style={{fontSize:13,color:"var(--text2)",marginBottom:8}}>
+          Optionally paste a link to the signed quote document (Google Drive / SharePoint).
+        </p>
+        <input autoFocus type="url" placeholder="https://drive.google.com/… (leave blank if not yet signed)"
+          value={acceptModal._url||""} onChange={e=>setAcceptModal(m=>({...m,_url:e.target.value}))}
+          style={{width:"100%",boxSizing:"border-box",padding:"8px 12px",border:"1.5px solid var(--border)",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+      </Modal>}
+
+      {/* ── Add Attachment modal ── */}
+      {attachModal&&<Modal title="Add Attachment" onClose={()=>setAttachModal(null)}
+        footer={<><button className="btn btn-sec btn-sm" onClick={()=>setAttachModal(null)}>Cancel</button>
+          <button className="btn btn-sm" disabled={!attachModal.name?.trim()||!attachModal.url?.trim()}
+            onClick={()=>_doAddAttachment(attachModal.quoteId,attachModal.name.trim(),attachModal.url.trim())}>Add</button></>}>
+        <div className="form-group" style={{marginBottom:10}}>
+          <label style={{fontSize:12,fontWeight:600}}>Label <span style={{color:"#EF4444"}}>*</span></label>
+          <input autoFocus placeholder="e.g. Customer RFP, Signed Quote…"
+            value={attachModal.name} onChange={e=>setAttachModal(m=>({...m,name:e.target.value}))}
+            style={{width:"100%",boxSizing:"border-box",padding:"7px 10px",border:"1.5px solid var(--border)",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+        </div>
+        <div className="form-group">
+          <label style={{fontSize:12,fontWeight:600}}>URL <span style={{color:"#EF4444"}}>*</span></label>
+          <input type="url" placeholder="https://drive.google.com/… or SharePoint link"
+            value={attachModal.url} onChange={e=>setAttachModal(m=>({...m,url:e.target.value}))}
+            style={{width:"100%",boxSizing:"border-box",padding:"7px 10px",border:"1.5px solid var(--border)",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+        </div>
+      </Modal>}
+
+      {/* ── Terms / Form clear confirms ── */}
+      {termsConfirm&&<Confirm
+        title={termsConfirm==="clearForm"?"Clear All Form Fields":termsConfirm==="clearTerms"?"Clear Terms & Conditions":`Replace T&C with "${termsConfirm.template?.name}"?`}
+        msg={termsConfirm==="clearForm"?"Reset all fields to blank? Saved data is not affected until you click Save.":termsConfirm==="clearTerms"?"This will clear all existing T&C text.":"This will replace your existing T&C text with the selected template."}
+        onConfirm={()=>{
+          if(termsConfirm==="clearForm"){setForm(f=>({...BLANK_QUOTE,id:f.id,owner:f.owner,createdDate:f.createdDate}));setFormErrors({});}
+          else if(termsConfirm==="clearTerms"){setForm(f=>({...f,terms:""}));}
+          else{setForm(f=>({...f,terms:termsConfirm.template.body}));}
+          setTermsConfirm(null);
+        }}
+        onCancel={()=>setTermsConfirm(null)}/>}
+
+      {/* ── Toast notification (replaces alert()) ── */}
+      {toast&&<div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#1B4F8A",color:"#fff",padding:"12px 22px",borderRadius:10,fontSize:13,fontWeight:600,zIndex:9999,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",display:"flex",alignItems:"center",gap:12}}>
+        {toast.msg}
+        <button onClick={()=>setToast(null)} style={{background:"none",border:"none",color:"#fff",cursor:"pointer",fontSize:16,lineHeight:1,padding:0,opacity:0.7}}>✕</button>
+      </div>}
 
       {sendEmailModal && (
         <SendEmailModal
