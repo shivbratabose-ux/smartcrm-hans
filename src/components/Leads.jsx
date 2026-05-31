@@ -1877,6 +1877,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
 
   return (
     <DataGrid
+      dense
       module="leads_list"
       userId={currentUser}
       columns={LEADS_COLUMNS}
