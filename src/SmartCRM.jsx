@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -599,92 +599,77 @@ export default function SmartCRM() {
   // bulk-uploaded leads/opps with no assignedTo showed up in every rep's
   // list. Unassigned records now stay invisible to scoped users and only
   // appear to admins/MDs/directors (who can then route them).
-  const visibleLeads = useMemo(() => {
-    const live = leads.filter(l => !l.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(l => l.assignedTo && _scopedIds.has(l.assignedTo));
-  }, [leads, _scopedIds, _globalRole]);
+  // ── COMPANY-WIDE READ MODEL (Hans Infomatic policy, May 2026) ──
+  // Every role can VIEW all records across the company. Editing is gated
+  // separately by canEditRecord() (own records, downline, or an owner-granted
+  // edit). Soft-deleted rows are always hidden here (Trash reads raw state).
+  // _scopedIds / _globalRole are intentionally NOT used for read visibility
+  // any more — they only govern WRITE permission downstream.
+  const visibleLeads = useMemo(() => leads.filter(l => !l.isDeleted), [leads]);
 
-  const visibleOpps = useMemo(() => {
-    const live = opps.filter(o => !o.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(o => o.owner && _scopedIds.has(o.owner));
-  }, [opps, _scopedIds, _globalRole]);
+  const visibleOpps = useMemo(() => opps.filter(o => !o.isDeleted), [opps]);
 
-  const visibleActivities = useMemo(() => {
-    const live = activities.filter(a => !a.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(a => a.owner && _scopedIds.has(a.owner));
-  }, [activities, _scopedIds, _globalRole]);
+  const visibleActivities = useMemo(() => activities.filter(a => !a.isDeleted), [activities]);
 
-  const visibleCallReports = useMemo(() => {
-    const live = callReports.filter(cr => !cr.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(cr => cr.marketingPerson && _scopedIds.has(cr.marketingPerson));
-  }, [callReports, _scopedIds, _globalRole]);
+  const visibleCallReports = useMemo(() => callReports.filter(cr => !cr.isDeleted), [callReports]);
 
-  // Per-module visibility rules (per Hans Infomatic policy, Apr 2026):
-  //   Accounts, Tickets, Invoices, Quotes, Contracts, Comm Logs, Events →
-  //     STRICT — only the owner (and their downline / global roles) see the row.
-  //   Contacts → SHARED — everyone sees every contact (intentional: helps the
-  //     team cross-reference decision-makers across deals).
-  // Soft-deleted rows are always hidden from these lists (Trash module reads
-  // the raw state arrays separately).
-  const visibleAccounts    = useMemo(() => {
-    const live = accounts.filter(a => !a.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(a => a.owner && _scopedIds.has(a.owner));
-  }, [accounts, _scopedIds, _globalRole]);
-  // Contacts are intentionally org-wide — supports cross-team handoffs.
+  const visibleAccounts    = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
   const visibleContacts    = useMemo(() => contacts.filter(c => !c.isDeleted), [contacts]);
-  // Tickets use `assigned` (not `owner`); support reps assigned by PM still
-  // see their own queue, and the PM/manager up the chain sees everything.
-  const visibleTickets     = useMemo(() => {
-    const live = tickets.filter(t => !t.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(t => t.assigned && _scopedIds.has(t.assigned));
-  }, [tickets, _scopedIds, _globalRole]);
-  const visibleContracts   = useMemo(() => {
-    const live = contracts.filter(c => !c.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(c => c.owner && _scopedIds.has(c.owner));
-  }, [contracts, _scopedIds, _globalRole]);
-  // Collections respect the same hierarchy walker as leads/opps: global roles
-  // see everything; managers see their full downline (solid + dotted line);
-  // sales execs see only what they own. Unowned rows stay visible to everyone
-  // so finance-uploaded invoices that haven't been routed yet aren't hidden.
-  const visibleCollections = useMemo(() => {
-    const live = collections.filter(c => !c.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(c => !c.owner || _scopedIds.has(c.owner));
-  }, [collections, _scopedIds, _globalRole]);
-  const visibleQuotes      = useMemo(() => {
-    const live = quotes.filter(q => !q.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(q => q.owner && _scopedIds.has(q.owner));
-  }, [quotes, _scopedIds, _globalRole]);
-  const visibleCommLogs    = useMemo(() => {
-    const live = commLogs.filter(c => !c.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(c => c.owner && _scopedIds.has(c.owner));
-  }, [commLogs, _scopedIds, _globalRole]);
-  const visibleEvents      = useMemo(() => {
-    const live = events.filter(e => !e.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(e => e.owner && _scopedIds.has(e.owner));
-  }, [events, _scopedIds, _globalRole]);
-  const visibleTargets     = useMemo(() => {
-    const live = targets.filter(t => !t.isDeleted);
-    if (_globalRole) return live;
-    // Targets are user-scoped via userId; reps see their own + downline.
-    return live.filter(t => t.userId && _scopedIds.has(t.userId));
-  }, [targets, _scopedIds, _globalRole]);
-  const visibleInvoices    = useMemo(() => {
-    const live = invoices.filter(i => !i.isDeleted);
-    if (_globalRole) return live;
-    return live.filter(i => i.owner && _scopedIds.has(i.owner));
-  }, [invoices, _scopedIds, _globalRole]);
+  const visibleTickets     = useMemo(() => tickets.filter(t => !t.isDeleted), [tickets]);
+  const visibleContracts   = useMemo(() => contracts.filter(c => !c.isDeleted), [contracts]);
+  const visibleCollections = useMemo(() => collections.filter(c => !c.isDeleted), [collections]);
+  const visibleQuotes      = useMemo(() => quotes.filter(q => !q.isDeleted), [quotes]);
+  const visibleCommLogs    = useMemo(() => commLogs.filter(c => !c.isDeleted), [commLogs]);
+  const visibleEvents      = useMemo(() => events.filter(e => !e.isDeleted), [events]);
+  const visibleTargets     = useMemo(() => targets.filter(t => !t.isDeleted), [targets]);
+  const visibleInvoices    = useMemo(() => invoices.filter(i => !i.isDeleted), [invoices]);
   const visibleUpdates     = useMemo(() => updates.filter(u => !u.isDeleted), [updates]);
+
+  // ── Edit-access request / approval workflow ──
+  // A user who hits a read-only (non-owned) record can request edit rights
+  // from its owner. The request is stored as a comm_logs entry (type
+  // "Access Request") so it shows in Communications and persists. The owner
+  // approves/denies there; an approved entry grants the requester edit access
+  // to that one record until the owner revokes it.
+  const requestEditAccess = useCallback((recordType, recordId, recordLabel, ownerId) => {
+    const me = (orgUsers || []).find(u => u.id === currentUser);
+    const ownerUser = (orgUsers || []).find(u => u.id === ownerId);
+    const dup = commLogs.some(e => {
+      const p = parseAccessReq(e);
+      return p && p.requestStatus !== "denied" && p.requesterId === currentUser
+        && p.recordType === recordType && String(p.recordId) === String(recordId);
+    });
+    if (dup) { notify.info("You already have a request open for this record."); return; }
+    const entry = {
+      id: `cm_${uid()}`,
+      type: ACCESS_REQ_TYPE,
+      subject: `Edit-access request: ${recordLabel || recordType}`,
+      body: JSON.stringify({ recordType, recordId, recordLabel: recordLabel || "", requesterId: currentUser, ownerId: ownerId || "", requestStatus: "pending" }),
+      from: me?.email || me?.name || currentUser,
+      to: ownerUser?.email || ownerUser?.name || ownerId || "",
+      accountId: recordType === "account" ? recordId : "",
+      contactId: "", oppId: "",
+      date: new Date().toISOString().slice(0, 16).replace("T", " "),
+      status: "Sent",
+      owner: ownerId || currentUser, // surfaces in the owner's Communications
+    };
+    setCommLogs(p => [...p, entry]);
+    notify.success("Edit-access request sent to the owner.");
+  }, [commLogs, orgUsers, currentUser, setCommLogs]);
+
+  // Owner (or admin) approves / denies / revokes a request from Communications.
+  const respondEditAccess = useCallback((entryId, approve) => {
+    setCommLogs(p => p.map(e => {
+      if (e.id !== entryId) return e;
+      const payload = parseAccessReq(e) || {};
+      return {
+        ...e,
+        body: JSON.stringify({ ...payload, requestStatus: approve ? "approved" : "denied", respondedAt: new Date().toISOString(), respondedBy: currentUser }),
+        status: "Replied",
+      };
+    }));
+    notify.success(approve ? "Edit access granted." : "Request denied / access revoked.");
+  }, [setCommLogs, currentUser]);
 
   // ── Session: persist login & track idle timeout ──
   const login = useCallback((userId) => { setCurrentUser(userId); saveSession(userId); }, []);
@@ -2070,7 +2055,7 @@ export default function SmartCRM() {
           <div className="content" id="main-content" role="main">
             {page==="dashboard"  && <Dashboard accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} setPage={setPage} orgUsers={orgUsers} currentUser={currentUser}/>}
             {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete}/>}
-            {page==="accounts"   && <Accounts accounts={visibleAccounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={visibleContacts} setContacts={setContacts} tickets={visibleTickets} contracts={visibleContracts} collections={visibleCollections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete}/>}
+            {page==="accounts"   && <Accounts accounts={visibleAccounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={visibleContacts} setContacts={setContacts} tickets={visibleTickets} contracts={visibleContracts} collections={visibleCollections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="contacts"   && <Contacts contacts={visibleContacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={visibleAccounts} opps={visibleOpps} leads={visibleLeads} contracts={visibleContracts} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} canDelete={canDelete} currentUser={currentUser}/>}
             {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} catalog={catalog} onDealWon={handleDealWon} canDelete={canDelete}/>}
             {page==="activities" && <Activities activities={visibleActivities} setActivities={setActivities} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers} canDelete={canDelete}/>}
@@ -2081,7 +2066,7 @@ export default function SmartCRM() {
             {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} isManager={_globalRole}/>}
             {page.startsWith("quote-accept/") && <QuoteAcceptLanding quoteId={page.replace(/^quote-accept\//,"")} quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} contracts={contracts} setContracts={setContracts} setActivities={setActivities} currentUser={currentUser} onBack={()=>setPage("quotations")}/>}
             {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete}/>}
-            {page==="communications"&& <CommLog commLogs={visibleCommLogs} setCommLogs={setCommLogs} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} canDelete={canDelete} orgUsers={orgUsers} catalog={catalog}/>}
+            {page==="communications"&& <CommLog commLogs={visibleCommLogs} setCommLogs={setCommLogs} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} canDelete={canDelete} orgUsers={orgUsers} catalog={catalog} onRespondEditAccess={respondEditAccess}/>}
             {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} currentUser={currentUser} canDelete={canDelete}/>}
             {page==="reports"    && <Reports accounts={visibleAccounts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} contacts={visibleContacts} contracts={visibleContracts} quotes={visibleQuotes} currentUser={currentUser} orgUsers={orgUsers} masters={masters}/>}
             {page==="updates"    && <Updates updates={visibleUpdates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}

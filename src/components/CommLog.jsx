@@ -2,7 +2,8 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Mail, MessageSquare, Send, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { TEAM, TEAM_MAP, COMM_TYPES, COMM_STATUSES } from '../data/constants';
 import { BLANK_COMM_LOG } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, parseAccessReq, ACCESS_REQ_TYPE, isGlobalRole } from '../utils/helpers';
+import { Check as CheckIcon, X as XIcon } from 'lucide-react';
 import { Library } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect, SendEmailModal } from './shared';
 import Pagination, { usePagination } from './Pagination';
@@ -18,7 +19,7 @@ const CSV_COLS = [
   {label:"Account",accessor:c=>c._accName||""},{label:"Owner",accessor:c=>TEAM_MAP[c.owner]?.name||""},
 ];
 
-function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDelete,orgUsers,catalog=[]}) {
+function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDelete,orgUsers,catalog=[],onRespondEditAccess}) {
   // Tab state — Activity Log (the original CommLog table) vs the new
   // Resource Library (sales collateral organised per product).
   const [tab,setTab]=useState("log");
@@ -128,8 +129,10 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
           <table className="tbl">
             <thead><tr><th style={{width:32}}></th><th>Type</th><th>Subject</th><th>From / To</th><th>Account</th><th>Source</th><th>Date</th><th>Status</th><th>Owner</th><th></th></tr></thead>
             <tbody>{pg.paged.map(c=>{
-              const col=TYPE_COL[c.type]||"var(--text3)";
+              const col=TYPE_COL[c.type]||(c.type===ACCESS_REQ_TYPE?"#B45309":"var(--text3)");
               const isInbound=c.type.includes("Received");
+              const ar=parseAccessReq(c);
+              const canRespond=ar&&ar.requestStatus==="pending"&&(ar.ownerId===currentUser||isGlobalRole(currentUser,orgUsers));
               return <tr key={c.id}>
                 <td style={{color:col}}>{TYPE_ICON[c.type]}</td>
                 <td><span style={{fontSize:11,fontWeight:600,padding:"2px 7px",borderRadius:5,background:col+"18",color:col}}>{c.type}</span></td>
@@ -145,9 +148,22 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
                   }
                 </td>
                 <td style={{fontSize:12,color:"var(--text3)"}}>{c.date}</td>
-                <td><span className={`badge ${c.status==="Delivered"||c.status==="Read"?"bs-active":c.status==="Bounced"||c.status==="Failed"?"bs-lost":"bs-planned"}`}>{c.status}</span></td>
+                <td>{ar
+                  ? <span className={`badge ${ar.requestStatus==="approved"?"bs-active":ar.requestStatus==="denied"?"bs-lost":"bs-planned"}`}>{ar.requestStatus==="pending"?"Pending":ar.requestStatus==="approved"?"Approved":"Denied"}</span>
+                  : <span className={`badge ${c.status==="Delivered"||c.status==="Read"?"bs-active":c.status==="Bounced"||c.status==="Failed"?"bs-lost":"bs-planned"}`}>{c.status}</span>}</td>
                 <td><UserPill uid={c.owner}/></td>
-                <td><div style={{display:"flex",gap:4}}><button className="icon-btn" aria-label="Edit" onClick={()=>openEdit(c)}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(c.id)}><Trash2 size={14}/></button>}</div></td>
+                <td><div style={{display:"flex",gap:4}}>
+                  {ar
+                    ? (canRespond
+                        ? <>
+                            <button className="icon-btn" aria-label="Approve" title="Grant edit access" style={{color:"#16A34A"}} onClick={()=>onRespondEditAccess&&onRespondEditAccess(c.id,true)}><CheckIcon size={15}/></button>
+                            <button className="icon-btn" aria-label="Deny" title="Deny request" style={{color:"#DC2626"}} onClick={()=>onRespondEditAccess&&onRespondEditAccess(c.id,false)}><XIcon size={15}/></button>
+                          </>
+                        : (ar.requestStatus==="approved"&&(ar.ownerId===currentUser||isGlobalRole(currentUser,orgUsers))
+                            ? <button className="icon-btn" aria-label="Revoke" title="Revoke edit access" style={{color:"#DC2626"}} onClick={()=>onRespondEditAccess&&onRespondEditAccess(c.id,false)}><XIcon size={15}/></button>
+                            : null))
+                    : <><button className="icon-btn" aria-label="Edit" onClick={()=>openEdit(c)}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(c.id)}><Trash2 size={14}/></button>}</>}
+                </div></td>
               </tr>;
             })}</tbody>
           </table>
@@ -165,7 +181,7 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
               ...(detail.quoteRef||detail.quoteId?[["Quote",detail.quoteRef||detail.quoteId]]:[] ),
             ].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>
-          {detail.body&&(
+          {detail.body&&detail.type!==ACCESS_REQ_TYPE&&(
             detail.body.trim().startsWith("<")
               ? <iframe
                   srcDoc={detail.body}

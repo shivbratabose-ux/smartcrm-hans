@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback } from "react";
-import { Plus, Search, Edit2, Trash2, Check, TrendingUp, Activity, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown, Users, Phone, Mail, FileText, Calendar, AlertTriangle, Shield, Globe, Building2, Target, DollarSign, Package, Clock, Star, BarChart3, Layers, ExternalLink, X, BadgeCheck } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, TrendingUp, Activity, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown, Users, Phone, Mail, FileText, Calendar, AlertTriangle, Shield, Globe, Building2, Target, DollarSign, Package, Clock, Star, BarChart3, Layers, ExternalLink, X, BadgeCheck, Lock } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LEVELS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_ACC } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today, migrateAccountAddresses, formatAddress, upper, lower, title } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, validateAccount, hasErrors, today, migrateAccountAddresses, formatAddress, upper, lower, title, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, TypeaheadSelect } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
@@ -505,7 +505,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
    Customer-view list backed by DataGrid. Column visibility/order/width
    are persisted per-user via user_table_views. The relationships
    column is non-sortable since it's a derived composite. */
-function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, setConfirm, canDelete, currentUser, canApprove, onApprove }) {
+function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, setConfirm, canDelete, currentUser, canApprove, onApprove, canEditAcc, onRequestAccess, commLogs = [] }) {
   const txt = (val) => <span style={{fontSize: 12}}>{val || "-"}</span>;
   // Full registry: every meaningful account field is opt-in. Different
   // user groups (sales, finance, ops, BD) can build their own views from
@@ -632,22 +632,35 @@ function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, 
       onSort={toggleSort}
       SortIcon={SortIcon}
       selection={bulk}
-      rowActions={a => (
+      rowActions={a => {
+        const editable = canEditAcc ? canEditAcc(a) : true;
+        const pendingReq = !editable && hasPendingAccessReq(commLogs, "account", a.id, currentUser);
+        return (
         <div style={{display:"flex",gap:4}}>
           {needsFinanceNo(a) && canApprove && (
             <button className="icon-btn" aria-label="Approve & activate"
               title={a.status === "Active" ? "Issue account number" : "Approve & issue account number"}
               style={{color:"#B45309"}} onClick={() => onApprove(a)}><BadgeCheck size={15}/></button>
           )}
-          <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(a)}><Edit2 size={14}/></button>
-          {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(a.id)}><Trash2 size={14}/></button>}
+          {editable ? (
+            <>
+              <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(a)}><Edit2 size={14}/></button>
+              {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(a.id)}><Trash2 size={14}/></button>}
+            </>
+          ) : pendingReq ? (
+            <span style={{fontSize:10.5,fontWeight:600,color:"#B45309",padding:"3px 7px",borderRadius:5,background:"#FFFBEB",border:"1px solid #FDE68A",whiteSpace:"nowrap"}} title="Edit-access request pending with the owner">Requested</span>
+          ) : (
+            <button className="icon-btn" aria-label="Request edit access" title="Read-only — request edit access from the owner"
+              style={{color:"#64748B"}} onClick={() => onRequestAccess && onRequestAccess(a)}><Lock size={14}/></button>
+          )}
         </div>
-      )}
+        );
+      }}
     />
   );
 }
 
-function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, setActivities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers, callReports, setCallReports, masters, catalog, canDelete}) {
+function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, setActivities, notes, files, onAddNote, onAddFile, currentUser, contacts=[], tickets=[], contracts=[], collections=[], leads=[], orgUsers, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
   const [typeF, setTypeF] = useState("All");
@@ -681,6 +694,17 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
       .filter(o => o.accountId === acctId && ["Won","closed_won","Closed Won"].includes(o.stage))
       .reduce((s, o) => s + (o.value || 0), 0)
   , [opps]);
+
+  // Company-wide read, owner-scoped edit: a row is editable only by its owner,
+  // the owner's manager (downline scope), an admin/global role, or someone the
+  // owner granted edit access to. Everyone else sees it read-only and can
+  // request access from the owner.
+  const canEditAcc = useCallback((a) => canEditRecord({
+    ownerId: a?.owner, currentUser, orgUsers, recordType: "account", recordId: a?.id, commLogs,
+  }), [currentUser, orgUsers, commLogs]);
+  const requestAccess = (a) => {
+    if (typeof onRequestEditAccess === "function") onRequestEditAccess("account", a.id, a.name, a.owner);
+  };
 
   const openApprove = (a) => { setApproveAcctNo(a.accountNo || ""); setApproveErr(""); setApproveModal(a); };
   const confirmApprove = () => {
@@ -827,6 +851,8 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   };
   const openAdd = () => { setForm({...BLANK_ACC, id:`a${uid()}`, accountNo: nextAccountNo(), addresses:[], owner: currentUser || BLANK_ACC.owner}); setFormErrors({}); setModal({mode:"add"}); };
   const openEdit = a => {
+    // Read-only guard: non-owners can't open the edit form (they request access).
+    if (a && a.id && !canEditAcc(a)) { requestAccess(a); return; }
     // Backfill productSelection from legacy `products` array so existing accounts open in the picker
     const seeded = (Array.isArray(a.productSelection) && a.productSelection.length > 0)
       ? a.productSelection
@@ -869,6 +895,8 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   };
 
   const save = () => {
+    // Read-only guard: block saving an existing record the user can't edit.
+    if (modal?.mode === "edit" && !canEditAcc(form)) { notify.error("You don't have edit access to this account."); return; }
     const errs = validateAccount(form);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const isDup = accounts.some(existing => existing.id !== form.id && existing.name.toLowerCase().trim() === form.name.toLowerCase().trim() && existing.country === form.country);
@@ -1091,6 +1119,9 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
                 currentUser={currentUser}
                 canApprove={canApprove}
                 onApprove={openApprove}
+                canEditAcc={canEditAcc}
+                onRequestAccess={requestAccess}
+                commLogs={commLogs}
               />
             )}
             {false && (

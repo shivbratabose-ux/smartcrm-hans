@@ -411,29 +411,11 @@ export const getScopedUserIds = (currentUserId, orgUsers) => {
     frontier = next;
   }
 
-  // Rule 2b: Walk UP the (solid) reporting line to the product-line top.
-  // In addition to their own downline, a user can see their own vertical
-  // chain of command — every manager from their direct manager up to, and
-  // including, the topmost NON-management manager (the product-line head).
-  // We stop the climb the moment we reach a global/management role
-  // (Admin / MD / Director / VP) — those are excluded — and we do NOT add
-  // peers or the sibling sub-teams hanging off those managers. The result is
-  // a vertical "spine" (own descendants + own ancestors up the product line),
-  // not the entire department.
-  {
-    let cursor = user;
-    const guard = new Set([user.id]);
-    while (cursor && cursor.reportsTo) {
-      const mgr = allUsers.find(u => u.id === cursor.reportsTo);
-      if (!mgr || guard.has(mgr.id)) break;                       // missing link or cycle
-      if (GLOBAL_ROLES.includes(normalizeRole(mgr.role))) break;  // reached management — exclude & stop
-      guard.add(mgr.id);
-      if (mgr.active !== false) scoped.add(mgr.id);               // include active managers in the chain
-      cursor = mgr;                                               // keep climbing (even through inactive nodes)
-    }
-  }
-
-  // If we found at least one report (down) or manager (up), that IS the scope.
+  // If we found at least one direct/indirect report, that IS the scope.
+  // NOTE: this set governs EDIT/WRITE rights (own records + downline). Read
+  // visibility is now company-wide for every role (see canReadAll / the
+  // visible* selectors in SmartCRM) and is intentionally NOT derived from
+  // this downward scope.
   if (scoped.size > 1) return scoped;
 
   // Rule 3 & 4: Fall back to legacy dept/branch scoping for managers
@@ -453,6 +435,53 @@ export const getScopedUserIds = (currentUserId, orgUsers) => {
 export const isGlobalRole = (userId, orgUsers) => {
   const user = (orgUsers || []).find(u => u.id === userId);
   return !user || GLOBAL_ROLES.includes(normalizeRole(user.role));
+};
+
+// ── Edit-access requests / grants ───────────────────────────────────
+// Reads are company-wide for every role. WRITES are owner-scoped: you may
+// edit your own records, your downline's records (managers), or a record you
+// were explicitly granted access to by its owner.
+//
+// Requests + grants are stored as comm_logs entries (type "Access Request")
+// so they show up in the Communications tab and persist on the existing
+// comm_logs table with no schema migration. The structured payload is JSON
+// in the entry body: { recordType, recordId, recordLabel, requesterId,
+// ownerId, requestStatus: "pending"|"approved"|"denied" }.
+export const ACCESS_REQ_TYPE = "Access Request";
+export const parseAccessReq = (entry) => {
+  if (!entry || entry.type !== ACCESS_REQ_TYPE) return null;
+  try {
+    const p = typeof entry.body === "string" ? JSON.parse(entry.body) : (entry.body || {});
+    if (!p || !p.recordType || p.recordId == null) return null;
+    return p;
+  } catch { return null; }
+};
+// True if `userId` holds an APPROVED grant to edit this specific record.
+export const hasEditGrant = (commLogs, recordType, recordId, userId) => {
+  if (!userId || !Array.isArray(commLogs)) return false;
+  return commLogs.some(e => {
+    const p = parseAccessReq(e);
+    return p && p.requestStatus === "approved" && p.requesterId === userId
+      && p.recordType === recordType && String(p.recordId) === String(recordId);
+  });
+};
+// Central edit-permission check. Returns true when the current user may WRITE
+// the record. (Reads are unrestricted and must not call this.)
+export const canEditRecord = ({ ownerId, currentUser, orgUsers, recordType, recordId, commLogs }) => {
+  if (isGlobalRole(currentUser, orgUsers)) return true;            // admin / md / director / vp
+  if (ownerId && ownerId === currentUser) return true;             // own record
+  const scope = getScopedUserIds(currentUser, orgUsers);           // own + downline (managers)
+  if (ownerId && scope.has(ownerId)) return true;
+  return hasEditGrant(commLogs, recordType, recordId, currentUser); // owner-granted
+};
+// Has the current user already filed a still-pending request for this record?
+export const hasPendingAccessReq = (commLogs, recordType, recordId, userId) => {
+  if (!Array.isArray(commLogs)) return false;
+  return commLogs.some(e => {
+    const p = parseAccessReq(e);
+    return p && p.requestStatus === "pending" && p.requesterId === userId
+      && p.recordType === recordType && String(p.recordId) === String(recordId);
+  });
 };
 
 export const canAccess = (userId, module, orgUsers, customPermissions) => {
