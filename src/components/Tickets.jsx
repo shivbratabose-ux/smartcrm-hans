@@ -98,7 +98,7 @@ function TicketsDataGrid({ rows, bulk, sort, openEdit, setDetail, setConfirm, ca
 
 function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,catalog=[],commLogs=[],onRequestEditAccess}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
-  const canEditTkt = (t) => canEditRecord({ownerId:t?.assigned,currentUser,orgUsers,recordType:"ticket",recordId:t?.id,commLogs});
+  const canEditTkt = (t) => canEditRecord({ownerId:t?.assigned,currentUser,orgUsers,recordType:"ticket",recordId:t?.id,commLogs,catalog,recordProductIds:t?.product?[t.product]:(t?.productSelection||[]).map(s=>s.productId)});
   const requestAccessTkt = (t) => onRequestEditAccess && onRequestEditAccess("ticket", t.id, t.ticketNo||t.id||"Ticket", t.assigned);
   const [tabS,setTabS]=useState("Open");
   const [search,setSearch]=useState("");

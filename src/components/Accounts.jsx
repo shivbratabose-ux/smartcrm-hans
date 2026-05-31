@@ -701,7 +701,8 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   // request access from the owner.
   const canEditAcc = useCallback((a) => canEditRecord({
     ownerId: a?.owner, currentUser, orgUsers, recordType: "account", recordId: a?.id, commLogs,
-  }), [currentUser, orgUsers, commLogs]);
+    catalog, recordProductIds: a?.products || [],
+  }), [currentUser, orgUsers, commLogs, catalog]);
   const requestAccess = (a) => {
     if (typeof onRequestEditAccess === "function") onRequestEditAccess("account", a.id, a.name, a.owner);
   };

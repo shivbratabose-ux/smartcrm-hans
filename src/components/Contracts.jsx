@@ -80,7 +80,7 @@ const buildTimelineData = (contracts) => {
 };
 
 function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete, onGenerateRenewal, commLogs=[], onRequestEditAccess }) {
-  const canEditCtr = (c) => canEditRecord({ownerId:c?.owner,currentUser,orgUsers,recordType:"contract",recordId:c?.id,commLogs});
+  const canEditCtr = (c) => canEditRecord({ownerId:c?.owner,currentUser,orgUsers,recordType:"contract",recordId:c?.id,commLogs,catalog,recordProductIds:c?.product?[c.product]:(c?.productSelection||[]).map(s=>s.productId)});
   const requestAccessCtr = (c) => onRequestEditAccess && onRequestEditAccess("contract", c.id, c.title||c.contractNo||"Contract", c.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search, setSearch] = useState("");

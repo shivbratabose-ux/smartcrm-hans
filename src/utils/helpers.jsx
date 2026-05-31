@@ -467,13 +467,29 @@ export const hasEditGrant = (commLogs, recordType, recordId, userId) => {
 };
 // Central edit-permission check. Returns true when the current user may WRITE
 // the record. (Reads are unrestricted and must not call this.)
-export const canEditRecord = ({ ownerId, currentUser, orgUsers, recordType, recordId, commLogs }) => {
+// Products a user is the delivery/line owner of — derived from the catalog's
+// lineManagerId. This is how the "Head GM – Product Delivery & Success" role
+// is scoped to one or more products (set in Masters → Catalog).
+export const getManagedProductIds = (userId, catalog) =>
+  (catalog || []).filter(p => p.lineManagerId === userId).map(p => p.id);
+
+export const canEditRecord = ({ ownerId, currentUser, orgUsers, recordType, recordId, commLogs, catalog, recordProductIds }) => {
   if (isGlobalRole(currentUser, orgUsers)) return true;            // admin / md / director / vp
+  const _role = normalizeRole((orgUsers || []).find(u => u.id === currentUser)?.role);
   // Finance owns the financial record types org-wide (approve accounts, manage
   // collections & contract billing) but is NOT global — it can't edit sales
   // opportunities, leads, activities, etc.
-  const _role = normalizeRole((orgUsers || []).find(u => u.id === currentUser)?.role);
   if (_role === "finance" && ["account", "collection", "contract"].includes(recordType)) return true;
+  // Head GM – Product Delivery & Success: owns customer experience / onboarding
+  // / delivery for the product(s) they line-manage. Can edit delivery & customer
+  // record types ONLY for records tied to one of their products — not org-wide.
+  if (_role === "product_head"
+      && ["account", "contact", "ticket", "activity", "contract", "opp", "lead"].includes(recordType)
+      && Array.isArray(recordProductIds) && recordProductIds.length
+      && Array.isArray(catalog)) {
+    const managed = getManagedProductIds(currentUser, catalog);
+    if (recordProductIds.some(pid => managed.includes(pid))) return true;
+  }
   if (ownerId && ownerId === currentUser) return true;             // own record
   const scope = getScopedUserIds(currentUser, orgUsers);           // own + downline (managers)
   if (ownerId && scope.has(ownerId)) return true;

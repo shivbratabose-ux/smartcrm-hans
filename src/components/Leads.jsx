@@ -1914,7 +1914,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
 }
 
 function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess }) {
-  const canEditLead = (l) => canEditRecord({ownerId:l?.assignedTo,currentUser,orgUsers,recordType:"lead",recordId:l?.id,commLogs});
+  const canEditLead = (l) => canEditRecord({ownerId:l?.assignedTo,currentUser,orgUsers,recordType:"lead",recordId:l?.id,commLogs,catalog,recordProductIds:l?.product?[l.product]:[]});
   const requestAccessLead = (l) => onRequestEditAccess && onRequestEditAccess("lead", l.id, l.company||l.leadId||"Lead", l.assignedTo);
   // Scope the team list to only users this logged-in user has visibility over.
   // This keeps owner filter and assignment dropdowns consistent with the scoped data.

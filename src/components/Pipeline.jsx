@@ -712,7 +712,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
 function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete, commLogs=[], onRequestEditAccess }) {
-  const canEditOpp = (o) => canEditRecord({ownerId:o?.owner,currentUser,orgUsers,recordType:"opp",recordId:o?.id,commLogs});
+  const canEditOpp = (o) => canEditRecord({ownerId:o?.owner,currentUser,orgUsers,recordType:"opp",recordId:o?.id,commLogs,catalog,recordProductIds:(o?.products&&o.products.length)?o.products:(o?.product?[o.product]:[])});
   const requestAccessOpp = (o) => onRequestEditAccess && onRequestEditAccess("opp", o.id, o.title||o.id||"Opportunity", o.owner);
   // Pipeline stages are now editable in Masters → Pipeline Stages. Build the
   // derived maps once per render — buildStagesContext handles fallback to
