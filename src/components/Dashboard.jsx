@@ -203,7 +203,9 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
     const byType = {};
     opps.forEach(o => {
       const acc = accounts.find(a => a.id === o.accountId);
-      const type = acc?.type || "Other";
+      // Group by the most specific populated classifier so deals don't all
+      // collapse into "Other" when `type` happens to be blank.
+      const type = acc?.vertical || acc?.segment || acc?.industry || acc?.type || "Other";
       if (!byType[type]) byType[type] = { days: [], count: 0, value: 0 };
       byType[type].count++;
       byType[type].value += o.value;
