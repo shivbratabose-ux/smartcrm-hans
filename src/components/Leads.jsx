@@ -482,13 +482,122 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
   // job (it scopes by account.id which is never empty, so no leak there).
   const leadActivities = (allActivities||[]).filter(a => a.leadId === lead.id);
   const leadCalls = (callReports||[]).filter(cr => cr.leadId === lead.id);
-  const combinedTimeline = [
-    ...leadActivities.map(a => ({ type: "activity", date: a.date || a.createdDate || "", icon: <MessageSquare size={13}/>, title: a.title || a.type || "Activity", desc: a.notes || a.description || "", time: a.date || a.createdDate || "" })),
-    ...leadCalls.map(cr => ({ type: "call", date: cr.date || cr.callDate || "", icon: <Phone size={13}/>, title: cr.callType || "Call", desc: cr.notes || cr.outcome || "", time: cr.date || cr.callDate || "" })),
-  ].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  const displayTimeline = combinedTimeline.length > 0 ? combinedTimeline : [
-    { icon: <Calendar size={13}/>, title: "Lead Created", desc: `Lead ${lead.leadId} was created`, time: lead.createdDate || "" },
-  ];
+
+  // ── Full Record Journey ──
+  // Every meaningful thing that happened to this lead, in one sorted list.
+  const JOURNEY_COLORS = {
+    created:    { bg:"#E8F5F1", color:"#1B6B5A", border:"#A7F3D0" },
+    assigned:   { bg:"#EFF6FF", color:"#2563EB", border:"#BFDBFE" },
+    stage:      { bg:"#F5F3FF", color:"#7C3AED", border:"#DDD6FE" },
+    call:       { bg:"#FFF7ED", color:"#D97706", border:"#FDE68A" },
+    activity:   { bg:"#F0FDF4", color:"#16A34A", border:"#BBF7D0" },
+    followup:   { bg:"#FEF3C7", color:"#B45309", border:"#FDE68A" },
+    converted:  { bg:"#DCFCE7", color:"#15803D", border:"#86EFAC" },
+    score:      { bg:"#FDF4FF", color:"#9333EA", border:"#E9D5FF" },
+    system:     { bg:"#F8FAFC", color:"#64748B", border:"#E2E8F0" },
+  };
+
+  const journeyEvents = [
+    // 1. Lead Created
+    {
+      kind: "created",
+      date: lead.createdDate || "",
+      title: "Lead Created",
+      subtitle: lead.source ? `Source: ${lead.source}` : "",
+      desc: [
+        lead.createdBy ? `Created by ${_teamMap[lead.createdBy]?.name || lead.createdBy}` : null,
+        lead.product ? `Product interest: ${PROD_MAP[lead.product]?.name || lead.product}` : null,
+        lead.vertical ? `Vertical: ${lead.vertical}` : null,
+        lead.region ? `Region: ${lead.region}` : null,
+      ].filter(Boolean).join(" · "),
+      by: lead.createdBy || "",
+    },
+    // 2. Assigned (initial assignment at creation)
+    ...(lead.assignedTo ? [{
+      kind: "assigned",
+      date: lead.createdDate || "",
+      title: `Assigned to ${_teamMap[lead.assignedTo]?.name || lead.assignedTo}`,
+      subtitle: "Initial assignment",
+      desc: `Sales owner: ${_teamMap[lead.assignedTo]?.name || lead.assignedTo}${_teamMap[lead.assignedTo]?.role ? ` (${_teamMap[lead.assignedTo].role})` : ""}`,
+      by: lead.createdBy || "",
+    }] : []),
+    // 3. Stage changes from stageHistory
+    ...(lead.stageHistory || []).map((sh, i) => ({
+      kind: "stage",
+      date: sh.date || "",
+      title: `Stage: ${sh.from} → ${sh.to}`,
+      subtitle: sh.to === "Converted" ? "Converted to Opportunity" : `Advanced to ${sh.to}`,
+      desc: sh.by ? `Changed by ${_teamMap[sh.by]?.name || sh.by}` : "",
+      by: sh.by || "",
+      from: sh.from,
+      to: sh.to,
+    })),
+    // 4. Calls
+    ...leadCalls.map(cr => ({
+      kind: "call",
+      date: cr.callDate || cr.date || "",
+      title: `${cr.callType || cr.objective || "Call"} — ${cr.outcome || ""}`,
+      subtitle: cr.objective || cr.callType || "",
+      desc: cr.notes || "",
+      by: cr.marketingPerson || cr.createdBy || cr.owner || "",
+      meta: [
+        cr.duration ? `${cr.duration} min` : null,
+        cr.nextCallDate ? `Next call: ${cr.nextCallDate}` : null,
+        cr.nextStepDesc ? `Next step: ${cr.nextStepDesc}` : null,
+      ].filter(Boolean).join(" · "),
+    })),
+    // 5. Activities
+    ...leadActivities
+      .filter(a => a.type !== "Follow-up")
+      .map(a => ({
+        kind: "activity",
+        date: a.date || a.createdDate || "",
+        title: a.title || a.type || "Activity",
+        subtitle: `${a.type}${a.status ? ` · ${a.status}` : ""}`,
+        desc: a.notes || a.description || "",
+        by: a.createdBy || a.owner || "",
+        status: a.status,
+      })),
+    // 6. Follow-ups (styled differently)
+    ...leadActivities
+      .filter(a => a.type === "Follow-up")
+      .map(a => ({
+        kind: "followup",
+        date: a.date || a.createdDate || "",
+        title: a.title || "Follow-up Scheduled",
+        subtitle: `Status: ${a.status || "Planned"}`,
+        desc: a.notes || "",
+        by: a.createdBy || a.owner || "",
+        status: a.status,
+      })),
+    // 7. Conversion milestone
+    ...(lead.convertedDate ? [{
+      kind: "converted",
+      date: lead.convertedDate,
+      title: "Converted to Opportunity",
+      subtitle: lead.convertedOppIds?.length ? `${lead.convertedOppIds.length} opportunity created` : "",
+      desc: "Lead successfully converted to pipeline opportunity.",
+      by: "",
+    }] : []),
+  ]
+  .filter(e => e.date) // only dated events
+  .sort((a, b) => {
+    // Sort by date desc; for same date put system events (created/assigned) last
+    if (b.date !== a.date) return (b.date || "").localeCompare(a.date || "");
+    const order = { converted:0, stage:1, call:2, activity:3, followup:4, assigned:5, created:6 };
+    return (order[a.kind] ?? 9) - (order[b.kind] ?? 9);
+  });
+
+  // Fallback if nothing at all
+  const combinedTimeline = journeyEvents;
+  const displayTimeline = journeyEvents.length > 0 ? journeyEvents : [{
+    kind: "system",
+    date: lead.createdDate || today,
+    title: "Lead Created",
+    subtitle: "",
+    desc: `Lead ${lead.leadId} was created. No activities logged yet.`,
+    by: "",
+  }];
 
   // ── Inline forms for activities tab ──
   const [showCallForm, setShowCallForm] = useState(false);
@@ -496,6 +605,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
   const [callForm, setCallForm] = useState({ callType: "Discovery", date: today, notes: "", outcome: "Interested", nextCallDate: "" });
   const [actForm, setActForm] = useState({ title: "", type: "Call", date: today, notes: "" });
   const [expandedTimeline, setExpandedTimeline] = useState(null);
+  const [journeyFilter, setJourneyFilter] = useState("all");
 
   const saveCallLog = () => {
     if (!callForm.notes?.trim()) return;
@@ -719,7 +829,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
                           disabled={!nextGateResult?.canAdvance}
                           onClick={() => {
                             if (nextStage === "Converted") { setShowConvertModal(true); }
-                            else { updateLead({ stage: nextStage, stageHistory: [...(lead.stageHistory||[]), {from:lead.stage,to:nextStage,date:today}] }); }
+                            else { updateLead({ stage: nextStage, stageHistory: [...(lead.stageHistory||[]), {from:lead.stage,to:nextStage,date:today,by:lead.assignedTo||""}] }); }
                           }}>
                           <ArrowRightCircle size={12}/>{nextStage === "Converted" ? "Convert" : `Advance to ${nextStage}`}
                         </button>
@@ -1157,99 +1267,188 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
             </div>
           </>}
 
-          {/* ─────────── ACTIVITIES TAB ─────────── */}
-          {activeTab === "activities" && <>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-              <div style={{fontSize:14,fontWeight:700,color:"var(--text1)"}}>Activity Timeline ({combinedTimeline.length})</div>
-              <div style={{display:"flex",gap:6}}>
-                <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => { setShowCallForm(v => !v); setShowActivityForm(false); }}>
-                  <Phone size={12}/>Log Call
-                </button>
-                <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => { setShowActivityForm(v => !v); setShowCallForm(false); }}>
-                  <Plus size={12}/>Log Activity
-                </button>
-                <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => {
-                  const followup = { id: `act-${Date.now()}`, accountId: lead.accountId || "", contactId: lead.contact || "", leadId: lead.id, title: `Follow-up: ${lead.company}`, type: "Follow-up", status: "Planned", date: today, notes: "", createdDate: today };
-                  setActivities(p => [...p, followup]);
-                }}><Calendar size={12}/>Set Follow-up</button>
-              </div>
-            </div>
+          {/* ─────────── ACTIVITIES TAB — FULL RECORD JOURNEY ─────────── */}
+          {activeTab === "activities" && (() => {
+            const FILTER_OPTS = [
+              { id:"all",      label:"All Events" },
+              { id:"call",     label:"📞 Calls" },
+              { id:"activity", label:"✅ Activities" },
+              { id:"stage",    label:"📊 Stage Changes" },
+              { id:"system",   label:"⚙️ System" },
+            ];
+            const filteredJourney = journeyFilter === "all"
+              ? displayTimeline
+              : journeyFilter === "system"
+                ? displayTimeline.filter(e => ["created","assigned","converted"].includes(e.kind))
+                : displayTimeline.filter(e => e.kind === journeyFilter || (journeyFilter === "activity" && e.kind === "followup"));
 
-            {/* Inline Call Form */}
-            {showCallForm && (
-              <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
-                <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log a Call</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Call Type</label>
-                    <select value={callForm.callType} onChange={e => setCallForm(f => ({...f, callType: e.target.value}))} style={{fontSize:11,width:"100%"}}>
-                      {["Discovery","Follow-up","Demo","Negotiation","Support","Cold Call"].map(t => <option key={t}>{t}</option>)}
-                    </select></div>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
-                    <input type="date" value={callForm.date} onChange={e => setCallForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Outcome</label>
-                    <select value={callForm.outcome} onChange={e => setCallForm(f => ({...f, outcome: e.target.value}))} style={{fontSize:11,width:"100%"}}>
-                      {["Interested","Not Interested","Call Back","Voicemail","No Answer","Meeting Booked"].map(t => <option key={t}>{t}</option>)}
-                    </select></div>
-                </div>
-                <div style={{marginBottom:8}}><label style={{fontSize:10,color:"var(--text3)"}}>Notes *</label>
-                  <textarea value={callForm.notes} onChange={e => setCallForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Call notes..."/></div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"end"}}>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Next Call Date</label>
-                    <input type="date" value={callForm.nextCallDate} onChange={e => setCallForm(f => ({...f, nextCallDate: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
-                  <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowCallForm(false)}>Cancel</button>
-                  <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveCallLog}><Check size={11}/>Save</button>
-                </div>
-              </div>
-            )}
+            const KIND_ICON = {
+              created:   <Star size={13}/>,
+              assigned:  <Users size={13}/>,
+              stage:     <TrendingUp size={13}/>,
+              call:      <Phone size={13}/>,
+              activity:  <MessageSquare size={13}/>,
+              followup:  <Calendar size={13}/>,
+              converted: <ArrowRightCircle size={13}/>,
+              system:    <Clock size={13}/>,
+            };
+            const KIND_LABEL = {
+              created:"Created", assigned:"Assigned", stage:"Stage Change",
+              call:"Call", activity:"Activity", followup:"Follow-up",
+              converted:"Converted", system:"System",
+            };
 
-            {/* Inline Activity Form */}
-            {showActivityForm && (
-              <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
-                <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log an Activity</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Title *</label>
-                    <input value={actForm.title} onChange={e => setActForm(f => ({...f, title: e.target.value}))} style={{fontSize:11,width:"100%"}} placeholder="Activity title"/></div>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Type</label>
-                    <select value={actForm.type} onChange={e => setActForm(f => ({...f, type: e.target.value}))} style={{fontSize:11,width:"100%"}}>
-                      {["Call","Email","Meeting","Task","Note","Follow-up"].map(t => <option key={t}>{t}</option>)}
-                    </select></div>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
-                    <input type="date" value={actForm.date} onChange={e => setActForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
+            return <>
+              {/* Header */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,color:"var(--text1)"}}>Record Journey</div>
+                  <div style={{fontSize:11,color:"var(--text3)",marginTop:1}}>{combinedTimeline.length} events · complete history</div>
                 </div>
-                <div style={{marginBottom:8}}><label style={{fontSize:10,color:"var(--text3)"}}>Notes</label>
-                  <textarea value={actForm.notes} onChange={e => setActForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Activity notes..."/></div>
-                <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-                  <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowActivityForm(false)}>Cancel</button>
-                  <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveActivity}><Check size={11}/>Save</button>
+                <div style={{display:"flex",gap:6}}>
+                  <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => { setShowCallForm(v => !v); setShowActivityForm(false); }}>
+                    <Phone size={12}/>Log Call
+                  </button>
+                  <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => { setShowActivityForm(v => !v); setShowCallForm(false); }}>
+                    <Plus size={12}/>Log Activity
+                  </button>
+                  <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => {
+                    const followup = { id:`act-${Date.now()}`, accountId:lead.accountId||"", contactId:lead.contact||"", leadId:lead.id, title:`Follow-up: ${lead.company}`, type:"Follow-up", status:"Planned", date:today, notes:"", createdDate:today, createdBy:"" };
+                    setActivities(p => [...p, followup]);
+                  }}><Calendar size={12}/>Set Follow-up</button>
                 </div>
               </div>
-            )}
 
-            {/* Timeline */}
-            <div style={{background:"white",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
-              {displayTimeline.map((a, i) => (
-                <div key={i} style={{borderBottom: i < displayTimeline.length - 1 ? "1px solid var(--border)" : "none"}}>
-                  <div style={{display:"flex",gap:10,padding:"12px 16px",cursor:"pointer"}} onClick={() => setExpandedTimeline(expandedTimeline === i ? null : i)}>
-                    <div style={{width:30,height:30,borderRadius:8,background:"var(--brand-light,#E8F5F1)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--brand)",flexShrink:0}}>
-                      {a.icon}
-                    </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <div style={{fontSize:12,fontWeight:600,color:"var(--text1)"}}>{a.title}</div>
-                        <div style={{fontSize:10,color:"var(--text3)"}}>{a.time}</div>
-                      </div>
-                      <div style={{fontSize:11,color:"var(--text3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace: expandedTimeline === i ? "normal" : "nowrap"}}>{a.desc}</div>
-                    </div>
+              {/* Filter pills */}
+              <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+                {FILTER_OPTS.map(f => (
+                  <button key={f.id}
+                    onClick={() => setJourneyFilter(f.id)}
+                    style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid",fontWeight:600,cursor:"pointer",
+                      background: journeyFilter===f.id ? "var(--brand)" : "transparent",
+                      color: journeyFilter===f.id ? "white" : "var(--text3)",
+                      borderColor: journeyFilter===f.id ? "var(--brand)" : "var(--border)"}}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Inline Call Form */}
+              {showCallForm && (
+                <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log a Call</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Call Type</label>
+                      <select value={callForm.callType} onChange={e => setCallForm(f => ({...f, callType: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                        {["Discovery","Follow-up","Demo","Negotiation","Support","Cold Call"].map(t => <option key={t}>{t}</option>)}
+                      </select></div>
+                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
+                      <input type="date" value={callForm.date} onChange={e => setCallForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
+                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Outcome</label>
+                      <select value={callForm.outcome} onChange={e => setCallForm(f => ({...f, outcome: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                        {["Interested","Not Interested","Call Back","Voicemail","No Answer","Meeting Booked"].map(t => <option key={t}>{t}</option>)}
+                      </select></div>
                   </div>
-                  {expandedTimeline === i && a.desc && (
-                    <div style={{padding:"0 16px 12px 56px"}}>
-                      <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.5,background:"var(--s2)",borderRadius:8,padding:"8px 12px"}}>{a.desc}</div>
-                    </div>
-                  )}
+                  <div style={{marginBottom:8}}><label style={{fontSize:10,color:"var(--text3)"}}>Notes *</label>
+                    <textarea value={callForm.notes} onChange={e => setCallForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Call notes..."/></div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"end"}}>
+                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Next Call Date</label>
+                      <input type="date" value={callForm.nextCallDate} onChange={e => setCallForm(f => ({...f, nextCallDate: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
+                    <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowCallForm(false)}>Cancel</button>
+                    <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveCallLog}><Check size={11}/>Save</button>
+                  </div>
                 </div>
-              ))}
-            </div>
-          </>}
+              )}
+
+              {/* Inline Activity Form */}
+              {showActivityForm && (
+                <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log an Activity</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Title *</label>
+                      <input value={actForm.title} onChange={e => setActForm(f => ({...f, title: e.target.value}))} style={{fontSize:11,width:"100%"}} placeholder="Activity title"/></div>
+                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Type</label>
+                      <select value={actForm.type} onChange={e => setActForm(f => ({...f, type: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                        {["Call","Email","Meeting","Task","Note","Follow-up"].map(t => <option key={t}>{t}</option>)}
+                      </select></div>
+                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
+                      <input type="date" value={actForm.date} onChange={e => setActForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
+                  </div>
+                  <div style={{marginBottom:8}}><label style={{fontSize:10,color:"var(--text3)"}}>Notes</label>
+                    <textarea value={actForm.notes} onChange={e => setActForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Activity notes..."/></div>
+                  <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                    <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowActivityForm(false)}>Cancel</button>
+                    <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveActivity}><Check size={11}/>Save</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Journey Timeline */}
+              {filteredJourney.length === 0
+                ? <div style={{textAlign:"center",padding:"32px 20px",color:"var(--text3)",fontSize:12}}>No events match this filter.</div>
+                : (
+                <div style={{position:"relative"}}>
+                  {/* Vertical line */}
+                  <div style={{position:"absolute",left:19,top:8,bottom:8,width:2,background:"var(--border)",borderRadius:1}}/>
+                  <div style={{display:"flex",flexDirection:"column",gap:0}}>
+                    {filteredJourney.map((ev, i) => {
+                      const c = JOURNEY_COLORS[ev.kind] || JOURNEY_COLORS.system;
+                      const byUser = ev.by ? (_teamMap[ev.by]?.name || ev.by) : null;
+                      const isExpanded = expandedTimeline === i;
+                      const isLast = i === filteredJourney.length - 1;
+                      return (
+                        <div key={i} style={{display:"flex",gap:12,paddingBottom: isLast ? 0 : 16,cursor: ev.desc ? "pointer" : "default"}}
+                          onClick={() => ev.desc && setExpandedTimeline(isExpanded ? null : i)}>
+                          {/* Icon node */}
+                          <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:0,zIndex:1}}>
+                            <div style={{width:38,height:38,borderRadius:10,background:c.bg,border:`1.5px solid ${c.border}`,display:"flex",alignItems:"center",justifyContent:"center",color:c.color,flexShrink:0}}>
+                              {KIND_ICON[ev.kind] || <Clock size={13}/>}
+                            </div>
+                          </div>
+                          {/* Content */}
+                          <div style={{flex:1,minWidth:0,background:"white",borderRadius:10,border:"1px solid var(--border)",padding:"10px 14px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+                            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                  <span style={{fontSize:11,fontWeight:700,padding:"1px 7px",borderRadius:10,background:c.bg,color:c.color,border:`1px solid ${c.border}`,whiteSpace:"nowrap"}}>
+                                    {KIND_LABEL[ev.kind]}
+                                  </span>
+                                  {ev.status && (
+                                    <span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background: ev.status==="Completed"?"#DCFCE7":ev.status==="Planned"?"#FEF9C3":"var(--s2)",color: ev.status==="Completed"?"#15803D":ev.status==="Planned"?"#92400E":"var(--text3)",fontWeight:600}}>
+                                      {ev.status}
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{fontSize:12.5,fontWeight:600,color:"var(--text1)",marginTop:4}}>{ev.title}</div>
+                                {ev.subtitle && <div style={{fontSize:11,color:"var(--text3)",marginTop:1}}>{ev.subtitle}</div>}
+                              </div>
+                              <div style={{flexShrink:0,textAlign:"right"}}>
+                                <div style={{fontSize:11,color:"var(--text3)",whiteSpace:"nowrap"}}>{ev.date}</div>
+                                {byUser && <div style={{fontSize:10,color:"var(--text3)",marginTop:1}}>by {byUser}</div>}
+                              </div>
+                            </div>
+                            {/* Expanded details */}
+                            {isExpanded && (ev.desc || ev.meta) && (
+                              <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--border)"}}>
+                                {ev.desc && <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{ev.desc}</div>}
+                                {ev.meta && <div style={{fontSize:11,color:"var(--text3)",marginTop:6,padding:"6px 10px",background:"var(--s2)",borderRadius:6}}>{ev.meta}</div>}
+                              </div>
+                            )}
+                            {/* Inline preview of notes when collapsed (first 80 chars) */}
+                            {!isExpanded && ev.desc && (
+                              <div style={{fontSize:11,color:"var(--text3)",marginTop:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>
+                                {ev.desc.length > 90 ? ev.desc.slice(0,90)+"…" : ev.desc}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>;
+          })()}
 
           {/* ─────────── DOCUMENTS TAB ─────────── */}
           {activeTab === "documents" && <>
