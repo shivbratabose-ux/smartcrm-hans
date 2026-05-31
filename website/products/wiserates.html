@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WiseRates — rate & tariff management | Hans Infomatic</title><meta name="description" content="WiseRates manages ocean, air, and road rate sheets — tenders, carrier contracts, surcharges, and customer-specific overrides. Quote in seconds, not hours; compete on accuracy, not memory."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter+Tight:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+:root{--paper:#F6F6F3;--paper-2:#EEEDE6;--ink:#0A0F0D;--ink-2:#1B2420;--ink-3:#3B4742;--mute:#6C7770;--line:rgba(10,15,13,0.12);--line-2:rgba(10,15,13,0.06);--forest:#062019;--forest-2:#0E3329;--accent:#00D17A;--accent-2:#8BE8C0}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:'Inter Tight',sans-serif;-webkit-font-smoothing:antialiased;font-size:16px;line-height:1.5;overflow-x:hidden}
+.mono{font-family:'JetBrains Mono',monospace}
+.eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:var(--mute);font-weight:500}
+.container{max-width:1440px;margin:0 auto;padding:0 48px}@media(max-width:768px){.container{padding:0 24px}}
+a{color:inherit;text-decoration:none}button{font-family:inherit;cursor:pointer;border:none;background:none}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(246,246,243,0.78);backdrop-filter:blur(20px) saturate(1.4);border-bottom:1px solid var(--line-2)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;padding:18px 48px;max-width:1440px;margin:0 auto}
+.logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;letter-spacing:-0.02em}
+.logo-mark{width:22px;height:22px}
+.nav-links{display:flex;align-items:center;gap:32px}@media(max-width:900px){.nav-links{display:none}}
+.nav-links a{font-size:13.5px;color:var(--ink-2);font-weight:450}.nav-links a:hover{color:var(--ink)}
+.nav-cta{display:flex;align-items:center;gap:20px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;font-size:13px;font-weight:500;transition:all 0.2s;white-space:nowrap}
+.btn-ghost{color:var(--ink-2)}.btn-ghost:hover{color:var(--ink)}
+.btn-primary{background:var(--ink);color:var(--paper);padding:10px 18px}.btn-primary:hover{background:var(--forest-2)}
+.btn-primary .arrow{display:inline-block;transition:transform 0.25s}.btn-primary:hover .arrow{transform:translateX(3px)}
+.btn-outline{border:1px solid var(--line);color:var(--ink);padding:10px 18px}
+.btn-outline:hover{border-color:var(--ink);background:var(--ink);color:var(--paper)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+.subnav{position:sticky;top:62px;z-index:50;background:rgba(246,246,243,0.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--line-2)}
+.subnav-inner{display:flex;align-items:center;justify-content:space-between;padding:14px 48px;max-width:1440px;margin:0 auto;gap:32px}
+.subnav-brand{display:flex;align-items:center;gap:12px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-2)}
+.subnav-brand .bt{color:var(--mute)}
+.subnav-links{display:flex;gap:24px;overflow-x:auto}@media(max-width:768px){.subnav-links{display:none}}
+.subnav-links a{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--mute);padding:4px 0}
+.subnav-links a:hover,.subnav-links a.active{color:var(--ink)}
+section{padding:110px 0;position:relative}
+.sec-head{display:grid;grid-template-columns:200px 1fr;gap:48px;margin-bottom:48px;align-items:start}
+@media(max-width:900px){.sec-head{grid-template-columns:1fr;gap:16px;margin-bottom:32px}}
+.sec-eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em;padding-top:10px;font-weight:500}
+.sec-title h2{font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(30px,3.6vw,52px);letter-spacing:-0.035em;line-height:1.04;max-width:860px}
+.sec-title h2 em{font-style:italic;color:var(--forest-2);font-weight:400}
+.sec-title p{font-size:16.5px;color:var(--ink-3);margin-top:20px;max-width:640px;line-height:1.55}
+.fade{opacity:0;transform:translateY(16px);transition:opacity 0.8s,transform 0.8s}.fade.in{opacity:1;transform:none}
+.phero{padding:140px 0 40px;position:relative}
+.phero-crumbs{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);margin-bottom:36px;display:flex;gap:8px;align-items:center}
+.phero-crumbs span{color:var(--line)}.phero-crumbs a:hover{color:var(--ink)}
+.phero-layout{display:grid;grid-template-columns:1.05fr 1fr;gap:64px;align-items:end}@media(max-width:900px){.phero-layout{grid-template-columns:1fr;gap:48px}}
+.phero-tag{display:inline-flex;align-items:center;gap:10px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,0.6);font-size:11.5px;font-family:'JetBrains Mono',monospace;color:var(--ink-2);margin-bottom:28px;font-weight:500}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(0,209,122,0.2);animation:pulse 2.2s infinite}
+.phero h1{font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(42px,5.6vw,80px);letter-spacing:-0.045em;line-height:0.98}
+.phero h1 em{font-style:italic;color:var(--forest-2);font-weight:400}
+.phero h1 .accent-word{color:var(--accent);font-style:italic;font-weight:350}
+.phero-sub{font-size:17px;line-height:1.55;color:var(--ink-3);margin-top:24px;max-width:520px}
+.phero-actions{display:flex;gap:12px;margin-top:28px;flex-wrap:wrap}
+.phero-meta{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:4px;background:var(--paper);margin-top:40px;max-width:520px}
+.phero-meta > div{padding:16px 18px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.phero-meta > div:nth-child(2n){border-right:none}
+.phero-meta > div:nth-child(n+3){border-bottom:none}
+.phero-meta .l{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px}
+.phero-meta .v{font-size:16px;font-weight:450;letter-spacing:-0.02em}
+.mock{background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;box-shadow:0 30px 80px -30px rgba(10,15,13,0.2)}
+.mock-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--paper-2)}
+.mock-bar .lights{display:flex;gap:5px}
+.mock-bar .lights span{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.mock-bar .url{flex:1;margin-left:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);padding:4px 10px;background:var(--paper);border-radius:3px;border:1px solid var(--line-2)}
+.caps{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+@media(max-width:900px){.caps{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.caps{grid-template-columns:1fr}}
+.cap{background:var(--paper);padding:28px 26px;display:flex;flex-direction:column;gap:10px;min-height:220px}
+.cap .n{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;font-weight:500}
+.cap h4{font-size:19px;font-weight:500;letter-spacing:-0.02em;margin-top:4px}
+.cap p{font-size:13.5px;color:var(--ink-3);line-height:1.55}
+.cap .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:16px}
+.cap .tag{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute);padding:3px 8px;border:1px solid var(--line);border-radius:2px;letter-spacing:0.04em}
+.faq-list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.faq-item{border-bottom:1px solid var(--line);padding:24px 0}
+.faq-item summary{display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-size:17px;font-weight:500;letter-spacing:-0.015em;list-style:none}
+.faq-item summary::after{content:"+";font-family:'JetBrains Mono',monospace;color:var(--mute);font-size:20px}
+.faq-item details[open] summary::after{content:"−"}
+.faq-item .a{font-size:15px;color:var(--ink-3);line-height:1.6;margin-top:14px;max-width:720px}
+.cta-box{background:var(--forest);color:#fff;border-radius:6px;padding:64px 56px;display:grid;grid-template-columns:1.2fr 1fr;gap:48px;align-items:center}
+@media(max-width:900px){.cta-box{grid-template-columns:1fr;padding:40px 28px;gap:24px}}
+.cta-box h3{font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(28px,3vw,40px);letter-spacing:-0.03em;line-height:1.05}
+.cta-box h3 em{font-style:italic;color:var(--accent-2);font-weight:400}
+.cta-box p{color:rgba(255,255,255,0.7);margin-top:16px;max-width:440px;font-size:14.5px;line-height:1.55}
+.cta-box .actions{display:flex;gap:12px;flex-wrap:wrap}
+.cta-box .btn-primary{background:var(--accent);color:var(--forest);font-weight:600}
+.cta-box .btn-primary:hover{background:#fff}
+.cta-box .btn-outline{border-color:rgba(255,255,255,0.3);color:#fff}
+.cta-box .btn-outline:hover{background:#fff;color:var(--forest);border-color:#fff}
+footer{background:var(--forest);color:#C8D4CD;padding:80px 0 40px;margin-top:80px}
+footer .foot-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr;gap:48px;margin-bottom:64px;padding-bottom:48px;border-bottom:1px solid rgba(255,255,255,0.08)}
+@media(max-width:900px){footer .foot-grid{grid-template-columns:1fr 1fr;gap:32px}}
+.foot-brand p{font-size:13px;color:rgba(200,212,205,0.7);line-height:1.5;max-width:260px;margin-top:18px}
+.foot-col h5{font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(200,212,205,0.5);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:18px;font-weight:500}
+.foot-col ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.foot-col a{font-size:13.5px;color:rgba(200,212,205,0.85)}.foot-col a:hover{color:#fff}
+.foot-bottom{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:rgba(200,212,205,0.45);flex-wrap:wrap;gap:16px}
+.foot-bottom .links{display:flex;gap:20px}.foot-bottom a:hover{color:#fff}
+
+</style></head><body>
+<nav class="nav"><div class="nav-inner">
+<a href="../index.html" class="logo"><span class="logo-mark"><img src="../assets/hans-logo.png" alt="Hans Infomatic" style="width:100%;height:100%;object-fit:contain;display:block"/></span>Hans Infomatic</a>
+<div class="nav-links"><a href="../products.html">Products</a><a href="../industries.html">Industries</a><a href="../about.html">Company</a><a href="#">Resources</a><a href="#">Pricing</a></div>
+<div class="nav-cta"><a href="#" class="btn btn-ghost" style="padding:9px 0">Sign in</a><a href="#" class="btn btn-primary">Book demo <span class="arrow">→</span></a></div>
+</div></nav>
+<div class="subnav"><div class="subnav-inner">
+    <div class="subnav-brand"><span class="bt">Product</span><span>·</span><span style="color:var(--accent)">WiseRates</span><span style="color:var(--mute)">rate & tariff management</span></div>
+    <div class="subnav-links">
+      <a href="#overview" class="active">Overview</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#deepdive">Deep dive</a>
+      <a href="#integrations">Integrations</a>
+      <a href="#metrics">Outcomes</a>
+      <a href="#faq">FAQ</a>
+    </div>
+  </div></div><section id="overview" class="phero"><div class="container">
+    <div class="phero-crumbs"><a href="../index.html">Hans Infomatic</a><span>/</span><a href="../products.html">Products</a><span>/</span><span style="color:var(--ink-2)">WiseRates</span></div>
+    <div class="phero-layout">
+      <div>
+        <div class="phero-tag"><span class="dot"></span>RATES · TENDERS · QUOTES</div>
+        <h1>Every rate, every lane,<br/><em>instantly</em> <span class="accent-word">priceable.</span></h1>
+        <p class="phero-sub">WiseRates manages ocean, air, and road rate sheets — tenders, carrier contracts, surcharges, and customer-specific overrides. Quote in seconds, not hours; compete on accuracy, not memory.</p>
+        <div class="phero-actions">
+          <a href="#" class="btn btn-primary">Book a demo <span class="arrow">→</span></a>
+          <a href="#deepdive" class="btn btn-outline">See the product</a>
+        </div>
+        <div class="phero-meta"><div><div class="l">Forwarders</div><div class="v">34 live</div></div><div><div class="l">Rates managed</div><div class="v">12M+ active</div></div><div><div class="l">Lanes</div><div class="v">40,000+</div></div><div><div class="l">Carriers</div><div class="v">280+</div></div></div>
+      </div>
+      <div class="phero-mock-wrap fade"><div class="mock"><div class="mock-bar"><div class="lights"><span></span><span></span><span></span></div><div class="url">rates.hansinfo.com / quote / SHAKAR · DEL → LAX</div></div><div style="padding:20px 22px;min-height:380px;display:flex;flex-direction:column;gap:14px">
+    <div><div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em">Quote · Q-2026-814</div><div style="font-size:16px;font-weight:500">Shakar Industries · DEL → LAX · 22 Apr</div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px"><div style="padding:12px;background:var(--paper-2);border-radius:3px"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.08em">ORIGIN</div><div style="font-size:18px;font-weight:400;margin-top:3px">DEL</div></div><div style="padding:12px;background:var(--paper-2);border-radius:3px"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.08em">DESTINATION</div><div style="font-size:18px;font-weight:400;margin-top:3px">LAX</div></div><div style="padding:12px;background:var(--paper-2);border-radius:3px"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.08em">MODE</div><div style="font-size:18px;font-weight:400;margin-top:3px">AIR · 2,400 kg</div></div></div>
+    <div style="flex:1;border:1px solid var(--line);border-radius:3px;overflow:hidden;display:flex;flex-direction:column">
+      <div style="display:grid;grid-template-columns:90px 1fr 80px 80px 90px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--paper-2);font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.08em"><div>CARRIER</div><div>SERVICE · TRANSIT</div><div>RATE/KG</div><div>TOTAL</div><div>MARGIN</div></div>
+      <div style="display:grid;grid-template-columns:90px 1fr 80px 80px 90px;padding:10px 12px;border-bottom:1px solid var(--line-2);font-family:'JetBrains Mono',monospace;font-size:10.5px;background:rgba(0,209,122,0.06)"><b>AI</b><span style="color:var(--ink-2)">Pri · 2 days</span><span>$4.10</span><span style="font-weight:500">$9,840</span><span style="color:var(--accent)">+18%</span></div><div style="display:grid;grid-template-columns:90px 1fr 80px 80px 90px;padding:10px 12px;border-bottom:1px solid var(--line-2);font-family:'JetBrains Mono',monospace;font-size:10.5px;"><b>EK</b><span style="color:var(--ink-2)">Pri · 2 days</span><span>$3.95</span><span style="font-weight:500">$9,480</span><span style="color:var(--accent)">+14%</span></div><div style="display:grid;grid-template-columns:90px 1fr 80px 80px 90px;padding:10px 12px;border-bottom:1px solid var(--line-2);font-family:'JetBrains Mono',monospace;font-size:10.5px;"><b>QR</b><span style="color:var(--ink-2)">Std · 3 days</span><span>$3.40</span><span style="font-weight:500">$8,160</span><span style="color:var(--accent)">+22%</span></div><div style="display:grid;grid-template-columns:90px 1fr 80px 80px 90px;padding:10px 12px;border-bottom:1px solid var(--line-2);font-family:'JetBrains Mono',monospace;font-size:10.5px;"><b>LH</b><span style="color:var(--ink-2)">Std · 3 days</span><span>$3.65</span><span style="font-weight:500">$8,760</span><span style="color:var(--accent)">+19%</span></div>
+      <div style="padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);background:var(--paper-2);margin-top:auto;border-top:1px solid var(--line)">Surcharges: <b style="color:var(--ink-2)">FSC $0.42 · SSC $0.18</b> · Auto-applied · Customer override: <b style="color:var(--ink-2)">-5% contract</b></div>
+    </div></div></div></div>
+    </div>
+  </div></section>
+  <section id="capabilities" style="padding-top:60px"><div class="container">
+    <div class="sec-head"><div class="sec-eyebrow">02 / Capabilities</div><div class="sec-title"><h2>Rate management, <em>end-to-end.</em></h2><p>From tender ingestion to customer quote to invoice reconciliation. Every rate artifact, one system.</p></div></div>
+    <div class="caps fade">
+      <div class="cap"><span class="n">01 · INGEST</span><h4>Rate sheet ingestion</h4><p>Upload carrier rate sheets in any format — Excel, PDF, email attachments. AI extracts and structures.</p><div class="tags"><span class="tag">Excel</span><span class="tag">PDF</span><span class="tag">AI</span></div></div><div class="cap"><span class="n">02 · TENDER</span><h4>Tender management</h4><p>Run RFQs to carriers, collect responses, award lanes. Maintain a versioned contract library.</p><div class="tags"><span class="tag">RFQ</span><span class="tag">Award</span></div></div><div class="cap"><span class="n">03 · QUOTE</span><h4>Instant quoting</h4><p>Query any lane in any mode. Best rate, surcharges auto-applied, margin built in. Send in seconds.</p><div class="tags"><span class="tag">Multi-carrier</span><span class="tag">Margin</span></div></div><div class="cap"><span class="n">04 · CONTRACTS</span><h4>Customer contracts</h4><p>Customer-specific rates, tiered pricing, volume commitments. Automatic contract-to-quote application.</p><div class="tags"><span class="tag">Tiered</span><span class="tag">Volume</span></div></div><div class="cap"><span class="n">05 · SURCHARGE</span><h4>Surcharge engine</h4><p>FSC, SSC, security, war risk — managed centrally, applied automatically, audit-logged.</p><div class="tags"><span class="tag">FSC</span><span class="tag">SSC</span></div></div><div class="cap"><span class="n">06 · RECON</span><h4>Invoice reconciliation</h4><p>Match carrier invoices to quoted rates. Dispute mismatches with one-click evidence package.</p><div class="tags"><span class="tag">Dispute</span><span class="tag">Match</span></div></div>
+    </div>
+  </div></section>
+  <section id="deepdive" style="background:var(--paper-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)"><div class="container">
+    <div class="sec-head"><div class="sec-eyebrow">03 / The product</div><div class="sec-title"><h2>Built for <em>rate complexity.</em></h2><p>A modern forwarder manages thousands of rates across hundreds of carriers. Spreadsheets break. WiseRates scales.</p></div></div>
+    <div class="fade"><div style="display:grid;grid-template-columns:1fr 1fr;gap:32px">
+    <div style="padding:28px;border:1px solid var(--line);background:var(--paper);border-radius:4px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">AI EXTRACTION</div><h4 style="font-size:22px;font-weight:450;letter-spacing:-0.025em;margin-bottom:12px">From PDF to priceable in minutes</h4><p style="color:var(--ink-3);font-size:14.5px;line-height:1.55">Carrier rate sheets arrive as PDFs, Excels, even emails. Our document AI extracts origin, destination, commodity, rate, surcharge, validity — and validates against known errors.</p></div>
+    <div style="padding:28px;border:1px solid var(--line);background:var(--paper);border-radius:4px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">API FIRST</div><h4 style="font-size:22px;font-weight:450;letter-spacing:-0.025em;margin-bottom:12px">Quoting as an API</h4><p style="color:var(--ink-3);font-size:14.5px;line-height:1.55">Put quotes on your customer website. Run rates through your CRM. Automate tender responses. WiseRates ships with a first-class REST API.</p></div>
+  </div></div>
+  </div></section>
+  <section id="integrations"><div class="container">
+    <div class="sec-head"><div class="sec-eyebrow">04 / Integrations</div><div class="sec-title"><h2>Talks to <em>every rate source.</em></h2><p>Carrier APIs, market indices, internal TMS — WiseRates pulls, parses, and quotes.</p></div></div>
+    <div class="fade" style="display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;overflow:hidden">
+      <div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">CargoAi</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">AIR</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">WebCargo</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">AIR</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">Inttra</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">OCEAN</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">GoComet</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">OCEAN</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">Freightos</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">MARKET</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">SAP</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">ERP</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">Oracle</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">ERP</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">CargoWise</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">TMS</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">iCAFFE</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">HANS</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">WiseFinance</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">HANS</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">Salesforce</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">CRM</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">Zoho</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">CRM</div></div>
+    </div>
+  </div></section>
+  <section id="metrics" style="background:var(--forest);color:#fff"><div class="container">
+    <div class="sec-head" style="margin-bottom:48px"><div class="sec-eyebrow" style="color:rgba(255,255,255,0.5)">05 / Outcomes</div><div class="sec-title"><h2 style="color:#fff">Rates, <em>measurably faster.</em></h2><p style="color:rgba(255,255,255,0.7)">Averages across 34 forwarders using WiseRates in 2025.</p></div></div>
+    <div class="fade" style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid rgba(255,255,255,0.1)">
+      <div style="padding:32px 24px;border-right:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:10px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.1em">Quote time</div><div style="font-size:44px;font-weight:300;letter-spacing:-0.04em;color:#fff">−88%</div><div style="font-size:13px;color:rgba(255,255,255,0.6)">Days to minutes</div></div><div style="padding:32px 24px;border-right:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:10px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.1em">Win rate</div><div style="font-size:44px;font-weight:300;letter-spacing:-0.04em;color:#fff">+12%</div><div style="font-size:13px;color:rgba(255,255,255,0.6)">On instant-quote traffic</div></div><div style="padding:32px 24px;border-right:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:10px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.1em">Rate coverage</div><div style="font-size:44px;font-weight:300;letter-spacing:-0.04em;color:#fff">+340%</div><div style="font-size:13px;color:rgba(255,255,255,0.6)">Lanes pre-priced</div></div><div style="padding:32px 24px;border-right:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:10px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.1em">Invoice disputes</div><div style="font-size:44px;font-weight:300;letter-spacing:-0.04em;color:#fff">+$2.1M</div><div style="font-size:13px;color:rgba(255,255,255,0.6)">Recovered in 2025</div></div>
+    </div>
+  </div></section>
+  <section id="faq"><div class="container">
+    <div class="sec-head"><div class="sec-eyebrow">06 / FAQ</div><div class="sec-title"><h2>Frequently asked</h2></div></div>
+    <div class="faq-list fade">
+      <div class="faq-item"><details><summary>Can we import rates from any format?</summary><div class="a">Excel, CSV, PDF, XLSX — yes. We've processed rate sheets from 280+ carriers; new formats onboard in hours, not weeks.</div></details></div><div class="faq-item"><details><summary>Does it work with our TMS?</summary><div class="a">Yes. Native connectors for CargoWise, SAP TM, Descartes, and a generic API for custom TMS.</div></details></div><div class="faq-item"><details><summary>How are surcharges handled?</summary><div class="a">Centralized surcharge library with effective dates, lane filters, and currency conversion. Never re-key another FSC.</div></details></div><div class="faq-item"><details><summary>Can customers quote themselves?</summary><div class="a">Yes — customer portal + API gives your customers a branded quote surface. Included.</div></details></div><div class="faq-item"><details><summary>Standalone or with iCAFFE?</summary><div class="a">Both. WiseRates ships standalone for quote-heavy forwarders, or embedded inside iCAFFE for end-to-end execution.</div></details></div>
+    </div>
+    <div class="fade" style="margin-top:64px"><div class="cta-box">
+      <div><h3>Ready to see WiseRates on <em>your data?</em></h3><p>Upload one of your carrier rate sheets. We'll parse it live on the call.</p></div>
+      <div class="actions"><a href="#" class="btn btn-primary">Book a tailored demo <span class="arrow">→</span></a><a href="#" class="btn btn-outline">Download data sheet</a></div>
+    </div></div>
+  </div></section>
+<footer><div class="container">
+<div class="foot-grid">
+<div class="foot-brand"><a href="../index.html" class="logo" style="font-size:18px"><span class="logo-mark" style="width:26px;height:26px"><img src="../assets/hans-logo.png" alt="Hans Infomatic" style="width:100%;height:100%;object-fit:contain;display:block"/></span>Hans Infomatic</a><p>Digital intelligence for the global movement of cargo.</p><p class="mono" style="font-size:11px;color:var(--mute);margin-top:16px">HI / 2003 · ncr, india</p></div>
+<div class="foot-col"><h5>Products</h5><ul><li><a href="../products/icaffe.html">iCAFFE</a></li><li><a href="../products/wiseccs.html">WiseCCS</a></li><li><a href="../products/wisecargo.html">WiseCargo</a></li><li><a href="../products/wisehandling.html">WiseHandling</a></li><li><a href="../products.html">All products →</a></li></ul></div>
+<div class="foot-col"><h5>Industries</h5><ul><li><a href="../industries.html">Airlines &amp; GSAs</a></li><li><a href="../industries.html">Freight Forwarders</a></li><li><a href="../industries.html">Customs Brokers</a></li><li><a href="../industries.html">Terminal Operators</a></li><li><a href="../industries.html">Carriers</a></li></ul></div>
+<div class="foot-col"><h5>Company</h5><ul><li><a href="../about.html">About</a></li><li><a href="../about.html#offices">Global offices</a></li><li><a href="#">Careers</a></li><li><a href="#">Press</a></li><li><a href="#">Partners</a></li></ul></div>
+<div class="foot-col"><h5>Resources</h5><ul><li><a href="#">Documentation</a></li><li><a href="#">Case studies</a></li><li><a href="#">Blog</a></li><li><a href="#">Security</a></li><li><a href="#">Status</a></li></ul></div>
+</div>
+<div class="foot-bottom"><p>© 2026 Hans Infomatic — All rights reserved.</p><div class="links"><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Cookies</a><a href="#">Security</a></div></div>
+</div></footer>
+<script>const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:0.1,rootMargin:'0px 0px -60px 0px'});document.querySelectorAll('.fade').forEach(el=>io.observe(el));
+const sl=document.querySelectorAll('.subnav-links a');const ids=["overview","capabilities","deepdive","integrations","metrics","faq"];const els=ids.map(i=>document.getElementById(i));const nio=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){const id=e.target.id;sl.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+id))}})},{threshold:0.3,rootMargin:'-120px 0px -60% 0px'});els.forEach(s=>s&&nio.observe(s));
+</script></body></html>

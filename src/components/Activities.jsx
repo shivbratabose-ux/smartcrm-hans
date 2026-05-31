@@ -7,15 +7,17 @@ import {
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { ACT_TYPES, ACT_STATUS, TEAM, TEAM_MAP } from '../data/constants';
-import { uid, fmt, today, sanitizeObj, validateActivity, hasErrors, softDeleteById } from '../utils/helpers';
-import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList, PageTip, TypeaheadSelect } from './shared';
+import { uid, fmt, today, sanitizeObj, validateActivity, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
 
 const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
 const TYPE_COL={Call:"var(--brand)",Email:"var(--blue)",Meeting:"var(--purple)",Demo:"var(--orange)",WhatsApp:"var(--green)",LinkedIn:"#0077B5","Site Visit":"var(--amber)",Presentation:"var(--teal)",Conference:"var(--red-t)"};
 const TYPE_ICON={Call:<PhoneCall size={15}/>,Email:<Mail size={15}/>,Meeting:<CalendarDays size={15}/>,Demo:<Zap size={15}/>,WhatsApp:<MessageSquare size={15}/>,LinkedIn:<Globe size={15}/>,"Site Visit":<MapPin size={15}/>,Presentation:<BookOpen size={15}/>,Conference:<Users size={15}/>};
 
-function Activities({activities,setActivities,accounts,contacts,opps,currentUser,files,onAddFile,orgUsers,canDelete}) {
+function Activities({activities,setActivities,accounts,contacts,opps,currentUser,files,onAddFile,orgUsers,canDelete,commLogs=[],onRequestEditAccess}) {
+  const canEditAct=(a)=>canEditRecord({ownerId:a?.owner,currentUser,orgUsers,recordType:"activity",recordId:a?.id,commLogs});
+  const requestAccess=(a)=>onRequestEditAccess&&onRequestEditAccess("activity",a.id,a.title||"Activity",a.owner);
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u => [u.id, u]));
   const [tabS,setTabS]=useState("All");
@@ -49,9 +51,10 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
     setForm({...BLANK_ACT,id:`act${uid()}`,date:preset.date||today,owner:currentUser,...preset});
     setMTab("details"); setFormErrors({}); setModal({mode:"add"});
   };
-  const openEdit=a=>{setForm({...a,files:a.files||[]});setMTab("details");setFormErrors({});setModal({mode:"edit"});};
+  const openEdit=a=>{if(a&&a.id&&!canEditAct(a)){requestAccess(a);return;}setForm({...a,files:a.files||[]});setMTab("details");setFormErrors({});setModal({mode:"edit"});};
 
   const save=()=>{
+    if(modal?.mode==="edit"&&!canEditAct(form)){ setFormErrors({}); setModal(null); return; }
     const errs = validateActivity(form);
     if(hasErrors(errs)){ setFormErrors(errs); return; }
     const clean = sanitizeObj(form);
@@ -241,9 +244,13 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
                 {a.notes&&<div style={{fontSize:12,color:"var(--text2)",marginTop:6,padding:"6px 9px",background:"var(--s2)",borderRadius:6,borderLeft:"2px solid var(--border2)"}}>{a.notes}</div>}
               </div>
               <div className="act-card-actions">
-                {a.status==="Planned"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(a.id)} title="Mark complete"><Check size={12}/></button>}
-                <button className="icon-btn" aria-label="Edit" onClick={()=>openEdit(a)}><Edit2 size={14}/></button>
-                {canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(a.id)}><Trash2 size={14}/></button>}
+                <EditLockActions
+                  editable={canEditAct(a)}
+                  pending={hasPendingAccessReq(commLogs,"activity",a.id,currentUser)}
+                  onEdit={()=>openEdit(a)} onDelete={()=>setConfirm(a.id)}
+                  onRequest={()=>requestAccess(a)} canDelete={canDelete}>
+                  {a.status==="Planned"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(a.id)} title="Mark complete"><Check size={12}/></button>}
+                </EditLockActions>
               </div>
             </div>
           );

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Industries — Who we serve | Hans Infomatic</title><meta name="description" content="Hans Infomatic serves airlines, freight forwarders, customs brokers, terminal operators, and carriers across 3 continents."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter+Tight:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+:root{--paper:#F6F6F3;--paper-2:#EEEDE6;--ink:#0A0F0D;--ink-2:#1B2420;--ink-3:#3B4742;--mute:#6C7770;--line:rgba(10,15,13,0.12);--line-2:rgba(10,15,13,0.06);--forest:#062019;--forest-2:#0E3329;--accent:#00D17A;--accent-2:#8BE8C0}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:'Inter Tight',sans-serif;-webkit-font-smoothing:antialiased;font-size:16px;line-height:1.5;overflow-x:hidden}
+.mono{font-family:'JetBrains Mono',monospace;letter-spacing:-0.01em}
+.eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:var(--mute);font-weight:500}
+.container{max-width:1440px;margin:0 auto;padding:0 48px}@media(max-width:768px){.container{padding:0 24px}}
+a{color:inherit;text-decoration:none}button{font-family:inherit;cursor:pointer;border:none;background:none}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(246,246,243,0.78);backdrop-filter:blur(20px) saturate(1.4);border-bottom:1px solid var(--line-2)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;padding:18px 48px;max-width:1440px;margin:0 auto}
+@media(max-width:768px){.nav-inner{padding:16px 24px}}
+.logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;letter-spacing:-0.02em}
+.logo-mark{width:22px;height:22px}
+.nav-links{display:flex;align-items:center;gap:32px}@media(max-width:900px){.nav-links{display:none}}
+.nav-links a{font-size:13.5px;color:var(--ink-2);font-weight:450;transition:color 0.2s}
+.nav-links a:hover,.nav-links a.on{color:var(--ink)}
+.nav-cta{display:flex;align-items:center;gap:20px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;font-size:13px;font-weight:500;transition:all 0.2s;white-space:nowrap}
+.btn-ghost{color:var(--ink-2)}.btn-ghost:hover{color:var(--ink)}
+.btn-primary{background:var(--ink);color:var(--paper);padding:10px 18px}.btn-primary:hover{background:var(--forest-2)}
+.btn-primary .arrow{display:inline-block;transition:transform 0.25s}.btn-primary:hover .arrow{transform:translateX(3px)}
+.btn-outline{border:1px solid var(--line);color:var(--ink);padding:10px 18px}
+.btn-outline:hover{border-color:var(--ink);background:var(--ink);color:var(--paper)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+section{padding:110px 0;position:relative}
+.sec-head{display:grid;grid-template-columns:200px 1fr;gap:48px;margin-bottom:48px;align-items:start}
+@media(max-width:900px){.sec-head{grid-template-columns:1fr;gap:16px;margin-bottom:32px}}
+.sec-eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em;padding-top:10px;font-weight:500}
+.sec-title h2{font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(30px,3.6vw,52px);letter-spacing:-0.035em;line-height:1.04;max-width:860px}
+.sec-title h2 em{font-style:italic;color:var(--forest-2);font-weight:400}
+.sec-title p{font-size:16.5px;color:var(--ink-3);margin-top:20px;max-width:640px;line-height:1.55}
+.fade{opacity:0;transform:translateY(16px);transition:opacity 0.8s,transform 0.8s}.fade.in{opacity:1;transform:none}
+.phero{padding:160px 0 80px;position:relative}
+.phero-crumbs{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);margin-bottom:32px;display:flex;gap:8px;align-items:center}
+.phero-crumbs span{color:var(--line)}.phero-crumbs a:hover{color:var(--ink)}
+.phero h1{font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(40px,5.4vw,76px);letter-spacing:-0.045em;line-height:0.98;max-width:1100px}
+.phero h1 em{font-style:italic;color:var(--forest-2);font-weight:400}
+.phero h1 .accent-word{color:var(--accent);font-style:italic;font-weight:350}
+.phero-sub{font-size:18px;line-height:1.55;color:var(--ink-3);margin-top:24px;max-width:640px}
+.phero-actions{display:flex;gap:12px;margin-top:32px;flex-wrap:wrap}
+.cta-box{background:var(--forest);color:#fff;border-radius:6px;padding:64px 56px;display:grid;grid-template-columns:1.2fr 1fr;gap:48px;align-items:center}
+@media(max-width:900px){.cta-box{grid-template-columns:1fr;padding:40px 28px;gap:24px}}
+.cta-box h3{font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(28px,3vw,40px);letter-spacing:-0.03em;line-height:1.05}
+.cta-box h3 em{font-style:italic;color:var(--accent-2);font-weight:400}
+.cta-box p{color:rgba(255,255,255,0.7);margin-top:16px;max-width:440px;font-size:14.5px;line-height:1.55}
+.cta-box .actions{display:flex;gap:12px;flex-wrap:wrap}
+.cta-box .btn-primary{background:var(--accent);color:var(--forest);font-weight:600}
+.cta-box .btn-primary:hover{background:#fff}
+.cta-box .btn-outline{border-color:rgba(255,255,255,0.3);color:#fff}
+.cta-box .btn-outline:hover{background:#fff;color:var(--forest);border-color:#fff}
+footer{background:var(--forest);color:#C8D4CD;padding:80px 0 40px;margin-top:80px}
+footer .foot-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr;gap:48px;margin-bottom:64px;padding-bottom:48px;border-bottom:1px solid rgba(255,255,255,0.08)}
+@media(max-width:900px){footer .foot-grid{grid-template-columns:1fr 1fr;gap:32px}}
+.foot-brand p{font-size:13px;color:rgba(200,212,205,0.7);line-height:1.5;max-width:260px;margin-top:18px}
+.foot-col h5{font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(200,212,205,0.5);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:18px;font-weight:500}
+.foot-col ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.foot-col a{font-size:13.5px;color:rgba(200,212,205,0.85);transition:color 0.2s}.foot-col a:hover{color:#fff}
+.foot-bottom{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:rgba(200,212,205,0.45);flex-wrap:wrap;gap:16px}
+.foot-bottom .links{display:flex;gap:20px}.foot-bottom a:hover{color:#fff}
+
+</style></head><body>
+<nav class="nav"><div class="nav-inner">
+<a href="index.html" class="logo"><span class="logo-mark"><img src="assets/hans-logo.png" alt="Hans Infomatic" style="width:100%;height:100%;object-fit:contain;display:block"/></span>Hans Infomatic</a>
+<div class="nav-links">
+    <a href="products.html">Products</a>
+    <a href="industries.html">Industries</a>
+    <a href="about.html">Company</a>
+    <a href="#">Resources</a>
+    <a href="#">Pricing</a></div>
+<div class="nav-cta"><a href="#" class="btn btn-ghost" style="padding:9px 0">Sign in</a><a href="#" class="btn btn-primary">Book demo <span class="arrow">→</span></a></div>
+</div></nav>
+<section class="phero"><div class="container">
+<div class="phero-crumbs fade"><a href="index.html">Hans Infomatic</a><span>/</span><span style="color:var(--ink-2)">Industries</span></div>
+<div class="fade"><span class="eyebrow">Industries we serve</span></div>
+<h1 class="fade" style="margin-top:16px">Built with <em>operators.</em><br/>For <span class="accent-word">operators.</span></h1>
+<p class="phero-sub fade">We don't serve logistics in the abstract. We serve the airline cargo supervisor at 3am. The CHA filing against a port strike. The GHA dispatcher closing a flight. Every module is shaped by the people who use it on shift.</p>
+</div></section>
+<section style="padding:40px 0 120px"><div class="container">
+<div id="airlines" class="fade" style="display:grid;grid-template-columns:80px 1fr 360px;gap:48px;padding:64px 0;border-top:1px solid var(--line);">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:42px;font-weight:300;color:var(--line);letter-spacing:-0.04em;line-height:1">01</div>
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em">Cargo divisions of airlines and their general sales agents</div>
+    <h2 style="font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(34px,4vw,56px);letter-spacing:-0.035em;line-height:1.02">Airlines & GSAs</h2>
+    <p style="font-size:16.5px;color:var(--ink-3);line-height:1.55;max-width:640px">From flag carriers to low-cost cargo operations to GSA networks. Revenue, capacity, manifesting, CASS — the full cargo backbone.</p>
+    <div style="display:flex;gap:48px;margin-top:12px;flex-wrap:wrap">
+      <div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Airlines live</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">11</div></div><div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">AWBs / month</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">340K+</div></div><div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Stations</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">32</div></div>
+    </div>
+    <div style="margin-top:24px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px">Products used</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseCargo</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">BagTrack</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WinAir</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseRates</span>
+      </div>
+    </div>
+  </div>
+  <div style="background:var(--forest);color:#fff;padding:28px;border-radius:4px;display:flex;flex-direction:column;gap:14px;align-self:start">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.1em">Outcomes customers report</div>
+    <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Load factor +6.8%</div><div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>AWB processing −54%</div><div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Revenue accounting D+3</div>
+    <a href="#" style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:0.12em">Read case studies →</a>
+  </div>
+</div><div id="forwarders" class="fade" style="display:grid;grid-template-columns:80px 1fr 360px;gap:48px;padding:64px 0;border-top:1px solid var(--line);">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:42px;font-weight:300;color:var(--line);letter-spacing:-0.04em;line-height:1">02</div>
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em">Global, regional, niche — forwarders need execution that scales</div>
+    <h2 style="font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(34px,4vw,56px);letter-spacing:-0.035em;line-height:1.02">Freight Forwarders</h2>
+    <p style="font-size:16.5px;color:var(--ink-3);line-height:1.55;max-width:640px">From a 50-person regional forwarder to a 5,000-branch global network. iCAFFE adapts. Document AI, rates, shipments, visibility, finance.</p>
+    <div style="display:flex;gap:48px;margin-top:12px;flex-wrap:wrap">
+      <div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Forwarders</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">68</div></div><div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Branches</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">320+</div></div><div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Countries</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">14</div></div>
+    </div>
+    <div style="margin-top:24px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px">Products used</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">iCAFFE</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseRates</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseTrack</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseFinance</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseCustomer</span>
+      </div>
+    </div>
+  </div>
+  <div style="background:var(--forest);color:#fff;padding:28px;border-radius:4px;display:flex;flex-direction:column;gap:14px;align-self:start">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.1em">Outcomes customers report</div>
+    <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Doc processing −74%</div><div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Rate quote time: days → minutes</div><div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Visibility coverage 96%</div>
+    <a href="#" style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:0.12em">Read case studies →</a>
+  </div>
+</div><div id="customs" class="fade" style="display:grid;grid-template-columns:80px 1fr 360px;gap:48px;padding:64px 0;border-top:1px solid var(--line);">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:42px;font-weight:300;color:var(--line);letter-spacing:-0.04em;line-height:1">03</div>
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em">Indian CHAs and international brokers</div>
+    <h2 style="font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(34px,4vw,56px);letter-spacing:-0.035em;line-height:1.02">Customs Brokers</h2>
+    <p style="font-size:16.5px;color:var(--ink-3);line-height:1.55;max-width:640px">Purpose-built for Indian customs complexity. Shipping bills, BoE, e-Sanchit, ICEGATE, duty drawback, query management — all automated.</p>
+    <div style="display:flex;gap:48px;margin-top:12px;flex-wrap:wrap">
+      <div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">CHA agents</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">4,200+</div></div><div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Ports live</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">14</div></div><div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Filings / month</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">128K+</div></div>
+    </div>
+    <div style="margin-top:24px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px">Products used</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseCCS</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseDocs</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseHub</span>
+      </div>
+    </div>
+  </div>
+  <div style="background:var(--forest);color:#fff;padding:28px;border-radius:4px;display:flex;flex-direction:column;gap:14px;align-self:start">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.1em">Outcomes customers report</div>
+    <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Filing time −62%</div><div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Rejection rate −48%</div><div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>DRI query: 4h → 20m</div>
+    <a href="#" style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:0.12em">Read case studies →</a>
+  </div>
+</div><div id="terminals" class="fade" style="display:grid;grid-template-columns:80px 1fr 360px;gap:48px;padding:64px 0;border-top:1px solid var(--line);">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:42px;font-weight:300;color:var(--line);letter-spacing:-0.04em;line-height:1">04</div>
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em">Air cargo terminals and ground handling agents</div>
+    <h2 style="font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(34px,4vw,56px);letter-spacing:-0.035em;line-height:1.02">Terminal Operators & GHAs</h2>
+    <p style="font-size:16.5px;color:var(--ink-3);line-height:1.55;max-width:640px">Whether you run a single-carrier terminal or a multi-airline GHA. Acceptance, ULD build-up, warehouse, ramp — all paperless.</p>
+    <div style="display:flex;gap:48px;margin-top:12px;flex-wrap:wrap">
+      <div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Stations</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">18</div></div><div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Tonnage/mo</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">42K</div></div><div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">ULDs tracked</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">24K</div></div>
+    </div>
+    <div style="margin-top:24px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px">Products used</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseHandling</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseGSE</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">BagTrack</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseTrack</span>
+      </div>
+    </div>
+  </div>
+  <div style="background:var(--forest);color:#fff;padding:28px;border-radius:4px;display:flex;flex-direction:column;gap:14px;align-self:start">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.1em">Outcomes customers report</div>
+    <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Acceptance time −41%</div><div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Build accuracy 99.3%</div><div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Aged cargo −72%</div>
+    <a href="#" style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:0.12em">Read case studies →</a>
+  </div>
+</div><div id="carriers" class="fade" style="display:grid;grid-template-columns:80px 1fr 360px;gap:48px;padding:64px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:42px;font-weight:300;color:var(--line);letter-spacing:-0.04em;line-height:1">05</div>
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em">Shipping lines, NVOCCs, trucking fleets</div>
+    <h2 style="font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(34px,4vw,56px);letter-spacing:-0.035em;line-height:1.02">Ocean & Road Carriers</h2>
+    <p style="font-size:16.5px;color:var(--ink-3);line-height:1.55;max-width:640px">The pieces of cargo that don't fly. Booking, BL management, container tracking, fleet management, POD capture — integrated end-to-end.</p>
+    <div style="display:flex;gap:48px;margin-top:12px;flex-wrap:wrap">
+      <div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Carriers</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">14</div></div><div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Containers/yr</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">180K+</div></div><div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Fleet vehicles</div><div style="font-size:28px;font-weight:350;letter-spacing:-0.03em">3,200</div></div>
+    </div>
+    <div style="margin-top:24px"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px">Products used</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">iCAFFE</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseFleet</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WiseTrack</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:2px;color:var(--ink-2)">WisePort</span>
+      </div>
+    </div>
+  </div>
+  <div style="background:var(--forest);color:#fff;padding:28px;border-radius:4px;display:flex;flex-direction:column;gap:14px;align-self:start">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.1em">Outcomes customers report</div>
+    <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>BL cycle time −58%</div><div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>Truck utilization +11%</div><div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.1);font-size:14.5px;color:rgba(255,255,255,0.9);display:flex;align-items:center;gap:10px"><span style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:11px">→</span>POD capture 99.1%</div>
+    <a href="#" style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:0.12em">Read case studies →</a>
+  </div>
+</div>
+</div></section>
+<section style="padding:0 0 120px"><div class="container"><div class="fade cta-box">
+<div><h3>Your operation is <em>specific.</em> Our team listens.</h3><p>A 30-minute workshop with our domain leads — they've run these operations themselves. Come with your messiest edge case.</p></div>
+<div class="actions"><a href="#" class="btn btn-primary">Request a workshop <span class="arrow">→</span></a><a href="about.html" class="btn btn-outline">Meet the team</a></div>
+</div></div></section>
+<footer><div class="container">
+<div class="foot-grid">
+<div class="foot-brand"><a href="index.html" class="logo" style="font-size:18px"><span class="logo-mark" style="width:26px;height:26px"><img src="assets/hans-logo.png" alt="Hans Infomatic" style="width:100%;height:100%;object-fit:contain;display:block"/></span>Hans Infomatic</a><p>Digital intelligence for the global movement of cargo.</p><p class="mono" style="font-size:11px;color:var(--mute);margin-top:16px">HI / 2003 · ncr, india</p></div>
+<div class="foot-col"><h5>Products</h5><ul><li><a href="products/icaffe.html">iCAFFE</a></li><li><a href="products/wiseccs.html">WiseCCS</a></li><li><a href="products/wisecargo.html">WiseCargo</a></li><li><a href="products/wisehandling.html">WiseHandling</a></li><li><a href="products.html">All products →</a></li></ul></div>
+<div class="foot-col"><h5>Industries</h5><ul><li><a href="industries.html">Airlines &amp; GSAs</a></li><li><a href="industries.html">Freight Forwarders</a></li><li><a href="industries.html">Customs Brokers</a></li><li><a href="industries.html">Terminal Operators</a></li><li><a href="industries.html">Carriers</a></li></ul></div>
+<div class="foot-col"><h5>Company</h5><ul><li><a href="about.html">About</a></li><li><a href="about.html#offices">Global offices</a></li><li><a href="#">Careers</a></li><li><a href="#">Press</a></li><li><a href="#">Partners</a></li></ul></div>
+<div class="foot-col"><h5>Resources</h5><ul><li><a href="#">Documentation</a></li><li><a href="#">Case studies</a></li><li><a href="#">Blog</a></li><li><a href="#">Security</a></li><li><a href="#">Status</a></li></ul></div>
+</div>
+<div class="foot-bottom"><p>© 2026 Hans Infomatic — All rights reserved.</p><div class="links"><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Cookies</a><a href="#">Security</a></div></div>
+</div></footer>
+<script>const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:0.1,rootMargin:'0px 0px -60px 0px'});document.querySelectorAll('.fade').forEach(el=>io.observe(el));</script>
+</body></html>

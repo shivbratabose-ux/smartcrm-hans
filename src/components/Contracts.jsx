@@ -3,9 +3,9 @@ import { Plus, Search, Edit2, Trash2, Check, Download, FileText, AlertTriangle, 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, BILL_TERMS, BILL_TYPES, CONTRACT_STATUSES, CONTRACT_DOC_TYPES } from '../data/constants';
 import { BLANK_CONTRACT } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { notify } from '../utils/toast';
-import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge, TypeaheadSelect } from './shared';
+import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge, TypeaheadSelect, EditLockActions } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
@@ -79,7 +79,9 @@ const buildTimelineData = (contracts) => {
   });
 };
 
-function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete, onGenerateRenewal }) {
+function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete, onGenerateRenewal, commLogs=[], onRequestEditAccess }) {
+  const canEditCtr = (c) => canEditRecord({ownerId:c?.owner,currentUser,orgUsers,recordType:"contract",recordId:c?.id,commLogs});
+  const requestAccessCtr = (c) => onRequestEditAccess && onRequestEditAccess("contract", c.id, c.title||c.contractNo||"Contract", c.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search, setSearch] = useState("");
   const [statusF, setStatusF] = useState("All");
@@ -144,6 +146,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
     setModal({ mode: "add" });
   };
   const openEdit = (c) => {
+    if (c && c.id && !canEditCtr(c)) { requestAccessCtr(c); return; }
     // Backfill productSelection from legacy single `product` field on existing contracts
     const seeded = (Array.isArray(c.productSelection) && c.productSelection.length > 0)
       ? c.productSelection
@@ -153,6 +156,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
     setModal({ mode: "edit" });
   };
   const save = () => {
+    if (modal?.mode === "edit" && !canEditCtr(form)) { setModal(null); setFormErrors({}); return; }
     const errs = validateContract(form);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const clean = sanitizeObj(form);
@@ -431,10 +435,11 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
               onSort={sort.toggle}
               SortIcon={ContractsSortIcon}
               rowActions={c => (
-                <div style={{display:"flex",gap:4}}>
-                  <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
-                  {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
-                </div>
+                <EditLockActions
+                  editable={canEditCtr(c)}
+                  pending={hasPendingAccessReq(commLogs, "contract", c.id, currentUser)}
+                  onEdit={() => openEdit(c)} onDelete={() => setConfirm(c.id)}
+                  onRequest={() => requestAccessCtr(c)} canDelete={canDelete}/>
               )}
             />
           );

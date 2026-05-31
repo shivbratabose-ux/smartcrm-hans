@@ -1,0 +1,1574 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Hans Infomatic — Digital Intelligence for Global Cargo & Logistics</title>
+<meta name="description" content="Hans Infomatic builds intelligent software for airlines, freight forwarders, terminal operators and customs brokers. Operating across India, Africa and Europe."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter+Tight:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --paper:#F6F6F3;
+    --paper-2:#EEEDE6;
+    --ink:#0A0F0D;
+    --ink-2:#1B2420;
+    --ink-3:#3B4742;
+    --mute:#6C7770;
+    --line:rgba(10,15,13,0.12);
+    --line-2:rgba(10,15,13,0.06);
+    --forest:#062019;
+    --forest-2:#0E3329;
+    --accent:#00D17A;
+    --accent-2:#8BE8C0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter Tight',sans-serif;
+    font-feature-settings:"ss01","cv11";
+    -webkit-font-smoothing:antialiased;
+    font-size:16px;
+    line-height:1.5;
+    overflow-x:hidden;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;letter-spacing:-0.01em}
+  .eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:var(--mute);font-weight:500}
+  .display{font-family:'Inter Tight',sans-serif;font-weight:400;letter-spacing:-0.04em;line-height:0.98}
+  .container{max-width:1440px;margin:0 auto;padding:0 48px}
+  @media(max-width:768px){.container{padding:0 24px}}
+  a{color:inherit;text-decoration:none}
+  button{font-family:inherit;cursor:pointer;border:none;background:none}
+  hr{border:none;border-top:1px solid var(--line);margin:0}
+
+  /* ============== NAV ============== */
+  .nav{
+    position:fixed;top:0;left:0;right:0;z-index:100;
+    background:rgba(246,246,243,0.78);
+    backdrop-filter:blur(20px) saturate(1.4);
+    -webkit-backdrop-filter:blur(20px) saturate(1.4);
+    border-bottom:1px solid var(--line-2);
+    transition:border-color 0.3s;
+  }
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;padding:18px 48px;max-width:1440px;margin:0 auto}
+  @media(max-width:768px){.nav-inner{padding:16px 24px}}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;letter-spacing:-0.02em}
+  .logo-mark{width:22px;height:22px;position:relative}
+  .logo-mark svg{width:100%;height:100%}
+  .nav-links{display:flex;align-items:center;gap:32px}
+  @media(max-width:900px){.nav-links{display:none}}
+  .nav-links a{font-size:13.5px;color:var(--ink-2);font-weight:450;position:relative;display:flex;align-items:center;gap:4px;transition:color 0.2s}
+  .nav-links a:hover{color:var(--ink)}
+  .nav-links a .chev{opacity:0.4;font-size:10px;transition:transform 0.2s}
+  .nav-links a:hover .chev{opacity:0.8}
+  .nav-cta{display:flex;align-items:center;gap:20px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;font-size:13px;font-weight:500;transition:all 0.2s;white-space:nowrap}
+  .btn-ghost{color:var(--ink-2)}
+  .btn-ghost:hover{color:var(--ink)}
+  .btn-primary{background:var(--ink);color:var(--paper);padding:10px 18px}
+  .btn-primary:hover{background:var(--forest-2)}
+  .btn-primary .arrow{display:inline-block;transition:transform 0.25s}
+  .btn-primary:hover .arrow{transform:translateX(3px)}
+  .btn-outline{border:1px solid var(--line);color:var(--ink);padding:10px 18px}
+  .btn-outline:hover{border-color:var(--ink);background:var(--ink);color:var(--paper)}
+
+  /* ============== HERO ============== */
+  .hero{position:relative;padding:140px 0 80px;overflow:hidden}
+  .hero-grid{display:grid;grid-template-columns:1fr;gap:80px;position:relative}
+  .hero-top{display:flex;align-items:flex-end;justify-content:space-between;gap:48px;flex-wrap:wrap}
+  .hero-tag{display:inline-flex;align-items:center;gap:10px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,0.6);font-size:11.5px;font-family:'JetBrains Mono',monospace;color:var(--ink-2);font-weight:500}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(0,209,122,0.2);animation:pulse 2.2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+  .hero h1{
+    font-family:'Inter Tight',sans-serif;
+    font-weight:350;
+    font-size:clamp(44px, 7.4vw, 110px);
+    letter-spacing:-0.045em;
+    line-height:0.96;
+    color:var(--ink);
+    margin-top:28px;
+    max-width:1200px;
+  }
+  .hero h1 em{font-style:normal;color:var(--forest-2);font-weight:400}
+  .hero h1 .accent-word{
+    position:relative;display:inline-block;color:var(--accent);
+    font-style:italic;font-weight:350;
+  }
+  .hero-sub{
+    max-width:520px;
+    font-size:17px;
+    line-height:1.5;
+    color:var(--ink-3);
+    margin-top:8px;
+  }
+  .hero-actions{display:flex;gap:12px;margin-top:36px;flex-wrap:wrap}
+
+  /* ============== MAP (redesigned) ============== */
+  .map-wrap{margin-top:88px;position:relative;border-top:1px solid var(--line);padding-top:32px}
+  .map-header{display:flex;justify-content:space-between;align-items:flex-start;gap:32px;margin-bottom:28px;flex-wrap:wrap}
+  .map-label{display:flex;flex-direction:column;gap:6px}
+  .map-label h3{font-size:15px;font-weight:500;letter-spacing:-0.02em}
+  .map-legend{display:flex;gap:20px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute)}
+  .map-legend span{display:flex;align-items:center;gap:8px}
+  .legend-dot{width:8px;height:8px;border-radius:50%}
+  .legend-dot.active{background:var(--accent);box-shadow:0 0 0 3px rgba(0,209,122,0.2)}
+  .legend-dot.route{background:var(--ink-2)}
+
+  /* ============== OPS CONSOLE (4-card dense) ============== */
+  .ops-grid{
+    display:grid;
+    grid-template-columns: 1.25fr 0.9fr;
+    grid-template-rows: auto auto;
+    gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);
+    border-radius:6px;
+    overflow:hidden;
+  }
+  @media(max-width:900px){.ops-grid{grid-template-columns:1fr}}
+  .ops-card{background:var(--paper);padding:20px 22px;display:flex;flex-direction:column;gap:14px;min-height:290px}
+  .ops-A{grid-row: 1; grid-column: 1}
+  .ops-B{grid-row: 1; grid-column: 2}
+  .ops-C{grid-row: 2; grid-column: 1}
+  .ops-D{grid-row: 2; grid-column: 2}
+
+  .ops-head{display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em}
+  .ops-tag{font-weight:500}
+  .ops-live{display:flex;align-items:center;gap:6px;color:var(--accent)}
+  .ops-live i{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.5s infinite}
+  .ops-title{font-family:'Inter Tight',sans-serif;font-size:17px;font-weight:500;letter-spacing:-0.02em;color:var(--ink);margin-top:-4px}
+  .ops-title.small{font-size:14px}
+  .ops-sub{font-size:12.5px;color:var(--mute);margin-top:-8px}
+
+  /* Card A — Table */
+  .ops-table{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:11px;flex:1}
+  .ops-table thead th{text-align:left;font-weight:500;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;font-size:9.5px;padding:6px 8px 8px 0;border-bottom:1px solid var(--line)}
+  .ops-table tbody td{padding:9px 8px 9px 0;border-bottom:1px solid var(--line-2);color:var(--ink-2);white-space:nowrap}
+  .ops-table tbody td:first-child{color:var(--ink);font-weight:500}
+  .ops-table tbody tr:last-child td{border-bottom:none}
+  .ops-table tbody tr{transition:background 0.2s}
+  .ops-table tbody tr:hover{background:var(--paper-2)}
+  .chip{display:inline-block;padding:2px 7px;border-radius:2px;font-size:9.5px;font-weight:500;letter-spacing:0.05em;text-transform:uppercase}
+  .chip.ok{background:rgba(0,209,122,0.12);color:#008851}
+  .chip.wait{background:rgba(95,103,99,0.12);color:var(--ink-2)}
+  .chip.warn{background:rgba(232,150,70,0.15);color:#B86A10}
+
+  /* Card B — Data wall */
+  .dw-row{padding-bottom:12px;border-bottom:1px dashed var(--line-2);display:flex;flex-direction:column;gap:4px}
+  .dw-row:last-child{border-bottom:none;padding-bottom:0}
+  .dw-k{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em}
+  .dw-v{font-family:'Inter Tight',sans-serif;font-size:34px;font-weight:350;letter-spacing:-0.04em;color:var(--ink);line-height:1}
+  .dw-v.small{font-size:22px}
+  .dw-v .delta{font-size:11px;color:var(--accent);font-family:'JetBrains Mono',monospace;margin-left:8px;letter-spacing:0}
+  .dw-sub{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute)}
+  .dw-bar{height:3px;background:var(--line-2);border-radius:2px;overflow:hidden}
+  .dw-bar i{display:block;height:100%;background:var(--accent)}
+  .dw-meta{display:flex;gap:14px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-2)}
+  .dw-meta span{position:relative;padding-left:10px}
+  .dw-meta span::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  .dw-spark{color:var(--accent);height:28px;margin-top:2px}
+  .dw-spark svg{width:100%;height:100%;display:block}
+  .dw-dots{display:grid;grid-template-columns:repeat(30,1fr);gap:3px;margin-top:3px}
+  .dw-dots i{aspect-ratio:1;background:var(--accent);border-radius:1px;opacity:0.85}
+  .dw-dots i.warn{background:#E89646}
+
+  /* Card C — Document AI */
+  .doc-split{display:grid;grid-template-columns:0.9fr 1.2fr;gap:16px;flex:1;min-height:0}
+  @media(max-width:700px){.doc-split{grid-template-columns:1fr}}
+  .doc-preview{background:var(--paper-2);border:1px solid var(--line-2);border-radius:3px;padding:14px;display:flex;flex-direction:column;gap:8px;position:relative}
+  .doc-head{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);padding-bottom:8px;border-bottom:1px solid var(--line-2)}
+  .doc-lines{display:flex;flex-direction:column;gap:7px}
+  .dl{height:6px;background:var(--line);border-radius:1px;width:100%}
+  .dl.short{width:62%}
+  .dl.hi{background:rgba(0,209,122,0.28);box-shadow:0 0 0 2px rgba(0,209,122,0.12);position:relative;animation:highlight 4s infinite}
+  @keyframes highlight{
+    0%,100%{background:var(--line);box-shadow:none}
+    30%,70%{background:rgba(0,209,122,0.32);box-shadow:0 0 0 2px rgba(0,209,122,0.14)}
+  }
+  .dl[data-f="consignee"]{animation-delay:0.6s}
+  .dl[data-f="desc"]{animation-delay:1.2s}
+  .dl[data-f="weight"]{animation-delay:1.8s}
+  .doc-fields{display:flex;flex-direction:column;gap:6px;overflow:auto}
+  .df{display:grid;grid-template-columns: 88px 1fr auto;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px dashed var(--line-2);font-family:'JetBrains Mono',monospace;font-size:10.5px}
+  .df:last-child{border-bottom:none}
+  .dfk{color:var(--mute);font-size:9.5px;text-transform:uppercase;letter-spacing:0.08em}
+  .dfv{color:var(--ink);font-weight:500;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dfc{color:var(--accent);font-size:9.5px;font-weight:500}
+  .dfc.sug{color:#B86A10}
+
+  /* Card D — Ledger */
+  .ledger{display:flex;flex-direction:column;gap:2px;flex:1;font-family:'JetBrains Mono',monospace;font-size:10.5px}
+  .lg-row{display:grid;grid-template-columns: 42px 40px 18px 40px 36px 1fr;gap:10px;align-items:center;padding:7px 8px;border-radius:2px;transition:background 0.2s}
+  .lg-row:hover{background:var(--paper-2)}
+  .lg-t{color:var(--mute)}
+  .lg-o,.lg-d{color:var(--ink);font-weight:600;letter-spacing:0.02em}
+  .lg-arrow{color:var(--accent);text-align:center}
+  .lg-m{color:var(--mute);font-size:9.5px;letter-spacing:0.08em}
+  .lg-s{text-align:right;font-size:9.5px;letter-spacing:0.08em;font-weight:500}
+  .lg-s.ok{color:var(--accent)}
+  .lg-s.warn{color:#B86A10}
+
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+
+  /* Hide old map shell (kept in DOM for reference) */
+  .map-shell{display:none !important}
+
+  .map-shell{display:grid;grid-template-columns:1fr 300px;gap:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--paper)}
+  @media(max-width:900px){.map-shell{grid-template-columns:1fr}}
+  .map-stage{position:relative;aspect-ratio: 16/9;width:100%;background:var(--paper);overflow:hidden;border-right:1px solid var(--line)}
+  @media(max-width:900px){.map-stage{border-right:none;border-bottom:1px solid var(--line)}}
+  .map-stage svg.base{width:100%;height:100%;display:block}
+  .map-stage::before{content:"";position:absolute;inset:0;background-image:linear-gradient(var(--line-2) 1px,transparent 1px),linear-gradient(90deg,var(--line-2) 1px,transparent 1px);background-size:40px 40px;mask-image:radial-gradient(ellipse at center,black 50%,transparent 90%);-webkit-mask-image:radial-gradient(ellipse at center,black 50%,transparent 90%);pointer-events:none;z-index:1}
+  .map-stage svg.overlay{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
+
+  /* Continents */
+  .continent{fill:#0A0F0D;opacity:0.08}
+  .graticule{stroke:var(--line-2);stroke-width:0.5;fill:none}
+
+  /* Hubs as SVG (positioned in the same viewBox) */
+  .hub-svg{pointer-events:auto}
+  .hub-core{fill:var(--accent)}
+  .hub-glow{fill:var(--accent);opacity:0.18}
+  .hub-glow-2{fill:var(--accent);opacity:0.06}
+  .hub-ring{fill:none;stroke:var(--accent);stroke-width:1;opacity:0;transform-origin:center;animation:mring 3s infinite ease-out}
+  @keyframes mring{0%{r:6;opacity:0.7}100%{r:22;opacity:0}}
+
+  /* Labels - SVG text with callout line */
+  .lbl-line{stroke:var(--ink-2);stroke-width:0.7;opacity:0.5}
+  .lbl-pill{fill:rgba(246,246,243,0.95);stroke:var(--line);stroke-width:0.7}
+  .lbl-text{font-family:'JetBrains Mono',monospace;font-size:9.5px;fill:var(--ink);font-weight:500}
+  .lbl-tag{font-family:'JetBrains Mono',monospace;font-size:8px;fill:var(--mute);letter-spacing:0.08em}
+
+  /* Routes */
+  .route{stroke:var(--ink-2);stroke-width:0.9;fill:none;stroke-dasharray:3 3;opacity:0.22}
+  .route-live{stroke:var(--accent);stroke-width:1.4;fill:none;stroke-dasharray:500;stroke-dashoffset:500;animation:dash 5s linear infinite;filter:drop-shadow(0 0 3px rgba(0,209,122,0.5))}
+  @keyframes dash{0%{stroke-dashoffset:500}100%{stroke-dashoffset:-500}}
+  .plane-g{animation:flyplane 5s linear infinite}
+  @keyframes flyplane{
+    0%{offset-distance:0%;opacity:0}
+    8%{opacity:1}
+    92%{opacity:1}
+    100%{offset-distance:100%;opacity:0}
+  }
+
+  /* India cluster - stacked vertical callout */
+  .india-cluster-card{
+    position:absolute;right:16px;bottom:16px;z-index:3;
+    background:rgba(246,246,243,0.95);
+    backdrop-filter:blur(8px);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:10px 12px;
+    min-width:170px;
+    font-family:'JetBrains Mono',monospace;
+  }
+  .india-cluster-card .ic-t{font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .india-cluster-card .ic-t b{color:var(--ink);font-weight:600}
+  .india-cluster-card ul{list-style:none;display:flex;flex-direction:column;gap:5px;padding:0;margin:0}
+  .india-cluster-card li{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-2);align-items:center}
+  .india-cluster-card li .city{display:flex;align-items:center;gap:7px}
+  .india-cluster-card li .city::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  .india-cluster-card li .v{color:var(--mute);font-size:9.5px}
+  .india-cluster-card li.ho .city b{color:var(--ink);font-weight:600}
+  .india-cluster-card li.ho .v{color:var(--accent)}
+
+  /* Sidebar ticker */
+  .map-side{background:var(--paper-2);padding:18px 18px 16px;display:flex;flex-direction:column;gap:14px;font-family:'JetBrains Mono',monospace}
+  .map-side .ms-head{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em}
+  .map-side .ms-head .live-dot{display:flex;align-items:center;gap:6px;color:var(--accent)}
+  .map-side .ms-head .live-dot::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.5s infinite}
+  .map-side .ms-title{font-family:'Inter Tight',sans-serif;font-size:14px;font-weight:500;letter-spacing:-0.015em;color:var(--ink)}
+  .ticker{display:flex;flex-direction:column;gap:4px;flex:1;overflow:hidden;position:relative}
+  .ticker-item{padding:9px 10px;background:var(--paper);border:1px solid var(--line-2);border-radius:3px;font-size:10px;color:var(--ink-2);line-height:1.35;opacity:0;transform:translateY(6px);animation:tickin 0.5s forwards}
+  .ticker-item .ti-top{display:flex;justify-content:space-between;margin-bottom:3px;color:var(--mute);font-size:9px}
+  .ticker-item .ti-top b{color:var(--ink);font-weight:500}
+  .ticker-item .ti-path{color:var(--ink);font-size:10.5px}
+  .ticker-item.new{border-left:2px solid var(--accent)}
+  @keyframes tickin{to{opacity:1;transform:translateY(0)}}
+  .map-side .ms-foot{border-top:1px solid var(--line);padding-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .map-side .ms-foot div{display:flex;flex-direction:column;gap:2px}
+  .map-side .ms-foot .k{font-size:9px;color:var(--mute);text-transform:uppercase;letter-spacing:0.08em}
+  .map-side .ms-foot .v{font-size:14px;font-weight:500;color:var(--ink);font-family:'Inter Tight',sans-serif;letter-spacing:-0.02em}
+
+  /* ============== METRICS BAR ============== */
+  .metrics{
+    display:grid;grid-template-columns:repeat(4,1fr);
+    border-top:1px solid var(--line);
+    border-bottom:1px solid var(--line);
+    margin-top:48px;
+  }
+  .metrics > div{
+    padding:32px 24px;
+    border-right:1px solid var(--line);
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .metrics > div:last-child{border-right:none}
+  .metrics .num{font-size:40px;font-weight:350;letter-spacing:-0.04em;color:var(--ink)}
+  .metrics .lbl{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em}
+  @media(max-width:768px){
+    .metrics{grid-template-columns:1fr 1fr}
+    .metrics > div{padding:20px 16px}
+    .metrics > div:nth-child(2){border-right:none}
+    .metrics > div:nth-child(1),.metrics > div:nth-child(2){border-bottom:1px solid var(--line)}
+    .metrics .num{font-size:30px}
+  }
+
+  /* ============== CLIENT LOGO STRIP ============== */
+  .clients{padding:64px 0;border-bottom:1px solid var(--line)}
+  .clients-label{text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:36px}
+  .clients-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:24px;align-items:center}
+  @media(max-width:900px){.clients-strip{grid-template-columns:repeat(3,1fr);gap:32px 16px}}
+  .client{
+    display:flex;align-items:center;justify-content:center;
+    padding:20px 12px;
+    font-family:'Inter Tight',sans-serif;
+    font-weight:500;
+    font-size:15px;
+    letter-spacing:-0.01em;
+    color:var(--ink-3);
+    opacity:0.55;
+    transition:opacity 0.2s;
+    position:relative;
+    height:70px;
+  }
+  .client:hover{opacity:1}
+  .client .placeholder{
+    display:flex;align-items:center;gap:8px;
+  }
+  .client svg{flex-shrink:0}
+
+  /* ============== SECTION HEADERS ============== */
+  section{padding:120px 0;position:relative}
+  .sec-head{display:grid;grid-template-columns:200px 1fr;gap:48px;margin-bottom:64px;align-items:start}
+  @media(max-width:900px){.sec-head{grid-template-columns:1fr;gap:16px;margin-bottom:40px}}
+  .sec-eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em;padding-top:12px;font-weight:500}
+  .sec-title{font-size:clamp(34px,4.4vw,60px);font-weight:350;letter-spacing:-0.035em;line-height:1.02;max-width:880px}
+  .sec-title em{font-style:italic;color:var(--forest-2);font-weight:400}
+
+  /* ============== PRODUCT SHOWCASE ============== */
+  .products{background:var(--paper)}
+  .product-row{
+    display:grid;
+    grid-template-columns:1.1fr 1fr;
+    border-top:1px solid var(--line);
+    min-height:480px;
+  }
+  .product-row:last-child{border-bottom:1px solid var(--line)}
+  .product-row.flip{grid-template-columns:1fr 1.1fr}
+  .product-row.flip .product-info{order:2;border-left:1px solid var(--line);border-right:none}
+  .product-row.flip .product-visual{order:1}
+  @media(max-width:900px){
+    .product-row,.product-row.flip{grid-template-columns:1fr}
+    .product-row.flip .product-info{order:1;border-left:none}
+    .product-row.flip .product-visual{order:2}
+  }
+  .product-info{
+    padding:48px 40px;
+    display:flex;flex-direction:column;justify-content:space-between;
+    gap:32px;
+    border-right:1px solid var(--line);
+  }
+  .product-info .p-top{display:flex;flex-direction:column;gap:20px}
+  .product-idx{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);letter-spacing:0.1em}
+  .product-name{display:flex;align-items:baseline;gap:12px}
+  .product-name h3{font-size:32px;font-weight:400;letter-spacing:-0.03em}
+  .product-name .tag{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent);background:rgba(0,209,122,0.08);padding:3px 8px;border-radius:3px;letter-spacing:0.05em;text-transform:uppercase;font-weight:500}
+  .product-tag{font-size:14px;color:var(--ink-3);font-weight:450;max-width:460px;line-height:1.45}
+  .product-feats{list-style:none;display:flex;flex-direction:column;gap:8px;margin-top:16px}
+  .product-feats li{font-size:13.5px;color:var(--ink-2);display:flex;gap:12px;align-items:baseline}
+  .product-feats li::before{content:"";width:14px;height:1px;background:var(--accent);display:inline-block;flex-shrink:0;transform:translateY(-4px)}
+  .product-link{
+    display:inline-flex;align-items:center;gap:10px;
+    font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;
+    color:var(--ink);
+    padding-top:16px;border-top:1px solid var(--line);
+    width:fit-content;
+  }
+  .product-link .arrow{transition:transform 0.25s}
+  .product-link:hover .arrow{transform:translateX(4px)}
+
+  .product-visual{
+    background:var(--paper-2);
+    position:relative;overflow:hidden;
+    padding:32px;
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  /* Mini dashboard for iCAFFE */
+  .mock{
+    width:100%;max-width:520px;
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:6px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    overflow:hidden;
+    box-shadow:0 20px 50px -20px rgba(10,15,13,0.15);
+  }
+  .mock-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--paper-2)}
+  .mock-bar .lights{display:flex;gap:5px}
+  .mock-bar .lights span{width:8px;height:8px;border-radius:50%;background:var(--line)}
+  .mock-bar .title{font-size:10px;color:var(--mute);margin-left:8px}
+  .mock-body{padding:20px}
+  .mock-head{display:flex;justify-content:space-between;margin-bottom:16px}
+  .mock-h{font-size:13px;color:var(--ink);font-weight:500}
+  .mock-live{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--accent)}
+  .mock-live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.5s infinite}
+  .mock-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;padding:10px 0;border-bottom:1px solid var(--line-2);align-items:center;font-size:11px}
+  .mock-row:last-child{border-bottom:none}
+  .mock-row .id{color:var(--mute)}
+  .mock-row .status{padding:2px 7px;border-radius:3px;font-size:10px}
+  .mock-row .s-ok{background:rgba(0,209,122,0.1);color:#047a48}
+  .mock-row .s-wait{background:rgba(10,15,13,0.06);color:var(--ink-3)}
+  .mock-row .s-alert{background:rgba(186,26,26,0.08);color:#ba1a1a}
+  .mock-meta{text-align:right;color:var(--ink-2)}
+  .mock-chart{margin-top:18px;height:60px;background:var(--paper-2);border-radius:4px;position:relative;overflow:hidden}
+  .mock-chart svg{width:100%;height:100%}
+
+  /* Network mock for WiseCCS */
+  .net-mock{
+    width:100%;max-width:520px;aspect-ratio:4/3;
+    position:relative;
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:6px;
+    overflow:hidden;
+    padding:24px;
+  }
+  .net-mock::before{
+    content:"wiseccs.live";
+    position:absolute;top:12px;left:16px;
+    font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute);
+  }
+  .net-node{position:absolute;display:flex;flex-direction:column;align-items:center;gap:4px;transform:translate(-50%,-50%)}
+  .net-node .n-dot{width:44px;height:44px;border-radius:50%;background:var(--paper);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-2);font-weight:500;transition:all 0.3s}
+  .net-node .n-label{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.05em}
+  .net-node.center .n-dot{background:var(--ink);color:var(--accent);border-color:var(--ink);box-shadow:0 0 0 6px rgba(0,209,122,0.1)}
+  .net-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .net-line{stroke:var(--line);stroke-width:1;fill:none;stroke-dasharray:2 3}
+  .net-flow{stroke:var(--accent);stroke-width:1.5;fill:none;stroke-dasharray:80;animation:flow 2.5s linear infinite}
+  @keyframes flow{to{stroke-dashoffset:-80}}
+
+  /* Terminal mock for WiseCargo */
+  .term-mock{
+    width:100%;max-width:520px;
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:6px;
+    overflow:hidden;
+  }
+  .term-head{display:flex;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--ink-2)}
+  .term-grid{padding:16px;display:grid;grid-template-columns:repeat(8,1fr);gap:4px}
+  .term-cell{aspect-ratio:1;border-radius:2px;background:var(--paper-2);border:1px solid var(--line-2)}
+  .term-cell.f1{background:rgba(0,209,122,0.2);border-color:rgba(0,209,122,0.4)}
+  .term-cell.f2{background:rgba(0,209,122,0.45);border-color:rgba(0,209,122,0.6)}
+  .term-cell.f3{background:var(--accent);border-color:var(--accent)}
+  .term-cell.alert{background:rgba(186,26,26,0.25);border-color:rgba(186,26,26,0.5)}
+  .term-foot{display:flex;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--line);font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute)}
+  .term-foot b{color:var(--ink)}
+
+  /* Handling mock */
+  .hand-mock{
+    width:100%;max-width:520px;
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:20px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+  }
+  .hand-timeline{display:flex;flex-direction:column;gap:14px;margin-top:16px}
+  .hand-item{display:grid;grid-template-columns:60px 1fr auto;gap:14px;align-items:center;padding:10px 12px;background:var(--paper-2);border-radius:3px;border-left:2px solid transparent}
+  .hand-item.live{border-left-color:var(--accent);background:rgba(0,209,122,0.06)}
+  .hand-item.done{opacity:0.5}
+  .hand-item .t{color:var(--mute)}
+  .hand-item .e{color:var(--ink-2);font-size:11px}
+  .hand-item .s{font-size:10px;color:var(--accent)}
+  .hand-item.done .s{color:var(--mute)}
+
+  /* ============== INDUSTRIES ============== */
+  .industries{background:var(--forest);color:var(--paper);padding:120px 0}
+  .industries .sec-eyebrow{color:rgba(255,255,255,0.5)}
+  .industries .sec-title{color:var(--paper)}
+  .industries .sec-title em{color:var(--accent);font-style:italic}
+  .ind-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border-top:1px solid rgba(255,255,255,0.12)}
+  @media(max-width:900px){.ind-grid{grid-template-columns:1fr 1fr}}
+  @media(max-width:540px){.ind-grid{grid-template-columns:1fr}}
+  .ind-cell{
+    padding:32px 24px 40px;
+    border-right:1px solid rgba(255,255,255,0.12);
+    border-bottom:1px solid rgba(255,255,255,0.12);
+    display:flex;flex-direction:column;justify-content:space-between;
+    min-height:280px;
+    transition:background 0.3s;
+    cursor:pointer;
+    position:relative;
+    overflow:hidden;
+  }
+  .ind-cell:last-child{border-right:none}
+  @media(max-width:900px){
+    .ind-cell:nth-child(2n){border-right:none}
+  }
+  .ind-cell:hover{background:var(--forest-2)}
+  .ind-cell .num{font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(255,255,255,0.4);letter-spacing:0.1em;margin-bottom:48px}
+  .ind-cell h4{font-size:22px;font-weight:400;letter-spacing:-0.02em;margin-bottom:12px}
+  .ind-cell p{font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5}
+  .ind-cell .arrow{
+    display:inline-flex;align-items:center;gap:6px;
+    margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);
+    opacity:0;transform:translateY(6px);transition:all 0.3s;
+  }
+  .ind-cell:hover .arrow{opacity:1;transform:translateY(0)}
+
+  /* ============== PLATFORM STACK ============== */
+  .stack-diagram{
+    display:grid;
+    grid-template-columns:1fr 2fr;
+    gap:48px;
+    align-items:center;
+  }
+  @media(max-width:900px){.stack-diagram{grid-template-columns:1fr}}
+  .stack-cap{display:flex;flex-direction:column;gap:16px}
+  .stack-cap h3{font-size:28px;font-weight:400;letter-spacing:-0.025em}
+  .stack-cap p{font-size:15px;color:var(--ink-3);line-height:1.5}
+  .stack-layers{display:flex;flex-direction:column;gap:6px}
+  .stack-layer{
+    display:grid;grid-template-columns:80px 1fr auto;gap:20px;
+    padding:18px 24px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    background:var(--paper);
+    align-items:center;
+    transition:all 0.25s;
+  }
+  .stack-layer:hover{border-color:var(--ink);transform:translateX(4px)}
+  .stack-layer .l-num{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);letter-spacing:0.1em}
+  .stack-layer .l-title{font-weight:500;font-size:16px}
+  .stack-layer .l-sub{font-size:13px;color:var(--mute);font-weight:400;margin-left:8px}
+  .stack-layer .l-items{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-align:right}
+  .stack-layer.top{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .stack-layer.top .l-num,.stack-layer.top .l-sub,.stack-layer.top .l-items{color:rgba(255,255,255,0.5)}
+
+  /* ============== GLOBAL PRESENCE ============== */
+  .presence{background:var(--paper-2)}
+  .offices{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid var(--line)}
+  @media(max-width:900px){.offices{grid-template-columns:1fr 1fr}}
+  @media(max-width:540px){.offices{grid-template-columns:1fr}}
+  .office{
+    padding:32px 28px 40px;
+    border-right:1px solid var(--line);
+    border-bottom:1px solid var(--line);
+    background:var(--paper);
+  }
+  .office:nth-child(3n){border-right:none}
+  @media(max-width:900px){.office:nth-child(3n){border-right:1px solid var(--line)}.office:nth-child(2n){border-right:none}}
+  .office-region{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+  .office-region::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .office h4{font-size:22px;font-weight:400;letter-spacing:-0.02em;margin-bottom:4px}
+  .office .sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);margin-bottom:20px}
+  .office .addr{font-size:13px;color:var(--ink-3);line-height:1.5}
+  .office.ho::after{
+    content:"HQ";
+    display:inline-block;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink);
+    border:1px solid var(--ink);padding:2px 7px;border-radius:3px;margin-top:14px;
+  }
+
+  /* ============== CTA BANNER ============== */
+  .cta-banner{
+    background:var(--ink);
+    color:var(--paper);
+    padding:120px 0;
+    position:relative;overflow:hidden;
+  }
+  .cta-banner::before{
+    content:"";position:absolute;inset:0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size:64px 64px;
+    mask-image: radial-gradient(ellipse at 50% 50%, black 40%, transparent 80%);
+  }
+  .cta-inner{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:end;position:relative;z-index:2}
+  @media(max-width:900px){.cta-inner{grid-template-columns:1fr;gap:32px}}
+  .cta-inner h2{font-size:clamp(40px,5vw,72px);font-weight:350;letter-spacing:-0.035em;line-height:1}
+  .cta-inner h2 em{font-style:italic;color:var(--accent);font-weight:400}
+  .cta-right{display:flex;flex-direction:column;gap:24px;align-items:flex-start}
+  .cta-right p{font-size:16px;color:rgba(255,255,255,0.6);max-width:400px;line-height:1.5}
+  .cta-right .btn-primary{background:var(--accent);color:var(--ink)}
+  .cta-right .btn-primary:hover{background:var(--accent-2)}
+  .cta-right .btn-outline{border-color:rgba(255,255,255,0.2);color:var(--paper)}
+  .cta-right .btn-outline:hover{background:var(--paper);color:var(--ink);border-color:var(--paper)}
+
+  /* ============== FOOTER ============== */
+  footer{background:var(--paper);padding:80px 0 32px;border-top:1px solid var(--line)}
+  .foot-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr;gap:48px;padding-bottom:64px;border-bottom:1px solid var(--line)}
+  @media(max-width:900px){.foot-grid{grid-template-columns:1fr 1fr;gap:40px}}
+  @media(max-width:540px){.foot-grid{grid-template-columns:1fr 1fr}}
+  .foot-brand{display:flex;flex-direction:column;gap:16px}
+  .foot-brand p{font-size:13.5px;color:var(--ink-3);line-height:1.5;max-width:280px}
+  .foot-col h5{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:18px;font-weight:500}
+  .foot-col ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+  .foot-col a{font-size:13.5px;color:var(--ink-2);transition:color 0.2s}
+  .foot-col a:hover{color:var(--accent)}
+  .foot-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:24px;flex-wrap:wrap;gap:16px}
+  .foot-bottom p{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute)}
+  .foot-bottom .links{display:flex;gap:20px}
+  .foot-bottom a{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute)}
+  .foot-bottom a:hover{color:var(--ink)}
+
+  /* Fade in on scroll */
+  .fade{opacity:0;transform:translateY(16px);transition:all 0.8s cubic-bezier(0.2,0.7,0.3,1)}
+  .fade.in{opacity:1;transform:translateY(0)}
+
+</style>
+</head>
+<body>
+
+<!-- =================== NAV =================== -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="logo">
+      <span class="logo-mark"><img src="assets/hans-logo.png" alt="Hans Infomatic" style="width:100%;height:100%;object-fit:contain;display:block"/></span>
+      Hans Infomatic
+    </a>
+    <div class="nav-links">
+      <a href="products/icaffe.html">Products <span class="chev">↓</span></a>
+      <a href="#industries">Industries <span class="chev">↓</span></a>
+      <a href="#platform">Platform</a>
+      <a href="#presence">Company <span class="chev">↓</span></a>
+      <a href="#">Resources</a>
+    </div>
+    <div class="nav-cta">
+      <a href="#" class="btn btn-ghost">Sign in</a>
+      <a href="#" class="btn btn-primary">Book a demo <span class="arrow">→</span></a>
+    </div>
+  </div>
+</nav>
+
+<!-- =================== HERO =================== -->
+<section class="hero">
+  <div class="container" style="font-weight: 300">
+    <div class="hero-top fade">
+      <div>
+        <span class="hero-tag"><span class="dot"></span>Now serving 9 offices across 3 continents</span>
+        <h1 style="width: 917.153px; font-weight: 400">
+          Digital intelligence<br>
+          for the <em>global</em> movement<br>
+          of <span class="accent-word">Cargo &amp; Passenger</span>
+        </h1>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:40px;align-items:start" class="fade">
+      <p class="hero-sub">
+        Hans Infomatic builds the operational backbone for airlines, freight forwarders, terminal operators, and customs brokers. One platform. Fifteen products. Built for the realities of global logistics.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:16px;align-items:flex-start">
+        <div class="hero-actions">
+          <a href="#" class="btn btn-primary">Book a demo <span class="arrow">→</span></a>
+          <a href="#platform" class="btn btn-outline">Explore the platform</a>
+        </div>
+        <div class="mono" style="font-size:11px;color:var(--mute);letter-spacing:0.05em">
+          Trusted by airlines, GSAs &amp; ground handlers across India, Africa &amp; Europe
+        </div>
+      </div>
+    </div>
+
+    <!-- MAP -->
+    <div class="map-wrap fade">
+      <div class="map-header">
+        <div class="map-label">
+          <span class="eyebrow">Live operations · 02:42:18 UTC</span>
+          <h3>One platform, end-to-end visibility</h3>
+        </div>
+        <div class="map-legend">
+          <span><span class="legend-dot active"></span>Live</span>
+          <span><span class="legend-dot route"></span>Queued</span>
+          <span><span class="legend-dot" style="background:#E89646"></span>Delayed</span>
+        </div>
+      </div>
+
+      <!-- OPS CONSOLE: 4-card dense grid (replaces map) -->
+      <div class="ops-grid">
+        <!-- Card A: Live Shipments Table -->
+        <div class="ops-card ops-A">
+          <div class="ops-head">
+            <span class="ops-tag">A / LIVE OPERATIONS</span>
+            <span class="ops-live"><i></i>STREAMING</span>
+          </div>
+          <div class="ops-title">Shipments in flight</div>
+          <div class="ops-sub">Real-time AWB &amp; BL status across 38 carriers</div>
+          <table class="ops-table">
+            <thead><tr><th>AWB / BL</th><th>Route</th><th>Carrier</th><th>Status</th><th>ETA</th></tr></thead>
+            <tbody id="opsTable">
+              <tr><td>176-48201734</td><td>DEL → OTP</td><td>EK</td><td><span class="chip ok">In transit</span></td><td>+06:12</td></tr>
+              <tr><td>MAEU-77203145</td><td>MAA → CPT</td><td>MSK</td><td><span class="chip ok">Cleared</span></td><td>+18:04</td></tr>
+              <tr><td>220-81124903</td><td>BOM → JNB</td><td>SA</td><td><span class="chip wait">Awaiting</span></td><td>+02:38</td></tr>
+              <tr><td>HLCU-98012741</td><td>NSA → CMB</td><td>HL</td><td><span class="chip ok">Departed</span></td><td>+33:20</td></tr>
+              <tr><td>098-11507620</td><td>CCU → FRA</td><td>LH</td><td><span class="chip ok">In transit</span></td><td>+08:45</td></tr>
+              <tr><td>ONEY-44120915</td><td>SIN → DEL</td><td>ONE</td><td><span class="chip warn">Delayed</span></td><td>+04:10</td></tr>
+              <tr><td>CMAU-55124003</td><td>CPT → BOM</td><td>CMA</td><td><span class="chip ok">Cleared</span></td><td>+21:55</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Card B: Data Wall / Metrics Column -->
+        <div class="ops-card ops-B">
+          <div class="ops-head">
+            <span class="ops-tag">B / TODAY · 02:42 UTC</span>
+            <span class="ops-live"><i></i>LIVE</span>
+          </div>
+          <div class="dw-row">
+            <div class="dw-k">Shipments processed</div>
+            <div class="dw-v" id="dw-proc">1,382</div>
+            <div class="dw-bar"><i style="width:72%"></i></div>
+            <div class="dw-sub">72% of 24h target · +8.4% WoW</div>
+          </div>
+          <div class="dw-row">
+            <div class="dw-k">In transit now</div>
+            <div class="dw-v" id="dw-trans">247</div>
+            <div class="dw-meta"><span>AIR 142</span><span>SEA 84</span><span>ROAD 21</span></div>
+          </div>
+          <div class="dw-row">
+            <div class="dw-k">Avg clearance time</div>
+            <div class="dw-v small">4h 12m <span class="delta">−18m</span></div>
+            <div class="dw-spark">
+              <svg viewBox="0 0 120 28" preserveAspectRatio="none">
+                <polyline points="0,18 10,16 20,19 30,14 40,17 50,12 60,14 70,10 80,13 90,8 100,10 110,6 120,8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+              </svg>
+            </div>
+          </div>
+          <div class="dw-row">
+            <div class="dw-k">Platform uptime · 30d</div>
+            <div class="dw-v small">99.97%</div>
+            <div class="dw-dots">
+              <!-- 30 dots -->
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              <i></i><i></i><i class="warn"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card C: Document Intelligence -->
+        <div class="ops-card ops-C">
+          <div class="ops-head">
+            <span class="ops-tag">C / DOCUMENT AI · iCAFFE</span>
+            <span class="ops-live"><i></i>PARSING</span>
+          </div>
+          <div class="doc-split">
+            <div class="doc-preview">
+              <div class="doc-head">AWB_176-48201734.pdf</div>
+              <div class="doc-lines">
+                <span class="dl"></span><span class="dl short"></span>
+                <span class="dl hi" data-f="shipper"></span>
+                <span class="dl hi" data-f="consignee"></span>
+                <span class="dl"></span><span class="dl short"></span>
+                <span class="dl hi" data-f="desc"></span>
+                <span class="dl"></span><span class="dl"></span>
+                <span class="dl hi" data-f="weight"></span>
+                <span class="dl short"></span>
+              </div>
+            </div>
+            <div class="doc-fields">
+              <div class="df"><span class="dfk">Shipper</span><span class="dfv">ACE LOGISTICS PVT LTD</span><span class="dfc">99%</span></div>
+              <div class="df"><span class="dfk">Consignee</span><span class="dfv">TRANSGLOBE FREIGHT SRL</span><span class="dfc">99%</span></div>
+              <div class="df"><span class="dfk">Origin</span><span class="dfv">DEL · Delhi</span><span class="dfc">100%</span></div>
+              <div class="df"><span class="dfk">Destination</span><span class="dfv">OTP · Bucharest</span><span class="dfc">100%</span></div>
+              <div class="df"><span class="dfk">Commodity</span><span class="dfv">Pharmaceuticals, temp-controlled</span><span class="dfc">97%</span></div>
+              <div class="df"><span class="dfk">Gross weight</span><span class="dfv">1,248.50 kg</span><span class="dfc">99%</span></div>
+              <div class="df"><span class="dfk">HS code</span><span class="dfv">3004.90</span><span class="dfc sug">suggested</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card D: Route Ledger / flight board -->
+        <div class="ops-card ops-D">
+          <div class="ops-head">
+            <span class="ops-tag">D / ROUTE LEDGER</span>
+            <span class="ops-live"><i></i>UTC</span>
+          </div>
+          <div class="ops-title small">Today's movements</div>
+          <div class="ledger" id="ledger">
+            <div class="lg-row"><span class="lg-t">02:12</span><span class="lg-o">DEL</span><span class="lg-arrow">→</span><span class="lg-d">OTP</span><span class="lg-m">AIR</span><span class="lg-s ok">ON TIME</span></div>
+            <div class="lg-row"><span class="lg-t">02:08</span><span class="lg-o">BOM</span><span class="lg-arrow">→</span><span class="lg-d">JNB</span><span class="lg-m">SEA</span><span class="lg-s ok">LOADED</span></div>
+            <div class="lg-row"><span class="lg-t">01:54</span><span class="lg-o">MAA</span><span class="lg-arrow">→</span><span class="lg-d">CPT</span><span class="lg-m">SEA</span><span class="lg-s ok">CLEARED</span></div>
+            <div class="lg-row"><span class="lg-t">01:38</span><span class="lg-o">CCU</span><span class="lg-arrow">→</span><span class="lg-d">FRA</span><span class="lg-m">AIR</span><span class="lg-s warn">+18m</span></div>
+            <div class="lg-row"><span class="lg-t">01:20</span><span class="lg-o">BLR</span><span class="lg-arrow">→</span><span class="lg-d">DXB</span><span class="lg-m">AIR</span><span class="lg-s ok">BOARD</span></div>
+            <div class="lg-row"><span class="lg-t">00:55</span><span class="lg-o">OTP</span><span class="lg-arrow">→</span><span class="lg-d">DEL</span><span class="lg-m">AIR</span><span class="lg-s ok">ARRIVED</span></div>
+            <div class="lg-row"><span class="lg-t">00:41</span><span class="lg-o">NSA</span><span class="lg-arrow">→</span><span class="lg-d">CMB</span><span class="lg-m">SEA</span><span class="lg-s ok">DEPART</span></div>
+            <div class="lg-row"><span class="lg-t">00:12</span><span class="lg-o">CPT</span><span class="lg-arrow">→</span><span class="lg-d">BOM</span><span class="lg-m">SEA</span><span class="lg-s ok">CLEARED</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:none" class="map-shell">
+        <div class="map-stage">
+          <!-- Base world map: improved silhouettes, single SVG with everything in one viewBox -->
+          <svg class="base" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet">
+            <!-- Soft grid rings/graticule -->
+            <g class="graticule">
+              <line x1="0" y1="125" x2="1000" y2="125"/>
+              <line x1="0" y1="250" x2="1000" y2="250"/>
+              <line x1="0" y1="375" x2="1000" y2="375"/>
+            </g>
+
+            <!-- Continents: cleaner, more recognizable silhouettes (simplified landmasses) -->
+            <!-- North America -->
+            <path class="continent" d="M80,110 L130,95 L180,90 L220,95 L255,115 L270,140 L260,165 L265,195 L240,215 L205,225 L175,235 L150,230 L125,220 L105,200 L95,175 L85,145 Z M180,85 L210,78 L235,85 L225,95 L200,92 L180,90 Z"/>
+            <!-- Greenland -->
+            <path class="continent" d="M300,70 L330,65 L345,75 L340,95 L320,100 L305,90 Z"/>
+            <!-- South America -->
+            <path class="continent" d="M220,260 L250,255 L275,265 L285,285 L290,315 L285,345 L270,375 L255,395 L240,400 L225,390 L215,365 L210,330 L212,295 Z"/>
+            <!-- Europe -->
+            <path class="continent" d="M450,125 L475,115 L510,110 L545,115 L570,125 L580,140 L570,155 L545,160 L515,165 L485,162 L460,155 L448,140 Z M430,105 L455,102 L470,115 L445,118 Z"/>
+            <!-- UK/Ireland -->
+            <path class="continent" d="M435,130 L448,128 L450,145 L438,148 Z"/>
+            <!-- Africa -->
+            <path class="continent" d="M485,175 L525,170 L560,180 L580,205 L590,240 L585,275 L570,310 L548,340 L525,360 L505,355 L490,335 L478,305 L473,270 L475,235 L478,200 Z"/>
+            <!-- Madagascar -->
+            <path class="continent" d="M600,310 L610,305 L615,325 L608,340 Z"/>
+            <!-- Middle East -->
+            <path class="continent" d="M595,175 L625,170 L655,180 L665,200 L660,220 L640,230 L615,228 L598,210 L592,190 Z"/>
+            <!-- India subcontinent -->
+            <path class="continent" d="M680,190 L705,185 L725,195 L735,215 L728,240 L715,260 L700,270 L690,260 L680,240 L675,215 Z"/>
+            <!-- Central & East Asia -->
+            <path class="continent" d="M600,125 L660,115 L720,118 L780,125 L830,135 L865,150 L870,170 L850,180 L810,185 L760,185 L720,180 L680,175 L640,170 L610,160 Z"/>
+            <!-- SE Asia -->
+            <path class="continent" d="M760,210 L790,205 L810,215 L815,230 L800,245 L775,245 L760,230 Z"/>
+            <!-- Indonesia archipelago -->
+            <path class="continent" d="M790,260 L815,255 L825,265 L815,275 L795,272 Z M830,265 L852,262 L858,272 L840,278 Z"/>
+            <!-- Australia -->
+            <path class="continent" d="M835,310 L875,305 L905,315 L915,335 L905,355 L875,362 L840,358 L822,340 L825,320 Z"/>
+            <!-- New Zealand -->
+            <path class="continent" d="M940,365 L950,362 L955,378 L948,385 Z"/>
+
+            <!-- Equator reference line -->
+            <line x1="0" y1="270" x2="1000" y2="270" stroke="#0A0F0D" stroke-width="0.4" opacity="0.1" stroke-dasharray="2 4"/>
+          </svg>
+
+          <!-- Overlay: routes + hubs, same viewBox -->
+          <svg class="overlay" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <!-- Arrowhead for routes -->
+              <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M0,0 L10,5 L0,10 Z" fill="#00D17A"/>
+              </marker>
+              <marker id="arr-mute" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+                <path d="M0,0 L10,5 L0,10 Z" fill="#5F6763" opacity="0.4"/>
+              </marker>
+            </defs>
+
+            <!-- Coordinates reference:
+                 NCR Delhi  (705, 195)  - HO
+                 Mumbai     (695, 225)
+                 Kolkata    (725, 212)
+                 Bangalore  (705, 250)
+                 Chennai    (715, 253)
+                 Bucharest  (540, 130)
+                 Cape Town  (555, 358)
+            -->
+
+            <!-- Dotted planning routes (secondary) -->
+            <path class="route" d="M705,195 Q620,160 540,130"/>
+            <path class="route" d="M705,195 Q640,275 555,358"/>
+            <path class="route" d="M705,195 Q820,220 840,335"/>
+            <path class="route" d="M705,195 Q600,140 450,130"/>
+
+            <!-- Active live arcs: India ↔ Bucharest, India ↔ Cape Town -->
+            <path id="arc-buc" class="route-live" d="M705,195 Q620,155 540,130" style="animation-delay:0s" marker-end="url(#arr)"/>
+            <path id="arc-cpt" class="route-live" d="M705,195 Q640,275 555,358" style="animation-delay:1.4s" marker-end="url(#arr)"/>
+
+            <!-- Planes traveling along the routes -->
+            <g class="plane-g" style="offset-path:path('M705,195 Q620,155 540,130');offset-rotate:auto;animation-delay:0.2s">
+              <g transform="translate(-5,-5)">
+                <path d="M0,5 L10,3 L10,7 Z M10,5 L14,5" fill="#00D17A"/>
+              </g>
+            </g>
+            <g class="plane-g" style="offset-path:path('M705,195 Q640,275 555,358');offset-rotate:auto;animation-delay:1.6s">
+              <g transform="translate(-5,-5)">
+                <path d="M0,5 L10,3 L10,7 Z M10,5 L14,5" fill="#00D17A"/>
+              </g>
+            </g>
+
+            <!-- HUBS -->
+            <!-- NCR (HO) with label on right -->
+            <g class="hub-svg">
+              <circle class="hub-glow-2" cx="705" cy="195" r="14"/>
+              <circle class="hub-glow" cx="705" cy="195" r="8"/>
+              <circle class="hub-core" cx="705" cy="195" r="4.2"/>
+              <circle class="hub-ring" cx="705" cy="195" r="6" style="animation-delay:0s"/>
+              <!-- callout -->
+              <line class="lbl-line" x1="710" y1="195" x2="762" y2="172"/>
+              <rect class="lbl-pill" x="762" y="162" width="78" height="20" rx="2"/>
+              <text class="lbl-text" x="770" y="175.5">NCR</text>
+              <text class="lbl-tag" x="795" y="175.5">HEADQUARTERS</text>
+            </g>
+
+            <!-- Bucharest -->
+            <g class="hub-svg">
+              <circle class="hub-glow" cx="540" cy="130" r="7"/>
+              <circle class="hub-core" cx="540" cy="130" r="3.8"/>
+              <circle class="hub-ring" cx="540" cy="130" r="6" style="animation-delay:0.8s"/>
+              <line class="lbl-line" x1="537" y1="128" x2="505" y2="112"/>
+              <rect class="lbl-pill" x="428" y="100" width="78" height="20" rx="2"/>
+              <text class="lbl-text" x="436" y="113.5">BUCHAREST</text>
+              <text class="lbl-tag" x="436" y="136">EU GATEWAY</text>
+            </g>
+
+            <!-- Cape Town -->
+            <g class="hub-svg">
+              <circle class="hub-glow" cx="555" cy="358" r="7"/>
+              <circle class="hub-core" cx="555" cy="358" r="3.8"/>
+              <circle class="hub-ring" cx="555" cy="358" r="6" style="animation-delay:1.6s"/>
+              <line class="lbl-line" x1="552" y1="360" x2="515" y2="378"/>
+              <rect class="lbl-pill" x="432" y="370" width="82" height="20" rx="2"/>
+              <text class="lbl-text" x="440" y="383.5">CAPE TOWN</text>
+              <text class="lbl-tag" x="440" y="403">AFRICA GATEWAY</text>
+            </g>
+
+            <!-- India cluster: smaller dots, leader to the card -->
+            <g class="hub-svg">
+              <circle class="hub-core" cx="695" cy="225" r="3"/>
+              <circle class="hub-core" cx="725" cy="212" r="3"/>
+              <circle class="hub-core" cx="705" cy="250" r="3"/>
+              <circle class="hub-core" cx="715" cy="253" r="3"/>
+            </g>
+          </svg>
+
+          <!-- India cluster card anchored bottom-right -->
+          <div class="india-cluster-card" aria-label="India operations">
+            <div class="ic-t"><span>INDIA <b>/ 5 OFFICES</b></span><span>+91</span></div>
+            <ul>
+              <li class="ho"><span class="city"><b>New Delhi (NCR)</b></span><span class="v">HO</span></li>
+              <li><span class="city">Mumbai</span><span class="v">West</span></li>
+              <li><span class="city">Kolkata</span><span class="v">East</span></li>
+              <li><span class="city">Bangalore</span><span class="v">South</span></li>
+              <li><span class="city">Chennai</span><span class="v">South</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Side ticker -->
+        <aside class="map-side">
+          <div class="ms-head">
+            <span>Network activity</span>
+            <span class="live-dot">LIVE</span>
+          </div>
+          <div class="ms-title">Shipments in flight</div>
+          <div class="ticker" id="ticker">
+            <!-- injected by JS -->
+          </div>
+          <div class="ms-foot">
+            <div><span class="k">In transit</span><span class="v" id="t-intransit">247</span></div>
+            <div><span class="k">Today · cleared</span><span class="v" id="t-cleared">1,382</span></div>
+            <div><span class="k">Carriers online</span><span class="v">38</span></div>
+            <div><span class="k">Avg clearance</span><span class="v">4h 12m</span></div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Metrics -->
+      <div class="metrics">
+        <div>
+          <div class="num">9</div>
+          <div class="lbl">Offices / 3 continents</div>
+        </div>
+        <div>
+          <div class="num">15+</div>
+          <div class="lbl">Products in production</div>
+        </div>
+        <div>
+          <div class="num">24/7</div>
+          <div class="lbl">Global support coverage</div>
+        </div>
+        <div>
+          <div class="num">99.97<span style="color:var(--mute);font-size:24px">%</span></div>
+          <div class="lbl">Platform uptime (2025)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =================== CLIENT STRIP =================== -->
+<section class="clients" style="padding:64px 0">
+  <div class="container">
+    <p class="clients-label">Operating with the people who move the world's goods</p>
+    <div class="clients-strip">
+      <div class="client"><div class="placeholder">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 12l6-6 4 4 6-6" stroke="currentColor" stroke-width="1.6"/></svg>
+        Air Charter Co
+      </div></div>
+      <div class="client">Terminal One</div>
+      <div class="client"><div class="placeholder">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.6"/><path d="M4 12h16" stroke="currentColor" stroke-width="1.6"/></svg>
+        GlobalFreight
+      </div></div>
+      <div class="client">Harborline</div>
+      <div class="client"><div class="placeholder">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="4" y="7" width="16" height="10" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="17" r="2" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="17" r="2" stroke="currentColor" stroke-width="1.6"/></svg>
+        CargoWave
+      </div></div>
+      <div class="client">NorthStar Aviation</div>
+    </div>
+    <p class="mono" style="text-align:center;font-size:10.5px;color:var(--mute);margin-top:24px;opacity:0.7">
+      // logos rendered as placeholders — supply .svg/.png files to replace
+    </p>
+  </div>
+</section>
+
+<!-- =================== PRODUCT SHOWCASE =================== -->
+<section class="products" id="products">
+  <div class="container">
+    <div class="sec-head fade">
+      <div class="sec-eyebrow">01 / Platform</div>
+      <h2 class="sec-title">Fifteen products. One operational platform. Engineered for the <em>specifics</em> of air, cargo, and freight.</h2>
+    </div>
+  </div>
+
+  <!-- iCAFFE -->
+  <div class="product-row fade">
+    <div class="product-info">
+      <div class="p-top">
+        <span class="product-idx">P / 01 — FLAGSHIP</span>
+        <div class="product-name">
+          <h3>iCAFFE</h3>
+          <span class="tag">AI Freight Intelligence</span>
+        </div>
+        <p class="product-tag">An AI-powered cargo &amp; freight forwarding execution platform. Automates shipment management, documentation, and real-time tracking across every leg of the journey.</p>
+        <ul class="product-feats">
+          <li>Automated booking, rate management &amp; quoting</li>
+          <li>Document generation with AI-driven validation</li>
+          <li>Full-lifecycle shipment visibility, from pickup to POD</li>
+          <li>Carrier, customs and WMS integrations out of the box</li>
+        </ul>
+      </div>
+      <a href="products/icaffe.html" class="product-link">View iCAFFE <span class="arrow">→</span></a>
+    </div>
+    <div class="product-visual">
+      <div class="mock">
+        <div class="mock-bar">
+          <div class="lights"><span></span><span></span><span></span></div>
+          <div class="title">iCAFFE · Shipment Operations</div>
+        </div>
+        <div class="mock-body">
+          <div class="mock-head">
+            <div class="mock-h">Active shipments</div>
+            <div class="mock-live">Live</div>
+          </div>
+          <div class="mock-row">
+            <div class="id">HI-8824</div>
+            <div>BOM → FRA · 2×PMC</div>
+            <div class="status s-ok">In transit</div>
+            <div class="mock-meta">ETA 02:42</div>
+          </div>
+          <div class="mock-row">
+            <div class="id">HI-8825</div>
+            <div>DEL → CPT · 4×AKE</div>
+            <div class="status s-ok">In transit</div>
+            <div class="mock-meta">ETA 11:15</div>
+          </div>
+          <div class="mock-row">
+            <div class="id">HI-8826</div>
+            <div>CCU → OTP · 1×LD3</div>
+            <div class="status s-wait">Awaiting MAWB</div>
+            <div class="mock-meta">—</div>
+          </div>
+          <div class="mock-row">
+            <div class="id">HI-8827</div>
+            <div>MAA → DOH · DGR</div>
+            <div class="status s-alert">Docs check</div>
+            <div class="mock-meta">+12m</div>
+          </div>
+          <div class="mock-chart">
+            <svg viewBox="0 0 400 60" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#00D17A" stop-opacity="0.35"/>
+                  <stop offset="100%" stop-color="#00D17A" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0,45 L30,40 L60,42 L90,30 L120,32 L150,22 L180,26 L210,15 L240,18 L270,12 L300,16 L330,10 L360,14 L400,8 L400,60 L0,60 Z" fill="url(#g1)"/>
+              <path d="M0,45 L30,40 L60,42 L90,30 L120,32 L150,22 L180,26 L210,15 L240,18 L270,12 L300,16 L330,10 L360,14 L400,8" fill="none" stroke="#00D17A" stroke-width="1.5"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WiseCCS -->
+  <div class="product-row flip fade">
+    <div class="product-info">
+      <div class="p-top">
+        <span class="product-idx">P / 02 — COMMUNITY</span>
+        <div class="product-name">
+          <h3>WiseCCS</h3>
+          <span class="tag">Cargo Community System</span>
+        </div>
+        <p class="product-tag">A neutral, airport-wide cargo community system. Connects airlines, handlers, forwarders, and customs into a single authoritative data layer.</p>
+        <ul class="product-feats">
+          <li>Real-time data sharing across all stakeholders</li>
+          <li>Customs integration &amp; pre-clearance workflows</li>
+          <li>Community-wide analytics and KPI reporting</li>
+          <li>IATA ONE Record &amp; Cargo-XML ready</li>
+        </ul>
+      </div>
+      <a href="#" class="product-link">View WiseCCS <span class="arrow">→</span></a>
+    </div>
+    <div class="product-visual">
+      <div class="net-mock">
+        <svg class="net-svg" viewBox="0 0 400 300" preserveAspectRatio="none">
+          <line class="net-line" x1="80" y1="80" x2="200" y2="150"/>
+          <line class="net-line" x1="320" y1="80" x2="200" y2="150"/>
+          <line class="net-line" x1="80" y1="220" x2="200" y2="150"/>
+          <line class="net-line" x1="320" y1="220" x2="200" y2="150"/>
+          <line class="net-line" x1="200" y1="50" x2="200" y2="150"/>
+          <line class="net-line" x1="200" y1="250" x2="200" y2="150"/>
+
+          <path class="net-flow" d="M80,80 Q140,115 200,150"/>
+          <path class="net-flow" d="M320,220 Q260,185 200,150" style="animation-delay:0.5s"/>
+          <path class="net-flow" d="M200,50 L200,150" style="animation-delay:1s"/>
+        </svg>
+        <div class="net-node center" style="left:50%;top:50%"><div class="n-dot">CCS</div><div class="n-label">Community Core</div></div>
+        <div class="net-node" style="left:20%;top:27%"><div class="n-dot">AIR</div><div class="n-label">Airline</div></div>
+        <div class="net-node" style="left:80%;top:27%"><div class="n-dot">FFW</div><div class="n-label">Forwarder</div></div>
+        <div class="net-node" style="left:20%;top:73%"><div class="n-dot">GHA</div><div class="n-label">Handler</div></div>
+        <div class="net-node" style="left:80%;top:73%"><div class="n-dot">CUS</div><div class="n-label">Customs</div></div>
+        <div class="net-node" style="left:50%;top:17%"><div class="n-dot">TRM</div><div class="n-label">Terminal</div></div>
+        <div class="net-node" style="left:50%;top:83%"><div class="n-dot">TRK</div><div class="n-label">Trucker</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WiseCargo -->
+  <div class="product-row fade">
+    <div class="product-info">
+      <div class="p-top">
+        <span class="product-idx">P / 03 — TERMINAL</span>
+        <div class="product-name">
+          <h3>WiseCargo</h3>
+          <span class="tag">Terminal Operations</span>
+        </div>
+        <p class="product-tag">End-to-end cargo terminal management. Acceptance, storage, build-up &amp; breakdown, and delivery — with real-time visibility of every ULD, shipment and dock.</p>
+        <ul class="product-feats">
+          <li>Live storage-zone and capacity planning</li>
+          <li>Build-up / breakdown workflows with barcode &amp; RFID</li>
+          <li>Acceptance-to-delivery SLA monitoring</li>
+          <li>Dangerous goods, perishables &amp; temperature-sensitive handling</li>
+        </ul>
+      </div>
+      <a href="#" class="product-link">View WiseCargo <span class="arrow">→</span></a>
+    </div>
+    <div class="product-visual">
+      <div class="term-mock">
+        <div class="term-head">
+          <span>Zone B · Import storage</span>
+          <span>02:42:18 · Live</span>
+        </div>
+        <div class="term-grid" id="termGrid"></div>
+        <div class="term-foot">
+          <span>Occupancy <b>74%</b></span>
+          <span>Dwell avg <b>6h 12m</b></span>
+          <span>SLA <b style="color:var(--accent)">98.4%</b></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WiseHandling -->
+  <div class="product-row flip fade">
+    <div class="product-info">
+      <div class="p-top">
+        <span class="product-idx">P / 04 — GROUND</span>
+        <div class="product-name">
+          <h3>WiseHandling</h3>
+          <span class="tag">Ground Ops</span>
+        </div>
+        <p class="product-tag">Digitizes ground handling with real-time resource allocation, turnaround coordination and live SLA monitoring — across ramp, passenger and cargo handling.</p>
+        <ul class="product-feats">
+          <li>Resource scheduling for crew, equipment and bays</li>
+          <li>Turnaround event capture with IATA AHM codes</li>
+          <li>Billing &amp; SLA performance at flight level</li>
+          <li>Mobile-first field capture for ramp teams</li>
+        </ul>
+      </div>
+      <a href="#" class="product-link">View WiseHandling <span class="arrow">→</span></a>
+    </div>
+    <div class="product-visual">
+      <div class="hand-mock">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="color:var(--ink);font-size:12px;font-weight:500">Turnaround · AI-431 · CPT</div>
+          <div style="color:var(--accent);font-size:10px">ON TIME</div>
+        </div>
+        <div class="hand-timeline">
+          <div class="hand-item done">
+            <div class="t">02:14</div>
+            <div class="e">BLOCKS ON</div>
+            <div class="s">✓</div>
+          </div>
+          <div class="hand-item done">
+            <div class="t">02:18</div>
+            <div class="e">DOORS OPEN · FWD CARGO</div>
+            <div class="s">✓</div>
+          </div>
+          <div class="hand-item live">
+            <div class="t">02:31</div>
+            <div class="e">OFFLOAD IN PROGRESS · 64/120 ULD</div>
+            <div class="s">LIVE</div>
+          </div>
+          <div class="hand-item">
+            <div class="t">02:48</div>
+            <div class="e">REFUEL START (projected)</div>
+            <div class="s">—</div>
+          </div>
+          <div class="hand-item">
+            <div class="t">03:26</div>
+            <div class="e">BLOCKS OFF (scheduled)</div>
+            <div class="s">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container" style="margin-top:64px;display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap" class="fade">
+    <p class="mono" style="font-size:12px;color:var(--mute)">11 more products in the suite — BagTrack, WiseDOX, WiseFleet, WiseSTOX, WiseGSA, WiseHRMS, AMS, VMS, CRMExpert, E-Annex Ultra, WiseDO, WiseTrax, SmATGate.</p>
+    <a href="#" class="btn btn-outline">See every product <span class="arrow">→</span></a>
+  </div>
+</section>
+
+<!-- =================== INDUSTRIES =================== -->
+<section class="industries" id="industries">
+  <div class="container">
+    <div class="sec-head fade">
+      <div class="sec-eyebrow" style="color:rgba(255,255,255,0.5)">02 / Industries</div>
+      <h2 class="sec-title">Built by operators, for <em>operators</em>. Every workflow, every compliance line.</h2>
+    </div>
+
+    <div class="ind-grid">
+      <div class="ind-cell">
+        <div><div class="num">01</div><h4>Airlines &amp; GSAs</h4><p>Cargo revenue management, capacity planning, sales operations and IATA messaging for carriers and their sales agents.</p></div>
+        <span class="arrow">Explore →</span>
+      </div>
+      <div class="ind-cell">
+        <div><div class="num">02</div><h4>Freight Forwarders</h4><p>A digital forwarding stack — booking, pricing, documentation, customs, tracking — purpose-built for modern FF operations.</p></div>
+        <span class="arrow">Explore →</span>
+      </div>
+      <div class="ind-cell">
+        <div><div class="num">03</div><h4>Customs Brokers</h4><p>E-Annex Ultra automates declarations and compliance filing with live integration to customs authorities.</p></div>
+        <span class="arrow">Explore →</span>
+      </div>
+      <div class="ind-cell">
+        <div><div class="num">04</div><h4>Terminal Operators</h4><p>Capacity, cargo &amp; community systems to run high-throughput cargo terminals and bonded facilities.</p></div>
+        <span class="arrow">Explore →</span>
+      </div>
+      <div class="ind-cell">
+        <div><div class="num">05</div><h4>Carriers &amp; GHAs</h4><p>Fleet, driver, and ground-handling workflows from ramp to delivery — fully interoperable with the wider suite.</p></div>
+        <span class="arrow">Explore →</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =================== PLATFORM STACK =================== -->
+<section id="platform">
+  <div class="container">
+    <div class="sec-head fade">
+      <div class="sec-eyebrow">03 / Architecture</div>
+      <h2 class="sec-title">One platform. Composed in <em>layers</em>.</h2>
+    </div>
+
+    <div class="stack-diagram fade">
+      <div class="stack-cap">
+        <h3>A stack designed for interoperability.</h3>
+        <p>Each Hans Infomatic product is a first-class module, but every module writes into the same operational data fabric. Deploy one product; extend to the full suite when you're ready.</p>
+        <p class="mono" style="font-size:12px;color:var(--mute);margin-top:8px">SOC 2 Type II · ISO 27001 · GDPR</p>
+      </div>
+      <div class="stack-layers">
+        <div class="stack-layer top">
+          <div class="l-num">L4</div>
+          <div><span class="l-title">Experience</span><span class="l-sub">Web, mobile, API, EDI</span></div>
+          <div class="l-items">Dashboards · Mobile · Partner portals</div>
+        </div>
+        <div class="stack-layer">
+          <div class="l-num">L3</div>
+          <div><span class="l-title">Products</span><span class="l-sub">15+ modules</span></div>
+          <div class="l-items">iCAFFE · WiseCCS · WiseCargo · …</div>
+        </div>
+        <div class="stack-layer">
+          <div class="l-num">L2</div>
+          <div><span class="l-title">Intelligence</span><span class="l-sub">ML, OCR, event engine</span></div>
+          <div class="l-items">Anomaly · Forecast · Classification</div>
+        </div>
+        <div class="stack-layer">
+          <div class="l-num">L1</div>
+          <div><span class="l-title">Data fabric</span><span class="l-sub">Shipments, documents, events</span></div>
+          <div class="l-items">ONE Record · Cargo-XML · IATA AHM</div>
+        </div>
+        <div class="stack-layer">
+          <div class="l-num">L0</div>
+          <div><span class="l-title">Infrastructure</span><span class="l-sub">Cloud, on-prem, hybrid</span></div>
+          <div class="l-items">Multi-region · Air-gapped · Edge</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =================== GLOBAL PRESENCE =================== -->
+<section class="presence" id="presence">
+  <div class="container">
+    <div class="sec-head fade">
+      <div class="sec-eyebrow">04 / Presence</div>
+      <h2 class="sec-title">Nine offices. Three continents. <em>One</em> operating philosophy.</h2>
+    </div>
+  </div>
+
+  <div class="offices fade">
+    <div class="office ho">
+      <div class="office-region">India — Headquarters</div>
+      <h4>Delhi NCR</h4>
+      <div class="sub">Headquarters · Engineering · Operations</div>
+      <div class="addr">The centre of our engineering and platform operations — home to core product, R&amp;D and global customer success.</div>
+    </div>
+    <div class="office">
+      <div class="office-region">India — West</div>
+      <h4>Mumbai</h4>
+      <div class="sub">Sales · Airlines &amp; Freight</div>
+      <div class="addr">Commercial hub serving BOM airline cargo, forwarders and the western India GSA network.</div>
+    </div>
+    <div class="office">
+      <div class="office-region">India — East</div>
+      <h4>Kolkata</h4>
+      <div class="sub">Operations · Customer Success</div>
+      <div class="addr">Eastern operations for CCU airline cargo and regional terminal implementations.</div>
+    </div>
+    <div class="office">
+      <div class="office-region">India — South</div>
+      <h4>Chennai</h4>
+      <div class="sub">Delivery · Implementation</div>
+      <div class="addr">Implementation centre anchoring MAA airline cargo and southern corridor deployments.</div>
+    </div>
+    <div class="office">
+      <div class="office-region">India — South</div>
+      <h4>Bangalore</h4>
+      <div class="sub">Engineering · AI &amp; Platform</div>
+      <div class="addr">AI / ML and platform engineering centre, powering the next generation of WiseAI products.</div>
+    </div>
+    <div class="office">
+      <div class="office-region">Africa</div>
+      <h4>Cape Town</h4>
+      <div class="sub">Regional HQ · Africa</div>
+      <div class="addr">Serving airlines, terminals and forwarders across Sub-Saharan Africa from our Cape Town office.</div>
+    </div>
+    <div class="office">
+      <div class="office-region">Europe</div>
+      <h4>Bucharest</h4>
+      <div class="sub">Regional HQ · Europe</div>
+      <div class="addr">European operations and delivery centre, covering EU cargo compliance and carrier partners.</div>
+    </div>
+    <div class="office">
+      <div class="office-region">Coming 2026</div>
+      <h4>Singapore</h4>
+      <div class="sub">Planned · APAC</div>
+      <div class="addr" style="opacity:0.6">APAC regional hub in planning — serving Southeast Asia &amp; Oceania cargo partners.</div>
+    </div>
+    <div class="office">
+      <div class="office-region">Coming 2026</div>
+      <h4>Dubai</h4>
+      <div class="sub">Planned · MENA</div>
+      <div class="addr" style="opacity:0.6">MENA regional office in planning — covering Gulf &amp; Middle East cargo corridors.</div>
+    </div>
+  </div>
+</section>
+
+<!-- =================== CTA BANNER =================== -->
+<section class="cta-banner">
+  <div class="container">
+    <div class="cta-inner fade">
+      <h2>Ready to <em>operate</em><br>at global standard?</h2>
+      <div class="cta-right">
+        <p>Book a 30-minute walkthrough with a Hans Infomatic solutions engineer. We'll show you the platform on your own shipment data.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <a href="#" class="btn btn-primary">Book a demo <span class="arrow">→</span></a>
+          <a href="#" class="btn btn-outline">Talk to sales</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =================== FOOTER =================== -->
+<footer>
+  <div class="container">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a href="index.html" class="logo" style="font-size:18px">
+          <span class="logo-mark" style="width:26px;height:26px"><img src="assets/hans-logo.png" alt="Hans Infomatic" style="width:100%;height:100%;object-fit:contain;display:block"/></span>
+          Hans Infomatic
+        </a>
+        <p>Digital intelligence for the global movement of cargo. Built by operators, engineered for scale.</p>
+        <p class="mono" style="font-size:11px;color:var(--mute);margin-top:16px">HI / 2003 · ncr, india</p>
+      </div>
+
+      <div class="foot-col">
+        <h5>Products</h5>
+        <ul>
+          <li><a href="products/icaffe.html">iCAFFE</a></li>
+          <li><a href="#">WiseCCS</a></li>
+          <li><a href="#">WiseCargo</a></li>
+          <li><a href="#">WiseHandling</a></li>
+          <li><a href="#">BagTrack</a></li>
+          <li><a href="#">All products →</a></li>
+        </ul>
+      </div>
+
+      <div class="foot-col">
+        <h5>Industries</h5>
+        <ul>
+          <li><a href="#">Airlines &amp; GSAs</a></li>
+          <li><a href="#">Freight Forwarders</a></li>
+          <li><a href="#">Customs Brokers</a></li>
+          <li><a href="#">Terminal Operators</a></li>
+          <li><a href="#">Carriers</a></li>
+        </ul>
+      </div>
+
+      <div class="foot-col">
+        <h5>Company</h5>
+        <ul>
+          <li><a href="#">About</a></li>
+          <li><a href="#">Global offices</a></li>
+          <li><a href="#">Careers</a></li>
+          <li><a href="#">Press &amp; media</a></li>
+          <li><a href="#">Partner program</a></li>
+        </ul>
+      </div>
+
+      <div class="foot-col">
+        <h5>Resources</h5>
+        <ul>
+          <li><a href="#">Documentation</a></li>
+          <li><a href="#">Case studies</a></li>
+          <li><a href="#">Blog</a></li>
+          <li><a href="#">Security</a></li>
+          <li><a href="#">Status</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="foot-bottom">
+      <p>© 2026 Hans Infomatic — All rights reserved.</p>
+      <div class="links">
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+        <a href="#">Cookies</a>
+        <a href="#">Security</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Fade in on scroll
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+  },{threshold:0.1,rootMargin:'0px 0px -60px 0px'});
+  document.querySelectorAll('.fade').forEach(el=>io.observe(el));
+
+  // Ops console: update counters + cycle table rows
+  (function(){
+    const proc = document.getElementById('dw-proc');
+    const trans = document.getElementById('dw-trans');
+    setInterval(()=>{
+      if(proc){
+        const cur = parseInt(proc.textContent.replace(/,/g,''))||1382;
+        proc.textContent = (cur + Math.floor(Math.random()*3)).toLocaleString();
+      }
+      if(trans){
+        trans.textContent = (247 + Math.floor(Math.random()*14) - 6).toString();
+      }
+    }, 2800);
+
+    // Subtle table row highlight rotation
+    const rows = document.querySelectorAll('#opsTable tr');
+    let ri = 0;
+    setInterval(()=>{
+      rows.forEach(r=>r.style.background='');
+      if(rows[ri]) rows[ri].style.background='rgba(0,209,122,0.06)';
+      ri = (ri+1) % rows.length;
+    }, 1400);
+  })();
+
+  // (legacy) Live shipment ticker - kept but inert
+  (function(){
+    const ticker = document.getElementById('ticker');
+    if(!ticker) return;
+    const routes = [
+      {from:'BOM',to:'JNB',carrier:'MSC',mode:'SEA',ref:'MBLX-48201',status:'loaded'},
+      {from:'DEL',to:'OTP',carrier:'Emirates',mode:'AIR',ref:'EK0588-A',status:'in transit'},
+      {from:'MAA',to:'CPT',carrier:'Maersk',mode:'SEA',ref:'MAEU-772031',status:'cleared'},
+      {from:'CCU',to:'FRA',carrier:'Lufthansa',mode:'AIR',ref:'LH4821',status:'in transit'},
+      {from:'BLR',to:'DXB',carrier:'Etihad',mode:'AIR',ref:'EY0203',status:'boarding'},
+      {from:'NSA',to:'CMB',carrier:'Hapag-Lloyd',mode:'SEA',ref:'HLCU-9801',status:'departed'},
+      {from:'DEL',to:'JFK',carrier:'Air India',mode:'AIR',ref:'AI0101',status:'in transit'},
+      {from:'MUN',to:'DEL',carrier:'ONE',mode:'SEA',ref:'ONEY-44120',status:'arriving'},
+      {from:'CPT',to:'BOM',carrier:'CMA CGM',mode:'SEA',ref:'CMAU-55124',status:'cleared'},
+      {from:'BUC',to:'DEL',carrier:'Turkish',mode:'AIR',ref:'TK1502',status:'in transit'},
+    ];
+    const MAX = 6;
+    let idx = 0;
+    function render(){
+      const r = routes[idx % routes.length];
+      idx++;
+      const now = new Date();
+      const tt = String(now.getUTCHours()).padStart(2,'0')+':'+String(now.getUTCMinutes()).padStart(2,'0')+':'+String(now.getUTCSeconds()).padStart(2,'0');
+      const el = document.createElement('div');
+      el.className = 'ticker-item new';
+      el.innerHTML = `
+        <div class="ti-top"><b>${r.mode} · ${r.carrier}</b><span>${tt}</span></div>
+        <div class="ti-path">${r.from} → ${r.to} · ${r.ref}</div>
+        <div class="ti-top" style="margin-top:3px"><span style="color:var(--accent);text-transform:uppercase">${r.status}</span><span>${r.ref.split('-')[0]}</span></div>
+      `;
+      ticker.prepend(el);
+      while(ticker.children.length > MAX) ticker.removeChild(ticker.lastChild);
+      // remove 'new' marker from older items
+      Array.from(ticker.children).forEach((c,i)=>{ if(i>0) c.classList.remove('new'); });
+    }
+    // seed
+    for(let i=0;i<4;i++) render();
+    // loop
+    setInterval(render, 2600);
+
+    // increment counters
+    const intransit = document.getElementById('t-intransit');
+    const cleared = document.getElementById('t-cleared');
+    setInterval(()=>{
+      if(intransit) intransit.textContent = (247 + Math.floor(Math.random()*12) - 5).toString();
+      if(cleared){
+        const cur = parseInt(cleared.textContent.replace(/,/g,''))||1382;
+        const next = cur + Math.floor(Math.random()*3);
+        cleared.textContent = next.toLocaleString();
+      }
+    }, 3200);
+  })();
+
+  // Populate terminal grid
+  const grid = document.getElementById('termGrid');
+  if(grid){
+    const cells = 64;
+    const states = ['','f1','f1','f2','','f1','f2','f3','','','f1','','f2','f1','f3','','f1','','f2','f1','','f3','alert','f1','','f1','','f2','f1','','','f3','f1','','f2','','f1','f2','','','','f1','','','f1','f2','','f3','','','f1','','','f2','f1','','','f1','','f2','f1','','','','f1'];
+    for(let i=0;i<cells;i++){
+      const cell = document.createElement('div');
+      cell.className = 'term-cell ' + (states[i]||'');
+      grid.appendChild(cell);
+    }
+  }
+</script>
+</body>
+</html>

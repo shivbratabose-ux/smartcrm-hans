@@ -2,9 +2,9 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Bug, Clock, AlertCircle, Download } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TICKET_TYPES, TICKET_STATUSES, PRIORITIES, TEAM, TEAM_MAP } from '../data/constants';
 import { BLANK_TKT } from '../data/seed';
-import { uid, fmt, today, isOverdue, sanitizeObj, validateTicket, hasErrors, softDeleteById } from '../utils/helpers';
+import { uid, fmt, today, isOverdue, sanitizeObj, validateTicket, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { notify } from '../utils/toast';
-import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError, TypeaheadSelect } from './shared';
+import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
@@ -26,7 +26,7 @@ const TicketsSortIcon = ({ col, sortKey, sortDir }) => {
 /* ── TicketsDataGrid ──────────────────────────────────────────────
    All BLANK_TKT fields are opt-in via the column picker. Defaults
    match the legacy hardcoded list. */
-function TicketsDataGrid({ rows, bulk, sort, openEdit, setDetail, setConfirm, canDelete, currentUser }) {
+function TicketsDataGrid({ rows, bulk, sort, openEdit, setDetail, setConfirm, canDelete, currentUser, canEditTkt, onRequestAccess, commLogs = [] }) {
   const txt = (v) => <span style={{fontSize:12}}>{v || "-"}</span>;
   const COLS = useMemo(() => ([
     { key: "title", label: "Ticket", defaultWidth: 280, render: t => (
@@ -86,17 +86,20 @@ function TicketsDataGrid({ rows, bulk, sort, openEdit, setDetail, setConfirm, ca
       SortIcon={TicketsSortIcon}
       selection={bulk}
       rowActions={t => (
-        <div style={{display:"flex",gap:4}}>
-          <button className="icon-btn" onClick={() => openEdit(t)}><Edit2 size={14}/></button>
-          {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(t.id)}><Trash2 size={14}/></button>}
-        </div>
+        <EditLockActions
+          editable={canEditTkt ? canEditTkt(t) : true}
+          pending={hasPendingAccessReq(commLogs, "ticket", t.id, currentUser)}
+          onEdit={() => openEdit(t)} onDelete={() => setConfirm(t.id)}
+          onRequest={() => onRequestAccess && onRequestAccess(t)} canDelete={canDelete}/>
       )}
     />
   );
 }
 
-function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,catalog=[]}) {
+function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,catalog=[],commLogs=[],onRequestEditAccess}) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
+  const canEditTkt = (t) => canEditRecord({ownerId:t?.assigned,currentUser,orgUsers,recordType:"ticket",recordId:t?.id,commLogs});
+  const requestAccessTkt = (t) => onRequestEditAccess && onRequestEditAccess("ticket", t.id, t.ticketNo||t.id||"Ticket", t.assigned);
   const [tabS,setTabS]=useState("Open");
   const [search,setSearch]=useState("");
   const [prodF,setProdF]=useState("All");
@@ -122,6 +125,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,cat
   const openAdd=()=>{setForm({...BLANK_TKT,id:`TK-${String(tickets.length+1).padStart(3,"0")}`,assigned:currentUser||BLANK_TKT.assigned});setFormErrors({});setModal({mode:"add"});};
   // Backfill productSelection from legacy product+affectedModule when editing older rows
   const openEdit=(t)=>{
+    if(t&&t.id&&!canEditTkt(t)){requestAccessTkt(t);return;}
     const ps = Array.isArray(t.productSelection) && t.productSelection.length > 0
       ? t.productSelection
       : (t.product ? [{ productId: t.product, moduleIds: [], noAddons: !t.affectedModule }] : []);
@@ -141,6 +145,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,cat
     return { ...f, product, affectedModule };
   };
   const save=()=>{
+    if(modal?.mode==="edit"&&!canEditTkt(form)){ setModal(null); setFormErrors({}); return; }
     const errs = validateTicket(form);
     if(hasErrors(errs)){ setFormErrors(errs); return; }
     const clean = sanitizeObj(syncLegacy(form));
@@ -211,6 +216,9 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,cat
           setConfirm={setConfirm}
           canDelete={canDelete}
           currentUser={currentUser}
+          canEditTkt={canEditTkt}
+          onRequestAccess={requestAccessTkt}
+          commLogs={commLogs}
         />
         <Pagination {...pg} />
       </div>

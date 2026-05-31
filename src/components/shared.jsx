@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight, AlertTriangle, RotateCcw } from "lucide-react";
+import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight, AlertTriangle, RotateCcw, Edit2, Trash2, Lock } from "lucide-react";
 import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
 import { fmt, uid, today, hasErrors } from "../utils/helpers";
 
@@ -25,6 +25,31 @@ export function StatusBadge({status}) {
     "planned":"bs-planned","completed":"bs-completed","cancelled":"bs-cancelled",
   }[s]||"bs-closed";
   return <span className={`badge ${cls}`}>{status}</span>;
+}
+/**
+ * EditLockActions — standard row-action cluster for the company-wide-read /
+ * owner-scoped-edit model. If the user can edit the record it renders the
+ * normal Edit (+ Delete) buttons; otherwise it shows either a "Requested"
+ * chip (a request is already pending) or a lock button that fires onRequest
+ * to ask the owner for edit access. `children` (extra leading buttons) render
+ * first in all states.
+ */
+export function EditLockActions({ editable, pending, onEdit, onDelete, onRequest, canDelete, children }) {
+  return (
+    <div style={{display:"flex",gap:4,alignItems:"center"}}>
+      {children}
+      {editable ? (
+        <>
+          <button className="icon-btn" aria-label="Edit" onClick={onEdit}><Edit2 size={14}/></button>
+          {canDelete && <button className="icon-btn" aria-label="Delete" onClick={onDelete}><Trash2 size={14}/></button>}
+        </>
+      ) : pending ? (
+        <span style={{fontSize:10.5,fontWeight:600,color:"#B45309",padding:"3px 7px",borderRadius:5,background:"#FFFBEB",border:"1px solid #FDE68A",whiteSpace:"nowrap"}} title="Edit-access request pending with the owner">Requested</span>
+      ) : (
+        <button className="icon-btn" aria-label="Request edit access" title="Read-only — request edit access from the owner" style={{color:"#64748B"}} onClick={onRequest}><Lock size={14}/></button>
+      )}
+    </div>
+  );
 }
 export function PriorityBadge({priority}) {
   const cls={Critical:"bp-critical",High:"bp-high",Medium:"bp-medium",Low:"bp-low"}[priority]||"bp-low";

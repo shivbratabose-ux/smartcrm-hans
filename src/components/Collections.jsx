@@ -2,9 +2,9 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, DollarSign, AlertCircle, TrendingUp } from "lucide-react";
 import { TEAM, TEAM_MAP, COLLECTION_STATUSES, PAYMENT_MODES, AGEING_BUCKETS } from '../data/constants';
 import { BLANK_COLLECTION } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { notify } from '../utils/toast';
-import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
+import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
@@ -71,7 +71,9 @@ const ageingColor = (a) => ({
   "Current":"#22C55E","0-30":"#F59E0B","30-60":"#F97316","60-90":"#EF4444","90-120":"#DC2626","120-180":"#991B1B","180+":"#450A0A"
 }[a] || "#94A3B8");
 
-function Collections({ collections, setCollections, accounts, contracts, currentUser, orgUsers, canDelete }) {
+function Collections({ collections, setCollections, accounts, contracts, currentUser, orgUsers, canDelete, commLogs=[], onRequestEditAccess }) {
+  const canEditCol = (c) => canEditRecord({ownerId:c?.owner,currentUser,orgUsers,recordType:"collection",recordId:c?.id,commLogs});
+  const requestAccessCol = (c) => onRequestEditAccess && onRequestEditAccess("collection", c.id, c.invoiceNo||"Invoice", c.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search, setSearch] = useState("");
   const [statusF, setStatusF] = useState("All");
@@ -107,8 +109,9 @@ function Collections({ collections, setCollections, accounts, contracts, current
     setFormErrors({});
     setModal({ mode: "add" });
   };
-  const openEdit = (c) => { setForm({ ...c }); setFormErrors({}); setModal({ mode: "edit" }); };
+  const openEdit = (c) => { if (c && c.id && !canEditCol(c)) { requestAccessCol(c); return; } setForm({ ...c }); setFormErrors({}); setModal({ mode: "edit" }); };
   const save = () => {
+    if (modal?.mode === "edit" && !canEditCol(form)) { setModal(null); setFormErrors({}); return; }
     const errs = validateCollection(form);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const clean = sanitizeObj({ ...form, pendingAmount: form.billedAmount - form.collectedAmount });
@@ -255,10 +258,11 @@ function Collections({ collections, setCollections, accounts, contracts, current
               onSort={sort.toggle}
               SortIcon={CollectionsSortIcon}
               rowActions={c => (
-                <div style={{display:"flex",gap:4}}>
-                  <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
-                  {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
-                </div>
+                <EditLockActions
+                  editable={canEditCol(c)}
+                  pending={hasPendingAccessReq(commLogs, "collection", c.id, currentUser)}
+                  onEdit={() => openEdit(c)} onDelete={() => setConfirm(c.id)}
+                  onRequest={() => requestAccessCol(c)} canDelete={canDelete}/>
               )}
             />
           );

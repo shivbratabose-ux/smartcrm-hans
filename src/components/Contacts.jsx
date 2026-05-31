@@ -1,9 +1,9 @@
 import { useState, useMemo, useRef } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star, Building2, ArrowUpDown, ArrowUp, ArrowDown, Globe, Briefcase, Calendar, TrendingUp, FileText, Activity, X } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today, resolveAddress, formatAddress, lower, title } from "../utils/helpers";
+import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today, resolveAddress, formatAddress, lower, title, canEditRecord, hasPendingAccessReq } from "../utils/helpers";
 import { PRODUCTS, PROD_MAP, COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
-import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, TypeaheadSelect, LogCallModal } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, TypeaheadSelect, LogCallModal, EditLockActions } from "./shared";
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -181,7 +181,7 @@ function ContactDetail({ c, onClose, onEdit, accounts, opps=[], activities=[] })
 /* ── ContactsDataGrid ─────────────────────────────────────────────
    Column registry covers every BLANK_CON field. Defaults match the
    pre-DataGrid header set; everything else is opt-in via the picker. */
-function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, openCallLog, setConfirm, canDelete, currentUser }) {
+function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, openCallLog, setConfirm, canDelete, currentUser, canEditCon, onRequestAccess, commLogs = [] }) {
   const txt = (v) => <span style={{fontSize:12}}>{v || "-"}</span>;
 
   // Click-vs-doubleclick on the contact name. React fires onClick TWICE
@@ -329,16 +329,23 @@ function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, 
       SortIcon={SortIcon}
       selection={bulk}
       rowActions={c => (
-        <div style={{display:"flex",gap:4}}>
-          <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(c)}><Edit2 size={14}/></button>
-          {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(c.id)}><Trash2 size={14}/></button>}
-        </div>
+        <EditLockActions
+          editable={canEditCon ? canEditCon(c) : true}
+          pending={hasPendingAccessReq(commLogs, "contact", c.id, currentUser)}
+          onEdit={() => openEdit(c)} onDelete={() => setConfirm(c.id)}
+          onRequest={() => onRequestAccess && onRequestAccess(c)} canDelete={canDelete}/>
       )}
     />
   );
 }
 
-function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], leads=[], contracts=[], activities=[], setActivities, callReports=[], setCallReports, orgUsers, masters, canDelete, currentUser}) {
+function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], leads=[], contracts=[], activities=[], setActivities, callReports=[], setCallReports, orgUsers, masters, canDelete, currentUser, commLogs=[], onRequestEditAccess}) {
+  // Contact edit follows ownership: the contact's own owner, or (when it has
+  // none) the owner of its linked account. Truly ownerless contacts stay
+  // editable by everyone (they are shared org-wide records).
+  const _contactOwner = (c) => c?.owner || accounts.find(a => a.id === c?.accountId)?.owner || "";
+  const canEditCon = (c) => { const o = _contactOwner(c); if (!o) return true; return canEditRecord({ownerId:o,currentUser,orgUsers,recordType:"contact",recordId:c?.id,commLogs}); };
+  const requestAccessCon = (c) => onRequestEditAccess && onRequestEditAccess("contact", c.id, c.name || "Contact", _contactOwner(c));
   const [search, setSearch] = useState("");
   const [accF, setAccF] = useState("All");
   const [deptF, setDeptF] = useState("All");
@@ -591,8 +598,9 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
     setFormErrors({});
     setModal({mode:"add"});
   };
-  const openEdit = c => { setForm({...c}); setFormErrors({}); setModal({mode:"edit"}); };
+  const openEdit = c => { if (c && c.id && !canEditCon(c)) { requestAccessCon(c); return; } setForm({...c}); setFormErrors({}); setModal({mode:"edit"}); };
   const save = () => {
+    if (modal?.mode === "edit" && !canEditCon(form)) { setModal(null); setFormErrors({}); return; }
     const errs = validateContact(form, accounts);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const isDup = contacts.some(existing =>
@@ -717,6 +725,9 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
                 setConfirm={setConfirm}
                 canDelete={canDelete}
                 currentUser={currentUser}
+                canEditCon={canEditCon}
+                onRequestAccess={requestAccessCon}
+                commLogs={commLogs}
               />
             )}
             {false && (

@@ -3,8 +3,8 @@ import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId } from '../utils/helpers';
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect } from './shared';
+import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from './ProductModulePicker';
 import BulkActions, { useBulkSelect } from './BulkActions';
@@ -1554,7 +1554,7 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
    Read-only Excel-like view backed by DataGrid. Column visibility,
    order, and width are persisted per-user via user_table_views; the
    "Grid" toggle still routes to EditableLeadsGrid for inline edits. */
-function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, openCallLog, setConfirm, handleConvert, canDelete, currentUser }) {
+function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, openCallLog, setConfirm, handleConvert, canDelete, currentUser, canEditLead, onRequestAccess, commLogs = [] }) {
   const txt = (val) => <span style={{ fontSize: 12 }}>{val || "-"}</span>;
   // Full registry: every meaningful lead field is opt-in. Different user
   // groups (sales reps, BD, marketing, line mgr, ops) can build their
@@ -1689,31 +1689,34 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
       SortIcon={SortIcon}
       selection={bulk}
       rowStyle={l => (l.nextCall && l.nextCall < today && l.stage !== "NA") ? { background: "#FEF2F2" } : undefined}
-      rowActions={l => (
+      rowActions={l => {
+        const editable = canEditLead ? canEditLead(l) : true;
+        return (
         <div style={{ display: "flex", gap: 4 }}>
           <button className="icon-btn" aria-label="Log Call" title="Log Call" style={{ color: "#3B82F6" }} onClick={() => openCallLog(l)}>
             <Phone size={14}/>
           </button>
-          <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(l)}>
-            <Edit2 size={14}/>
-          </button>
-          {canDelete && (
-            <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(l.id)}>
-              <Trash2 size={14}/>
-            </button>
-          )}
-          {l.stage !== "Converted" && l.stage !== "NA" && (
-            <button className="icon-btn" aria-label="Convert to Opportunity" title="Convert to Opportunity" style={{ color: "var(--brand)" }} onClick={() => handleConvert(l)}>
-              <ArrowRightCircle size={14}/>
-            </button>
-          )}
+          <EditLockActions
+            editable={editable}
+            pending={hasPendingAccessReq(commLogs, "lead", l.id, currentUser)}
+            onEdit={() => openEdit(l)} onDelete={() => setConfirm(l.id)}
+            onRequest={() => onRequestAccess && onRequestAccess(l)} canDelete={canDelete}>
+            {editable && l.stage !== "Converted" && l.stage !== "NA" && (
+              <button className="icon-btn" aria-label="Convert to Opportunity" title="Convert to Opportunity" style={{ color: "var(--brand)" }} onClick={() => handleConvert(l)}>
+                <ArrowRightCircle size={14}/>
+              </button>
+            )}
+          </EditLockActions>
         </div>
-      )}
+        );
+      }}
     />
   );
 }
 
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete }) {
+function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess }) {
+  const canEditLead = (l) => canEditRecord({ownerId:l?.assignedTo,currentUser,orgUsers,recordType:"lead",recordId:l?.id,commLogs});
+  const requestAccessLead = (l) => onRequestEditAccess && onRequestEditAccess("lead", l.id, l.company||l.leadId||"Lead", l.assignedTo);
   // Scope the team list to only users this logged-in user has visibility over.
   // This keeps owner filter and assignment dropdowns consistent with the scoped data.
   const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
@@ -1858,6 +1861,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   };
 
   const openEdit = (l) => {
+    if (l && l.id && !canEditLead(l)) { requestAccessLead(l); return; }
     // Backfill productSelection for legacy leads (created before the picker existed):
     // seed it from the single `product` field + any `additionalProducts`. User must
     // still confirm modules-or-None per line on next save (validation will prompt).
@@ -1873,6 +1877,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   };
 
   const save = () => {
+    if (modal?.mode === "edit" && !canEditLead(form)) { setModal(null); setFormErrors({}); return; }
     // Normalise productSelection BEFORE validating so half-filled lines
     // (product picked, no module ticked, no explicit "None") don't block save.
     const normalisedForm = { ...form, productSelection: normaliseProductSelection(form.productSelection) };
@@ -2269,6 +2274,9 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 handleConvert={handleConvert}
                 canDelete={canDelete}
                 currentUser={currentUser}
+                canEditLead={canEditLead}
+                onRequestAccess={requestAccessLead}
+                commLogs={commLogs}
               />
             )}
             {false && (

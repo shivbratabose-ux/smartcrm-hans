@@ -82,7 +82,7 @@ const coerceToTextArray = (v) => {
   if (typeof v === "string") {
     const trimmed = v.trim();
     if (trimmed === "") return [];
-    return trimmed.split(/[;,]/).map(s => s.trim()).filter(Boolean);
+    return trimmed.split(/;/).map(s => s.trim()).filter(Boolean);
   }
   // numbers / booleans / objects shouldn't land here — wrap as a single-element
   // array so we don't 400; downstream UI will surface the bad value to the user.
@@ -133,7 +133,7 @@ const coerceToNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// Coerce DD-MM-YYYY / DD/MM/YYYY (Indian convention) to YYYY-MM-DD.
+// Coerce DD-MM-YYYY / DD/MM/YYYY / MM-DD-YYYY to YYYY-MM-DD.
 // Postgres rejects "30-05-2026" with SQLSTATE 22008 ("date/time field
 // value out of range") because it treats the leading 30 as the month.
 // Reps in India + sales-collateral CSVs routinely use the local format,
@@ -148,13 +148,25 @@ const coerceToDate = (v) => {
   if (!s) return null;
   // Already YYYY-MM-DD (or with T timestamp suffix) — leave alone.
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s;
-  // DD-MM-YYYY / DD/MM/YYYY → YYYY-MM-DD. Pads single-digit day/month.
-  // If the first segment is > 12 we know it's DD-MM-YYYY for sure
-  // (otherwise it's ambiguous — assume Indian convention).
+  // DD-MM-YYYY / DD/MM/YYYY / MM-DD-YYYY → YYYY-MM-DD. Pads single-digit day/month.
   const m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
   if (m) {
-    const dd = m[1].padStart(2, "0");
-    const mm = m[2].padStart(2, "0");
+    const p1 = parseInt(m[1], 10);
+    const p2 = parseInt(m[2], 10);
+    let dd, mm;
+    if (p1 > 12) {
+      // Unambiguously DD-MM-YYYY
+      dd = m[1].padStart(2, "0");
+      mm = m[2].padStart(2, "0");
+    } else if (p2 > 12) {
+      // Unambiguously MM-DD-YYYY
+      dd = m[2].padStart(2, "0");
+      mm = m[1].padStart(2, "0");
+    } else {
+      // Ambiguous (e.g. 05-12-2026): default to Indian convention DD-MM-YYYY
+      dd = m[1].padStart(2, "0");
+      mm = m[2].padStart(2, "0");
+    }
     return `${m[3]}-${mm}-${dd}`;
   }
   return s;

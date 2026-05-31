@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WiseCargo — cargo management for airlines | Hans Infomatic</title><meta name="description" content="WiseCargo is the full cargo management suite used by airlines and GSAs in India, Africa and Europe. Reservations, capacity, accepting, manifesting, revenue accounting — Cargo-IMP, Cargo-XML, and CASS-ready."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter+Tight:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+:root{--paper:#F6F6F3;--paper-2:#EEEDE6;--ink:#0A0F0D;--ink-2:#1B2420;--ink-3:#3B4742;--mute:#6C7770;--line:rgba(10,15,13,0.12);--line-2:rgba(10,15,13,0.06);--forest:#062019;--forest-2:#0E3329;--accent:#00D17A;--accent-2:#8BE8C0}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:'Inter Tight',sans-serif;font-feature-settings:"ss01","cv11";-webkit-font-smoothing:antialiased;font-size:16px;line-height:1.5;overflow-x:hidden}
+.mono{font-family:'JetBrains Mono',monospace;letter-spacing:-0.01em}
+.eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:var(--mute);font-weight:500}
+.container{max-width:1440px;margin:0 auto;padding:0 48px}
+@media(max-width:768px){.container{padding:0 24px}}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(246,246,243,0.78);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);border-bottom:1px solid var(--line-2)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;padding:18px 48px;max-width:1440px;margin:0 auto}
+@media(max-width:768px){.nav-inner{padding:16px 24px}}
+.logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;letter-spacing:-0.02em}
+.logo-mark{width:22px;height:22px}
+.nav-links{display:flex;align-items:center;gap:32px}
+@media(max-width:900px){.nav-links{display:none}}
+.nav-links a{font-size:13.5px;color:var(--ink-2);font-weight:450;transition:color 0.2s}
+.nav-links a:hover,.nav-links a.on{color:var(--ink)}
+.nav-cta{display:flex;align-items:center;gap:20px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;font-size:13px;font-weight:500;transition:all 0.2s;white-space:nowrap}
+.btn-ghost{color:var(--ink-2)}.btn-ghost:hover{color:var(--ink)}
+.btn-primary{background:var(--ink);color:var(--paper);padding:10px 18px}
+.btn-primary:hover{background:var(--forest-2)}
+.btn-primary .arrow{display:inline-block;transition:transform 0.25s}
+.btn-primary:hover .arrow{transform:translateX(3px)}
+.btn-outline{border:1px solid var(--line);color:var(--ink);padding:10px 18px}
+.btn-outline:hover{border-color:var(--ink);background:var(--ink);color:var(--paper)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+.subnav{position:sticky;top:62px;z-index:50;background:rgba(246,246,243,0.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--line-2)}
+.subnav-inner{display:flex;align-items:center;justify-content:space-between;padding:14px 48px;max-width:1440px;margin:0 auto;gap:32px}
+.subnav-brand{display:flex;align-items:center;gap:12px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-2)}
+.subnav-brand .bt{color:var(--mute)}
+.subnav-links{display:flex;gap:24px;overflow-x:auto}
+@media(max-width:768px){.subnav-links{display:none}}
+.subnav-links a{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--mute);white-space:nowrap;padding:4px 0;transition:color 0.2s}
+.subnav-links a:hover,.subnav-links a.active{color:var(--ink)}
+section{padding:110px 0;position:relative}
+.sec-head{display:grid;grid-template-columns:200px 1fr;gap:48px;margin-bottom:48px;align-items:start}
+@media(max-width:900px){.sec-head{grid-template-columns:1fr;gap:16px;margin-bottom:32px}}
+.sec-eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:0.12em;padding-top:10px;font-weight:500}
+.sec-title h2{font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(30px,3.6vw,52px);letter-spacing:-0.035em;line-height:1.04;max-width:860px}
+.sec-title h2 em{font-style:italic;color:var(--forest-2);font-weight:400}
+.sec-title p{font-size:16.5px;color:var(--ink-3);margin-top:20px;max-width:640px;line-height:1.55}
+.fade{opacity:0;transform:translateY(16px);transition:opacity 0.8s,transform 0.8s}
+.fade.in{opacity:1;transform:none}
+/* Product hero shared */
+.phero{padding:140px 0 40px;position:relative}
+.phero-crumbs{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);margin-bottom:36px;display:flex;gap:8px;align-items:center}
+.phero-crumbs span{color:var(--line)}
+.phero-crumbs a:hover{color:var(--ink)}
+.phero-layout{display:grid;grid-template-columns:1.05fr 1fr;gap:64px;align-items:end}
+@media(max-width:900px){.phero-layout{grid-template-columns:1fr;gap:48px}}
+.phero-tag{display:inline-flex;align-items:center;gap:10px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,0.6);font-size:11.5px;font-family:'JetBrains Mono',monospace;color:var(--ink-2);margin-bottom:28px;font-weight:500}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(0,209,122,0.2);animation:pulse 2.2s infinite}
+.phero h1{font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(42px,5.6vw,80px);letter-spacing:-0.045em;line-height:0.98}
+.phero h1 em{font-style:italic;color:var(--forest-2);font-weight:400}
+.phero h1 .accent-word{color:var(--accent);font-style:italic;font-weight:350}
+.phero-sub{font-size:17px;line-height:1.55;color:var(--ink-3);margin-top:24px;max-width:520px}
+.phero-actions{display:flex;gap:12px;margin-top:28px;flex-wrap:wrap}
+.phero-meta{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:4px;background:var(--paper);margin-top:40px;max-width:520px}
+.phero-meta > div{padding:16px 18px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.phero-meta > div:nth-child(2n){border-right:none}
+.phero-meta > div:nth-child(n+3){border-bottom:none}
+.phero-meta .l{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px}
+.phero-meta .v{font-size:16px;font-weight:450;letter-spacing:-0.02em}
+
+/* Mock frame shared */
+.mock{background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;box-shadow:0 30px 80px -30px rgba(10,15,13,0.2)}
+.mock-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--paper-2)}
+.mock-bar .lights{display:flex;gap:5px}
+.mock-bar .lights span{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.mock-bar .url{flex:1;margin-left:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute);padding:4px 10px;background:var(--paper);border-radius:3px;border:1px solid var(--line-2)}
+.mock-body{padding:22px 24px;min-height:380px}
+
+/* Capability grid */
+.caps{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+@media(max-width:900px){.caps{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.caps{grid-template-columns:1fr}}
+.cap{background:var(--paper);padding:28px 26px;display:flex;flex-direction:column;gap:10px;min-height:220px}
+.cap .n{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;font-weight:500}
+.cap h4{font-size:19px;font-weight:500;letter-spacing:-0.02em;margin-top:4px}
+.cap p{font-size:13.5px;color:var(--ink-3);line-height:1.55}
+.cap .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:16px}
+.cap .tag{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute);padding:3px 8px;border:1px solid var(--line);border-radius:2px;letter-spacing:0.04em}
+
+/* FAQ */
+.faq-list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.faq-item{border-bottom:1px solid var(--line);padding:24px 0}
+.faq-item details{display:flex;flex-direction:column}
+.faq-item summary{display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-size:17px;font-weight:500;letter-spacing:-0.015em;list-style:none}
+.faq-item summary::after{content:"+";font-family:'JetBrains Mono',monospace;color:var(--mute);font-weight:400;font-size:20px;transition:transform 0.2s}
+.faq-item details[open] summary::after{content:"−"}
+.faq-item .a{font-size:15px;color:var(--ink-3);line-height:1.6;margin-top:14px;max-width:720px}
+
+/* CTA */
+.cta-box{background:var(--forest);color:#fff;border-radius:6px;padding:64px 56px;display:grid;grid-template-columns:1.2fr 1fr;gap:48px;align-items:center}
+@media(max-width:900px){.cta-box{grid-template-columns:1fr;padding:40px 28px;gap:24px}}
+.cta-box h3{font-family:'Inter Tight',sans-serif;font-weight:350;font-size:clamp(28px,3vw,40px);letter-spacing:-0.03em;line-height:1.05}
+.cta-box h3 em{font-style:italic;color:var(--accent-2);font-weight:400}
+.cta-box p{color:rgba(255,255,255,0.7);margin-top:16px;max-width:440px;font-size:14.5px;line-height:1.55}
+.cta-box .actions{display:flex;gap:12px;flex-wrap:wrap}
+.cta-box .btn-primary{background:var(--accent);color:var(--forest);font-weight:600}
+.cta-box .btn-primary:hover{background:#fff}
+.cta-box .btn-outline{border-color:rgba(255,255,255,0.3);color:#fff}
+.cta-box .btn-outline:hover{background:#fff;color:var(--forest);border-color:#fff}
+
+footer{background:var(--forest);color:#C8D4CD;padding:80px 0 40px;margin-top:80px}
+footer .foot-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr;gap:48px;margin-bottom:64px;padding-bottom:48px;border-bottom:1px solid rgba(255,255,255,0.08)}
+@media(max-width:900px){footer .foot-grid{grid-template-columns:1fr 1fr;gap:32px}}
+.foot-brand p{font-size:13px;color:rgba(200,212,205,0.7);line-height:1.5;max-width:260px;margin-top:18px}
+.foot-col h5{font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(200,212,205,0.5);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:18px;font-weight:500}
+.foot-col ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.foot-col a{font-size:13.5px;color:rgba(200,212,205,0.85);transition:color 0.2s}
+.foot-col a:hover{color:#fff}
+.foot-bottom{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:rgba(200,212,205,0.45);flex-wrap:wrap;gap:16px}
+.foot-bottom .links{display:flex;gap:20px}
+.foot-bottom a:hover{color:#fff}
+
+</style></head><body>
+<nav class="nav"><div class="nav-inner">
+<a href="../index.html" class="logo"><span class="logo-mark"><img src="../assets/hans-logo.png" alt="Hans Infomatic" style="width:100%;height:100%;object-fit:contain;display:block"/></span>Hans Infomatic</a>
+<div class="nav-links">
+    <a href="../products.html">Products</a>
+    <a href="../industries.html">Industries</a>
+    <a href="../about.html">Company</a>
+    <a href="#">Resources</a>
+    <a href="#">Pricing</a></div>
+<div class="nav-cta"><a href="#" class="btn btn-ghost" style="padding:9px 0">Sign in</a><a href="#" class="btn btn-primary">Book demo <span class="arrow">→</span></a></div>
+</div></nav>
+<div class="subnav"><div class="subnav-inner">
+    <div class="subnav-brand"><span class="bt">Product</span><span>·</span><span style="color:var(--accent)">WiseCargo</span><span style="color:var(--mute)">cargo management for airlines</span></div>
+    <div class="subnav-links">
+      <a href="#overview" class="active">Overview</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#deepdive">Deep dive</a>
+      <a href="#integrations">Integrations</a>
+      <a href="#metrics">Outcomes</a>
+      <a href="#faq">FAQ</a>
+    </div>
+  </div></div>
+<section id="overview" class="phero">
+    <div class="container">
+      <div class="phero-crumbs"><a href="../index.html">Hans Infomatic</a><span>/</span><a href="../products.html">Products</a><span>/</span><span style="color:var(--ink-2)">WiseCargo</span></div>
+      <div class="phero-layout">
+        <div>
+          <div class="phero-tag"><span class="dot"></span>CARGO · 11 AIRLINES IN PRODUCTION</div>
+          <h1>The cargo system that <em>airlines</em><br/>grow <span class="accent-word">with.</span></h1>
+          <p class="phero-sub">WiseCargo is the full cargo management suite used by airlines and GSAs in India, Africa and Europe. Reservations, capacity, accepting, manifesting, revenue accounting — Cargo-IMP, Cargo-XML, and CASS-ready.</p>
+          <div class="phero-actions">
+            <a href="#" class="btn btn-primary">Book a demo <span class="arrow">→</span></a>
+            <a href="#deepdive" class="btn btn-outline">See the product</a>
+          </div>
+          <div class="phero-meta">
+            <div><div class="l">Airlines</div><div class="v">11 in production</div></div><div><div class="l">AWBs / month</div><div class="v">340,000+</div></div><div><div class="l">Standards</div><div class="v">IATA Cargo-IMP/XML</div></div><div><div class="l">CASS</div><div class="v">Certified</div></div>
+          </div>
+        </div>
+        <div class="phero-mock-wrap fade"><div class="mock">
+    <div class="mock-bar"><div class="lights"><span></span><span></span><span></span></div><div class="url">cargo.wisecargo.aero / flight / AI·842 / DEL-OTP</div></div>
+    <div class="mock-body" style="padding:0;display:grid;grid-template-columns:1fr 280px;min-height:400px">
+      <div style="padding:20px 22px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em">Flight · AI-842 · 23 APR</div><div style="font-size:17px;font-weight:500;letter-spacing:-0.015em">DEL → OTP · B788 (VT-ANU)</div></div>
+          <div style="display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent)"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.5s infinite"></span>BOARDING</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
+          <div style="padding:12px;background:var(--paper-2);border-radius:3px"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.08em">Capacity</div><div style="font-size:18px;font-weight:400;margin-top:3px">18,400 <span style="font-size:11px;color:var(--mute)">kg</span></div></div>
+          <div style="padding:12px;background:var(--paper-2);border-radius:3px"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.08em">Booked</div><div style="font-size:18px;font-weight:400;margin-top:3px;color:var(--accent)">15,820 <span style="font-size:11px;color:var(--mute)">kg · 86%</span></div></div>
+          <div style="padding:12px;background:var(--paper-2);border-radius:3px"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.08em">AWBs</div><div style="font-size:18px;font-weight:400;margin-top:3px">47</div></div>
+          <div style="padding:12px;background:var(--paper-2);border-radius:3px"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.08em">Revenue</div><div style="font-size:18px;font-weight:400;margin-top:3px">$78,4k</div></div>
+        </div>
+        <div style="flex:1;border:1px solid var(--line);border-radius:3px;overflow:hidden">
+          <div style="display:grid;grid-template-columns:80px 1fr 80px 70px 70px;gap:0;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--paper-2);font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:0.08em">
+            <div>AWB</div><div>Shipper</div><div>Pcs/Wt</div><div>Commod</div><div>Status</div>
+          </div>
+          <div style="display:grid;grid-template-columns:80px 1fr 80px 70px 70px;gap:0;padding:8px 12px;border-bottom:1px solid var(--line-2);font-family:'JetBrains Mono',monospace;font-size:10.5px"><div style="color:var(--ink);font-weight:500">176-48201734</div><div style="color:var(--ink-2)">ACE PHARMA · DEL</div><div style="color:var(--ink-2)">4 / 1248</div><div style="color:var(--mute)">PHR</div><div style="color:var(--accent);font-weight:500">ACC</div></div><div style="display:grid;grid-template-columns:80px 1fr 80px 70px 70px;gap:0;padding:8px 12px;border-bottom:1px solid var(--line-2);font-family:'JetBrains Mono',monospace;font-size:10.5px"><div style="color:var(--ink);font-weight:500">176-48201891</div><div style="color:var(--ink-2)">TRANS-GBL · GGN</div><div style="color:var(--ink-2)">12 / 2840</div><div style="color:var(--mute)">GEN</div><div style="color:var(--ink-2);font-weight:500">CHK</div></div><div style="display:grid;grid-template-columns:80px 1fr 80px 70px 70px;gap:0;padding:8px 12px;border-bottom:1px solid var(--line-2);font-family:'JetBrains Mono',monospace;font-size:10.5px"><div style="color:var(--ink);font-weight:500">176-48201922</div><div style="color:var(--ink-2)">INDIAN GEMS</div><div style="color:var(--ink-2)">1 / 12</div><div style="color:var(--mute)">VAL</div><div style="color:#B86A10;font-weight:500">HOLD</div></div><div style="display:grid;grid-template-columns:80px 1fr 80px 70px 70px;gap:0;padding:8px 12px;border-bottom:1px solid var(--line-2);font-family:'JetBrains Mono',monospace;font-size:10.5px"><div style="color:var(--ink);font-weight:500">176-48202014</div><div style="color:var(--ink-2)">LIFE SCIENCES</div><div style="color:var(--ink-2)">8 / 890</div><div style="color:var(--mute)">PHR</div><div style="color:var(--accent);font-weight:500">ACC</div></div><div style="display:grid;grid-template-columns:80px 1fr 80px 70px 70px;gap:0;padding:8px 12px;border-bottom:1px solid var(--line-2);font-family:'JetBrains Mono',monospace;font-size:10.5px"><div style="color:var(--ink);font-weight:500">176-48202087</div><div style="color:var(--ink-2)">TEX-EXPORTS</div><div style="color:var(--ink-2)">22 / 4120</div><div style="color:var(--mute)">GEN</div><div style="color:var(--accent);font-weight:500">ACC</div></div>
+        </div>
+      </div>
+      <div style="padding:18px;background:var(--paper-2);display:flex;flex-direction:column;gap:14px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:0.1em">Load distribution</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div><div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10.5px;margin-bottom:4px"><span>Fwd compartment</span><span style="color:var(--accent)">4,200 kg</span></div><div style="height:6px;background:var(--line);border-radius:2px;overflow:hidden"><i style="display:block;height:100%;background:var(--accent);width:64%"></i></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10.5px;margin-bottom:4px"><span>Mid compartment</span><span style="color:var(--accent)">6,820 kg</span></div><div style="height:6px;background:var(--line);border-radius:2px;overflow:hidden"><i style="display:block;height:100%;background:var(--accent);width:88%"></i></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10.5px;margin-bottom:4px"><span>Aft compartment</span><span style="color:var(--accent)">4,800 kg</span></div><div style="height:6px;background:var(--line);border-radius:2px;overflow:hidden"><i style="display:block;height:100%;background:var(--accent);width:72%"></i></div></div>
+        </div>
+        <div style="margin-top:auto;padding-top:12px;border-top:1px dashed var(--line);font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-2);display:flex;flex-direction:column;gap:4px"><span style="color:var(--mute)">CG margin</span><span style="color:var(--accent);font-size:14px;font-family:'Inter Tight',sans-serif">within limits</span></div>
+      </div>
+    </div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="capabilities" style="padding-top:60px">
+    <div class="container">
+      <div class="sec-head">
+        <div class="sec-eyebrow">02 / Capabilities</div>
+        <div class="sec-title"><h2>The full cargo journey — <em>reservation to revenue.</em></h2><p>Every surface an airline cargo division touches, on one platform. IATA-standard, CASS-ready, multi-station capable.</p></div>
+      </div>
+      <div class="caps fade">
+        <div class="cap">
+          <span class="n">01 · RES</span>
+          <h4>Reservations & capacity</h4>
+          <p>Flight schedules, capacity control by cabin and compartment, waitlist, split AWB handling, charter requests.</p>
+          <div class="tags"><span class="tag">IATA</span><span class="tag">Multi-leg</span></div>
+        </div><div class="cap">
+          <span class="n">02 · ACCEPT</span>
+          <h4>Accepting & handling</h4>
+          <p>Weighing, screening, x-ray integration, ULD build-up, DG compliance, perishables & pharma cold chain.</p>
+          <div class="tags"><span class="tag">DG</span><span class="tag">CEIV-Pharma</span></div>
+        </div><div class="cap">
+          <span class="n">03 · MANIFEST</span>
+          <h4>Manifesting & flight closure</h4>
+          <p>Live manifest, load planning, CG calculation, ULD manifest, flight plan integration.</p>
+          <div class="tags"><span class="tag">LDM</span><span class="tag">FWB/FHL</span></div>
+        </div><div class="cap">
+          <span class="n">04 · REVENUE</span>
+          <h4>Revenue accounting</h4>
+          <p>Rate engine, prorate, interline billing, CASS submissions, FWB/FHL reconciliation.</p>
+          <div class="tags"><span class="tag">CASS</span><span class="tag">Prorate</span></div>
+        </div><div class="cap">
+          <span class="n">05 · GSA</span>
+          <h4>Multi-GSA support</h4>
+          <p>Territory segmentation, commission structures, sub-agent hierarchies — run your whole GSA network from one backend.</p>
+          <div class="tags"><span class="tag">Multi-ccy</span><span class="tag">Commission</span></div>
+        </div><div class="cap">
+          <span class="n">06 · EDI</span>
+          <h4>Cargo-IMP & XML</h4>
+          <p>Full suite of IATA cargo messages. FWB, FHL, FFM, FSU, FNA, FOH — send and receive with trading partners.</p>
+          <div class="tags"><span class="tag">IMP</span><span class="tag">XML</span><span class="tag">FSU</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="deepdive" style="background:var(--paper-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+    <div class="container">
+      <div class="sec-head">
+        <div class="sec-eyebrow">03 / The product</div>
+        <div class="sec-title"><h2>IATA standards done <em>right.</em></h2><p>WiseCargo is an IATA Strategic Partner. Our EDI implementation is tested against live airline partners, not just spec documents.</p></div>
+      </div>
+      <div class="fade"><div style="display:grid;grid-template-columns:1fr 1fr;gap:32px">
+    <div style="padding:28px;border:1px solid var(--line);background:var(--paper);border-radius:4px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">MULTI-STATION</div>
+      <h4 style="font-size:22px;font-weight:450;letter-spacing:-0.025em;margin-bottom:12px">Every station, same playbook</h4>
+      <p style="color:var(--ink-3);font-size:14.5px;line-height:1.55">Whether you operate from 3 stations or 30, WiseCargo enforces consistent workflows while allowing station-specific rules — local screening norms, ground handler contracts, cutoff times.</p>
+    </div>
+    <div style="padding:28px;border:1px solid var(--line);background:var(--paper);border-radius:4px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">CEIV-PHARMA</div>
+      <h4 style="font-size:22px;font-weight:450;letter-spacing:-0.025em;margin-bottom:12px">Cold chain, tracked</h4>
+      <p style="color:var(--ink-3);font-size:14.5px;line-height:1.55">Temperature profiles, CEIV-Pharma workflow compliance, integration with temp loggers and cold-storage ULDs. Your pharma customers get certifiable audit trails out of the box.</p>
+    </div>
+  </div></div>
+    </div>
+  </section>
+
+  <section id="integrations">
+    <div class="container">
+      <div class="sec-head">
+        <div class="sec-eyebrow">04 / Integrations</div>
+        <div class="sec-title"><h2>Works with the <em>whole cargo stack.</em></h2><p>From handling systems to customs, finance to reservations — WiseCargo is IATA-certified and carrier-neutral.</p></div>
+      </div>
+      <div class="fade" style="display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;overflow:hidden">
+        <div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">CASS</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">IATA</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">CHAMP</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">NETWORK</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">Cargo-IMP</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">EDI</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">Cargo-XML</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">EDI</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">ICEGATE</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">CUSTOMS</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">WiseCCS</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">HANS</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">WiseHandling</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">HANS</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">SAP</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">ERP</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">Oracle</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">ERP</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">Unisys Logistics</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">GHA</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">Hermes</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">GHA</div></div><div style="background:var(--paper);padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-2)"><div style="font-size:13px;font-weight:500;color:var(--ink);letter-spacing:-0.01em;font-family:'Inter Tight',sans-serif">SFTP/MQ</div><div style="color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">NETWORK</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="metrics" style="background:var(--forest);color:#fff">
+    <div class="container">
+      <div class="sec-head" style="margin-bottom:48px">
+        <div class="sec-eyebrow" style="color:rgba(255,255,255,0.5)">05 / Outcomes</div>
+        <div class="sec-title"><h2 style="color:#fff">Cargo operations, <em>quantified.</em></h2><p style="color:rgba(255,255,255,0.7)">2025 aggregate across 11 airlines in production on WiseCargo.</p></div>
+      </div>
+      <div class="fade" style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid rgba(255,255,255,0.1)">
+        <div style="padding:32px 24px;border-right:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.1em">Load factor</div>
+          <div style="font-size:44px;font-weight:300;letter-spacing:-0.04em;color:#fff">+6.8%</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.6)">Avg uplift post-migration</div>
+        </div><div style="padding:32px 24px;border-right:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.1em">AWB processing</div>
+          <div style="font-size:44px;font-weight:300;letter-spacing:-0.04em;color:#fff">−54%</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.6)">Time per AWB</div>
+        </div><div style="padding:32px 24px;border-right:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.1em">RA close time</div>
+          <div style="font-size:44px;font-weight:300;letter-spacing:-0.04em;color:#fff">D+3</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.6)">Revenue accounting cycle</div>
+        </div><div style="padding:32px 24px;border-right:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.1em">Stations live</div>
+          <div style="font-size:44px;font-weight:300;letter-spacing:-0.04em;color:#fff">32</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.6)">Across 11 airlines</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="container">
+      <div class="sec-head">
+        <div class="sec-eyebrow">06 / FAQ</div>
+        <div class="sec-title"><h2>Frequently asked</h2></div>
+      </div>
+      <div class="faq-list fade">
+        <div class="faq-item"><details><summary>Is WiseCargo IATA-certified?</summary><div class="a">Yes — Hans Infomatic is an IATA Strategic Partner. WiseCargo implements the full Cargo-IMP and Cargo-XML message suites, tested in production with partner carriers.</div></details></div><div class="faq-item"><details><summary>Can we run WiseCargo alongside our existing PSS/reservations?</summary><div class="a">Yes. We connect to most PSS/reservation systems via standard EDI, and provide our own cargo reservations module if you don't have one.</div></details></div><div class="faq-item"><details><summary>What about CASS-India / CASS-global?</summary><div class="a">CASS-ready out of the box. We handle CASS submissions, prorate calculations, and interline billing for all CASS regions.</div></details></div><div class="faq-item"><details><summary>How long does onboarding take?</summary><div class="a">Typical airline go-live: 12–18 weeks for a 3-station launch. We run parallel with your current system for 4–6 weeks before cutover.</div></details></div><div class="faq-item"><details><summary>Can GSAs use it independently?</summary><div class="a">Yes — we have a GSA edition with territory segmentation and sub-agent hierarchy support. 6 of our deployments are GSA-only.</div></details></div>
+      </div>
+      <div class="fade" style="margin-top:64px"><div class="cta-box">
+        <div><h3>Ready to see WiseCargo on <em>your data?</em></h3><p>See WiseCargo configured for your network, your rate structure, your GSA model.</p></div>
+        <div class="actions"><a href="#" class="btn btn-primary">Book a tailored demo <span class="arrow">→</span></a><a href="#" class="btn btn-outline">Download data sheet</a></div>
+      </div></div>
+    </div>
+  </section>
+<footer><div class="container">
+<div class="foot-grid">
+<div class="foot-brand"><a href="../index.html" class="logo" style="font-size:18px"><span class="logo-mark" style="width:26px;height:26px"><img src="../assets/hans-logo.png" alt="Hans Infomatic" style="width:100%;height:100%;object-fit:contain;display:block"/></span>Hans Infomatic</a><p>Digital intelligence for the global movement of cargo.</p><p class="mono" style="font-size:11px;color:var(--mute);margin-top:16px">HI / 2003 · ncr, india</p></div>
+<div class="foot-col"><h5>Products</h5><ul><li><a href="../products/icaffe.html">iCAFFE</a></li><li><a href="../products/wiseccs.html">WiseCCS</a></li><li><a href="../products/wisecargo.html">WiseCargo</a></li><li><a href="../products/wisehandling.html">WiseHandling</a></li><li><a href="../products.html">All products →</a></li></ul></div>
+<div class="foot-col"><h5>Industries</h5><ul><li><a href="../industries.html">Airlines &amp; GSAs</a></li><li><a href="../industries.html">Freight Forwarders</a></li><li><a href="../industries.html">Customs Brokers</a></li><li><a href="../industries.html">Terminal Operators</a></li><li><a href="../industries.html">Carriers</a></li></ul></div>
+<div class="foot-col"><h5>Company</h5><ul><li><a href="../about.html">About</a></li><li><a href="../about.html#offices">Global offices</a></li><li><a href="#">Careers</a></li><li><a href="#">Press</a></li><li><a href="#">Partners</a></li></ul></div>
+<div class="foot-col"><h5>Resources</h5><ul><li><a href="#">Documentation</a></li><li><a href="#">Case studies</a></li><li><a href="#">Blog</a></li><li><a href="#">Security</a></li><li><a href="#">Status</a></li></ul></div>
+</div>
+<div class="foot-bottom"><p>© 2026 Hans Infomatic — All rights reserved.</p><div class="links"><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Cookies</a><a href="#">Security</a></div></div>
+</div></footer>
+<script>
+const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:0.1,rootMargin:'0px 0px -60px 0px'});
+document.querySelectorAll('.fade').forEach(el=>io.observe(el));
+const sl=document.querySelectorAll('.subnav-links a');const ids=["overview","capabilities","deepdive","integrations","metrics","faq"];const els=ids.map(i=>document.getElementById(i));const nio=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){const id=e.target.id;sl.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+id))}})},{threshold:0.3,rootMargin:'-120px 0px -60% 0px'});els.forEach(s=>s&&nio.observe(s));
+</script></body></html>

@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip, Lock } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE, INDIAN_STATES } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { getQuoteTemplate, STANDARD_TERMS_SECTIONS, STANDARD_PAYMENT_MILESTONES, STANDARD_EXTRA_NOTES } from '../data/quoteTemplates';
-import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip, TypeaheadSelect, SendEmailModal } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
@@ -592,7 +592,9 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
   );
 }
 
-function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,commLogs,setCommLogs,currentUser,orgUsers,catalog,canDelete,isManager=false}) {
+function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,commLogs,setCommLogs,currentUser,orgUsers,catalog,canDelete,isManager=false,onRequestEditAccess}) {
+  const canEditQuote = (q) => canEditRecord({ownerId:q?.owner,currentUser,orgUsers,recordType:"quote",recordId:q?.id,commLogs:commLogs||[]});
+  const requestAccessQuote = (q) => onRequestEditAccess && onRequestEditAccess("quote", q.id, q.title||q.id||"Quote", q.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search,setSearch]=useState("");
   const [statusF,setStatusF]=useState("All");
@@ -906,23 +908,67 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   // Whole-quote recompute. Recomputes every line's tax using the current
   // POS, then aggregates totals. Returns `items` so callers spread it back
   // and per-line tax stays consistent with quote-level POS.
+  // Net discount is distributed proportionally to lines for full legal GST compliance.
   const recalc=(items,taxType,discount,placeOfSupply)=>{
     const ctx={taxType,placeOfSupply};
-    const recomputed=(items||[]).map(it=>recalcLineWithCtx(it,ctx));
-    const subtotal=+recomputed.reduce((s,i)=>s+(Number(i.amount)||0),0).toFixed(2);
-    const igstTotal=+recomputed.reduce((s,i)=>s+(Number(i.igstAmount)||0),0).toFixed(2);
-    const cgstTotal=+recomputed.reduce((s,i)=>s+(Number(i.cgstAmount)||0),0).toFixed(2);
-    const sgstTotal=+recomputed.reduce((s,i)=>s+(Number(i.sgstAmount)||0),0).toFixed(2);
-    let taxAmount=+(igstTotal+cgstTotal+sgstTotal).toFixed(2);
+    const discVal = Number(discount) || 0;
+
+    // 1. Calculate raw pre-quote-discount amounts for each item
+    const rawItems = (items || []).map(it => {
+      const mrp = Number(it.mrp) || 0;
+      const dv = Number(it.discountValue) || 0;
+      const dt = it.discountType || "pct";
+      let unitPrice = Number(it.unitPrice) || 0;
+      if (mrp > 0) {
+        const discountAmt = dt === "pct" ? (mrp * dv) / 100 : dv;
+        unitPrice = Math.max(0, +(mrp - discountAmt).toFixed(2));
+      }
+      const qty = Number(it.qty) || 0;
+      const amount = +(unitPrice * qty).toFixed(2);
+      return { ...it, unitPrice, amount };
+    });
+
+    const sumPreDiscountSubtotal = rawItems.reduce((s, i) => s + i.amount, 0);
+
+    // 2. Recompute each line's tax on its post-quote-discount net taxable value
+    const recomputed = rawItems.map((it, idx) => {
+      const share = sumPreDiscountSubtotal > 0 ? +((discVal * (it.amount / sumPreDiscountSubtotal))).toFixed(2) : 0;
+      const netAmount = Math.max(0, +(it.amount - share).toFixed(2));
+
+      const rates = lineTaxRates(taxType, placeOfSupply);
+      const igstAmount = +(netAmount * rates.igst / 100).toFixed(2);
+      const cgstAmount = +(netAmount * rates.cgst / 100).toFixed(2);
+      const sgstAmount = +(netAmount * rates.sgst / 100).toFixed(2);
+      const totalWithTax = +(netAmount + igstAmount + cgstAmount + sgstAmount).toFixed(2);
+
+      return {
+        ...it,
+        amount: netAmount, // Taxable amount is now post-quote-discount
+        igstRate: rates.igst,
+        cgstRate: rates.cgst,
+        sgstRate: rates.sgst,
+        igstAmount,
+        cgstAmount,
+        sgstAmount,
+        totalWithTax
+      };
+    });
+
+    // 3. Aggregate totals
+    const subtotal = +recomputed.reduce((s, i) => s + i.amount, 0).toFixed(2);
+    const igstTotal = +recomputed.reduce((s, i) => s + (Number(i.igstAmount) || 0), 0).toFixed(2);
+    const cgstTotal = +recomputed.reduce((s, i) => s + (Number(i.cgstAmount) || 0), 0).toFixed(2);
+    const sgstTotal = +recomputed.reduce((s, i) => s + (Number(i.sgstAmount) || 0), 0).toFixed(2);
+    let taxAmount = +(igstTotal + cgstTotal + sgstTotal).toFixed(2);
+
     // Legacy fallback: when POS is empty (old quotes / not yet set), fall
-    // back to the lump-sum tax = (subtotal - discount) * rate so existing
-    // quotes don't lose their displayed tax until the rep sets POS.
-    if(!placeOfSupply){
-      const rate=TAX_RATES[taxType]||0;
-      taxAmount=+((subtotal-(+discount||0))*rate/100).toFixed(2);
+    // back to the lump-sum tax = (subtotal - discount) * rate
+    if (!placeOfSupply) {
+      const rate = TAX_RATES[taxType] || 0;
+      taxAmount = +(subtotal * rate / 100).toFixed(2);
     }
-    const total=+(subtotal-(+discount||0)+taxAmount).toFixed(2);
-    return {items:recomputed,subtotal,taxAmount,total,igstTotal,cgstTotal,sgstTotal};
+    const total = +(subtotal + taxAmount).toFixed(2);
+    return { items: recomputed, subtotal, taxAmount, total, igstTotal, cgstTotal, sgstTotal };
   };
 
   const openAdd=()=>{
@@ -931,6 +977,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     setFormErrors({});setFormTab("details");setSourceMode("opportunity");setSourceLeadId("");setModal({mode:"add"});
   };
   const openEdit=(q)=>{
+    if(q&&q.id&&!canEditQuote(q)){requestAccessQuote(q);return;}
     const seeded=(Array.isArray(q.productSelection)&&q.productSelection.length>0)?q.productSelection:(q.product?[{productId:q.product,moduleIds:[],noAddons:false}]:[]);
     // Auto-derive the best contactId if not yet stored on the quote:
     // priority: stored q.contactId → opp.primaryContactId → lead.contactIds[0] → first account contact
@@ -1206,6 +1253,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   };
 
   const save=()=>{
+    if(modal?.mode==="edit"&&!canEditQuote(form)){setModal(null);setFormErrors({});return;}
     if(modal?.lockedFinal){
       setFormErrors({_lock:"This quote is marked Final and cannot be edited. Duplicate/Revise it instead to create a new version."});
       return;
@@ -1981,9 +2029,12 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               sortKey={sort.key} sortDir={sort.dir}
               onSort={sort.toggle}
               SortIcon={QuotesSortIcon}
-              rowActions={q => (
+              rowActions={q => {
+                const editable = canEditQuote(q);
+                return (
                 <div style={{display:"flex",gap:4}}>
                   <button className="icon-btn" title="View" onClick={()=>setDetail(q)}><Eye size={14}/></button>
+                  {editable ? (<>
                   <button className="icon-btn" title="Edit" onClick={()=>openEdit(q)}><Edit2 size={14}/></button>
                   {q.status==="Draft"&&<button className="icon-btn" title={needsApproval(q)&&q.approvalStatus!=="Approved"?`Request approval (${approvalReason(q)})`:"Email quote to customer"} onClick={()=>{if(needsApproval(q)&&q.approvalStatus!=="Approved"){sendQuote(q);}else{openEmailModal(q);}}} style={{color:needsApproval(q)&&q.approvalStatus!=="Approved"?"#F59E0B":"#3B82F6"}}><Send size={14}/></button>}
                   {isManager && q.approvalStatus==="Pending" && (<>
@@ -1994,8 +2045,14 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                   {["Sent","Under Review"].includes(q.status)&&<button className="icon-btn" title="Mark as Accepted by customer" onClick={()=>acceptQuote(q)} style={{color:"#22C55E"}}><FileSignature size={14}/></button>}
                   <button className="icon-btn" title="Duplicate/Revise" onClick={()=>duplicate(q)}><Copy size={14}/></button>
                   {canDelete&&<button className="icon-btn" title="Delete" onClick={()=>setConfirm(q.id)}><Trash2 size={14}/></button>}
+                  </>) : hasPendingAccessReq(commLogs||[],"quote",q.id,currentUser) ? (
+                    <span style={{fontSize:10.5,fontWeight:600,color:"#B45309",padding:"3px 7px",borderRadius:5,background:"#FFFBEB",border:"1px solid #FDE68A",whiteSpace:"nowrap"}} title="Edit-access request pending with the owner">Requested</span>
+                  ) : (
+                    <button className="icon-btn" title="Read-only — request edit access from the owner" style={{color:"#64748B"}} onClick={()=>requestAccessQuote(q)}><Lock size={14}/></button>
+                  )}
                 </div>
-              )}
+                );
+              }}
             />
           );
         })()}
