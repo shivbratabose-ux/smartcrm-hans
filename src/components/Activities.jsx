@@ -122,9 +122,10 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
 
   // Format duration for table
   const fmtDuration=(mins)=>{
-    if(!mins) return "--";
-    const m=Math.floor(mins);
-    const sec=Math.round((mins-m)*60);
+    const n=Number(mins)||0;
+    if(!n) return "--";
+    const m=Math.floor(n);
+    const sec=Math.round((n-m)*60);
     return sec>0?`${m}m ${sec}s`:`${m}m 0s`;
   };
 
@@ -166,9 +167,13 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
         <div style={{background:"#1B6B5A",borderRadius:12,padding:"16px 20px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",opacity:0.8}}>AVG. DURATION</div>
           <div style={{fontSize:28,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>
-            {activities.filter(a=>a.duration>0).length > 0
-              ? `${Math.floor(activities.filter(a=>a.duration>0).reduce((s,a)=>s+a.duration,0)/activities.filter(a=>a.duration>0).length)}m`
-              : "0m"}
+            {(() => {
+              // Coerce to Number — durations can arrive as strings (DB/bulk
+              // import), and `0 + "30" + "15"` string-concatenates into an
+              // astronomical value instead of summing.
+              const durs = activities.map(a => Number(a.duration) || 0).filter(d => d > 0);
+              return durs.length > 0 ? `${Math.round(durs.reduce((s, d) => s + d, 0) / durs.length)}m` : "0m";
+            })()}
           </div>
           <div style={{fontSize:11,opacity:0.7}}>Minutes per interaction</div>
         </div>
