@@ -2,7 +2,8 @@ import { useState, useMemo } from "react";
 import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap } from "lucide-react";
 import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES } from '../data/constants';
 import { BLANK_EVENT } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
+import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { Lock } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 
 const TYPE_COL={"Call":"var(--brand)","Meeting":"var(--purple)","Demo":"var(--orange)","Follow-up":"var(--blue)","Site Visit":"var(--amber)","Presentation":"var(--teal)","Training":"var(--green)","Review":"#8B5CF6"};
@@ -12,7 +13,9 @@ const STATUS_COL={"Scheduled":"#3B82F6","Completed":"#22C55E","Cancelled":"#94A3
 
 const SOURCE_COL = { activity: "var(--purple)", call: "var(--brand)", event: undefined };
 
-function CalendarView({events,setEvents,activities=[],setActivities,callReports=[],setCallReports,leads=[],accounts,contacts,opps,currentUser,orgUsers,canDelete}) {
+function CalendarView({events,setEvents,activities=[],setActivities,callReports=[],setCallReports,leads=[],accounts,contacts,opps,currentUser,orgUsers,canDelete,commLogs=[],onRequestEditAccess}) {
+  const canEditEvt = (e) => canEditRecord({ownerId:e?.owner,currentUser,orgUsers,recordType:"event",recordId:e?.id,commLogs});
+  const requestAccessEvt = (e) => onRequestEditAccess && onRequestEditAccess("event", e.id, e.title||"Event", e.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u=>[u.id,u]));
   const [viewDate,setViewDate]=useState(new Date(today));
@@ -123,9 +126,11 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   };
   const openEdit=(e)=>{
     if(e._source==="activity"||e._source==="call") return; // non-event items are read-only
+    if(e&&e.id&&!canEditEvt(e)){requestAccessEvt(e);return;}
     setForm({...e,attendees:[...e.attendees]});setFormErrors({});setModal({mode:"edit"});
   };
   const save=()=>{
+    if(modal?.mode==="edit"&&!canEditEvt(form)){setModal(null);setFormErrors({});return;}
     const errs={};
     if(!form.title?.trim()) errs.title="Title is required";
     if(!form.date) errs.date="Date is required";
@@ -298,10 +303,22 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
                 <td style={{fontSize:12}}>{acc?.name||"—"}</td>
                 <td><UserPill uid={ev.owner}/></td>
                 <td style={{fontSize:11,color:"var(--text3)"}}>{ev.location?.substring(0,25)}</td>
-                <td><div style={{display:"flex",gap:4}}>
+                <td><div style={{display:"flex",gap:4,alignItems:"center"}}>
                   {ev.status==="Scheduled"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(ev)} title="Mark complete"><Check size={12}/></button>}
-                  {ev._source==="event"&&<button className="icon-btn" aria-label="Edit" onClick={()=>openEdit(ev)}><Edit2 size={14}/></button>}
-                  {canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(ev)}><Trash2 size={14}/></button>}
+                  {ev._source==="event" ? (
+                    canEditEvt(ev) ? (
+                      <>
+                        <button className="icon-btn" aria-label="Edit" onClick={()=>openEdit(ev)}><Edit2 size={14}/></button>
+                        {canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(ev)}><Trash2 size={14}/></button>}
+                      </>
+                    ) : hasPendingAccessReq(commLogs,"event",ev.id,currentUser) ? (
+                      <span style={{fontSize:10.5,fontWeight:600,color:"#B45309",padding:"3px 7px",borderRadius:5,background:"#FFFBEB",border:"1px solid #FDE68A",whiteSpace:"nowrap"}} title="Edit-access request pending with the owner">Requested</span>
+                    ) : (
+                      <button className="icon-btn" aria-label="Request edit access" title="Read-only — request edit access from the owner" style={{color:"#64748B"}} onClick={()=>requestAccessEvt(ev)}><Lock size={14}/></button>
+                    )
+                  ) : (
+                    canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(ev)}><Trash2 size={14}/></button>
+                  )}
                 </div></td>
               </tr>;
             })}</tbody>

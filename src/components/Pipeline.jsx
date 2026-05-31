@@ -24,9 +24,9 @@ import {
   CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
-import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds } from "../utils/helpers";
+import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds, canEditRecord, hasPendingAccessReq } from "../utils/helpers";
 import { exportCSV } from "../utils/csv";
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect, EditLockActions } from "./shared";
 import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from "./ProductModulePicker";
 import DataGrid from "./DataGrid";
 
@@ -711,7 +711,9 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
 /* ═══════════════════════════════════════════════════════
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
-function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete }) {
+function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete, commLogs=[], onRequestEditAccess }) {
+  const canEditOpp = (o) => canEditRecord({ownerId:o?.owner,currentUser,orgUsers,recordType:"opp",recordId:o?.id,commLogs});
+  const requestAccessOpp = (o) => onRequestEditAccess && onRequestEditAccess("opp", o.id, o.title||o.id||"Opportunity", o.owner);
   // Pipeline stages are now editable in Masters → Pipeline Stages. Build the
   // derived maps once per render — buildStagesContext handles fallback to
   // bundled defaults when masters.stages is missing.
@@ -854,6 +856,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   /* form handlers */
   const openAdd = () => { setForm({ ...BLANK_OPP, id: `o${uid()}`, productSelection: [], owner: currentUser || BLANK_OPP.owner }); setFormErrors({}); setModal({ mode: "add" }); };
   const openEdit = o => {
+    if (o && o.id && !canEditOpp(o)) { requestAccessOpp(o); return; }
     // Backfill productSelection from legacy `products` array if missing,
     // so deals created before the picker shipped still load editable.
     const seeded = (Array.isArray(o.productSelection) && o.productSelection.length > 0)
@@ -864,6 +867,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     setModal({ mode: "edit" });
   };
   const save = () => {
+    if (modal?.mode === "edit" && !canEditOpp(form)) { setModal(null); setFormErrors({}); return; }
     // Normalise productSelection BEFORE validating so half-filled lines
     // (product picked, no module ticked, no explicit "None") don't block save.
     const normalisedForm = { ...form, productSelection: normaliseProductSelection(form.productSelection) };
@@ -892,6 +896,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
 
   /* ── STAGE MOVEMENT (gated) ── */
   const initiateStageMove = (opp, dir) => {
+    if (!canEditOpp(opp)) { requestAccessOpp(opp); return; }
     const idx = STAGES.indexOf(opp.stage);
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= STAGES.length) return;
@@ -1414,10 +1419,11 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
               SortIcon={SortIcon}
               emptyState={<Empty icon={<List size={36} />} title="No deals found" sub="Adjust your filters or add a new deal" />}
               rowActions={o => (
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(o)}><Edit2 size={14} /></button>
-                  {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(o.id)}><Trash2 size={14} /></button>}
-                </div>
+                <EditLockActions
+                  editable={canEditOpp(o)}
+                  pending={hasPendingAccessReq(commLogs, "opp", o.id, currentUser)}
+                  onEdit={() => openEdit(o)} onDelete={() => setConfirm(o.id)}
+                  onRequest={() => requestAccessOpp(o)} canDelete={canDelete}/>
               )}
             />
           </div>
