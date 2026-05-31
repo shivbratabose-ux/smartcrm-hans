@@ -1300,8 +1300,10 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           { key: "title", label: "Deal", defaultWidth: 240, render: o => (
             <>
               <span className="tbl-link" onClick={() => setDetail(o)}>{o.title}</span>
-              {o.oppNo && <div style={{ fontSize: 10, fontFamily: "'Courier New',monospace", color: "#1B6B5A", marginTop: 2 }}>{o.oppNo}</div>}
-              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>{(o.products||[]).slice(0, 2).map(p => <ProdTag key={p} pid={p} />)}</div>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginTop: 2 }}>
+                {o.oppNo && <span style={{ fontSize: 10, fontFamily: "'Courier New',monospace", color: "#1B6B5A" }}>{o.oppNo}</span>}
+                {(o.products||[]).slice(0, 2).map(p => <ProdTag key={p} pid={p} />)}
+              </div>
             </>
           )},
           { key: "oppNo", label: "Opp No.", defaultWidth: 120, render: o => (
@@ -1408,6 +1410,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
         return (
           <div className="card" style={{ padding: 0, overflow: "hidden" }}>
             <DataGrid
+              dense
               module="pipeline_list"
               userId={currentUser}
               columns={PIPELINE_COLUMNS}

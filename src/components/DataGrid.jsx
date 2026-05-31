@@ -343,7 +343,7 @@ export default function DataGrid({
   module, userId, columns, defaultColumnConfig, rows,
   rowKey, sortKey, sortDir, onSort,
   rowStyle, selection, rowActions, emptyState, SortIcon,
-  onRowClick,
+  onRowClick, dense,
 }) {
   const [views, setViews] = useState([]);
   const [activeViewId, setActiveViewId] = useState(null);
@@ -513,7 +513,7 @@ export default function DataGrid({
 
       {/* Table */}
       <div className="tbl-scroll" style={{ maxHeight: "calc(100vh - 280px)", overflow: "auto" }}>
-        <table className="tbl" style={{ tableLayout: "fixed", width: "max-content", minWidth: "100%" }}>
+        <table className={`tbl${dense ? " tbl-dense" : ""}`} style={{ tableLayout: "fixed", width: "max-content", minWidth: "100%" }}>
           <thead style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--surface)" }}>
             <tr>
               {selection && (

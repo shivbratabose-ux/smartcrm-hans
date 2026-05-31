@@ -304,6 +304,13 @@ export const CSS = `
   .tbl td { padding:11px 14px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
   .tbl tr:last-child td { border-bottom:none; }
   .tbl tr:hover td { background:var(--s2); }
+  /* Dense variant — opt-in via <table className="tbl tbl-dense">. Tighter
+     rows for high-density list views (e.g. Pipeline). */
+  .tbl-dense th { padding:6px 12px; }
+  .tbl-dense td { padding:5px 12px; font-size:12px; line-height:1.25; }
+  .tbl-dense td .prod-tag, .tbl-dense td .badge, .tbl-dense td .badge-pill { font-size:10px; padding:1px 6px; }
+  .tbl-dense td .u-pill .u-av { width:18px; height:18px; font-size:9px; }
+  .tbl-dense .icon-btn { padding:3px; }
   .tbl-link { cursor:pointer; font-weight:500; color:var(--brand); }
   .tbl-link:hover { text-decoration:underline; }
 
