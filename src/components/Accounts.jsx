@@ -15,6 +15,13 @@ import { notify } from '../utils/toast';
 
 /* ── helpers ── */
 const daysSince = (d) => d ? Math.max(0, Math.round((new Date(today) - new Date(d)) / 864e5)) : null;
+// An account needs a finance-issued number when it has no account number AND
+// it's either a won deal awaiting approval ("Pending Approval") OR a live
+// account that was created before the approval gate existed ("Active" with a
+// blank number — legacy auto-converted rows). Prospects are excluded: the deal
+// isn't won yet, so no number is due.
+const needsFinanceNo = (a) => !!a && !a.isDeleted && !String(a.accountNo || "").trim()
+  && (a.status === "Pending Approval" || a.status === "Active");
 const infoRow = (label, value) => (
   <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid var(--border)"}}>
     <span style={{fontSize:12,color:"var(--text3)",fontWeight:500}}>{label}</span>
@@ -627,8 +634,9 @@ function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, 
       selection={bulk}
       rowActions={a => (
         <div style={{display:"flex",gap:4}}>
-          {a.status === "Pending Approval" && canApprove && (
-            <button className="icon-btn" aria-label="Approve & activate" title="Approve & issue account number"
+          {needsFinanceNo(a) && canApprove && (
+            <button className="icon-btn" aria-label="Approve & activate"
+              title={a.status === "Active" ? "Issue account number" : "Approve & issue account number"}
               style={{color:"#B45309"}} onClick={() => onApprove(a)}><BadgeCheck size={15}/></button>
           )}
           <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(a)}><Edit2 size={14}/></button>
@@ -646,6 +654,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   const [countryF, setCountryF] = useState("All");
   const [statusF, setStatusF] = useState("All");
   const [ownerF, setOwnerF] = useState("All");
+  const [financeQueueOnly, setFinanceQueueOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_ACC);
@@ -746,6 +755,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     if (countryF !== "All" && a.country !== countryF) return false;
     if (statusF !== "All" && a.status !== statusF) return false;
     if (ownerF !== "All" && a.owner !== ownerF) return false;
+    if (financeQueueOnly && !needsFinanceNo(a)) return false;
     // Search across name, CRM accountNo, AND ERP code so reps who think in
     // "SHP/2881" find the same record as reps who think in "ACC-2026-001".
     if (search) {
@@ -759,7 +769,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     if (sortCol === "arrRevenue" || sortCol === "potential") v = (a[sortCol] || 0) - (b[sortCol] || 0);
     else v = cmp(a, b, sortCol);
     return sortDir === "desc" ? -v : v;
-  }), [accounts, typeF, countryF, statusF, ownerF, search, sortCol, sortDir]);
+  }), [accounts, typeF, countryF, statusF, ownerF, financeQueueOnly, search, sortCol, sortDir]);
 
   const bulk = useBulkSelect(filtered);
   const pg = usePagination(filtered);
@@ -785,6 +795,10 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   const activeCount = accounts.filter(a => a.status === "Active").length;
   const prospectCount = accounts.filter(a => a.status === "Prospect").length;
   const pendingApprovalCount = accounts.filter(a => a.status === "Pending Approval").length;
+  // Won-deal queue + legacy Active accounts missing a number — everything that
+  // still needs a finance-issued account number.
+  const financeQueueCount = accounts.filter(needsFinanceNo).length;
+  const legacyMissingNoCount = accounts.filter(a => needsFinanceNo(a) && a.status === "Active").length;
   const avgProducts = accounts.length > 0 ? (accounts.reduce((s, a) => s + (a.products?.length || 0), 0) / accounts.length).toFixed(1) : 0;
 
   // Product adoption for insights
@@ -1041,15 +1055,20 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
             orgUsers={orgUsers}
           />
 
-          {pendingApprovalCount > 0 && (
+          {financeQueueCount > 0 && (
             <div style={{display:"flex",alignItems:"center",gap:10,background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
               <BadgeCheck size={18} style={{color:"#B45309",flexShrink:0}}/>
               <div style={{flex:1,fontSize:12.5,color:"#92400E"}}>
-                <strong>{pendingApprovalCount}</strong> won deal{pendingApprovalCount>1?"s":""} awaiting finance approval.
-                {canApprove ? " Review each, enter the account number, and activate." : " A finance approver (Admin / MD / Director) must issue the account number."}
+                <strong>{financeQueueCount}</strong> account{financeQueueCount>1?"s":""} need{financeQueueCount>1?"":"s"} a finance-issued account number
+                {pendingApprovalCount > 0 && legacyMissingNoCount > 0
+                  ? ` (${pendingApprovalCount} won deal${pendingApprovalCount>1?"s":""} awaiting approval, ${legacyMissingNoCount} active account${legacyMissingNoCount>1?"s":""} missing a number).`
+                  : legacyMissingNoCount > 0
+                    ? ` (active account${legacyMissingNoCount>1?"s":""} created before approval was required).`
+                    : " (won deals awaiting approval)."}
+                {canApprove ? " Review each, enter the number, and activate." : " A finance approver (Admin / MD / Director) must issue the number."}
               </div>
-              <button className="btn btn-sec btn-sm" onClick={() => setStatusF(statusF === "Pending Approval" ? "All" : "Pending Approval")}>
-                {statusF === "Pending Approval" ? "Show all" : "View queue"}
+              <button className="btn btn-sec btn-sm" onClick={() => setFinanceQueueOnly(v => !v)}>
+                {financeQueueOnly ? "Show all" : "View queue"}
               </button>
             </div>
           )}
@@ -1340,16 +1359,18 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
       {/* ═════════ FINANCE APPROVAL MODAL ═════════ */}
       {approveModal && (
         <Modal
-          title="Approve Account & Issue Number"
+          title={approveModal.status === "Active" ? "Issue Account Number" : "Approve Account & Issue Number"}
           onClose={() => { setApproveModal(null); setApproveErr(""); }}
           footer={<>
             <button className="btn btn-sec" onClick={() => { setApproveModal(null); setApproveErr(""); }}>Cancel</button>
-            <button className="btn btn-primary" onClick={confirmApprove}><BadgeCheck size={14}/>Approve & Activate</button>
+            <button className="btn btn-primary" onClick={confirmApprove}><BadgeCheck size={14}/>{approveModal.status === "Active" ? "Save Number" : "Approve & Activate"}</button>
           </>}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8}}>
             <BadgeCheck size={18} style={{color:"#B45309",flexShrink:0}}/>
             <div style={{fontSize:12.5,color:"#92400E"}}>
-              Activating <strong>{approveModal.name}</strong> as a live customer. Enter the account number from your accounting / ERP system.
+              {approveModal.status === "Active"
+                ? <><strong>{approveModal.name}</strong> is already active but has no account number. Enter the number from your accounting / ERP system.</>
+                : <>Activating <strong>{approveModal.name}</strong> as a live customer. Enter the account number from your accounting / ERP system.</>}
             </div>
           </div>
           <div className="form-group">
@@ -1365,7 +1386,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
             <FormError error={approveErr}/>
           </div>
           <div style={{fontSize:11.5,color:"var(--text3)",marginTop:4}}>
-            On approval the status becomes <strong>Active</strong>
+            {approveModal.status === "Active" ? "The account stays " : "On approval the status becomes "}<strong>Active</strong>
             {!approveModal.arrRevenue && wonValueFor(approveModal.id) > 0
               ? <> and ARR is set to <strong>₹{wonValueFor(approveModal.id)}L</strong> from the won deal.</>
               : <>.</>}
