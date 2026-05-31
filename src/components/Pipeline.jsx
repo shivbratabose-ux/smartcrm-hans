@@ -1012,32 +1012,35 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   /* ── ANALYTICS DATA ── */
   // STAGES / closingNames / wonName / lostName resolved from masters (with
   // legacy fallback) — see buildStagesContext at module top.
+  // Analytics charts read from `filtered` (not raw `opps`) so they move with
+  // the search / product / owner / region / stage / status filters, matching
+  // the KPI tiles above them.
   const stageConvData = useMemo(() => STAGES.filter(s => s !== lostName).map(s => ({
-    stage: s, count: opps.filter(o => o.stage === s).length,
-  })), [opps, STAGES, lostName]);
+    stage: s, count: filtered.filter(o => o.stage === s).length,
+  })), [filtered, STAGES, lostName]);
 
   const winLossData = useMemo(() => [
-    { name: wonName, value: opps.filter(o => o.stage === wonName).length },
-    { name: lostName, value: opps.filter(o => o.stage === lostName).length },
-    { name: "Open", value: opps.filter(o => !closingNames.includes(o.stage)).length },
-  ], [opps, wonName, lostName, closingNames]);
+    { name: wonName, value: filtered.filter(o => o.stage === wonName).length },
+    { name: lostName, value: filtered.filter(o => o.stage === lostName).length },
+    { name: "Open", value: filtered.filter(o => !closingNames.includes(o.stage)).length },
+  ], [filtered, wonName, lostName, closingNames]);
 
   const forecastData = useMemo(() => {
     const months = {};
-    opps.filter(o => !closingNames.includes(o.stage) && o.closeDate).forEach(o => {
+    filtered.filter(o => !closingNames.includes(o.stage) && o.closeDate).forEach(o => {
       const m = o.closeDate.slice(0, 7);
       months[m] = (months[m] || 0) + o.value * (o.probability / 100);
     });
     return Object.entries(months).sort().slice(0, 6).map(([m, v]) => ({ month: m, value: +v.toFixed(1) }));
-  }, [opps, closingNames]);
+  }, [filtered, closingNames]);
 
   const activityVsConv = useMemo(() => STAGES.filter(s => !closingNames.includes(s)).map(s => {
-    const stageOpps = opps.filter(o => o.stage === s);
+    const stageOpps = filtered.filter(o => o.stage === s);
     const avgActs = stageOpps.length > 0
       ? Math.round(stageOpps.reduce((sum, o) => sum + (activities || []).filter(a => a.oppId === o.id && a.status === "Completed").length, 0) / stageOpps.length)
       : 0;
     return { stage: s, avgActivities: avgActs, deals: stageOpps.length };
-  }), [opps, activities, STAGES, closingNames]);
+  }), [filtered, activities, STAGES, closingNames]);
 
   /* ── MANAGER VIEW: mismatch detection ── */
   // Excludes closed deals (Won/Lost) AND the very first stage in the list
@@ -1046,12 +1049,12 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   const firstStageName = STAGES[0];
   const mismatchDeals = useMemo(() => {
     if (!mgrView) return [];
-    return opps.filter(o => {
+    return filtered.filter(o => {
       if (closingNames.includes(o.stage) || o.stage === firstStageName) return false;
       const recent = (activities || []).filter(a => a.oppId === o.id && a.status === "Completed" && a.date >= (() => { const d = new Date(today); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); })());
       return recent.length === 0;
     });
-  }, [opps, activities, mgrView, closingNames, firstStageName]);
+  }, [filtered, activities, mgrView, closingNames, firstStageName]);
 
   /* ─────────────────── RENDER ─────────────────── */
   return (
@@ -1560,7 +1563,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Deal Velocity Metrics</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
               {STAGES.filter(s => !closingNames.includes(s)).map(s => {
-                const stageOpps = opps.filter(o => o.stage === s);
+                const stageOpps = filtered.filter(o => o.stage === s);
                 const totalVal = stageOpps.reduce((sum, o) => sum + o.value, 0);
                 const avgProb = stageOpps.length > 0 ? Math.round(stageOpps.reduce((sum, o) => sum + o.probability, 0) / stageOpps.length) : 0;
                 return (
