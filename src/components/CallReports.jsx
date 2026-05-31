@@ -189,7 +189,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
         {filtered.length === 0 ? (
           <Empty icon={<Phone size={22}/>} title="No call reports" sub="Log your first call to start tracking interactions."/>
         ) : (
-          <table className="tbl">
+          <table className="tbl tbl-dense">
             <thead>
               <tr>
                 <th style={{width:36}}><input type="checkbox" checked={bulk.allSelected} onChange={bulk.toggleAll}/></th>
