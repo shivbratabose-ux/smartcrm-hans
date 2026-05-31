@@ -411,7 +411,29 @@ export const getScopedUserIds = (currentUserId, orgUsers) => {
     frontier = next;
   }
 
-  // If we found at least one direct/indirect report, that IS the scope.
+  // Rule 2b: Walk UP the (solid) reporting line to the product-line top.
+  // In addition to their own downline, a user can see their own vertical
+  // chain of command — every manager from their direct manager up to, and
+  // including, the topmost NON-management manager (the product-line head).
+  // We stop the climb the moment we reach a global/management role
+  // (Admin / MD / Director / VP) — those are excluded — and we do NOT add
+  // peers or the sibling sub-teams hanging off those managers. The result is
+  // a vertical "spine" (own descendants + own ancestors up the product line),
+  // not the entire department.
+  {
+    let cursor = user;
+    const guard = new Set([user.id]);
+    while (cursor && cursor.reportsTo) {
+      const mgr = allUsers.find(u => u.id === cursor.reportsTo);
+      if (!mgr || guard.has(mgr.id)) break;                       // missing link or cycle
+      if (GLOBAL_ROLES.includes(normalizeRole(mgr.role))) break;  // reached management — exclude & stop
+      guard.add(mgr.id);
+      if (mgr.active !== false) scoped.add(mgr.id);               // include active managers in the chain
+      cursor = mgr;                                               // keep climbing (even through inactive nodes)
+    }
+  }
+
+  // If we found at least one report (down) or manager (up), that IS the scope.
   if (scoped.size > 1) return scoped;
 
   // Rule 3 & 4: Fall back to legacy dept/branch scoping for managers
