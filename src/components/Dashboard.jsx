@@ -124,12 +124,20 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
 
   // ─── Revenue by product ───
   const productRevenue = useMemo(() => {
+    // Normalise product ids to their canonical PRODUCTS id (case-insensitive)
+    // so e.g. "Icaffe" and "iCAFFE" collapse into one slice instead of two.
+    const canonical = (pid) => {
+      const hit = PRODUCTS.find(p => p.id.toLowerCase() === String(pid).toLowerCase());
+      return hit ? hit.id : pid;
+    };
     const byProd = {};
     accounts.forEach(acc => {
-      const share = acc.products.length > 0 ? (parseFloat(acc.arrRevenue) || 0) / acc.products.length : 0;
-      acc.products.forEach(pid => {
-        if (!byProd[pid]) byProd[pid] = 0;
-        byProd[pid] += share;
+      const prods = acc.products || [];
+      const share = prods.length > 0 ? (parseFloat(acc.arrRevenue) || 0) / prods.length : 0;
+      prods.forEach(pid => {
+        const cid = canonical(pid);
+        if (!byProd[cid]) byProd[cid] = 0;
+        byProd[cid] += share;
       });
     });
     return Object.entries(byProd)
@@ -229,7 +237,16 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
   }, [opps, accounts, activities]);
 
   // ─── Target achievement ───
-  const currentTargets = (targets || []).filter(t => t.period === "2026-Q1");
+  // Use the CURRENT quarter (derived from today), not a hardcoded one. If no
+  // targets exist for the current quarter, fall back to the most recent period
+  // that does have data so the exec view isn't blank.
+  const activePeriod = useMemo(() => {
+    const d = new Date(today);
+    const cq = `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+    const periods = [...new Set((targets || []).map(t => t.period).filter(Boolean))];
+    return periods.includes(cq) ? cq : (periods.slice().sort().pop() || cq);
+  }, [targets]);
+  const currentTargets = (targets || []).filter(t => t.period === activePeriod);
   const totalTarget = currentTargets.reduce((s, t) => s + (parseFloat(t.targetValue) || 0), 0);
   const totalAchieved = currentTargets.reduce((s, t) => s + (parseFloat(t.achievedValue) || 0), 0);
   const targetPct = totalTarget > 0 ? Math.round((totalAchieved / totalTarget) * 100) : 0;
@@ -247,7 +264,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
     .filter(t => _dashIsGlobal || _dashScopedIds.has(t.id))
     .slice(0, 4);
   const teamPerf = _dashTeam.map(t => {
-    const memberTargets = currentTargets.filter(ct => ct.owner === t.id);
+    const memberTargets = currentTargets.filter(ct => ct.userId === t.id);
     const achieved = memberTargets.reduce((s, ct) => s + (parseFloat(ct.achievedValue) || 0), 0);
     const target = memberTargets.reduce((s, ct) => s + (parseFloat(ct.targetValue) || 0), 0);
     const memberDeals = opps.filter(o => o.owner === t.id && !["Won", "Lost"].includes(o.stage)).length;
@@ -410,7 +427,9 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--text3)", letterSpacing: "0.06em" }}>GROWTH FORECAST</div>
               <div style={{ fontSize: 13, color: "var(--text2)", marginTop: 4, lineHeight: 1.5 }}>
-                Pipeline velocity suggests a <strong style={{ color: pipelineSurplus > 0 ? "var(--green-t)" : "var(--red-t)" }}>{Math.abs(pipelineSurplus)}% {pipelineSurplus > 0 ? "surplus" : "gap"}</strong> in Q4 targets if conversion rate holds.
+                {totalTarget > 0
+                  ? <>Pipeline velocity suggests a <strong style={{ color: pipelineSurplus >= 0 ? "var(--green-t)" : "var(--red-t)" }}>{Math.abs(pipelineSurplus)}% {pipelineSurplus >= 0 ? "surplus" : "gap"}</strong> against {activePeriod} targets if conversion rate holds.</>
+                  : <>No targets set for <strong>{activePeriod}</strong> yet — add quarterly targets to see the growth forecast.</>}
               </div>
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--text3)", letterSpacing: "0.06em" }}>TARGET ATTAINMENT</div>
