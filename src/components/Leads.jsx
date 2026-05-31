@@ -609,7 +609,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 
   const saveCallLog = () => {
     if (!callForm.notes?.trim()) return;
-    const newCall = { id: `cr-${Date.now()}`, accountId: lead.accountId || "", leadId: lead.id, contactId: lead.contact || "", callType: callForm.callType, date: callForm.date, callDate: callForm.date, notes: callForm.notes, outcome: callForm.outcome, nextCallDate: callForm.nextCallDate, createdBy: "" };
+    const newCall = { id: `cr-${Date.now()}`, company: lead.company || "", leadName: lead.contact || "", leadId: lead.leadId || lead.id, accountId: lead.accountId || "", contactId: lead.contact || "", callType: callForm.callType, date: callForm.date, callDate: callForm.date, notes: callForm.notes, outcome: callForm.outcome, nextCallDate: callForm.nextCallDate, createdBy: "" };
     setCallReports(p => [...p, newCall]);
     setCallForm({ callType: "Discovery", date: today, notes: "", outcome: "Interested", nextCallDate: "" });
     setShowCallForm(false);

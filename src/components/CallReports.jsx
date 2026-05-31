@@ -43,7 +43,31 @@ const CSV_COLS = [
   { label: "Duration (min)", accessor: r => r.duration },
 ];
 
-function CallReports({ callReports, setCallReports, accounts, contacts, opps, currentUser, orgUsers, canDelete, catalog = [] }) {
+function CallReports({ callReports, setCallReports, accounts, contacts, opps, leads = [], currentUser, orgUsers, canDelete, catalog = [] }) {
+  // Resolve a display name for a call: stored leadName/company first, then
+  // fall back to the linked account / lead / opportunity / contact, so calls
+  // logged without an explicit company (e.g. from a lead's quick-log) still
+  // show who they're with instead of a blank cell.
+  const resolveCallName = (r) => {
+    if (r.leadName?.trim()) return r.leadName.trim();
+    if (r.company?.trim()) return r.company.trim();
+    const acc = r.accountId && accounts.find(a => a.id === r.accountId);
+    if (acc?.name) return acc.name;
+    const lead = r.leadId && leads.find(l => l.id === r.leadId || l.leadId === r.leadId);
+    if (lead?.company) return lead.company;
+    const opp = r.oppId && opps.find(o => o.id === r.oppId);
+    if (opp) {
+      const oacc = accounts.find(a => a.id === opp.accountId);
+      return oacc?.name || opp.title || "";
+    }
+    const con = r.contactId && contacts.find(c => c.id === r.contactId);
+    if (con) {
+      const cacc = accounts.find(a => a.id === con.accountId);
+      return cacc?.name || con.name || "";
+    }
+    if (r.leadId) return `Lead ${r.leadId}`;
+    return "—";
+  };
   const _crScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const team = useMemo(() => {
     const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
@@ -188,7 +212,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, cu
                   <tr key={r.id}>
                     <td><input type="checkbox" checked={bulk.isSelected(r.id)} onChange={() => bulk.toggle(r.id)}/></td>
                     <td>
-                      <div style={{fontWeight:600,fontSize:13}}>{r.leadName || r.company}</div>
+                      <div style={{fontWeight:600,fontSize:13}}>{resolveCallName(r)}</div>
                       {r.company && r.leadName && <div style={{fontSize:11,color:"var(--text3)"}}>{r.company}</div>}
                     </td>
                     <td>
