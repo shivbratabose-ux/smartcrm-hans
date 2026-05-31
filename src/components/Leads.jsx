@@ -2314,17 +2314,17 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       </div>
 
       {/* ──── DATE RANGE PILLS ──── */}
-      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:10,flexWrap:"wrap"}}>
         <Calendar size={14} style={{color:"var(--text3)",marginRight:2}}/>
         {RANGE_PRESETS.filter(p => p.key !== "custom").map(p => (
           <button key={p.key}
-            style={{fontSize:11,padding:"5px 12px",borderRadius:6,cursor:"pointer",fontWeight:600,border:rangeKey===p.key?"none":"1.5px solid #CBD5E1",background:rangeKey===p.key?"#1B6B5A":"#fff",color:rangeKey===p.key?"#fff":"#334155",transition:"all 0.15s",whiteSpace:"nowrap"}}
+            style={{fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer",fontWeight:600,border:rangeKey===p.key?"none":"1.5px solid #CBD5E1",background:rangeKey===p.key?"#1B6B5A":"#fff",color:rangeKey===p.key?"#fff":"#334155",transition:"all 0.15s",whiteSpace:"nowrap"}}
             onClick={() => setRangeKey(p.key)}>
             {p.label}
           </button>
         ))}
         <button
-          style={{fontSize:11,padding:"5px 12px",borderRadius:6,cursor:"pointer",fontWeight:600,border:rangeKey==="custom"?"none":"1.5px solid #CBD5E1",background:rangeKey==="custom"?"#1B6B5A":"#fff",color:rangeKey==="custom"?"#fff":"#334155",transition:"all 0.15s",whiteSpace:"nowrap"}}
+          style={{fontSize:11,padding:"3px 10px",borderRadius:6,cursor:"pointer",fontWeight:600,border:rangeKey==="custom"?"none":"1.5px solid #CBD5E1",background:rangeKey==="custom"?"#1B6B5A":"#fff",color:rangeKey==="custom"?"#fff":"#334155",transition:"all 0.15s",whiteSpace:"nowrap"}}
           onClick={() => setRangeKey("custom")}>
           Custom
         </button>
@@ -2338,36 +2338,36 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       </div>
 
       {/* ──── KPI CARDS ──── */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:16}}>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:10}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>ACTIVE LEADS</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>{activeLeads}</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{activeLeads}</div>
           <div style={{fontSize:11,opacity:0.7}}>{hotLeads} hot (70+ score)</div>
         </div>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>AVG SCORE</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>{avgScore}<span style={{fontSize:14,opacity:0.7}}>/100</span></div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{avgScore}<span style={{fontSize:14,opacity:0.7}}>/100</span></div>
           <div style={{fontSize:11,opacity:0.7}}>{avgScore >= 60 ? "Healthy pipeline" : "Needs nurturing"}</div>
         </div>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>PIPELINE VALUE</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>₹{pipelineValue.toFixed(1)}L</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>₹{pipelineValue.toFixed(1)}L</div>
           <div style={{fontSize:11,opacity:0.7}} title="Sum of Est. Value across active leads (Converted / NA excluded). Falls back to score×0.5 when a lead has no Est. Value entered.">Active leads · Est. Value</div>
         </div>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>CONVERSION</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>{salCount}</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{salCount}</div>
           <div style={{fontSize:11,opacity:0.7}}>SAL ready to convert</div>
         </div>
-        <div onClick={() => overdueLeads > 0 && setOverdueOnly(v => !v)} style={{background: overdueOnly ? "#7F1D1D" : overdueLeads > 0 ? "#DC2626" : "#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white",cursor:overdueLeads > 0 ? "pointer" : "default",transition:"all 0.15s",outline:overdueOnly?"2px solid #FCA5A5":"none"}}>
+        <div onClick={() => overdueLeads > 0 && setOverdueOnly(v => !v)} style={{background: overdueOnly ? "#7F1D1D" : overdueLeads > 0 ? "#DC2626" : "#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white",cursor:overdueLeads > 0 ? "pointer" : "default",transition:"all 0.15s",outline:overdueOnly?"2px solid #FCA5A5":"none"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>{overdueOnly ? "FILTERED: OVERDUE" : "FOLLOW-UPS"}</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>{overdueLeads}</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{overdueLeads}</div>
           <div style={{fontSize:11,opacity:0.7}}>{overdueOnly ? "Click to show all" : overdueLeads > 0 ? "Overdue – click to filter!" : "All on track"}</div>
         </div>
       </div>
 
       {/* ──── STAGE PIPELINE MINI BAR ──── */}
-      <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",marginBottom:16,gap:2}}>
+      <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",marginBottom:10,gap:2}}>
         {stageFunnel.map(s => s.count > 0 && (
           <div key={s.name} style={{flex:s.count,background:s.color,borderRadius:2,position:"relative",minWidth:4}} title={`${s.name}: ${s.count}`}/>
         ))}
