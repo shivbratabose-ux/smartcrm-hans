@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { Plus, Search, Edit2, Trash2, Check, TrendingUp, Activity, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown, Users, Phone, Mail, FileText, Calendar, AlertTriangle, Shield, Globe, Building2, Target, DollarSign, Package, Clock, Star, BarChart3, Layers, ExternalLink, X } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, TrendingUp, Activity, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown, Users, Phone, Mail, FileText, Calendar, AlertTriangle, Shield, Globe, Building2, Target, DollarSign, Package, Clock, Star, BarChart3, Layers, ExternalLink, X, BadgeCheck } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, PROD_MAP, CUST_TYPES, COUNTRIES, TEAM, TEAM_MAP, HIERARCHY_LEVELS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_ACC } from '../data/seed';
@@ -498,7 +498,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
    Customer-view list backed by DataGrid. Column visibility/order/width
    are persisted per-user via user_table_views. The relationships
    column is non-sortable since it's a derived composite. */
-function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, setConfirm, canDelete, currentUser }) {
+function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, setConfirm, canDelete, currentUser, canApprove, onApprove }) {
   const txt = (val) => <span style={{fontSize: 12}}>{val || "-"}</span>;
   // Full registry: every meaningful account field is opt-in. Different
   // user groups (sales, finance, ops, BD) can build their own views from
@@ -627,6 +627,10 @@ function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, 
       selection={bulk}
       rowActions={a => (
         <div style={{display:"flex",gap:4}}>
+          {a.status === "Pending Approval" && canApprove && (
+            <button className="icon-btn" aria-label="Approve & activate" title="Approve & issue account number"
+              style={{color:"#B45309"}} onClick={() => onApprove(a)}><BadgeCheck size={15}/></button>
+          )}
           <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(a)}><Edit2 size={14}/></button>
           {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(a.id)}><Trash2 size={14}/></button>}
         </div>
@@ -651,6 +655,39 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   const [logCallPrefill, setLogCallPrefill] = useState(null);
   const [sortCol, setSortCol] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
+  // ── Finance approval queue ──
+  // A won deal lands its account in "Pending Approval". Finance (admin/md/
+  // director) approves it and manually enters the account number, which is
+  // the only path that flips an account to "Active".
+  const [approveModal, setApproveModal] = useState(null);
+  const [approveAcctNo, setApproveAcctNo] = useState("");
+  const [approveErr, setApproveErr] = useState("");
+  const _me = (orgUsers || []).find(u => u.id === currentUser);
+  const canApprove = !!_me && ["admin","md","director"].includes(String(_me.role || "").toLowerCase());
+
+  // Sum the value of won opps linked to an account — used to seed ARR at the
+  // moment Finance activates the account.
+  const wonValueFor = useCallback((acctId) =>
+    (opps || [])
+      .filter(o => o.accountId === acctId && ["Won","closed_won","Closed Won"].includes(o.stage))
+      .reduce((s, o) => s + (o.value || 0), 0)
+  , [opps]);
+
+  const openApprove = (a) => { setApproveAcctNo(a.accountNo || ""); setApproveErr(""); setApproveModal(a); };
+  const confirmApprove = () => {
+    const no = approveAcctNo.trim();
+    if (!no) { setApproveErr("Account number is required to approve."); return; }
+    const dup = accounts.some(a => a.id !== approveModal.id && (a.accountNo || "").trim().toLowerCase() === no.toLowerCase());
+    if (dup) { setApproveErr("That account number is already in use by another account."); return; }
+    setAccounts(p => p.map(a => a.id === approveModal.id ? {
+      ...a,
+      status: "Active",
+      accountNo: no,
+      arrRevenue: a.arrRevenue || wonValueFor(a.id),
+    } : a));
+    notify.success(`${approveModal.name} approved & activated as ${no}.`);
+    setApproveModal(null); setApproveAcctNo(""); setApproveErr("");
+  };
 
   /* ── Save call report handler ── */
   const handleSaveCall = useCallback((callForm) => {
@@ -747,6 +784,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   const totalPotential = accounts.reduce((s, a) => s + (a.potential || 0), 0);
   const activeCount = accounts.filter(a => a.status === "Active").length;
   const prospectCount = accounts.filter(a => a.status === "Prospect").length;
+  const pendingApprovalCount = accounts.filter(a => a.status === "Pending Approval").length;
   const avgProducts = accounts.length > 0 ? (accounts.reduce((s, a) => s + (a.products?.length || 0), 0) / accounts.length).toFixed(1) : 0;
 
   // Product adoption for insights
@@ -903,7 +941,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
       <div className="pg-head">
         <div>
           <div className="pg-title">Accounts</div>
-          <div className="pg-sub">{accounts.length} total · {activeCount} active · {prospectCount} prospects</div>
+          <div className="pg-sub">{accounts.length} total · {activeCount} active · {prospectCount} prospects{pendingApprovalCount > 0 ? ` · ${pendingApprovalCount} pending approval` : ""}</div>
         </div>
         <div className="pg-actions">
           {/* Resync to Cloud — admin-only safety button. The CRM uses dual
@@ -983,7 +1021,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
               value={countryF} onChange={setCountryF}
               options={COUNTRIES.map(c => ({ value: c, label: c }))}
             />
-            <select className="filter-select" value={statusF} onChange={e => setStatusF(e.target.value)}><option>All</option><option>Active</option><option>Prospect</option></select>
+            <select className="filter-select" value={statusF} onChange={e => setStatusF(e.target.value)}><option>All</option><option>Active</option><option>Prospect</option><option>Pending Approval</option></select>
             <TypeaheadSelect
               size="filter" allowAll allLabel="All Owners" placeholder="Search owners…"
               value={ownerF} onChange={setOwnerF}
@@ -1003,6 +1041,19 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
             orgUsers={orgUsers}
           />
 
+          {pendingApprovalCount > 0 && (
+            <div style={{display:"flex",alignItems:"center",gap:10,background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+              <BadgeCheck size={18} style={{color:"#B45309",flexShrink:0}}/>
+              <div style={{flex:1,fontSize:12.5,color:"#92400E"}}>
+                <strong>{pendingApprovalCount}</strong> won deal{pendingApprovalCount>1?"s":""} awaiting finance approval.
+                {canApprove ? " Review each, enter the account number, and activate." : " A finance approver (Admin / MD / Director) must issue the account number."}
+              </div>
+              <button className="btn btn-sec btn-sm" onClick={() => setStatusF(statusF === "Pending Approval" ? "All" : "Pending Approval")}>
+                {statusF === "Pending Approval" ? "Show all" : "View queue"}
+              </button>
+            </div>
+          )}
+
           <div className="card" style={{padding:0}}>
             {filtered.length === 0 ? (
               <Empty icon={<Building2 size={22}/>} title="No accounts found" sub="Try adjusting filters or add a new account."/>
@@ -1019,6 +1070,8 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
                 setConfirm={setConfirm}
                 canDelete={canDelete}
                 currentUser={currentUser}
+                canApprove={canApprove}
+                onApprove={openApprove}
               />
             )}
             {false && (
@@ -1282,6 +1335,42 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           accounts={accounts} contacts={contacts} opps={opps} orgUsers={orgUsers} masters={masters}
           prefill={logCallPrefill}
         />
+      )}
+
+      {/* ═════════ FINANCE APPROVAL MODAL ═════════ */}
+      {approveModal && (
+        <Modal
+          title="Approve Account & Issue Number"
+          onClose={() => { setApproveModal(null); setApproveErr(""); }}
+          footer={<>
+            <button className="btn btn-sec" onClick={() => { setApproveModal(null); setApproveErr(""); }}>Cancel</button>
+            <button className="btn btn-primary" onClick={confirmApprove}><BadgeCheck size={14}/>Approve & Activate</button>
+          </>}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 14px",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8}}>
+            <BadgeCheck size={18} style={{color:"#B45309",flexShrink:0}}/>
+            <div style={{fontSize:12.5,color:"#92400E"}}>
+              Activating <strong>{approveModal.name}</strong> as a live customer. Enter the account number from your accounting / ERP system.
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Account Number *</label>
+            <input
+              autoFocus
+              value={approveAcctNo}
+              onChange={e => { setApproveAcctNo(e.target.value); setApproveErr(""); }}
+              onKeyDown={e => { if (e.key === "Enter") confirmApprove(); }}
+              placeholder="e.g. ACC-2026-009 or your ERP code"
+              style={{fontFamily:"'Courier New',monospace",...(approveErr?{borderColor:"#DC2626"}:{})}}
+            />
+            <FormError error={approveErr}/>
+          </div>
+          <div style={{fontSize:11.5,color:"var(--text3)",marginTop:4}}>
+            On approval the status becomes <strong>Active</strong>
+            {!approveModal.arrRevenue && wonValueFor(approveModal.id) > 0
+              ? <> and ARR is set to <strong>₹{wonValueFor(approveModal.id)}L</strong> from the won deal.</>
+              : <>.</>}
+          </div>
+        </Modal>
       )}
     </div>
   );

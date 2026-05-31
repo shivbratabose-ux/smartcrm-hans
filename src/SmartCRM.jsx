@@ -1231,93 +1231,121 @@ export default function SmartCRM() {
     const now = new Date().toISOString();
     const sdPrimary = { isDeleted: true, deletedAt: now, deletedBy: currentUser, deleteReason: meta.reason || null, deleteReasonCategory: meta.category || null };
     const sdChild   = { isDeleted: true, deletedAt: now, deletedBy: currentUser };
-    setAccounts(p => p.map(a => a.id === accId ? {...a, ...sdPrimary} : (a.parentId === accId ? {...a, parentId: ""} : a)));
-    setContacts(p => p.map(c => c.accountId === accId ? {...c, ...sdChild} : c));
-    setOpps(p => p.map(o => o.accountId === accId ? {...o, ...sdChild} : o));
-    setActivities(p => p.map(a => a.accountId === accId ? {...a, ...sdChild} : a));
-    setTickets(p => p.map(t => t.accountId === accId ? {...t, ...sdChild} : t));
-    setContracts(p => p.map(c => c.accountId === accId ? {...c, ...sdChild} : c));
-    setCollections(p => p.map(c => c.accountId === accId ? {...c, ...sdChild} : c));
-    setCallReports(p => p.map(r => r.accountId === accId ? {...r, ...sdChild} : r));
+    const canWrite = (owner) => _globalRole || (owner && _scopedIds.has(owner));
+
+    setAccounts(p => p.map(a => a.id === accId ? {...a, ...sdPrimary} : (a.parentId === accId && canWrite(a.owner) ? {...a, parentId: ""} : a)));
+    setContacts(p => p.map(c => c.accountId === accId && canWrite(c.owner) ? {...c, ...sdChild} : c));
+    setOpps(p => p.map(o => o.accountId === accId && canWrite(o.owner) ? {...o, ...sdChild} : o));
+    setActivities(p => p.map(a => a.accountId === accId && canWrite(a.owner) ? {...a, ...sdChild} : a));
+    setTickets(p => p.map(t => t.accountId === accId && canWrite(t.assigned) ? {...t, ...sdChild} : t));
+    setContracts(p => p.map(c => c.accountId === accId && canWrite(c.owner) ? {...c, ...sdChild} : c));
+    setCollections(p => p.map(c => c.accountId === accId && canWrite(c.owner) ? {...c, ...sdChild} : c));
+    setCallReports(p => p.map(r => r.accountId === accId && canWrite(r.marketingPerson) ? {...r, ...sdChild} : r));
     // notes/files: orphan rather than soft-delete (they carry content)
-  }, [currentUser]);
+  }, [currentUser, _globalRole, _scopedIds]);
 
   const cascadeDeleteOpp = useCallback((oppId, meta = {}) => {
     const now = new Date().toISOString();
     const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser, deleteReason: meta.reason || null, deleteReasonCategory: meta.category || null };
+    const canWrite = (owner) => _globalRole || (owner && _scopedIds.has(owner));
+
     setOpps(p => p.map(o => o.id === oppId ? {...o, ...sd} : o));
     // Dependent records: clear the broken FK rather than soft-delete so
     // the user-authored content (activity notes, contract terms, quote
     // line-items, comm bodies) is preserved and can be re-linked later.
-    setActivities(p => p.map(a => a.oppId === oppId ? {...a, oppId: ""} : a));
-    setContracts(p => p.map(c => c.oppId === oppId ? {...c, oppId: ""} : c));
-    setQuotes(p => p.map(q => q.oppId === oppId ? {...q, oppId: ""} : q));
-    setCallReports(p => p.map(r => r.oppId === oppId ? {...r, oppId: ""} : r));
-    setCommLogs(p => p.map(c => c.oppId === oppId ? {...c, oppId: ""} : c));
-  }, [currentUser]);
+    setActivities(p => p.map(a => a.oppId === oppId && canWrite(a.owner) ? {...a, oppId: ""} : a));
+    setContracts(p => p.map(c => c.oppId === oppId && canWrite(c.owner) ? {...c, oppId: ""} : c));
+    setQuotes(p => p.map(q => q.oppId === oppId && canWrite(q.owner) ? {...q, oppId: ""} : q));
+    setCallReports(p => p.map(r => r.oppId === oppId && canWrite(r.marketingPerson) ? {...r, oppId: ""} : r));
+    setCommLogs(p => p.map(c => c.oppId === oppId && canWrite(c.owner) ? {...c, oppId: ""} : c));
+  }, [currentUser, _globalRole, _scopedIds]);
 
   const cascadeDeleteContact = useCallback((conId, meta = {}) => {
     const now = new Date().toISOString();
     const sd = { isDeleted: true, deletedAt: now, deletedBy: currentUser, deleteReason: meta.reason || null, deleteReasonCategory: meta.category || null };
-    setContacts(p => p.map(c => c.id === conId ? {...c, ...sd} : c));
-    setActivities(p => p.map(a => a.contactId === conId ? {...a, contactId: ""} : a));
-    setCallReports(p => p.map(cr => cr.contactId === conId ? {...cr, contactId: ""} : cr));
-    setLeads(p => p.map(l => l.contactIds?.includes(conId) ? {...l, contactIds: l.contactIds.filter(id => id !== conId)} : l));
-    setOpps(p => p.map(o => {
-      let changed = false, up = {...o};
-      if (o.primaryContactId === conId) { up.primaryContactId = ""; changed = true; }
-      if (o.secondaryContactIds?.includes(conId)) { up.secondaryContactIds = o.secondaryContactIds.filter(id => id !== conId); changed = true; }
-      return changed ? up : o;
-    }));
-  }, [currentUser]);
+    const canWrite = (owner) => _globalRole || (owner && _scopedIds.has(owner));
 
-  // Deal Won → Customer: auto-create or update account
-  const handleDealWon = useCallback((opp) => {
-    if (opp.accountId) {
-      // Update existing account: mark Active, add products
-      setAccounts(p => p.map(a => {
-        if (a.id !== opp.accountId) return a;
-        // Merge productSelection: union by productId, union moduleIds within
-        const existingSel = Array.isArray(a.productSelection) ? a.productSelection : [];
-        const incoming = Array.isArray(opp.productSelection) ? opp.productSelection : [];
-        const mergedSel = [...existingSel];
-        for (const inc of incoming) {
-          const idx = mergedSel.findIndex(x => x.productId === inc.productId);
-          if (idx === -1) mergedSel.push({ ...inc });
-          else mergedSel[idx] = {
-            productId: inc.productId,
-            moduleIds: [...new Set([...(mergedSel[idx].moduleIds||[]), ...(inc.moduleIds||[])])],
-            noAddons: mergedSel[idx].noAddons && inc.noAddons,
-          };
+    setContacts(p => p.map(c => c.id === conId ? {...c, ...sd} : c));
+    setActivities(p => p.map(a => a.contactId === conId && canWrite(a.owner) ? {...a, contactId: ""} : a));
+    setCallReports(p => p.map(cr => cr.contactId === conId && canWrite(cr.marketingPerson) ? {...cr, contactId: ""} : cr));
+    setLeads(p => p.map(l => l.contactIds?.includes(conId) && canWrite(l.assignedTo) ? {...l, contactIds: l.contactIds.filter(id => id !== conId)} : l));
+    setOpps(p => p.map(o => {
+      if (o.primaryContactId === conId || o.secondaryContactIds?.includes(conId)) {
+        if (canWrite(o.owner)) {
+          let changed = false, up = {...o};
+          if (o.primaryContactId === conId) { up.primaryContactId = ""; changed = true; }
+          if (o.secondaryContactIds?.includes(conId)) { up.secondaryContactIds = o.secondaryContactIds.filter(id => id !== conId); changed = true; }
+          return changed ? up : o;
         }
-        return {
-          ...a,
-          status: "Active",
-          products: [...new Set([...(a.products || []), ...(opp.products || [])])],
-          productSelection: mergedSel,
-          arrRevenue: (a.arrRevenue || 0) + (opp.value || 0),
-        };
+      }
+      return o;
+    }));
+  }, [currentUser, _globalRole, _scopedIds]);
+
+  // Deal Won → Customer.
+  //
+  // A won deal does NOT immediately become a live (Active) customer account.
+  // It enters the FINANCE APPROVAL QUEUE: the account is set to
+  // "Pending Approval" with no account number. Finance later approves it and
+  // manually enters the account number (see Accounts → Approve), which is the
+  // only path that flips an account to "Active".
+  //
+  // Exception: if the deal is linked to an account that is ALREADY a live
+  // customer (status Active + has an account number), this is an upsell /
+  // cross-sell — we merge products and add ARR immediately, no re-approval.
+  const mergeProductSelection = (a, opp) => {
+    const existingSel = Array.isArray(a.productSelection) ? a.productSelection : [];
+    const incoming = Array.isArray(opp.productSelection) ? opp.productSelection : [];
+    const mergedSel = [...existingSel];
+    for (const inc of incoming) {
+      const idx = mergedSel.findIndex(x => x.productId === inc.productId);
+      if (idx === -1) mergedSel.push({ ...inc });
+      else mergedSel[idx] = {
+        productId: inc.productId,
+        moduleIds: [...new Set([...(mergedSel[idx].moduleIds||[]), ...(inc.moduleIds||[])])],
+        noAddons: mergedSel[idx].noAddons && inc.noAddons,
+      };
+    }
+    return mergedSel;
+  };
+  const handleDealWon = useCallback((opp) => {
+    const linked = opp.accountId ? accounts.find(a => a.id === opp.accountId) : null;
+    const isLiveCustomer = linked && linked.accountNo && linked.status === "Active";
+
+    if (isLiveCustomer) {
+      // Existing live customer — upsell/cross-sell. Merge & add ARR now.
+      setAccounts(p => p.map(a => a.id !== opp.accountId ? a : {
+        ...a,
+        status: "Active",
+        products: [...new Set([...(a.products || []), ...(opp.products || [])])],
+        productSelection: mergeProductSelection(a, opp),
+        arrRevenue: (a.arrRevenue || 0) + (opp.value || 0),
+      }));
+    } else if (linked) {
+      // Prospect / not-yet-approved account won → move into finance queue.
+      // Stays Pending Approval (no account number, no ARR) until Finance acts.
+      setAccounts(p => p.map(a => a.id !== opp.accountId ? a : {
+        ...a,
+        status: "Pending Approval",
+        products: [...new Set([...(a.products || []), ...(opp.products || [])])],
+        productSelection: mergeProductSelection(a, opp),
       }));
     } else {
-      // Auto-create account from deal
-      const year = new Date().getFullYear();
-      const maxSeq = accounts.reduce((max, a) => {
-        const m = a.accountNo?.match(/ACC-\d+-(\d+)/);
-        return m ? Math.max(max, parseInt(m[1])) : max;
-      }, 0);
+      // Won deal with no linked account → create a Pending Approval account
+      // (no account number yet — Finance issues it on approval).
       const newAccId = `acc_${uid()}`;
       const newAcc = {
         id: newAccId,
-        accountNo: `ACC-${year}-${String(maxSeq + 1).padStart(3, '0')}`,
+        accountNo: "",
         name: opp.title?.split(' – ').pop() || opp.title || "New Customer",
-        status: "Active",
+        status: "Pending Approval",
         owner: opp.owner,
         country: opp.country || "",
         region: "",
         products: opp.products || [],
         productSelection: Array.isArray(opp.productSelection) ? opp.productSelection : [],
         source: "Deal Won",
-        arrRevenue: opp.value || 0,
+        arrRevenue: 0,
       };
       setAccounts(p => [...p, newAcc]);
       setOpps(p => p.map(o => o.id === opp.id ? {...o, accountId: newAccId} : o));
@@ -1389,7 +1417,10 @@ export default function SmartCRM() {
         name: lead.company,
         country: newOpp.country,
         region: lead.region || "",
-        status: "Active",
+        // Not a live customer yet — a Prospect in the pipeline. It only
+        // becomes a real (Active) account once the deal is Won AND Finance
+        // approves it + issues an account number. No accountNo until then.
+        status: "Prospect",
         owner: newOpp.owner,
         source: "Lead Conversion",
         products: newOpp.products || [],

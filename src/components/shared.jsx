@@ -16,6 +16,7 @@ export function StatusBadge({status}) {
   const s = (status||"").toLowerCase().replace(/\s+/g,"-");
   const cls = {
     "active":"bs-active","won":"bs-won","prospect":"bs-prospect",
+    "pending-approval":"bs-review",
     "negotiation":"bs-negotiation","proposal":"bs-proposal",
     "demo":"bs-demo","qualified":"bs-demo","lost":"bs-lost",
     "in-progress":"bs-pending","pending-qa":"bs-review",
