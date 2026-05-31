@@ -685,7 +685,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   const [approveAcctNo, setApproveAcctNo] = useState("");
   const [approveErr, setApproveErr] = useState("");
   const _me = (orgUsers || []).find(u => u.id === currentUser);
-  const canApprove = !!_me && ["admin","md","director"].includes(String(_me.role || "").toLowerCase());
+  const canApprove = !!_me && ["admin","md","director","finance"].includes(String(_me.role || "").toLowerCase());
 
   // Sum the value of won opps linked to an account — used to seed ARR at the
   // moment Finance activates the account.
@@ -1093,7 +1093,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
                   : legacyMissingNoCount > 0
                     ? ` (active account${legacyMissingNoCount>1?"s":""} created before approval was required).`
                     : " (won deals awaiting approval)."}
-                {canApprove ? " Review each, enter the number, and activate." : " A finance approver (Admin / MD / Director) must issue the number."}
+                {canApprove ? " Review each, enter the number, and activate." : " A Finance approver (Finance / Admin / MD / Director) must issue the number."}
               </div>
               <button className="btn btn-sec btn-sm" onClick={() => setFinanceQueueOnly(v => !v)}>
                 {financeQueueOnly ? "Show all" : "View queue"}

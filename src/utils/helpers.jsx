@@ -469,6 +469,11 @@ export const hasEditGrant = (commLogs, recordType, recordId, userId) => {
 // the record. (Reads are unrestricted and must not call this.)
 export const canEditRecord = ({ ownerId, currentUser, orgUsers, recordType, recordId, commLogs }) => {
   if (isGlobalRole(currentUser, orgUsers)) return true;            // admin / md / director / vp
+  // Finance owns the financial record types org-wide (approve accounts, manage
+  // collections & contract billing) but is NOT global — it can't edit sales
+  // opportunities, leads, activities, etc.
+  const _role = normalizeRole((orgUsers || []).find(u => u.id === currentUser)?.role);
+  if (_role === "finance" && ["account", "collection", "contract"].includes(recordType)) return true;
   if (ownerId && ownerId === currentUser) return true;             // own record
   const scope = getScopedUserIds(currentUser, orgUsers);           // own + downline (managers)
   if (ownerId && scope.has(ownerId)) return true;
