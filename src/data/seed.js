@@ -233,7 +233,9 @@ export const BLANK_OPP={oppNo:"",title:"",accountId:"",products:[],productSelect
   emdAmount:0,emdValidity:"",pbgAmount:0,pbgValidity:"",
   eligibility:"",oemReqs:"",mandatoryReqs:"",
   // ── Bid qualification & approval (Phase 2) ──
-  bidQualification:{},bidDecision:"",bidDecisionNotes:"",bidApprovalStatus:"Not Submitted",bidApprovalChain:[]};
+  bidQualification:{},bidDecision:"",bidDecisionNotes:"",bidApprovalStatus:"Not Submitted",bidApprovalChain:[],
+  // ── EMD/PBG register, pre-bid log, document repository (Phase 3) ──
+  bidInstruments:[],preBidLog:[],tenderDocs:[]};
 export const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
 export const BLANK_TKT={ticketNo:"",title:"",accountId:"",product:"iCAFFE",productSelection:[],type:"Bug / Glitch",priority:"Medium",status:"Open",assigned:"u7",description:"",sla:"",escalation:"L1 – Support Engineer",resolution:"",csat:0,category:"Technical",subCategory:"",reportedBy:"",reportedDate:"",resolvedDate:"",affectedModule:"",severity:"Medium",environment:"Production",workaround:"No",internalNotes:"",revisitDate:"",tags:""};
 export const BLANK_LEAD={company:"",contact:"",email:"",phone:"",product:"iCAFFE",productSelection:[],vertical:"CHA",region:"South Asia",source:"Inside Sales",stage:"MQL",assignedTo:"u1",notes:"",nextCall:"",score:50,createdDate:"",leadId:"",accountId:"",temperature:"Warm",designation:"",noOfUsers:0,businessType:"Customs Broker",staffSize:"",branches:0,monthlyVolume:{airExp:"",airImp:"",seaTEU:"",customsEntries:""},currentSoftware:"",swAge:"",swSatisfaction:0,painPoints:[],budgetRange:"",decisionMaker:"",decisionTimeline:"",evaluatingOthers:"",nextStep:"",objections:"",contactIds:[],contactRoles:{},additionalProducts:[],estimatedValue:0,stageHistory:[],convertedOppIds:[],branch:"",location:"",department:"",addresses:[],salesTeam:[],country:"",state:"",city:"",companyWebsite:"",alternatePhone:"",alternateEmail:"",linkedInUrl:"",annualRevenue:0,campaignName:"",referredBy:"",expectedCloseDate:"",proposalSent:"No",demoScheduled:"No",competitorName:"",lastContactDate:""};

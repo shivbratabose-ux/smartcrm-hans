@@ -522,10 +522,36 @@ export default function SmartCRM() {
       return true;
     });
 
-    if (dormant.length === 0 && due.length === 0) return;
+    // ── Tender bid calendar: submission within 7 days, EMD/PBG expiring within 14 ──
+    const bidCutoff = new Date(todayMid); bidCutoff.setDate(bidCutoff.getDate() + 7);
+    const instrCutoff = new Date(todayMid); instrCutoff.setDate(instrCutoff.getDate() + 14);
+    const _scoped = (o) => _globalRole || (o.owner && _scopedIds.has(o.owner));
+    const tenderDue = (opps || []).filter(o => {
+      if (o.isDeleted || !o.isTender || !_scoped(o)) return false;
+      if (["Won", "Lost", "closed_won", "closed_lost"].includes(o.stage)) return false;
+      const sub = o.submissionDate ? new Date(o.submissionDate) : null;
+      return sub && sub >= todayMid && sub <= bidCutoff;
+    });
+    const instrumentDue = (opps || []).filter(o => {
+      if (o.isDeleted || !o.isTender || !_scoped(o)) return false;
+      const chk = (d) => { if (!d) return false; const dt = new Date(d); return dt >= todayMid && dt <= instrCutoff; };
+      if (chk(o.emdValidity) || chk(o.pbgValidity)) return true;
+      // Phase 3: also scan the live instrument register (skip closed instruments)
+      return (o.bidInstruments || []).some(it => !["Returned","Forfeited","Expired"].includes(it.status) && chk(it.validTill));
+    });
+
+    if (dormant.length === 0 && due.length === 0 && tenderDue.length === 0 && instrumentDue.length === 0) return;
     _startupAlertedRef.current = true;
 
     const parts = [];
+    if (tenderDue.length > 0) {
+      const s = tenderDue.slice(0, 3).map(o => o.title || o.tenderNo || "Tender").join(", ");
+      const more = tenderDue.length > 3 ? ` +${tenderDue.length - 3}` : "";
+      parts.push(`${tenderDue.length} tender bid${tenderDue.length>1?"s":""} closing in 7d (${s}${more})`);
+    }
+    if (instrumentDue.length > 0) {
+      parts.push(`${instrumentDue.length} EMD/PBG instrument${instrumentDue.length>1?"s":""} expiring in 14d`);
+    }
     if (dormant.length > 0) {
       const s = dormant.slice(0, 3).map(a => a.name).join(", ");
       const more = dormant.length > 3 ? ` +${dormant.length - 3}` : "";
@@ -544,7 +570,7 @@ export default function SmartCRM() {
       const stamp = new Date().toISOString();
       setContracts(prev => prev.map(c => dueIds.has(c.id) ? { ...c, renewalNotifiedAt: stamp } : c));
     }
-  }, [currentUser, accounts, contracts, activities, callReports, commLogs, events, _scopedIds, _globalRole, setContracts]);
+  }, [currentUser, accounts, contracts, opps, activities, callReports, commLogs, events, _scopedIds, _globalRole, setContracts]);
 
   // ── HELPER: Generate a renewal quote from an existing contract ────────
   // Wired into Contracts.jsx as the "Generate Renewal Quote" action. Drops

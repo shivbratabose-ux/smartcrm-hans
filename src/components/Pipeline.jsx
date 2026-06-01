@@ -753,6 +753,16 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       return {...f,bidApprovalChain:chain,bidApprovalStatus:status};
     });
   };
+
+  // ── Phase 3: generic JSONB-list row helpers (EMD/PBG register, pre-bid log, docs) ──
+  const addRow = (key, blank) => setForm(f => ({ ...f, [key]: [...(f[key]||[]), { id: `r${Date.now()}${Math.random().toString(36).slice(2,5)}`, ...blank }] }));
+  const updRow = (key, id, patch) => setForm(f => ({ ...f, [key]: (f[key]||[]).map(r => r.id === id ? { ...r, ...patch } : r) }));
+  const delRow = (key, id) => setForm(f => ({ ...f, [key]: (f[key]||[]).filter(r => r.id !== id) }));
+  const INSTRUMENT_TYPES = ["EMD / Bid Security","PBG","Tender Fee","Security Deposit"];
+  const INSTRUMENT_MODES = ["DD","Bank Guarantee","Online / NEFT","Cheque","Exempted"];
+  const INSTRUMENT_STATUS = ["Pending","Submitted","Active","Returned","Forfeited","Expired"];
+  const PREBID_TYPES = ["Query","Clarification","Corrigendum","Site Visit","Pre-Bid Meeting"];
+  const TENDER_DOC_CATEGORIES = ["Technical Bid","Financial Bid","Annexure","Compliance Sheet","Corrigendum","EMD / PBG Proof","RFP / Tender Doc","Other"];
   // Pipeline stages are now editable in Masters → Pipeline Stages. Build the
   // derived maps once per render — buildStagesContext handles fallback to
   // bundled defaults when masters.stages is missing.
@@ -1896,6 +1906,57 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                     </>
                   )}
                 </div>
+
+                {/* ── EMD / PBG / Instrument Register (Phase 3) ── */}
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.05em", margin: "12px 0 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>EMD / PBG / Instrument Register</span>
+                  <button type="button" className="btn btn-sec btn-xs" style={{ fontSize: 10 }} onClick={() => addRow("bidInstruments", { type: "EMD / Bid Security", mode: "DD", amount: 0, refNo: "", validTill: "", status: "Pending" })}>+ Add</button>
+                </div>
+                {(form.bidInstruments || []).length === 0
+                  ? <div style={{ fontSize: 11, color: "var(--text3)" }}>No EMD/PBG instruments tracked yet.</div>
+                  : (form.bidInstruments || []).map(r => (
+                    <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 0.7fr 1fr 1fr 1fr auto", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                      <select value={r.type} onChange={e => updRow("bidInstruments", r.id, { type: e.target.value })}>{INSTRUMENT_TYPES.map(t => <option key={t}>{t}</option>)}</select>
+                      <select value={r.mode} onChange={e => updRow("bidInstruments", r.id, { mode: e.target.value })}>{INSTRUMENT_MODES.map(t => <option key={t}>{t}</option>)}</select>
+                      <input type="number" min={0} value={r.amount} onChange={e => updRow("bidInstruments", r.id, { amount: +e.target.value })} title="₹L" placeholder="₹L"/>
+                      <input value={r.refNo} onChange={e => updRow("bidInstruments", r.id, { refNo: e.target.value })} placeholder="Ref / DD no."/>
+                      <input type="date" value={r.validTill} onChange={e => updRow("bidInstruments", r.id, { validTill: e.target.value })} title="Valid till"/>
+                      <select value={r.status} onChange={e => updRow("bidInstruments", r.id, { status: e.target.value })}>{INSTRUMENT_STATUS.map(t => <option key={t}>{t}</option>)}</select>
+                      <button type="button" className="icon-btn" aria-label="Remove" onClick={() => delRow("bidInstruments", r.id)}><Trash2 size={13}/></button>
+                    </div>
+                  ))}
+
+                {/* ── Pre-Bid Log: queries / clarifications / corrigendum / site visits ── */}
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.05em", margin: "12px 0 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>Pre-Bid Log</span>
+                  <button type="button" className="btn btn-sec btn-xs" style={{ fontSize: 10 }} onClick={() => addRow("preBidLog", { type: "Query", date: today, note: "" })}>+ Add</button>
+                </div>
+                {(form.preBidLog || []).length === 0
+                  ? <div style={{ fontSize: 11, color: "var(--text3)" }}>No pre-bid queries, corrigendum or site visits logged.</div>
+                  : (form.preBidLog || []).map(r => (
+                    <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 3fr auto", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                      <select value={r.type} onChange={e => updRow("preBidLog", r.id, { type: e.target.value })}>{PREBID_TYPES.map(t => <option key={t}>{t}</option>)}</select>
+                      <input type="date" value={r.date} onChange={e => updRow("preBidLog", r.id, { date: e.target.value })}/>
+                      <input value={r.note} onChange={e => updRow("preBidLog", r.id, { note: e.target.value })} placeholder="Query / clarification / MoM / corrigendum detail…"/>
+                      <button type="button" className="icon-btn" aria-label="Remove" onClick={() => delRow("preBidLog", r.id)}><Trash2 size={13}/></button>
+                    </div>
+                  ))}
+
+                {/* ── Tender Document Repository ── */}
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.05em", margin: "12px 0 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>Tender Documents</span>
+                  <button type="button" className="btn btn-sec btn-xs" style={{ fontSize: 10 }} onClick={() => addRow("tenderDocs", { category: "Technical Bid", name: "", url: "", date: today })}>+ Add</button>
+                </div>
+                {(form.tenderDocs || []).length === 0
+                  ? <div style={{ fontSize: 11, color: "var(--text3)" }}>No documents attached.</div>
+                  : (form.tenderDocs || []).map(r => (
+                    <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1.3fr 1.6fr 1.6fr auto", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                      <select value={r.category} onChange={e => updRow("tenderDocs", r.id, { category: e.target.value })}>{TENDER_DOC_CATEGORIES.map(t => <option key={t}>{t}</option>)}</select>
+                      <input value={r.name} onChange={e => updRow("tenderDocs", r.id, { name: e.target.value })} placeholder="Document name"/>
+                      <input value={r.url} onChange={e => updRow("tenderDocs", r.id, { url: e.target.value })} placeholder="https:// link"/>
+                      <button type="button" className="icon-btn" aria-label="Remove" onClick={() => delRow("tenderDocs", r.id)}><Trash2 size={13}/></button>
+                    </div>
+                  ))}
               </div>
             )}
           </div>

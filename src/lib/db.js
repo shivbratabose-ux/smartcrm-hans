@@ -301,6 +301,7 @@ const toSnake = (obj, module) => {
     bidQualification:"bid_qualification", bidDecision:"bid_decision",
     bidDecisionNotes:"bid_decision_notes", bidApprovalStatus:"bid_approval_status",
     bidApprovalChain:"bid_approval_chain",
+    bidInstruments:"bid_instruments", preBidLog:"pre_bid_log", tenderDocs:"tender_docs",
     // Contract fields (added by add_missing_opp_contract_collection_fields_v1.sql)
     contractNo:"contract_no", billTerm:"bill_term", billType:"bill_type",
     approvalStage:"approval_stage", docType:"doc_type", poNumber:"po_number",
@@ -514,6 +515,7 @@ const toCamel = (obj, module) => {
     bid_qualification:"bidQualification", bid_decision:"bidDecision",
     bid_decision_notes:"bidDecisionNotes", bid_approval_status:"bidApprovalStatus",
     bid_approval_chain:"bidApprovalChain",
+    bid_instruments:"bidInstruments", pre_bid_log:"preBidLog", tender_docs:"tenderDocs",
     // Contract fields
     contract_no:"contractNo", bill_term:"billTerm", bill_type:"billType",
     approval_stage:"approvalStage", doc_type:"docType", po_number:"poNumber",
