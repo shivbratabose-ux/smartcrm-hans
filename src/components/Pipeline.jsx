@@ -714,6 +714,45 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
 function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete, commLogs=[], onRequestEditAccess }) {
   const canEditOpp = (o) => canEditRecord({ownerId:o?.owner,currentUser,orgUsers,recordType:"opp",recordId:o?.id,commLogs,catalog,recordProductIds:(o?.products&&o.products.length)?o.products:(o?.product?[o.product]:[])});
   const requestAccessOpp = (o) => onRequestEditAccess && onRequestEditAccess("opp", o.id, o.title||o.id||"Opportunity", o.owner);
+
+  // ── Bid Qualification & Approval matrix (Phase 2) ──
+  const _myRole = String((orgUsers||[]).find(u=>u.id===currentUser)?.role || "").toLowerCase();
+  const BID_QUAL_ITEMS = [
+    ["strategicFit","Strategic Fit"],["technicalFit","Technical Fit"],["financialFit","Financial Fit"],
+    ["existingRelationship","Existing Relationship"],["competitionAnalysis","Competition"],["resourceAvailability","Resource Availability"],
+  ];
+  const BID_APPROVAL_MATRIX = [
+    { label:"Sales Manager", roles:["line_mgr","bd_lead","country_mgr"] },
+    { label:"Vertical Head",  roles:["director","vp_sales_mkt","product_head"] },
+    { label:"CEO / MD",       roles:["md","admin"] },
+  ];
+  const bidCurrentIdx = (chain) => (chain||[]).findIndex(s => s.status === "Pending");
+  const bidCanActNow = (chain) => {
+    const i = bidCurrentIdx(chain);
+    if (i < 0) return false;
+    return _myRole === "admin" || BID_APPROVAL_MATRIX[i]?.roles.includes(_myRole);
+  };
+  const submitBidApproval = () => {
+    if (!form.bidDecision) { setFormErrors(e=>({...e,bidDecision:"Pick Bid / No-Bid / Hold first"})); return; }
+    if (form.bidDecision !== "Bid") {
+      // No-Bid / Hold needs no multi-tier sign-off — record it directly.
+      setForm(f=>({...f,bidApprovalStatus:f.bidDecision==="Hold"?"On Hold":"No-Bid Recorded",bidApprovalChain:[]}));
+      return;
+    }
+    setForm(f=>({...f,bidApprovalStatus:"Pending",bidApprovalChain:BID_APPROVAL_MATRIX.map(m=>({label:m.label,status:"Pending",by:"",at:"",note:""}))}));
+  };
+  const actBidApproval = (approve, note="") => {
+    setForm(f=>{
+      const chain=[...(f.bidApprovalChain||[])];
+      const i=bidCurrentIdx(chain);
+      if(i<0) return f;
+      chain[i]={...chain[i],status:approve?"Approved":"Rejected",by:currentUser,at:new Date().toISOString(),note};
+      let status="Pending";
+      if(!approve) status="Rejected";
+      else if(i===chain.length-1) status="Approved";
+      return {...f,bidApprovalChain:chain,bidApprovalStatus:status};
+    });
+  };
   // Pipeline stages are now editable in Masters → Pipeline Stages. Build the
   // derived maps once per render — buildStagesContext handles fallback to
   // bundled defaults when masters.stages is missing.
@@ -1774,6 +1813,88 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                 <div className="form-row">
                   <div className="form-group"><label>OEM Requirements</label><textarea rows={2} value={form.oemReqs || ""} onChange={e => setForm(f => ({ ...f, oemReqs: e.target.value }))} placeholder="OEM tie-ups / MAF…" style={{ width: "100%", resize: "vertical" }}/></div>
                   <div className="form-group"><label>Mandatory Requirements</label><textarea rows={2} value={form.mandatoryReqs || ""} onChange={e => setForm(f => ({ ...f, mandatoryReqs: e.target.value }))} placeholder="Must-have compliance items…" style={{ width: "100%", resize: "vertical" }}/></div>
+                </div>
+
+                {/* ── Bid Qualification & Decision (Phase 2) ── */}
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.05em", margin: "10px 0 4px" }}>Bid Qualification</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+                  {BID_QUAL_ITEMS.map(([k, lbl]) => (
+                    <div key={k} className="form-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: 11 }}>{lbl}</label>
+                      <select value={form.bidQualification?.[k] || ""} onChange={e => setForm(f => ({ ...f, bidQualification: { ...(f.bidQualification||{}), [k]: e.target.value } }))}>
+                        <option value="">—</option><option>High</option><option>Medium</option><option>Low</option>
+                      </select>
+                    </div>
+                  ))}
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 11 }}>Win Probability %</label>
+                    <input type="number" min={0} max={100} value={form.bidQualification?.winProbability ?? ""} onChange={e => setForm(f => ({ ...f, bidQualification: { ...(f.bidQualification||{}), winProbability: e.target.value === "" ? "" : Math.max(0, Math.min(100, +e.target.value)) } }))} placeholder="0–100"/>
+                  </div>
+                </div>
+
+                {/* Bid / No-Bid / Hold decision */}
+                <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Decision:</span>
+                  {["Bid", "No Bid", "Hold"].map(d => (
+                    <label key={d} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, cursor: "pointer" }}>
+                      <input type="radio" name="bidDecision" checked={form.bidDecision === d} onChange={() => { setForm(f => ({ ...f, bidDecision: d })); setFormErrors(e => ({ ...e, bidDecision: undefined })); }}/>
+                      {d}
+                    </label>
+                  ))}
+                  {formErrors.bidDecision && <span style={{ fontSize: 11, color: "#DC2626" }}>{formErrors.bidDecision}</span>}
+                </div>
+                <div className="form-row full" style={{ marginTop: 8 }}><div className="form-group"><label>Decision Rationale</label><textarea rows={2} value={form.bidDecisionNotes || ""} onChange={e => setForm(f => ({ ...f, bidDecisionNotes: e.target.value }))} placeholder="Why bid / no-bid / hold…" style={{ width: "100%", resize: "vertical" }}/></div></div>
+
+                {/* Approval matrix: Sales Manager → Vertical Head → CEO */}
+                <div style={{ marginTop: 8, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "#fff" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700 }}>Bid Approval</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                      background: form.bidApprovalStatus === "Approved" ? "#DCFCE7" : form.bidApprovalStatus === "Rejected" ? "#FEE2E2" : form.bidApprovalStatus === "Pending" ? "#FEF9C3" : "var(--s2)",
+                      color: form.bidApprovalStatus === "Approved" ? "#15803D" : form.bidApprovalStatus === "Rejected" ? "#991B1B" : form.bidApprovalStatus === "Pending" ? "#854D0E" : "var(--text3)" }}>
+                      {form.bidApprovalStatus || "Not Submitted"}
+                    </span>
+                  </div>
+                  {(!form.bidApprovalChain || form.bidApprovalChain.length === 0) ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 11, color: "var(--text3)" }}>
+                        {form.bidDecision === "Bid" ? "Submit to route through Sales Manager → Vertical Head → CEO."
+                          : form.bidDecision ? `Recorded as ${form.bidDecision}. No multi-tier approval needed.`
+                          : "Set a decision, then submit."}
+                      </span>
+                      <button type="button" className="btn btn-sm btn-primary" style={{ fontSize: 11 }} onClick={submitBidApproval}>
+                        {form.bidDecision === "Bid" ? "Submit for Approval" : "Record Decision"}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {form.bidApprovalChain.map((s, i) => {
+                          const isCurrent = bidCurrentIdx(form.bidApprovalChain) === i;
+                          return (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5 }}>
+                              <span style={{ width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0,
+                                background: s.status === "Approved" ? "#22C55E" : s.status === "Rejected" ? "#EF4444" : isCurrent ? "#F59E0B" : "var(--s3)",
+                                color: s.status === "Pending" && !isCurrent ? "var(--text3)" : "#fff" }}>{i + 1}</span>
+                              <span style={{ fontWeight: 600, minWidth: 110 }}>{s.label}</span>
+                              <span style={{ color: s.status === "Approved" ? "#15803D" : s.status === "Rejected" ? "#991B1B" : "var(--text3)" }}>
+                                {s.status}{s.by ? ` · ${TEAM_MAP[s.by]?.name || s.by}` : ""}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {form.bidApprovalStatus === "Pending" && bidCanActNow(form.bidApprovalChain) && (
+                        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                          <button type="button" className="btn btn-sm" style={{ fontSize: 11, background: "#22C55E", color: "#fff", border: "none" }} onClick={() => actBidApproval(true)}>Approve my level</button>
+                          <button type="button" className="btn btn-sm" style={{ fontSize: 11, background: "#EF4444", color: "#fff", border: "none" }} onClick={() => actBidApproval(false)}>Reject</button>
+                        </div>
+                      )}
+                      {form.bidApprovalStatus === "Pending" && !bidCanActNow(form.bidApprovalChain) && (
+                        <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 6 }}>Awaiting {BID_APPROVAL_MATRIX[bidCurrentIdx(form.bidApprovalChain)]?.label}'s approval.</div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             )}

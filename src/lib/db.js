@@ -298,6 +298,9 @@ const toSnake = (obj, module) => {
     submissionDate:"submission_date", emdAmount:"emd_amount", emdValidity:"emd_validity",
     pbgAmount:"pbg_amount", pbgValidity:"pbg_validity", eligibility:"eligibility",
     oemReqs:"oem_reqs", mandatoryReqs:"mandatory_reqs",
+    bidQualification:"bid_qualification", bidDecision:"bid_decision",
+    bidDecisionNotes:"bid_decision_notes", bidApprovalStatus:"bid_approval_status",
+    bidApprovalChain:"bid_approval_chain",
     // Contract fields (added by add_missing_opp_contract_collection_fields_v1.sql)
     contractNo:"contract_no", billTerm:"bill_term", billType:"bill_type",
     approvalStage:"approval_stage", docType:"doc_type", poNumber:"po_number",
@@ -508,6 +511,9 @@ const toCamel = (obj, module) => {
     submission_date:"submissionDate", emd_amount:"emdAmount", emd_validity:"emdValidity",
     pbg_amount:"pbgAmount", pbg_validity:"pbgValidity", eligibility:"eligibility",
     oem_reqs:"oemReqs", mandatory_reqs:"mandatoryReqs",
+    bid_qualification:"bidQualification", bid_decision:"bidDecision",
+    bid_decision_notes:"bidDecisionNotes", bid_approval_status:"bidApprovalStatus",
+    bid_approval_chain:"bidApprovalChain",
     // Contract fields
     contract_no:"contractNo", bill_term:"billTerm", bill_type:"billType",
     approval_stage:"approvalStage", doc_type:"docType", po_number:"poNumber",
