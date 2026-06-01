@@ -2673,7 +2673,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
 
       {/* Add / Edit Modal */}
       {modal && (
-        <Modal title={modal.mode === "add" ? "Add Lead" : "Edit Lead"} onClose={() => setModal(null)} lg
+        <Modal title={modal.mode === "add" ? "Add Lead" : "Edit Lead"} onClose={() => setModal(null)} size="xl"
           footer={
             <>
               <button className="btn btn-sec" onClick={() => setModal(null)}>Cancel</button>
