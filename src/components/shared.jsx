@@ -1259,7 +1259,7 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
   };
 
   return (
-    <Modal title="Log Call" onClose={onClose} lg footer={
+    <Modal title="Log Call" onClose={onClose} size="xl" footer={
       <>
         <button className="btn btn-sec" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" onClick={submit}><Check size={14} /> Save Call</button>
