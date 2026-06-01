@@ -23,6 +23,8 @@ const SECTIONS = {
     { key:"oppSources",      title:"Opportunity Sources" },
     { key:"oppSizes",        title:"Deal Sizes" },
     { key:"forecastCats",    title:"Forecast Categories" },
+    { key:"tenderCategories",title:"Tender Categories" },
+    { key:"tenderPortals",   title:"Tender Portals" },
     // Pipeline stages get their own dedicated editor (rendered above the
     // chip grid). They support color, probability %, kind (open/won/lost),
     // ordering, and delete-blocked-when-in-use — none of which the chip

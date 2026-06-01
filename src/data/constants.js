@@ -53,6 +53,8 @@ function getMasterBindings() {
     oppPhases:           { arr: OPP_PHASES,            str: true },
     oppSources:          { arr: OPP_SOURCES,           str: true },
     oppSizes:            { arr: OPP_SIZES,             str: true },
+    tenderCategories:    { arr: TENDER_CATEGORIES,     str: true },
+    tenderPortals:       { arr: TENDER_PORTALS,        str: true },
     forecastCats:        { arr: FORECAST_CATS,         str: true },
     oppContactRoles:     { arr: OPP_CONTACT_ROLES,     str: true },
     leadContactRoles:    { arr: LEAD_CONTACT_ROLES,    str: true },
@@ -422,6 +424,10 @@ export const CONTACT_DEPARTMENTS = ["Finance","Procurement","IT","Operations","L
 
 // ── Opportunity Sources ──
 export const OPP_SOURCES = ["New Lead","Existing Customer – Upsell","Existing Customer – Cross-sell","Referral","Partner"];
+
+// ── Tender Management (Phase 1) ──
+export const TENDER_CATEGORIES = ["Supply","Services","SaaS / Subscription","Turnkey / System Integration","AMC / Support","Consultancy","Managed Services","Digital Transformation"];
+export const TENDER_PORTALS = ["GeM","CPPP / eProcurement","State Procurement Portal","Airport Authority Portal","Customs / Port Portal","Direct RFP / EOI","Consultant / SI Referral"];
 
 // ── Permissions update for new modules ──
 export const PERMISSIONS_EXT = {

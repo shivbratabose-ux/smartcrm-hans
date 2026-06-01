@@ -21,7 +21,7 @@ import {
   TEAM, TEAM_MAP,
   COUNTRIES, OPP_SOURCES, HIERARCHY_LEVELS, FORECAST_CATS, OPP_SIZES,
   WIN_REASONS, LOSS_REASONS, LOSS_IMPACT_AREAS, SUSPEND_REASONS, ACT_TYPES, INIT_USERS,
-  CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES
+  CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, TENDER_CATEGORIES, TENDER_PORTALS
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds, canEditRecord, hasPendingAccessReq } from "../utils/helpers";
@@ -1373,6 +1373,15 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           { key: "notes", label: "Notes", defaultWidth: 240, sortable: false, render: o => (
             <span style={{fontSize:11,color:"var(--text3)"}} title={o.notes || ""}>{(o.notes || "").slice(0, 80) || "-"}</span>
           )},
+          // ── Tender columns (hidden by default; enable via Columns) ──
+          { key: "isTender", label: "Tender?", defaultWidth: 80, render: o => o.isTender
+            ? <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:5,background:"#FFF7ED",color:"#B45309",border:"1px solid #FDE68A"}}>TENDER</span> : txt("") },
+          { key: "tenderNo", label: "Tender No.", defaultWidth: 160, render: o => <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{o.tenderNo || "-"}</span> },
+          { key: "tenderAuthority", label: "Authority", defaultWidth: 180, render: o => txt(o.tenderAuthority) },
+          { key: "tenderPortal", label: "Portal", defaultWidth: 140, render: o => txt(o.tenderPortal) },
+          { key: "submissionDate", label: "Bid Submission", defaultWidth: 130, render: o => o.submissionDate
+            ? <span style={{fontSize:12,color: o.submissionDate < today ? "#DC2626" : isOverdue(o.submissionDate) ? "#DC2626" : "var(--text2)"}}>{fmt.short(o.submissionDate)}</span> : txt("") },
+          { key: "emdAmount", label: "EMD (₹L)", defaultWidth: 90, render: o => txt(o.emdAmount ? `₹${o.emdAmount}L` : "") },
         ];
         const PIPELINE_DEFAULT_CONFIG = [
           { key: "title", visible: true, width: 240 },
@@ -1409,6 +1418,12 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           { key: "lostToCompetitor", visible: false, width: 140 },
           { key: "upsellFlag", visible: false, width: 80 },
           { key: "notes", visible: false, width: 240 },
+          { key: "isTender", visible: false, width: 80 },
+          { key: "tenderNo", visible: false, width: 160 },
+          { key: "tenderAuthority", visible: false, width: 180 },
+          { key: "tenderPortal", visible: false, width: 140 },
+          { key: "submissionDate", visible: false, width: 130 },
+          { key: "emdAmount", visible: false, width: 90 },
         ];
         return (
           <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -1717,6 +1732,53 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
               </select>
             </div>
           </div>
+          {/* ── Tender / Government Bid details ── */}
+          <div style={{ marginTop: 6, marginBottom: 8, padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 10, background: form.isTender ? "#FFF7ED" : "var(--s1)" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+              <input type="checkbox" checked={!!form.isTender} onChange={e => setForm(f => ({ ...f, isTender: e.target.checked }))} />
+              This is a Government Tender / RFP / Bid
+            </label>
+            {form.isTender && (
+              <div style={{ marginTop: 12 }}>
+                <div className="form-row">
+                  <div className="form-group"><label>Tender / Bid No.</label><input value={form.tenderNo || ""} onChange={e => setForm(f => ({ ...f, tenderNo: e.target.value }))} placeholder="e.g. GEM/2026/B/123456"/></div>
+                  <div className="form-group"><label>Portal / Source</label><select value={form.tenderPortal || ""} onChange={e => setForm(f => ({ ...f, tenderPortal: e.target.value }))}><option value="">Select…</option>{TENDER_PORTALS.map(p => <option key={p}>{p}</option>)}</select></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>Authority / Body</label><input value={form.tenderAuthority || ""} onChange={e => setForm(f => ({ ...f, tenderAuthority: e.target.value }))} placeholder="e.g. Airports Authority of India"/></div>
+                  <div className="form-group"><label>Department</label><input value={form.tenderDepartment || ""} onChange={e => setForm(f => ({ ...f, tenderDepartment: e.target.value }))} placeholder="e.g. Cargo / IT"/></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>Tender Category</label><select value={form.tenderCategory || ""} onChange={e => setForm(f => ({ ...f, tenderCategory: e.target.value }))}><option value="">Select…</option>{TENDER_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
+                  <div className="form-group"><label>State</label><input value={form.tenderState || ""} onChange={e => setForm(f => ({ ...f, tenderState: e.target.value }))} placeholder="e.g. Maharashtra"/></div>
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.05em", margin: "8px 0 4px" }}>Bid Calendar</div>
+                <div className="form-row">
+                  <div className="form-group"><label>Pre-Bid Date</label><input type="date" value={form.preBidDate || ""} onChange={e => setForm(f => ({ ...f, preBidDate: e.target.value }))}/></div>
+                  <div className="form-group"><label>Bid Submission Date</label><input type="date" value={form.submissionDate || ""} onChange={e => setForm(f => ({ ...f, submissionDate: e.target.value }))}/></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>Technical Bid Date</label><input type="date" value={form.techBidDate || ""} onChange={e => setForm(f => ({ ...f, techBidDate: e.target.value }))}/></div>
+                  <div className="form-group"><label>Financial Bid Date</label><input type="date" value={form.finBidDate || ""} onChange={e => setForm(f => ({ ...f, finBidDate: e.target.value }))}/></div>
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.05em", margin: "8px 0 4px" }}>EMD / Bid Security &amp; PBG</div>
+                <div className="form-row">
+                  <div className="form-group"><label>EMD Amount (₹L)</label><input type="number" min={0} value={form.emdAmount || 0} onChange={e => setForm(f => ({ ...f, emdAmount: +e.target.value }))}/></div>
+                  <div className="form-group"><label>EMD Valid Till</label><input type="date" value={form.emdValidity || ""} onChange={e => setForm(f => ({ ...f, emdValidity: e.target.value }))}/></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>PBG Amount (₹L)</label><input type="number" min={0} value={form.pbgAmount || 0} onChange={e => setForm(f => ({ ...f, pbgAmount: +e.target.value }))}/></div>
+                  <div className="form-group"><label>PBG Valid Till</label><input type="date" value={form.pbgValidity || ""} onChange={e => setForm(f => ({ ...f, pbgValidity: e.target.value }))}/></div>
+                </div>
+                <div className="form-row full"><div className="form-group"><label>Eligibility Criteria</label><textarea rows={2} value={form.eligibility || ""} onChange={e => setForm(f => ({ ...f, eligibility: e.target.value }))} placeholder="Turnover, past performance, certifications…" style={{ width: "100%", resize: "vertical" }}/></div></div>
+                <div className="form-row">
+                  <div className="form-group"><label>OEM Requirements</label><textarea rows={2} value={form.oemReqs || ""} onChange={e => setForm(f => ({ ...f, oemReqs: e.target.value }))} placeholder="OEM tie-ups / MAF…" style={{ width: "100%", resize: "vertical" }}/></div>
+                  <div className="form-group"><label>Mandatory Requirements</label><textarea rows={2} value={form.mandatoryReqs || ""} onChange={e => setForm(f => ({ ...f, mandatoryReqs: e.target.value }))} placeholder="Must-have compliance items…" style={{ width: "100%", resize: "vertical" }}/></div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Win/Loss/Suspend Reasons (conditional) */}
           {form.stage === wonName && (
             <div className="form-row">

@@ -193,6 +193,9 @@ const DATE_COLUMNS = new Set([
   "updated_at", "uploaded_at",
   // Opp / Contract / Collection (add_missing_opp_contract_collection_fields_v1.sql)
   "follow_up_date", "bill_period_from", "bill_period_to",
+  // Tender bid-calendar dates (add_tender_fields_v1.sql)
+  "pre_bid_date", "tech_bid_date", "fin_bid_date", "submission_date",
+  "emd_validity", "pbg_validity",
 ]);
 
 // ── DB columns typed as foreign keys ──
@@ -287,6 +290,14 @@ const toSnake = (obj, module) => {
     lossImprovementNotes:"loss_improvement_notes", lossClosedAt:"loss_closed_at",
     upsellFlag:"upsell_flag", crossSellNotes:"cross_sell_notes",
     decisionDate:"decision_date", campaignSource:"campaign_source",
+    // Tender management fields (add_tender_fields_v1.sql)
+    isTender:"is_tender", tenderNo:"tender_no", tenderAuthority:"tender_authority",
+    tenderDepartment:"tender_department", tenderPortal:"tender_portal",
+    tenderCategory:"tender_category", tenderState:"tender_state",
+    preBidDate:"pre_bid_date", techBidDate:"tech_bid_date", finBidDate:"fin_bid_date",
+    submissionDate:"submission_date", emdAmount:"emd_amount", emdValidity:"emd_validity",
+    pbgAmount:"pbg_amount", pbgValidity:"pbg_validity", eligibility:"eligibility",
+    oemReqs:"oem_reqs", mandatoryReqs:"mandatory_reqs",
     // Contract fields (added by add_missing_opp_contract_collection_fields_v1.sql)
     contractNo:"contract_no", billTerm:"bill_term", billType:"bill_type",
     approvalStage:"approval_stage", docType:"doc_type", poNumber:"po_number",
@@ -489,6 +500,14 @@ const toCamel = (obj, module) => {
     loss_improvement_notes:"lossImprovementNotes", loss_closed_at:"lossClosedAt",
     upsell_flag:"upsellFlag", cross_sell_notes:"crossSellNotes",
     decision_date:"decisionDate", campaign_source:"campaignSource",
+    // Tender management fields
+    is_tender:"isTender", tender_no:"tenderNo", tender_authority:"tenderAuthority",
+    tender_department:"tenderDepartment", tender_portal:"tenderPortal",
+    tender_category:"tenderCategory", tender_state:"tenderState",
+    pre_bid_date:"preBidDate", tech_bid_date:"techBidDate", fin_bid_date:"finBidDate",
+    submission_date:"submissionDate", emd_amount:"emdAmount", emd_validity:"emdValidity",
+    pbg_amount:"pbgAmount", pbg_validity:"pbgValidity", eligibility:"eligibility",
+    oem_reqs:"oemReqs", mandatory_reqs:"mandatoryReqs",
     // Contract fields
     contract_no:"contractNo", bill_term:"billTerm", bill_type:"billType",
     approval_stage:"approvalStage", doc_type:"docType", po_number:"poNumber",
