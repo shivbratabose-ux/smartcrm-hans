@@ -308,7 +308,13 @@ export default function SmartCRM() {
   useEffect(() => { registerOrgUsers(orgUsers); }, [orgUsers]);
   // Keep PRODUCTS / PROD_MAP (constants.js) in sync with the live Masters catalog
   // so dropdowns app-wide reflect newly added/edited/deleted Product Lines.
-  useEffect(() => { registerCatalog(catalog); }, [catalog]);
+  // NOTE: must run DURING render (useMemo), not in a post-commit useEffect.
+  // These splice the shared constant arrays in place; mutating them does not
+  // trigger a re-render, so an effect would update them only AFTER children
+  // had already rendered with the old values (the "Masters change not showing
+  // in the form" bug). Running during render guarantees children read the
+  // fresh arrays in the same pass.
+  useMemo(() => { registerCatalog(catalog); }, [catalog]);
 
   // ── One-time seed: product → line manager (PM) mapping ──────────────
   // Real Hans Infomatic ownership snapshot supplied by the COO:
@@ -357,7 +363,10 @@ export default function SmartCRM() {
   // Keep ALL master-backed constants (CUST_TYPES, COUNTRIES, ACT_TYPES, VERTICALS,
   // LEAD_SOURCES, OPP_STAGES, BILL_TERMS, PAYMENT_MODES, QUOTE_STATUSES, etc.)
   // in sync with the live Masters editor so every dropdown/filter reflects edits.
-  useEffect(() => { registerMasters(masters); }, [masters]);
+  // useMemo (not useEffect) so the in-place array splices happen DURING render,
+  // before child forms read them — otherwise a Masters edit (e.g. Business Type)
+  // wouldn't appear in the form until an unrelated later re-render.
+  useMemo(() => { registerMasters(masters); }, [masters]);
   // New CRM modules
   const [leads,setLeads]             = useState(saved?.leads || INIT_LEADS);
   const [callReports,setCallReports] = useState(saved?.callReports || INIT_CALL_REPORTS);
