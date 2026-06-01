@@ -881,7 +881,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
                   {editField("Company", "company", "text")}
                   {editField("Stage", "stage", "select", LEAD_STAGES)}
                   {editField("Region", "region", "select", REGIONS)}
-                  {editField("Vertical", "vertical", "select", VERTICALS.map(v => ({id:v, name:v})))}
+                  {editField("Industry / Vertical", "vertical", "select", VERTICALS.map(v => ({id:v, name:v})))}
                   {editField("Branch", "branch", "text")}
                   {editField("Location", "location", "text")}
                   {editField("Department", "department", "text")}
@@ -891,7 +891,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
                   {editField("Lead Source", "source", "select", LEAD_SOURCES.map(s => ({id:s, name:s})))}
                   {editField("Score", "score", "range")}
                   {editField("Est. Value (₹L)", "estimatedValue", "number")}
-                  {editField("Temperature", "temperature", "select", LEAD_TEMPERATURES.map(t => ({id:t, name:t})))}
+                  {editField("Lead Temperature", "temperature", "select", LEAD_TEMPERATURES.map(t => ({id:t, name:t})))}
                   {editField("Next Call Date", "nextCall", "date")}
                   {editField("Assigned To", "assignedTo", "select", _team)}
                   {editField("Created Date", "createdDate", "date")}
@@ -2860,7 +2860,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             />
           </div>
           <div className="form-row">
-            <div className="form-group"><label>Vertical</label><select value={form.vertical} onChange={e => setForm(f => ({...f, vertical:e.target.value}))}>{VERTICALS.map(v => <option key={v}>{v}</option>)}</select></div>
+            <div className="form-group"><label>Industry / Vertical</label><select value={form.vertical} onChange={e => setForm(f => ({...f, vertical:e.target.value}))}>{VERTICALS.map(v => <option key={v}>{v}</option>)}</select></div>
             <div className="form-group"><label>Region</label><select value={form.region} onChange={e => setForm(f => ({...f, region:e.target.value}))}>{REGIONS.map(r => <option key={r}>{r}</option>)}</select></div>
           </div>
           {/* Monthly Volume */}
