@@ -236,6 +236,11 @@ export const BLANK_OPP={oppNo:"",title:"",accountId:"",products:[],productSelect
   bidQualification:{},bidDecision:"",bidDecisionNotes:"",bidApprovalStatus:"Not Submitted",bidApprovalChain:[],
   // ── EMD/PBG register, pre-bid log, document repository (Phase 3) ──
   bidInstruments:[],preBidLog:[],tenderDocs:[]};
+
+// ── Project Delivery (Phase 4) ──
+export const BLANK_PROJECT={projectNo:"",name:"",accountId:"",oppId:"",contractId:"",owner:"u1",products:[],
+  status:"Requirement Gathering",progress:0,startDate:"",goLiveTarget:"",goLiveActual:"",value:0,
+  scope:"",deliverables:"",risks:"",notes:"",milestones:[],team:[],createdDate:""};
 export const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
 export const BLANK_TKT={ticketNo:"",title:"",accountId:"",product:"iCAFFE",productSelection:[],type:"Bug / Glitch",priority:"Medium",status:"Open",assigned:"u7",description:"",sla:"",escalation:"L1 – Support Engineer",resolution:"",csat:0,category:"Technical",subCategory:"",reportedBy:"",reportedDate:"",resolvedDate:"",affectedModule:"",severity:"Medium",environment:"Production",workaround:"No",internalNotes:"",revisitDate:"",tags:""};
 export const BLANK_LEAD={company:"",contact:"",email:"",phone:"",product:"iCAFFE",productSelection:[],vertical:"CHA",region:"South Asia",source:"Inside Sales",stage:"MQL",assignedTo:"u1",notes:"",nextCall:"",score:50,createdDate:"",leadId:"",accountId:"",temperature:"Warm",designation:"",noOfUsers:0,businessType:"Customs Broker",staffSize:"",branches:0,monthlyVolume:{airExp:"",airImp:"",seaTEU:"",customsEntries:""},currentSoftware:"",swAge:"",swSatisfaction:0,painPoints:[],budgetRange:"",decisionMaker:"",decisionTimeline:"",evaluatingOthers:"",nextStep:"",objections:"",contactIds:[],contactRoles:{},additionalProducts:[],estimatedValue:0,stageHistory:[],convertedOppIds:[],branch:"",location:"",department:"",addresses:[],salesTeam:[],country:"",state:"",city:"",companyWebsite:"",alternatePhone:"",alternateEmail:"",linkedInUrl:"",annualRevenue:0,campaignName:"",referredBy:"",expectedCloseDate:"",proposalSent:"No",demoScheduled:"No",competitorName:"",lastContactDate:""};
@@ -249,6 +254,7 @@ export const INIT_CALL_REPORTS = [];
 export const INIT_CONTRACTS = [];
 export const INIT_COLLECTIONS = [];
 export const INIT_TARGETS = [];
+export const INIT_PROJECTS = [];
 
 export const BLANK_QUOTE={title:"",accountId:"",oppId:"",contactId:"",ccContactIds:[],product:"iCAFFE",productSelection:[],items:[],subtotal:0,taxType:"GST 18%",taxAmount:0,discount:0,total:0,status:"Draft",validity:"30 Days",version:1,isFinal:false,quoteFileUrl:"",approvalNotes:"",supersedesQuoteId:"",contractId:"",terms:"",owner:"u1",notes:"",createdDate:"",sentDate:"",expiryDate:"",approvalStatus:"Not Required",approvalRequestedAt:"",approvedBy:"",approvedAt:"",rejectedReason:"",acceptedDate:"",signedQuoteUrl:"",emailLog:[],lastReminderAt:"",changeLog:[],attachments:[],
   // ── Customer billing snapshot (taken at quote creation; editable on quote) ──

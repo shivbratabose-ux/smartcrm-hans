@@ -6,7 +6,7 @@ import {
   INIT_ACCOUNTS, INIT_CONTACTS, INIT_OPPS, INIT_ACTIVITIES,
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
   INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
-  INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
+  INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS, INIT_PROJECTS,
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE
 } from "./data/seed";
@@ -37,6 +37,7 @@ import Leads from "./components/Leads";
 import CallReports from "./components/CallReports";
 import Contracts from "./components/Contracts";
 import Collections from "./components/Collections";
+import Projects from "./components/Projects";
 import Targets from "./components/Targets";
 import Quotations from "./components/Quotations";
 import QuoteAcceptLanding from "./components/QuoteAcceptLanding";
@@ -149,6 +150,7 @@ function migrateState(raw) {
   if (!Array.isArray(s.callReports)) s.callReports = INIT_CALL_REPORTS;
   if (!Array.isArray(s.contracts))   s.contracts   = INIT_CONTRACTS;
   if (!Array.isArray(s.collections)) s.collections = INIT_COLLECTIONS;
+  if (!Array.isArray(s.projects))    s.projects    = INIT_PROJECTS;
   if (!Array.isArray(s.invoices))    s.invoices    = INIT_INVOICES;
   if (!Array.isArray(s.targets))     s.targets     = INIT_TARGETS;
   if (!Array.isArray(s.quotes))      s.quotes      = INIT_QUOTES;
@@ -269,7 +271,7 @@ export default function SmartCRM() {
       files: INIT_FILES, masters: INIT_MASTERS, catalog: INIT_PRODUCT_CATALOG,
       org: INIT_ORG, teams: INIT_TEAMS, orgUsers: INIT_USERS,
       leads: INIT_LEADS, callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
-      collections: INIT_COLLECTIONS, invoices: INIT_INVOICES, targets: INIT_TARGETS, quotes: INIT_QUOTES,
+      collections: INIT_COLLECTIONS, projects: INIT_PROJECTS, invoices: INIT_INVOICES, targets: INIT_TARGETS, quotes: INIT_QUOTES,
       commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, updates: INIT_UPDATES, customPermissions: {},
     };
     return migrateState(base);
@@ -372,6 +374,7 @@ export default function SmartCRM() {
   const [callReports,setCallReports] = useState(saved?.callReports || INIT_CALL_REPORTS);
   const [contracts,setContracts]     = useState(saved?.contracts || INIT_CONTRACTS);
   const [collections,setCollections] = useState(saved?.collections || INIT_COLLECTIONS);
+  const [projects,setProjects]       = useState(saved?.projects || INIT_PROJECTS);
   const [invoices,setInvoices]       = useState(saved?.invoices || INIT_INVOICES);
   const [targets,setTargets]         = useState(saved?.targets || INIT_TARGETS);
   const [quotes,setQuotes]           = useState(saved?.quotes || INIT_QUOTES);
@@ -653,6 +656,7 @@ export default function SmartCRM() {
   const visibleTickets     = useMemo(() => tickets.filter(t => !t.isDeleted), [tickets]);
   const visibleContracts   = useMemo(() => contracts.filter(c => !c.isDeleted), [contracts]);
   const visibleCollections = useMemo(() => collections.filter(c => !c.isDeleted), [collections]);
+  const visibleProjects    = useMemo(() => projects.filter(p => !p.isDeleted), [projects]);
   const visibleQuotes      = useMemo(() => quotes.filter(q => !q.isDeleted), [quotes]);
   const visibleCommLogs    = useMemo(() => commLogs.filter(c => !c.isDeleted), [commLogs]);
   const visibleEvents      = useMemo(() => events.filter(e => !e.isDeleted), [events]);
@@ -751,9 +755,9 @@ export default function SmartCRM() {
   const lastLocalSettingsEditRef = useRef(0);
   const syncModules = useMemo(() => ({
     accounts, contacts, opps, activities, tickets, leads, callReports,
-    contracts, collections, targets, quotes, commLogs, events, notes, files,
+    contracts, collections, projects, targets, quotes, commLogs, events, notes, files,
     users: orgUsers,
-  }), [accounts,contacts,opps,activities,tickets,leads,callReports,contracts,collections,targets,quotes,commLogs,events,notes,files,orgUsers]);
+  }), [accounts,contacts,opps,activities,tickets,leads,callReports,contracts,collections,projects,targets,quotes,commLogs,events,notes,files,orgUsers]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -957,6 +961,7 @@ export default function SmartCRM() {
         mergeOnLoad("callReports",  data.callReports, callReports, setCallReports);
         mergeOnLoad("contracts",    data.contracts,   contracts,   setContracts);
         mergeOnLoad("collections",  data.collections, collections, setCollections);
+        mergeOnLoad("projects",     data.projects,    projects,    setProjects);
         mergeOnLoad("targets",      data.targets,     targets,     setTargets);
         mergeOnLoad("quotes",       data.quotes,      quotes,      setQuotes);
         mergeOnLoad("commLogs",     data.commLogs,    commLogs,    setCommLogs);
@@ -1078,6 +1083,7 @@ export default function SmartCRM() {
       leads:       makeHandler(setLeads),
       callReports: makeHandler(setCallReports),
       collections: makeHandler(setCollections),
+      projects:    makeHandler(setProjects),
       // Added in add_realtime_coverage_v1.sql — without these, contracts
       // / quotes / targets / comms / events / notes / files / users
       // changes from other tabs/users only became visible on manual
@@ -1129,9 +1135,9 @@ export default function SmartCRM() {
   // Persist all data to localStorage on every change (works as primary store without Supabase, backup with Supabase)
   useEffect(() => {
     saveState({ version: DATA_VERSION, accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
-      leads, callReports, contracts, collections, invoices, targets, quotes, commLogs, events, updates, customPermissions });
+      leads, callReports, contracts, collections, projects, invoices, targets, quotes, commLogs, events, updates, customPermissions });
   }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
-    leads, callReports, contracts, collections, invoices, targets, quotes, commLogs, events, updates, customPermissions]);
+    leads, callReports, contracts, collections, projects, invoices, targets, quotes, commLogs, events, updates, customPermissions]);
 
   // ── Auto-heal: backfill missing addressId on contacts ──
   // Per company policy (PR #102) every contact must be associated with an
@@ -1385,6 +1391,36 @@ export default function SmartCRM() {
       notes: `Deal ${opp.oppId || opp.id} marked as Won. Value: ₹${opp.value || 0}L`,
       outcome: "Positive",
     }]);
+
+    // ── CRM → Project handover (Phase 4) ──
+    // Auto-create a delivery Project from the won deal, carrying scope, value,
+    // account, owner and products. Idempotent: skip if a project already
+    // exists for this opportunity.
+    setProjects(prev => {
+      if (prev.some(p => p.oppId === opp.id && !p.isDeleted)) return prev;
+      const yr = new Date().getFullYear();
+      const seq = prev.reduce((m, p) => { const x = p.projectNo?.match(/PRJ-\d{4}-(\d+)/); return x ? Math.max(m, +x[1]) : m; }, 0) + 1;
+      return [...prev, {
+        id: `prj_${uid()}`,
+        projectNo: `PRJ-${yr}-${String(seq).padStart(3, "0")}`,
+        name: opp.title || "New Project",
+        accountId: opp.accountId || "",
+        oppId: opp.id,
+        contractId: "",
+        owner: opp.owner,
+        products: Array.isArray(opp.products) ? [...opp.products] : [],
+        status: "Requirement Gathering",
+        progress: 0,
+        startDate: today,
+        goLiveTarget: opp.decisionDate || opp.closeDate || "",
+        goLiveActual: "",
+        value: opp.value || 0,
+        scope: opp.notes || "",
+        deliverables: "", risks: "", notes: opp.isTender ? `From tender ${opp.tenderNo || ""} (${opp.tenderAuthority || ""}).` : "Auto-created from won deal.",
+        milestones: [], team: [{ userId: opp.owner, role: "Delivery Lead" }],
+        createdDate: today,
+      }];
+    });
   }, [accounts]);
 
   // Convert lead to opportunity — accepts conversion data from modal
@@ -2098,6 +2134,7 @@ export default function SmartCRM() {
             {page==="tickets"    && <Tickets tickets={visibleTickets} setTickets={setTickets} accounts={visibleAccounts} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete} catalog={catalog} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="contracts"  && <Contracts contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="collections"&& <Collections collections={visibleCollections} setCollections={setCollections} accounts={visibleAccounts} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
+            {page==="projects"   && <Projects projects={visibleProjects} setProjects={setProjects} accounts={visibleAccounts} opps={visibleOpps} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
             {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}
             {page.startsWith("quote-accept/") && <QuoteAcceptLanding quoteId={page.replace(/^quote-accept\//,"")} quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} contracts={contracts} setContracts={setContracts} setActivities={setActivities} currentUser={currentUser} onBack={()=>setPage("quotations")}/>}
             {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
@@ -2121,6 +2158,7 @@ export default function SmartCRM() {
               { key:"tickets",     label:"Tickets",      items:tickets,      setter:setTickets,      getName:r=>r.title,                      getMeta:r=>[r.status, r.priority].filter(Boolean).join(" · ") },
               { key:"contracts",   label:"Contracts",    items:contracts,    setter:setContracts,    getName:r=>r.contractNo||r.title||r.id,  getMeta:r=>[r.status, r.value!=null?`$${r.value}`:""].filter(Boolean).join(" · ") },
               { key:"collections", label:"Collections",  items:collections,  setter:setCollections,  getName:r=>r.invoiceNo||r.id,            getMeta:r=>[r.status, r.amount!=null?`$${r.amount}`:""].filter(Boolean).join(" · ") },
+              { key:"projects",    label:"Projects",     items:projects,     setter:setProjects,     getName:r=>r.name||r.projectNo||r.id,    getMeta:r=>[r.status, r.progress!=null?`${r.progress}%`:""].filter(Boolean).join(" · ") },
               { key:"quotes",      label:"Quotations",   items:quotes,       setter:setQuotes,       getName:r=>r.quoteNo||r.title||r.id,     getMeta:r=>[r.status, r.total!=null?`$${r.total}`:""].filter(Boolean).join(" · ") },
               { key:"events",      label:"Calendar",     items:events,       setter:setEvents,       getName:r=>r.title,                      getMeta:r=>[r.type, r.date].filter(Boolean).join(" · ") },
               { key:"commLogs",    label:"Communications",items:commLogs,    setter:setCommLogs,     getName:r=>r.subject||r.channel||r.id,   getMeta:r=>[r.channel, r.date].filter(Boolean).join(" · ") },

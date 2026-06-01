@@ -28,6 +28,7 @@ const TABLE_MAP = {
   notes:       "notes",
   files:       "files",
   users:       "users",
+  projects:    "projects",
 };
 
 // ── Per-module field aliases ──
@@ -196,6 +197,8 @@ const DATE_COLUMNS = new Set([
   // Tender bid-calendar dates (add_tender_fields_v1.sql)
   "pre_bid_date", "tech_bid_date", "fin_bid_date", "submission_date",
   "emd_validity", "pbg_validity",
+  // Project delivery dates (add_projects_v1.sql)
+  "go_live_target", "go_live_actual",
 ]);
 
 // ── DB columns typed as foreign keys ──
@@ -302,6 +305,8 @@ const toSnake = (obj, module) => {
     bidDecisionNotes:"bid_decision_notes", bidApprovalStatus:"bid_approval_status",
     bidApprovalChain:"bid_approval_chain",
     bidInstruments:"bid_instruments", preBidLog:"pre_bid_log", tenderDocs:"tender_docs",
+    // Project delivery (add_projects_v1.sql)
+    projectNo:"project_no", goLiveTarget:"go_live_target", goLiveActual:"go_live_actual",
     // Contract fields (added by add_missing_opp_contract_collection_fields_v1.sql)
     contractNo:"contract_no", billTerm:"bill_term", billType:"bill_type",
     approvalStage:"approval_stage", docType:"doc_type", poNumber:"po_number",
@@ -516,6 +521,7 @@ const toCamel = (obj, module) => {
     bid_decision_notes:"bidDecisionNotes", bid_approval_status:"bidApprovalStatus",
     bid_approval_chain:"bidApprovalChain",
     bid_instruments:"bidInstruments", pre_bid_log:"preBidLog", tender_docs:"tenderDocs",
+    project_no:"projectNo", go_live_target:"goLiveTarget", go_live_actual:"goLiveActual",
     // Contract fields
     contract_no:"contractNo", bill_term:"billTerm", bill_type:"billType",
     approval_stage:"approvalStage", doc_type:"docType", po_number:"poNumber",

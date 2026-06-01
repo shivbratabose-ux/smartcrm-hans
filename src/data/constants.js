@@ -425,6 +425,9 @@ export const CONTACT_DEPARTMENTS = ["Finance","Procurement","IT","Operations","L
 // ── Opportunity Sources ──
 export const OPP_SOURCES = ["New Lead","Existing Customer – Upsell","Existing Customer – Cross-sell","Referral","Partner"];
 
+// ── Project Delivery (Phase 4) ──
+export const PROJECT_PHASES = ["Requirement Gathering","Gap Analysis","Design","Development","UAT","Go-Live","Hypercare","Closed","On Hold"];
+
 // ── Tender Management (Phase 1) ──
 export const TENDER_CATEGORIES = ["Supply","Services","SaaS / Subscription","Turnkey / System Integration","AMC / Support","Consultancy","Managed Services","Digital Transformation"];
 export const TENDER_PORTALS = ["GeM","CPPP / eProcurement","State Procurement Portal","Airport Authority Portal","Customs / Port Portal","Direct RFP / EOI","Consultant / SI Referral"];

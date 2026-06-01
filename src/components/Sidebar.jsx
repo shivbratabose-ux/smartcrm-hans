@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, Building2, Users, TrendingUp, Activity,
   BarChart3, Ticket, Layers, SlidersHorizontal, ChevronLeft, LogOut,
-  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2
+  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase
 } from "lucide-react";
 import { TEAM_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 
@@ -44,6 +44,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
     {section:"Post-Sales",items:[
       {id:"quotations", label:"Quotations",  icon:<ClipboardList size={17}/>},
       {id:"contracts",  label:"Contracts",   icon:<FileText size={17}/>},
+      {id:"projects",   label:"Projects",    icon:<Briefcase size={17}/>},
       {id:"collections",label:"Collections", icon:<DollarSign size={17}/>,badge:overdueCollections},
       {id:"tickets",    label:"Tickets",     icon:<Ticket size={17}/>,badge:openTix},
     ]},
