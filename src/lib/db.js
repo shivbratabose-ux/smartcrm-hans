@@ -71,7 +71,7 @@ const TEXT_ARRAY_COLUMNS = new Set([
   // opportunities
   "secondary_contact_ids", "source_lead_ids", "loss_impact_areas",
   // quotations
-  "terms",
+  "terms", "cc_contact_ids",
   // events
   "attendees",
 ]);
@@ -221,6 +221,7 @@ const toSnake = (obj, module) => {
     arrRevenue:"arr_revenue", parentId:"parent_id", hierarchyLevel:"hierarchy_level",
     hierarchyPath:"hierarchy_path", createdDate:"created_date", closeDate:"close_date",
     primaryContactId:"primary_contact_id", secondaryContactIds:"secondary_contact_ids",
+    ccContactIds:"cc_contact_ids",
     leadId:"lead_id", oppId:"opp_id", callDate:"call_date", callType:"call_type",
     marketingPerson:"marketing_person", leadName:"lead_name", nextCallDate:"next_call_date",
     leadStage:"lead_stage", invoiceNo:"invoice_no", invoiceDate:"invoice_date",
@@ -431,6 +432,7 @@ const toCamel = (obj, module) => {
     arr_revenue:"arrRevenue", parent_id:"parentId", hierarchy_level:"hierarchyLevel",
     hierarchy_path:"hierarchyPath", created_date:"createdDate", close_date:"closeDate",
     primary_contact_id:"primaryContactId", secondary_contact_ids:"secondaryContactIds",
+    cc_contact_ids:"ccContactIds",
     lead_id:"leadId", opp_id:"oppId", call_date:"callDate", call_type:"callType",
     marketing_person:"marketingPerson", lead_name:"leadName", next_call_date:"nextCallDate",
     lead_stage:"leadStage", invoice_no:"invoiceNo", invoice_date:"invoiceDate",
