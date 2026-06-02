@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight, AlertTriangle, RotateCcw, Edit2, Trash2, Lock } from "lucide-react";
+import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight, AlertTriangle, RotateCcw, Edit2, Trash2, Lock, Star, Users, TrendingUp, Phone, MessageSquare, Calendar, ArrowRightCircle, Clock, Plus } from "lucide-react";
 import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
 import { fmt, uid, today, hasErrors } from "../utils/helpers";
 
@@ -723,6 +723,144 @@ export function InlineContactForm({ accountId, accounts = [], onSave, onCancel }
         >Add Contact</button>
       </div>
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RECORD JOURNEY — reusable filterable activity timeline
+// ═══════════════════════════════════════════════════════════════════
+// Renders a unified "complete history" timeline (created / assigned / stage
+// changes / calls / activities / follow-ups / converted) with filter chips
+// and expandable cards. Caller passes a normalised `events` array; this only
+// renders. Originally inline in Leads; extracted so Pipeline/Opportunity (and
+// anything else) can show the same structure.
+//
+// Each event: { kind, date, title, subtitle?, desc?, meta?, by?, status? }
+//   kind ∈ created|assigned|stage|call|activity|followup|converted|system
+const JOURNEY_COLORS = {
+  created:   { bg:"#E8F5F1", color:"#1B6B5A", border:"#A7F3D0" },
+  assigned:  { bg:"#EFF6FF", color:"#2563EB", border:"#BFDBFE" },
+  stage:     { bg:"#F5F3FF", color:"#7C3AED", border:"#DDD6FE" },
+  call:      { bg:"#FFF7ED", color:"#D97706", border:"#FDE68A" },
+  activity:  { bg:"#F0FDF4", color:"#16A34A", border:"#BBF7D0" },
+  followup:  { bg:"#FEF3C7", color:"#B45309", border:"#FDE68A" },
+  converted: { bg:"#DCFCE7", color:"#15803D", border:"#86EFAC" },
+  system:    { bg:"#F8FAFC", color:"#64748B", border:"#E2E8F0" },
+};
+const JOURNEY_ICON = {
+  created:   <Star size={13}/>,        assigned:  <Users size={13}/>,
+  stage:     <TrendingUp size={13}/>,  call:      <Phone size={13}/>,
+  activity:  <MessageSquare size={13}/>, followup: <Calendar size={13}/>,
+  converted: <ArrowRightCircle size={13}/>, system: <Clock size={13}/>,
+};
+const JOURNEY_LABEL = {
+  created:"Created", assigned:"Assigned", stage:"Stage Change", call:"Call",
+  activity:"Activity", followup:"Follow-up", converted:"Converted", system:"System",
+};
+
+export function RecordJourney({ events = [], totalCount, orgUsers = [], onLogCall, onLogActivity, onSetFollowup, title = "Record Journey" }) {
+  const [filter, setFilter] = useState("all");
+  const [expanded, setExpanded] = useState(null);
+  const nameOf = (id) => (orgUsers || []).find(u => u.id === id)?.name || id || "";
+
+  const FILTER_OPTS = [
+    { id:"all",      label:"All Events" },
+    { id:"call",     label:"📞 Calls" },
+    { id:"activity", label:"✅ Activities" },
+    { id:"stage",    label:"📊 Stage Changes" },
+    { id:"system",   label:"⚙️ System" },
+  ];
+  const filtered = filter === "all"
+    ? events
+    : filter === "system"
+      ? events.filter(e => ["created","assigned","converted"].includes(e.kind))
+      : events.filter(e => e.kind === filter || (filter === "activity" && e.kind === "followup"));
+
+  return (
+    <>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontSize:14,fontWeight:700,color:"var(--text1)"}}>{title}</div>
+          <div style={{fontSize:11,color:"var(--text3)",marginTop:1}}>{totalCount ?? events.length} events · complete history</div>
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {onLogCall && <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={onLogCall}><Phone size={12}/>Log Call</button>}
+          {onLogActivity && <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={onLogActivity}><Plus size={12}/>Log Activity</button>}
+          {onSetFollowup && <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={onSetFollowup}><Calendar size={12}/>Set Follow-up</button>}
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+        {FILTER_OPTS.map(f => (
+          <button key={f.id} onClick={() => setFilter(f.id)}
+            style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid",fontWeight:600,cursor:"pointer",
+              background: filter===f.id ? "var(--brand)" : "transparent",
+              color: filter===f.id ? "white" : "var(--text3)",
+              borderColor: filter===f.id ? "var(--brand)" : "var(--border)"}}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0
+        ? <div style={{textAlign:"center",padding:"32px 20px",color:"var(--text3)",fontSize:12}}>No events match this filter.</div>
+        : (
+        <div style={{position:"relative"}}>
+          <div style={{position:"absolute",left:19,top:8,bottom:8,width:2,background:"var(--border)",borderRadius:1}}/>
+          <div style={{display:"flex",flexDirection:"column",gap:0}}>
+            {filtered.map((ev, i) => {
+              const c = JOURNEY_COLORS[ev.kind] || JOURNEY_COLORS.system;
+              const byUser = ev.by ? nameOf(ev.by) : null;
+              const isExpanded = expanded === i;
+              const isLast = i === filtered.length - 1;
+              return (
+                <div key={i} style={{display:"flex",gap:12,paddingBottom: isLast ? 0 : 16,cursor: ev.desc ? "pointer" : "default"}}
+                  onClick={() => ev.desc && setExpanded(isExpanded ? null : i)}>
+                  <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",zIndex:1}}>
+                    <div style={{width:38,height:38,borderRadius:10,background:c.bg,border:`1.5px solid ${c.border}`,display:"flex",alignItems:"center",justifyContent:"center",color:c.color,flexShrink:0}}>
+                      {JOURNEY_ICON[ev.kind] || <Clock size={13}/>}
+                    </div>
+                  </div>
+                  <div style={{flex:1,minWidth:0,background:"white",borderRadius:10,border:"1px solid var(--border)",padding:"10px 14px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                          <span style={{fontSize:11,fontWeight:700,padding:"1px 7px",borderRadius:10,background:c.bg,color:c.color,border:`1px solid ${c.border}`,whiteSpace:"nowrap"}}>
+                            {JOURNEY_LABEL[ev.kind] || "Event"}
+                          </span>
+                          {ev.status && (
+                            <span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background: ev.status==="Completed"?"#DCFCE7":ev.status==="Planned"?"#FEF9C3":"var(--s2)",color: ev.status==="Completed"?"#15803D":ev.status==="Planned"?"#92400E":"var(--text3)",fontWeight:600}}>
+                              {ev.status}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{fontSize:12.5,fontWeight:600,color:"var(--text1)",marginTop:4}}>{ev.title}</div>
+                        {ev.subtitle && <div style={{fontSize:11,color:"var(--text3)",marginTop:1}}>{ev.subtitle}</div>}
+                      </div>
+                      <div style={{flexShrink:0,textAlign:"right"}}>
+                        <div style={{fontSize:11,color:"var(--text3)",whiteSpace:"nowrap"}}>{ev.date}</div>
+                        {byUser && <div style={{fontSize:10,color:"var(--text3)",marginTop:1}}>by {byUser}</div>}
+                      </div>
+                    </div>
+                    {isExpanded && (ev.desc || ev.meta) && (
+                      <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--border)"}}>
+                        {ev.desc && <div style={{fontSize:12,color:"var(--text2)",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{ev.desc}</div>}
+                        {ev.meta && <div style={{fontSize:11,color:"var(--text3)",marginTop:6,padding:"6px 10px",background:"var(--s2)",borderRadius:6}}>{ev.meta}</div>}
+                      </div>
+                    )}
+                    {!isExpanded && ev.desc && (
+                      <div style={{fontSize:11,color:"var(--text3)",marginTop:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>
+                        {ev.desc.length > 90 ? ev.desc.slice(0,90)+"…" : ev.desc}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

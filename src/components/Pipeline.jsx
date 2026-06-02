@@ -28,7 +28,7 @@ import {
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds, canEditRecord, hasPendingAccessReq } from "../utils/helpers";
 import { exportCSV } from "../utils/csv";
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect, EditLockActions } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect, EditLockActions, RecordJourney } from "./shared";
 import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from "./ProductModulePicker";
 import DataGrid from "./DataGrid";
 import { TenderAiPanel } from "./AiActions";
@@ -436,7 +436,7 @@ function QuickUpdatePopover({ opp, onSave, onClose }) {
 /* ═══════════════════════════════════════════════════════
    DEAL DETAIL (Enhanced)
    ═══════════════════════════════════════════════════════ */
-function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, orgUsers = [], onLogCall }) {
+function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, orgUsers = [], callReports = [], onLogCall }) {
   const { STAGE_COL, STAGES } = useContext(StagesContext);
   const [tab, setTab] = useState("overview");
 
@@ -527,6 +527,47 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
     oppNotes.forEach(n => items.push({ date: n.date?.slice(0, 10) || today, type: "note", data: n }));
     return items.sort((a, b) => b.date.localeCompare(a.date));
   }, [oppActs, oppNotes]);
+
+  // Calls logged against this deal (for the Record Journey timeline).
+  const oppCalls = (callReports || []).filter(cr => cr.oppId === detail.id);
+
+  // ── Record Journey events — unified, filterable history of the deal ──
+  const journeyEvents = useMemo(() => {
+    const d10 = (s) => (s || "").slice(0, 10);
+    const evs = [];
+    evs.push({
+      kind: "created", date: d10(detail.createdDate) || d10(detail.closeDate) || "",
+      title: "Opportunity Created",
+      subtitle: detail.source ? `Source: ${detail.source}` : "",
+      desc: [
+        detail.products?.length ? `Products: ${detail.products.map(p => PROD_MAP[p]?.name || p).join(", ")}` : null,
+        detail.value ? `Value: ₹${detail.value}L` : null,
+        detail.leadId ? "Converted from a lead" : null,
+      ].filter(Boolean).join(" · "),
+      by: detail.owner || "",
+    });
+    if (detail.owner) evs.push({
+      kind: "assigned", date: d10(detail.createdDate) || "",
+      title: `Assigned to ${userName(detail.owner)}`, subtitle: "Sales owner", by: detail.owner,
+    });
+    (detail.stageHistory || []).forEach(sh => evs.push({
+      kind: "stage", date: d10(sh.date), title: `Stage: ${sh.from} → ${sh.to}`,
+      subtitle: sh.to, desc: sh.by ? `Changed by ${userName(sh.by)}` : "", by: sh.by || "",
+    }));
+    oppCalls.forEach(cr => evs.push({
+      kind: "call", date: d10(cr.callDate || cr.date),
+      title: `${cr.callType || cr.objective || "Call"}${cr.outcome ? ` — ${cr.outcome}` : ""}`,
+      subtitle: cr.objective || cr.callType || "", desc: cr.notes || "",
+      by: cr.marketingPerson || cr.owner || "", status: cr.outcome || "",
+      meta: [cr.duration ? `${cr.duration} min` : null, cr.nextCallDate ? `Next call: ${cr.nextCallDate}` : null].filter(Boolean).join(" · "),
+    }));
+    oppActs.forEach(a => evs.push({
+      kind: a.type === "Follow-up" ? "followup" : "activity", date: d10(a.date || a.createdDate),
+      title: a.title || a.type || "Activity", subtitle: a.type || "", desc: a.notes || "",
+      by: a.owner || "", status: a.status || "",
+    }));
+    return evs.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }, [detail, oppActs, oppCalls]);
 
   return (
     <div style={{
@@ -704,29 +745,18 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
             </div>
           )}
           {tab === "activities" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-                <button className="btn btn-xs btn-sec" onClick={() => onLogCall({ accountId: detail.accountId, oppId: detail.id, contactIds: detail.primaryContactId ? [detail.primaryContactId] : [] })}>
-                  <Phone size={12} /> Log Call
-                </button>
-              </div>
-              {oppActs.length === 0 && <div style={{ color: "var(--text3)", fontSize: 13, padding: "20px 0" }}>No activities logged for this deal.</div>}
-              {oppActs.map(a => (
-                <div key={a.id} style={{
-                  padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 8, marginBottom: 8,
-                  borderLeft: `3px solid ${a.status === "Completed" ? "#22C55E" : a.status === "Planned" ? "#3B82F6" : "#94A3B8"}`,
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>{a.title}</span>
-                    <StatusBadge status={a.status} />
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>
-                    {[a.type, fmt.date(a.date), userName(a.owner), a.outcome].filter(Boolean).join(" \u2022 ")}
-                  </div>
-                  {a.notes && <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 6 }}>{a.notes}</div>}
-                </div>
-              ))}
-            </div>
+            <RecordJourney
+              events={journeyEvents}
+              totalCount={journeyEvents.length}
+              orgUsers={orgUsers}
+              onLogCall={() => onLogCall({ accountId: detail.accountId, oppId: detail.id, contactIds: detail.primaryContactId ? [detail.primaryContactId] : [] })}
+              onLogActivity={() => logQuickActivity("Task")}
+              onSetFollowup={() => setActivities(p => [...p, {
+                id: `act${uid()}`, type: "Follow-up", status: "Planned", date: today, time: "12:00", duration: 15,
+                accountId: detail.accountId, contactId: detail.primaryContactId || "", oppId: detail.id,
+                owner: currentUser, title: `Follow-up: ${detail.title}`, notes: "", outcome: "",
+              }])}
+            />
           )}
           {tab === "notes" && <NotesThread notes={oppNotes} currentUser={currentUser} onAdd={text => onAddNote({ id: `n${uid()}`, recordType: "opp", recordId: detail.id, author: currentUser, date: new Date().toISOString().slice(0, 16).replace("T", " "), text })} />}
           {tab === "files" && <FilesList files={oppFiles} currentUser={currentUser} onAdd={f => onAddFile({ ...f, linkedTo: [{ type: "opp", id: detail.id }] })} />}
@@ -1689,7 +1719,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           accounts={accounts} contacts={contacts} notes={notes} files={files}
           onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser}
           activities={activities} setActivities={setActivities} opps={opps} setOpps={setOpps}
-          orgUsers={orgUsers}
+          orgUsers={orgUsers} callReports={callReports}
           onLogCall={(prefill) => { setDetail(null); setLogCallPrefill(prefill); }}
         />
       )}
