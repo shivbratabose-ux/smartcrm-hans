@@ -41,13 +41,24 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
 
   const tenders = useMemo(() => opps.filter(o => !o.isDeleted && o.isTender), [opps]);
 
+  // This executive hub is intentionally scoped to BIG-TICKET pipeline:
+  // large opportunities (deal value ≥ ₹50 L) plus ALL tenders (any size).
+  // Small day-to-day deals stay in the Pipeline module; here management
+  // tracks the strategic, high-value + competitive-bid book. Values are in
+  // ₹ Lakhs, so the threshold is a plain 50.
+  const LARGE_DEAL_LAKHS = 50;
+  const focusOpps = useMemo(
+    () => opps.filter(o => !o.isDeleted && ((+o.value || 0) >= LARGE_DEAL_LAKHS || o.isTender)),
+    [opps]
+  );
+
   // ── Management ──
   const mgmt = useMemo(() => {
-    const open = opps.filter(o => !o.isDeleted && isOpen(o));
+    const open = focusOpps.filter(o => isOpen(o));
     const totalPipe = open.reduce((s, o) => s + (+o.value || 0), 0);
     const weighted = open.reduce((s, o) => s + (+o.value || 0) * (+o.probability || 0) / 100, 0);
-    const won = opps.filter(o => !o.isDeleted && (o.stage === "Won" || o.stage === "closed_won"));
-    const lost = opps.filter(o => !o.isDeleted && (o.stage === "Lost" || o.stage === "closed_lost"));
+    const won = focusOpps.filter(o => o.stage === "Won" || o.stage === "closed_won");
+    const lost = focusOpps.filter(o => o.stage === "Lost" || o.stage === "closed_lost");
     const winRate = won.length + lost.length ? Math.round(won.length / (won.length + lost.length) * 100) : 0;
     const tWon = tenders.filter(o => o.stage === "Won" || o.stage === "closed_won").length;
     const tLost = tenders.filter(o => o.stage === "Lost" || o.stage === "closed_lost").length;
@@ -55,7 +66,7 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
     const tenderValue = tenders.filter(isOpen).reduce((s, o) => s + (+o.value || 0), 0);
     const renewalPipe = open.filter(o => o.upsellFlag || /upsell|renewal/i.test(o.source || "")).reduce((s, o) => s + (+o.value || 0), 0);
     return { totalPipe, weighted, winRate, bidSuccess, tenderValue, renewalPipe, openCount: open.length };
-  }, [opps, tenders]);
+  }, [focusOpps, tenders]);
 
   // ── Tender ──
   const tenderData = useMemo(() => {
@@ -165,6 +176,9 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
       {/* ── Management ── */}
       {tab === "management" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ fontSize: 12, color: "var(--text2)", background: "var(--s2,#F8FAFB)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6, alignSelf: "flex-start" }}>
+            <span style={{ fontWeight: 600 }}>Scope:</span> strategic book — large opportunities (≥ ₹{LARGE_DEAL_LAKHS} L) plus all tenders. Smaller deals live in the Pipeline module.
+          </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <KPI label="Total Pipeline" value={`₹${mgmt.totalPipe.toFixed(1)}L`} sub={`${mgmt.openCount} open deals`} />
             <KPI label="Revenue Forecast" value={`₹${mgmt.weighted.toFixed(1)}L`} sub="Weighted pipeline" />
