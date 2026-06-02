@@ -622,6 +622,7 @@ function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, 
 
   return (
     <DataGrid
+      dense
       module="accounts_list"
       userId={currentUser}
       columns={ACCOUNTS_COLUMNS}
