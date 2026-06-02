@@ -451,6 +451,10 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
   };
   const cancelEdit = () => { setEditingField(null); setFieldVal(""); };
   const iStyle = { fontSize:12, padding:"3px 7px", borderRadius:5, border:"1px solid var(--brand)", outline:"none", width:"100%", boxSizing:"border-box" };
+  // Resolve a user id to a real display name. Real users live in orgUsers
+  // (Supabase); TEAM_MAP is only the static seed and won't have live ids —
+  // hence activity/timeline lines showed a blank name. Fall back gracefully.
+  const userName = (id) => (orgUsers || []).find(u => u.id === id)?.name || TEAM_MAP[id]?.name || id || "";
 
   const editableRow = (key, field, type, options) => {
     const isEditing = editingField === field;
@@ -686,7 +690,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
                   <div style={{ flex: 1, paddingBottom: 4 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{item.type === "activity" ? item.data.title : "Note added"}</div>
                     <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>
-                      {fmt.date(item.date)} {item.type === "activity" && item.data.owner ? `\u2022 ${TEAM_MAP[item.data.owner]?.name || ""}` : ""}
+                      {fmt.date(item.date)} {item.type === "activity" && item.data.owner ? `\u2022 ${userName(item.data.owner)}` : ""}
                       {item.type === "activity" && item.data.outcome ? ` \u2022 ${item.data.outcome}` : ""}
                     </div>
                     {(item.type === "activity" ? item.data.notes : item.data.text) && (
@@ -717,7 +721,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
                     <StatusBadge status={a.status} />
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>
-                    {a.type} \u2022 {fmt.date(a.date)} \u2022 {TEAM_MAP[a.owner]?.name || ""} {a.outcome ? `\u2022 ${a.outcome}` : ""}
+                    {[a.type, fmt.date(a.date), userName(a.owner), a.outcome].filter(Boolean).join(" \u2022 ")}
                   </div>
                   {a.notes && <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 6 }}>{a.notes}</div>}
                 </div>
