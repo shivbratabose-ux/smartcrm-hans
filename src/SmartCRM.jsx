@@ -408,6 +408,14 @@ export default function SmartCRM() {
   // line_mgr  → department peers; country_mgr → branch peers; others → self only.
   const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const _globalRole = useMemo(() => isGlobalRole(currentUser, orgUsers), [currentUser, orgUsers]);
+  // Finance is a cross-cutting role: it needs company-wide read on the
+  // financial tables (accounts / contracts / collections) so it can run the
+  // account-number approval queue and manage billing for records it doesn't
+  // own. On every other module finance is scoped like anyone else.
+  const _financeRole = useMemo(() => {
+    const r = (orgUsers || []).find(u => u.id === currentUser)?.role;
+    return r === "finance";
+  }, [currentUser, orgUsers]);
 
   // ── Auto-route unowned leads to their product's line manager ──────────
   // Bulk uploads regularly arrive with assignedTo blank. Without routing
@@ -680,31 +688,94 @@ export default function SmartCRM() {
   // bulk-uploaded leads/opps with no assignedTo showed up in every rep's
   // list. Unassigned records now stay invisible to scoped users and only
   // appear to admins/MDs/directors (who can then route them).
-  // ── COMPANY-WIDE READ MODEL (Hans Infomatic policy, May 2026) ──
-  // Every role can VIEW all records across the company. Editing is gated
-  // separately by canEditRecord() (own records, downline, or an owner-granted
-  // edit). Soft-deleted rows are always hidden here (Trash reads raw state).
-  // _scopedIds / _globalRole are intentionally NOT used for read visibility
-  // any more — they only govern WRITE permission downstream.
-  const visibleLeads = useMemo(() => leads.filter(l => !l.isDeleted), [leads]);
+  // ── HIERARCHY-SCOPED READ MODEL (Hans Infomatic policy, restored Jun 2026) ──
+  // Each user sees only records they own plus their reporting-line downline
+  // (solid + dotted), computed by getScopedUserIds. Global roles
+  // (admin/md/director/vp_sales_mkt) see everything. Editing is gated
+  // separately by canEditRecord(). Soft-deleted rows are always hidden here
+  // (Trash reads raw state). The matching DB read RLS is scoped_read_v1.sql so
+  // the boundary holds at the API layer too, not just the UI.
+  //
+  // Contacts and Updates stay company-wide: contacts have no owner field (they
+  // are account-scoped) and Updates are broadcast announcements. Unassigned
+  // leads/opps are auto-routed to the product line manager above, so strict
+  // scoping doesn't strand them; collections keep unowned rows visible so
+  // finance-uploaded invoices that haven't been routed yet aren't hidden.
+  const visibleLeads = useMemo(() => {
+    const live = leads.filter(l => !l.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(l => l.assignedTo && _scopedIds.has(l.assignedTo));
+  }, [leads, _scopedIds, _globalRole]);
 
-  const visibleOpps = useMemo(() => opps.filter(o => !o.isDeleted), [opps]);
+  const visibleOpps = useMemo(() => {
+    const live = opps.filter(o => !o.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(o => o.owner && _scopedIds.has(o.owner));
+  }, [opps, _scopedIds, _globalRole]);
 
-  const visibleActivities = useMemo(() => activities.filter(a => !a.isDeleted), [activities]);
+  const visibleActivities = useMemo(() => {
+    const live = activities.filter(a => !a.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(a => a.owner && _scopedIds.has(a.owner));
+  }, [activities, _scopedIds, _globalRole]);
 
-  const visibleCallReports = useMemo(() => callReports.filter(cr => !cr.isDeleted), [callReports]);
+  const visibleCallReports = useMemo(() => {
+    const live = callReports.filter(cr => !cr.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(cr => cr.marketingPerson && _scopedIds.has(cr.marketingPerson));
+  }, [callReports, _scopedIds, _globalRole]);
 
-  const visibleAccounts    = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
+  const visibleAccounts    = useMemo(() => {
+    const live = accounts.filter(a => !a.isDeleted);
+    if (_globalRole || _financeRole) return live;
+    return live.filter(a => a.owner && _scopedIds.has(a.owner));
+  }, [accounts, _scopedIds, _globalRole, _financeRole]);
   const visibleContacts    = useMemo(() => contacts.filter(c => !c.isDeleted), [contacts]);
-  const visibleTickets     = useMemo(() => tickets.filter(t => !t.isDeleted), [tickets]);
-  const visibleContracts   = useMemo(() => contracts.filter(c => !c.isDeleted), [contracts]);
-  const visibleCollections = useMemo(() => collections.filter(c => !c.isDeleted), [collections]);
-  const visibleProjects    = useMemo(() => projects.filter(p => !p.isDeleted), [projects]);
-  const visibleQuotes      = useMemo(() => quotes.filter(q => !q.isDeleted), [quotes]);
-  const visibleCommLogs    = useMemo(() => commLogs.filter(c => !c.isDeleted), [commLogs]);
-  const visibleEvents      = useMemo(() => events.filter(e => !e.isDeleted), [events]);
-  const visibleTargets     = useMemo(() => targets.filter(t => !t.isDeleted), [targets]);
-  const visibleInvoices    = useMemo(() => invoices.filter(i => !i.isDeleted), [invoices]);
+  const visibleTickets     = useMemo(() => {
+    const live = tickets.filter(t => !t.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(t => t.assigned && _scopedIds.has(t.assigned));
+  }, [tickets, _scopedIds, _globalRole]);
+  const visibleContracts   = useMemo(() => {
+    const live = contracts.filter(c => !c.isDeleted);
+    if (_globalRole || _financeRole) return live;
+    return live.filter(c => c.owner && _scopedIds.has(c.owner));
+  }, [contracts, _scopedIds, _globalRole, _financeRole]);
+  const visibleCollections = useMemo(() => {
+    const live = collections.filter(c => !c.isDeleted);
+    if (_globalRole || _financeRole) return live;
+    return live.filter(c => !c.owner || _scopedIds.has(c.owner));
+  }, [collections, _scopedIds, _globalRole, _financeRole]);
+  const visibleProjects    = useMemo(() => {
+    const live = projects.filter(p => !p.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(p => p.owner && _scopedIds.has(p.owner));
+  }, [projects, _scopedIds, _globalRole]);
+  const visibleQuotes      = useMemo(() => {
+    const live = quotes.filter(q => !q.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(q => q.owner && _scopedIds.has(q.owner));
+  }, [quotes, _scopedIds, _globalRole]);
+  const visibleCommLogs    = useMemo(() => {
+    const live = commLogs.filter(c => !c.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(c => c.owner && _scopedIds.has(c.owner));
+  }, [commLogs, _scopedIds, _globalRole]);
+  const visibleEvents      = useMemo(() => {
+    const live = events.filter(e => !e.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(e => e.owner && _scopedIds.has(e.owner));
+  }, [events, _scopedIds, _globalRole]);
+  const visibleTargets     = useMemo(() => {
+    const live = targets.filter(t => !t.isDeleted);
+    if (_globalRole) return live;
+    return live.filter(t => t.userId && _scopedIds.has(t.userId));
+  }, [targets, _scopedIds, _globalRole]);
+  const visibleInvoices    = useMemo(() => {
+    const live = invoices.filter(i => !i.isDeleted);
+    if (_globalRole || _financeRole) return live;
+    return live.filter(i => i.owner && _scopedIds.has(i.owner));
+  }, [invoices, _scopedIds, _globalRole, _financeRole]);
   const visibleUpdates     = useMemo(() => updates.filter(u => !u.isDeleted), [updates]);
 
   // ── Edit-access request / approval workflow ──
