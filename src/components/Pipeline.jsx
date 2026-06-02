@@ -21,7 +21,8 @@ import {
   TEAM, TEAM_MAP,
   COUNTRIES, OPP_SOURCES, HIERARCHY_LEVELS, FORECAST_CATS, OPP_SIZES,
   WIN_REASONS, LOSS_REASONS, LOSS_IMPACT_AREAS, SUSPEND_REASONS, ACT_TYPES, INIT_USERS,
-  CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, TENDER_CATEGORIES, TENDER_PORTALS
+  CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, TENDER_CATEGORIES, TENDER_PORTALS,
+  BID_INSTRUMENT_TYPES, BID_INSTRUMENT_MODES, PREBID_ACTIVITY_TYPES, TENDER_DOC_CATEGORIES
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds, canEditRecord, hasPendingAccessReq } from "../utils/helpers";
@@ -758,11 +759,13 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   const addRow = (key, blank) => setForm(f => ({ ...f, [key]: [...(f[key]||[]), { id: `r${Date.now()}${Math.random().toString(36).slice(2,5)}`, ...blank }] }));
   const updRow = (key, id, patch) => setForm(f => ({ ...f, [key]: (f[key]||[]).map(r => r.id === id ? { ...r, ...patch } : r) }));
   const delRow = (key, id) => setForm(f => ({ ...f, [key]: (f[key]||[]).filter(r => r.id !== id) }));
-  const INSTRUMENT_TYPES = ["EMD / Bid Security","PBG","Tender Fee","Security Deposit"];
-  const INSTRUMENT_MODES = ["DD","Bank Guarantee","Online / NEFT","Cheque","Exempted"];
+  // Reference lists are now Masters-driven (Masters → Sales). Aliased to the
+  // live constant arrays that registerMasters() splices in place. Instrument
+  // STATUS stays a fixed workflow enum (not a customisable reference list).
+  const INSTRUMENT_TYPES = BID_INSTRUMENT_TYPES;
+  const INSTRUMENT_MODES = BID_INSTRUMENT_MODES;
   const INSTRUMENT_STATUS = ["Pending","Submitted","Active","Returned","Forfeited","Expired"];
-  const PREBID_TYPES = ["Query","Clarification","Corrigendum","Site Visit","Pre-Bid Meeting"];
-  const TENDER_DOC_CATEGORIES = ["Technical Bid","Financial Bid","Annexure","Compliance Sheet","Corrigendum","EMD / PBG Proof","RFP / Tender Doc","Other"];
+  const PREBID_TYPES = PREBID_ACTIVITY_TYPES;
   // Pipeline stages are now editable in Masters → Pipeline Stages. Build the
   // derived maps once per render — buildStagesContext handles fallback to
   // bundled defaults when masters.stages is missing.

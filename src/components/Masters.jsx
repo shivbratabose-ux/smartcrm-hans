@@ -25,6 +25,10 @@ const SECTIONS = {
     { key:"forecastCats",    title:"Forecast Categories" },
     { key:"tenderCategories",title:"Tender Categories" },
     { key:"tenderPortals",   title:"Tender Portals" },
+    { key:"bidInstrumentTypes", title:"Bid Instrument Types (EMD/PBG)" },
+    { key:"bidInstrumentModes", title:"Bid Instrument Modes" },
+    { key:"preBidActivityTypes",title:"Pre-Bid Activity Types" },
+    { key:"tenderDocCategories",title:"Tender Document Categories" },
     // Pipeline stages get their own dedicated editor (rendered above the
     // chip grid). They support color, probability %, kind (open/won/lost),
     // ordering, and delete-blocked-when-in-use — none of which the chip
@@ -83,6 +87,8 @@ const SECTIONS = {
     { key:"escalationLevels",title:"Escalation Levels" },
     { key:"slaHours",        title:"SLA Hours by Priority", subKey:"hours", subLabel:"Hours", subType:"num",
       help:"Resolution-time target (hours) per priority. Used by SLA-breach reports." },
+    { key:"projectPhases",   title:"Project Phases (Delivery)" },
+    { key:"projectTeamRoles",title:"Project Team Roles" },
   ],
   // ── Finance ─────────────────────────────────────────
   finance: [

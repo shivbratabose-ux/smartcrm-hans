@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Briefcase, AlertTriangle, TrendingUp, Calendar, CheckCircle2 } from "lucide-react";
-import { PROJECT_PHASES, TEAM, TEAM_MAP, PROD_MAP } from "../data/constants";
+import { PROJECT_PHASES, PROJECT_TEAM_ROLES, TEAM, TEAM_MAP, PROD_MAP } from "../data/constants";
 import { BLANK_PROJECT } from "../data/seed";
 import { uid, fmt, today, sanitizeObj, hasErrors, softDeleteById } from "../utils/helpers";
 import { Modal, Confirm, Empty, FormError, UserPill, StatusBadge, TypeaheadSelect, PageTip } from "./shared";
@@ -11,8 +11,10 @@ const PHASE_COL = {
   "Development":"#F59E0B","UAT":"#0D9488","Go-Live":"#22C55E","Hypercare":"#16A34A",
   "Closed":"#64748B","On Hold":"#EF4444",
 };
-const TEAM_ROLES = ["Project Manager","Delivery Lead","Technical Lead","Developer","QA","Implementation","Support","Customer SPOC"];
-const MS_STATUS = ["Pending","In Progress","Done","Delayed"];
+// Project team roles are Masters-driven (Masters → Support → Project Team Roles);
+// aliased to the live constant array that registerMasters() splices in place.
+const TEAM_ROLES = PROJECT_TEAM_ROLES;
+const MS_STATUS = ["Pending","In Progress","Done","Delayed"]; // fixed workflow enum
 
 // Health from progress vs go-live target
 const projectHealth = (p) => {

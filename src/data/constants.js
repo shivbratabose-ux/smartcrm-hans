@@ -55,6 +55,12 @@ function getMasterBindings() {
     oppSizes:            { arr: OPP_SIZES,             str: true },
     tenderCategories:    { arr: TENDER_CATEGORIES,     str: true },
     tenderPortals:       { arr: TENDER_PORTALS,        str: true },
+    bidInstrumentTypes:  { arr: BID_INSTRUMENT_TYPES,  str: true },
+    bidInstrumentModes:  { arr: BID_INSTRUMENT_MODES,  str: true },
+    preBidActivityTypes: { arr: PREBID_ACTIVITY_TYPES, str: true },
+    tenderDocCategories: { arr: TENDER_DOC_CATEGORIES, str: true },
+    projectPhases:       { arr: PROJECT_PHASES,        str: true },
+    projectTeamRoles:    { arr: PROJECT_TEAM_ROLES,    str: true },
     forecastCats:        { arr: FORECAST_CATS,         str: true },
     oppContactRoles:     { arr: OPP_CONTACT_ROLES,     str: true },
     leadContactRoles:    { arr: LEAD_CONTACT_ROLES,    str: true },
@@ -427,6 +433,13 @@ export const OPP_SOURCES = ["New Lead","Existing Customer – Upsell","Existing 
 
 // ── Project Delivery (Phase 4) ──
 export const PROJECT_PHASES = ["Requirement Gathering","Gap Analysis","Design","Development","UAT","Go-Live","Hypercare","Closed","On Hold"];
+export const PROJECT_TEAM_ROLES = ["Project Manager","Delivery Lead","Technical Lead","Developer","QA","Implementation","Support","Customer SPOC"];
+
+// ── Tender register reference lists (Phase 3) — Masters-driven ──
+export const BID_INSTRUMENT_TYPES = ["EMD / Bid Security","PBG","Tender Fee","Security Deposit"];
+export const BID_INSTRUMENT_MODES = ["DD","Bank Guarantee","Online / NEFT","Cheque","Exempted"];
+export const PREBID_ACTIVITY_TYPES = ["Query","Clarification","Corrigendum","Site Visit","Pre-Bid Meeting"];
+export const TENDER_DOC_CATEGORIES = ["Technical Bid","Financial Bid","Annexure","Compliance Sheet","Corrigendum","EMD / PBG Proof","RFP / Tender Doc","Other"];
 
 // ── Tender Management (Phase 1) ──
 export const TENDER_CATEGORIES = ["Supply","Services","SaaS / Subscription","Turnkey / System Integration","AMC / Support","Consultancy","Managed Services","Digital Transformation"];
