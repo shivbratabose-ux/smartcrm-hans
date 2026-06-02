@@ -436,7 +436,7 @@ function QuickUpdatePopover({ opp, onSave, onClose }) {
 /* ═══════════════════════════════════════════════════════
    DEAL DETAIL (Enhanced)
    ═══════════════════════════════════════════════════════ */
-function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, onLogCall }) {
+function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, orgUsers = [], onLogCall }) {
   const { STAGE_COL, STAGES } = useContext(StagesContext);
   const [tab, setTab] = useState("overview");
 
@@ -580,7 +580,28 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
                 {editableRow("Probability (%)", "probability", "number")}
                 {editableRow("Close Date", "closeDate", "date")}
                 {/* Static rows */}
-                <div className="dp-row"><span className="dp-key">Owner</span><span className="dp-val">{TEAM_MAP[detail.owner]?.name || "—"}</span></div>
+                <div className="dp-row">
+                  <span className="dp-key">Owner</span>
+                  <span className="dp-val" style={{flex:1}}>
+                    {editingField === "owner" ? (
+                      <span style={{display:"flex",gap:4,alignItems:"center"}}>
+                        <select autoFocus value={fieldVal} onChange={e=>saveEdit("owner", e.target.value)}
+                          onBlur={cancelEdit} style={iStyle}>
+                          {(orgUsers||[]).filter(u=>u.active!==false).map(u=>(
+                            <option key={u.id} value={u.id}>{u.name}</option>
+                          ))}
+                        </select>
+                        <button onClick={cancelEdit} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",padding:0,fontSize:16,lineHeight:1}}>✕</button>
+                      </span>
+                    ) : (
+                      <span style={{cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
+                        onClick={()=>{ setEditingField("owner"); setFieldVal(detail.owner || ""); }} title="Click to reassign owner">
+                        {(orgUsers||[]).find(u=>u.id===detail.owner)?.name || TEAM_MAP[detail.owner]?.name || "—"}
+                        <Edit2 size={9} style={{color:"var(--text3)",opacity:0.4,flexShrink:0}}/>
+                      </span>
+                    )}
+                  </span>
+                </div>
                 <div className="dp-row"><span className="dp-key">Source</span><span className="dp-val">{detail.source || "—"}</span></div>
                 <div className="dp-row"><span className="dp-key">Primary Contact</span><span className="dp-val">{primaryContact?.name || "—"}</span></div>
                 <div className="dp-row"><span className="dp-key">Hierarchy Level</span><span className="dp-val">{detail.hierarchyLevel || "—"}</span></div>
@@ -1659,6 +1680,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           accounts={accounts} contacts={contacts} notes={notes} files={files}
           onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser}
           activities={activities} setActivities={setActivities} opps={opps} setOpps={setOpps}
+          orgUsers={orgUsers}
           onLogCall={(prefill) => { setDetail(null); setLogCallPrefill(prefill); }}
         />
       )}
