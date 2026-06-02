@@ -22,7 +22,8 @@ import {
   COUNTRIES, OPP_SOURCES, HIERARCHY_LEVELS, FORECAST_CATS, OPP_SIZES,
   WIN_REASONS, LOSS_REASONS, LOSS_IMPACT_AREAS, SUSPEND_REASONS, ACT_TYPES, INIT_USERS,
   CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, TENDER_CATEGORIES, TENDER_PORTALS,
-  BID_INSTRUMENT_TYPES, BID_INSTRUMENT_MODES, PREBID_ACTIVITY_TYPES, TENDER_DOC_CATEGORIES
+  BID_INSTRUMENT_TYPES, BID_INSTRUMENT_MODES, PREBID_ACTIVITY_TYPES, TENDER_DOC_CATEGORIES,
+  BID_INSTRUMENT_STATUSES, BID_QUAL_RATINGS
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds, canEditRecord, hasPendingAccessReq } from "../utils/helpers";
@@ -764,7 +765,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   // STATUS stays a fixed workflow enum (not a customisable reference list).
   const INSTRUMENT_TYPES = BID_INSTRUMENT_TYPES;
   const INSTRUMENT_MODES = BID_INSTRUMENT_MODES;
-  const INSTRUMENT_STATUS = ["Pending","Submitted","Active","Returned","Forfeited","Expired"];
+  const INSTRUMENT_STATUS = BID_INSTRUMENT_STATUSES;
   const PREBID_TYPES = PREBID_ACTIVITY_TYPES;
   // Pipeline stages are now editable in Masters → Pipeline Stages. Build the
   // derived maps once per render — buildStagesContext handles fallback to
@@ -1835,7 +1836,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                     <div key={k} className="form-group" style={{ marginBottom: 0 }}>
                       <label style={{ fontSize: 11 }}>{lbl}</label>
                       <select value={form.bidQualification?.[k] || ""} onChange={e => setForm(f => ({ ...f, bidQualification: { ...(f.bidQualification||{}), [k]: e.target.value } }))}>
-                        <option value="">—</option><option>High</option><option>Medium</option><option>Low</option>
+                        <option value="">—</option>{BID_QUAL_RATINGS.map(r => <option key={r}>{r}</option>)}
                       </select>
                     </div>
                   ))}

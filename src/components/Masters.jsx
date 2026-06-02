@@ -29,6 +29,8 @@ const SECTIONS = {
     { key:"bidInstrumentModes", title:"Bid Instrument Modes" },
     { key:"preBidActivityTypes",title:"Pre-Bid Activity Types" },
     { key:"tenderDocCategories",title:"Tender Document Categories" },
+    { key:"bidInstrumentStatuses",title:"Bid Instrument Statuses" },
+    { key:"bidQualRatings",  title:"Bid Qualification Ratings" },
     // Pipeline stages get their own dedicated editor (rendered above the
     // chip grid). They support color, probability %, kind (open/won/lost),
     // ordering, and delete-blocked-when-in-use — none of which the chip
@@ -89,6 +91,7 @@ const SECTIONS = {
       help:"Resolution-time target (hours) per priority. Used by SLA-breach reports." },
     { key:"projectPhases",   title:"Project Phases (Delivery)" },
     { key:"projectTeamRoles",title:"Project Team Roles" },
+    { key:"projectMilestoneStatuses",title:"Project Milestone Statuses" },
   ],
   // ── Finance ─────────────────────────────────────────
   finance: [

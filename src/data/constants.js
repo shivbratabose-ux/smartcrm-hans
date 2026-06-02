@@ -59,8 +59,11 @@ function getMasterBindings() {
     bidInstrumentModes:  { arr: BID_INSTRUMENT_MODES,  str: true },
     preBidActivityTypes: { arr: PREBID_ACTIVITY_TYPES, str: true },
     tenderDocCategories: { arr: TENDER_DOC_CATEGORIES, str: true },
+    bidInstrumentStatuses:{ arr: BID_INSTRUMENT_STATUSES, str: true },
+    bidQualRatings:      { arr: BID_QUAL_RATINGS,      str: true },
     projectPhases:       { arr: PROJECT_PHASES,        str: true },
     projectTeamRoles:    { arr: PROJECT_TEAM_ROLES,    str: true },
+    projectMilestoneStatuses:{ arr: PROJECT_MILESTONE_STATUSES, str: true },
     forecastCats:        { arr: FORECAST_CATS,         str: true },
     oppContactRoles:     { arr: OPP_CONTACT_ROLES,     str: true },
     leadContactRoles:    { arr: LEAD_CONTACT_ROLES,    str: true },
@@ -440,6 +443,9 @@ export const BID_INSTRUMENT_TYPES = ["EMD / Bid Security","PBG","Tender Fee","Se
 export const BID_INSTRUMENT_MODES = ["DD","Bank Guarantee","Online / NEFT","Cheque","Exempted"];
 export const PREBID_ACTIVITY_TYPES = ["Query","Clarification","Corrigendum","Site Visit","Pre-Bid Meeting"];
 export const TENDER_DOC_CATEGORIES = ["Technical Bid","Financial Bid","Annexure","Compliance Sheet","Corrigendum","EMD / PBG Proof","RFP / Tender Doc","Other"];
+export const BID_INSTRUMENT_STATUSES = ["Pending","Submitted","Active","Returned","Forfeited","Expired"];
+export const BID_QUAL_RATINGS = ["High","Medium","Low"];
+export const PROJECT_MILESTONE_STATUSES = ["Pending","In Progress","Done","Delayed"];
 
 // ── Tender Management (Phase 1) ──
 export const TENDER_CATEGORIES = ["Supply","Services","SaaS / Subscription","Turnkey / System Integration","AMC / Support","Consultancy","Managed Services","Digital Transformation"];
