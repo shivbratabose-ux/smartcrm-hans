@@ -337,7 +337,7 @@ export const CSS = `
   .modal { background:white; border-radius:var(--rxl); box-shadow:var(--sh-lg); width:100%; max-width:520px; max-height:90vh; display:flex; flex-direction:column; }
   .modal-lg { max-width:680px; }
   /* xl: wide enough for the Quotations Items composer (Charge/Desc/Currency/ExRate/Unit/Qty/MRP/Discount + Price/Cost/Amount + chips) without horizontal scroll on standard desktops */
-  .modal-xl { max-width:min(1180px, 96vw); }
+  .modal-xl { max-width:min(1280px, 96vw); }
   .modal-head { display:flex; align-items:center; justify-content:space-between; padding:20px 24px 0; flex-shrink:0; }
   .modal-title { font-family:'Outfit',sans-serif; font-size:16px; font-weight:700; color:var(--text); }
   .modal-body { padding:20px 24px; overflow-y:auto; flex:1; }
