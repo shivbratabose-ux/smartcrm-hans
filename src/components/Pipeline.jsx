@@ -947,6 +947,11 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     // (product picked, no module ticked, no explicit "None") don't block save.
     const normalisedForm = { ...form, productSelection: normaliseProductSelection(form.productSelection) };
     const errs = validateOpp(normalisedForm);
+    // When EDITING an existing deal, don't hard-block on Account / Close Date.
+    // Many legacy deals were created without them, and routine edits (e.g.
+    // reassigning the owner) shouldn't force backfilling those fields. They
+    // stay required only when creating a NEW deal, so fresh data stays clean.
+    if (modal?.mode === "edit") { delete errs.accountId; delete errs.closeDate; }
     const psErr = validateProductSelection(normalisedForm.productSelection);
     if (psErr) errs.productSelection = psErr;
     if (hasErrors(errs)) { setFormErrors(errs); return; }
