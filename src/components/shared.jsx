@@ -651,38 +651,56 @@ export function InlineContactForm({ accountId, accounts = [], onSave, onCancel }
     }
   }, [defaultAddrId]);
 
-  // Block save until name AND addressId are set.
-  // (When account has zero addresses we also block — see warning UI.)
-  const canSave = !!form.name.trim() && !!form.addressId && addrs.length > 0;
+  // Only thing strictly required is a name. An office address is required ONLY
+  // when the account actually has an address book to pick from — leads (no
+  // account) and accounts with no addresses yet can still capture a contact;
+  // the address gets linked later (there's an auto-heal that backfills it).
+  const lblSt = { fontSize: 11, color: "var(--text3)", fontWeight: 600, marginBottom: 3, display: "block" };
+  const colFull = { gridColumn: "1/-1", display: "flex", flexDirection: "column" };
+  const colHalf = { display: "flex", flexDirection: "column" };
+  const fieldsNeedAddress = addrs.length > 0;
+  const canSave = !!form.name.trim() && (!fieldsNeedAddress || !!form.addressId);
 
   return (
-    <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, marginTop: 8 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+    <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 10, padding: 14, marginTop: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <span style={{ fontWeight: 600, fontSize: 13 }}>Quick Add Contact</span>
-        <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text3)" }}>&#x2715;</button>
+        <button onClick={onCancel} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text3)", fontSize: 15, lineHeight: 1 }}>&#x2715;</button>
       </div>
 
-      {/* Zero-addresses warning — directs the user to fix the account first */}
+      {/* Soft note when an account exists but has no addresses yet — no longer
+          blocks the save; just tells the user the contact won't be address-linked. */}
       {accountId && addrs.length === 0 && (
-        <div style={{ background: "#FEF3C7", border: "1px solid #FCD34D", padding: "8px 12px", borderRadius: 6, fontSize: 11.5, color: "#92400E", marginBottom: 10, display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <div style={{ background: "#FEF3C7", border: "1px solid #FCD34D", padding: "8px 12px", borderRadius: 6, fontSize: 11.5, color: "#92400E", marginBottom: 12, display: "flex", gap: 8, alignItems: "flex-start" }}>
           <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-          <span><strong>{account?.name || "This account"}</strong> has no office addresses yet. Open the account record and add at least one address before adding a contact — every contact must be linked to an office address.</span>
+          <span><strong>{account?.name || "This account"}</strong> has no office address on file yet. The contact will be saved now and you can link an address later from the account record.</span>
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <input placeholder="Full Name *" value={form.name} onChange={e => set("name", e.target.value)} className="f-input" style={{ gridColumn: "1/-1" }} />
-        <input placeholder="Email" value={form.email} onChange={e => set("email", e.target.value)} className="f-input" />
-        <input placeholder="Phone" value={form.phone} onChange={e => set("phone", e.target.value)} className="f-input" />
-        <input placeholder="Designation" value={form.designation} onChange={e => set("designation", e.target.value)} className="f-input" />
-        <input placeholder="Department" value={form.department} onChange={e => set("department", e.target.value)} className="f-input" />
-        {/* Office Address picker — only shown when the account has addresses.
-            For the single-address case the value is auto-pre-filled, but we
-            still render the dropdown so it's obvious which address the
-            contact will be tied to. */}
-        {addrs.length > 0 && (
-          <div style={{ gridColumn: "1/-1", display: "flex", flexDirection: "column", gap: 3 }}>
-            <label style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>Office Address *</label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={colFull}>
+          <label style={lblSt}>Full Name *</label>
+          <input placeholder="e.g. Surinder Singh Sandhu" value={form.name} onChange={e => set("name", e.target.value)} className="f-input" autoFocus />
+        </div>
+        <div style={colHalf}>
+          <label style={lblSt}>Email</label>
+          <input placeholder="name@company.com" value={form.email} onChange={e => set("email", e.target.value)} className="f-input" />
+        </div>
+        <div style={colHalf}>
+          <label style={lblSt}>Phone</label>
+          <input placeholder="Mobile / WhatsApp" value={form.phone} onChange={e => set("phone", e.target.value)} className="f-input" />
+        </div>
+        <div style={colHalf}>
+          <label style={lblSt}>Designation</label>
+          <input placeholder="e.g. Director" value={form.designation} onChange={e => set("designation", e.target.value)} className="f-input" />
+        </div>
+        <div style={colHalf}>
+          <label style={lblSt}>Department</label>
+          <input placeholder="e.g. Operations" value={form.department} onChange={e => set("department", e.target.value)} className="f-input" />
+        </div>
+        {fieldsNeedAddress && (
+          <div style={colFull}>
+            <label style={lblSt}>Office Address *</label>
             <select className="f-input" value={form.addressId} onChange={e => set("addressId", e.target.value)}>
               <option value="">Select office address…</option>
               {addrs.map(a => (
@@ -694,14 +712,14 @@ export function InlineContactForm({ accountId, accounts = [], onSave, onCancel }
           </div>
         )}
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
-        <button onClick={onCancel} className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 12px" }}>Cancel</button>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+        <button onClick={onCancel} className="btn btn-sec btn-sm" style={{ fontSize: 12, padding: "5px 14px" }}>Cancel</button>
         <button
           onClick={() => { if (!canSave) return; onSave({ ...form, accountId }); }}
-          className="btn btn-sm"
-          style={{ fontSize: 12, padding: "4px 12px", background: canSave ? "var(--brand)" : "var(--border2)", color: "#fff", border: "none", borderRadius: 6, cursor: canSave ? "pointer" : "not-allowed" }}
+          className="btn btn-primary btn-sm"
+          style={{ fontSize: 12, padding: "5px 14px", opacity: canSave ? 1 : 0.5, cursor: canSave ? "pointer" : "not-allowed" }}
           disabled={!canSave}
-          title={!form.name.trim() ? "Enter a name" : !form.addressId ? (addrs.length === 0 ? "Add an address on the account first" : "Pick an office address") : "Add contact"}
+          title={!form.name.trim() ? "Enter a name" : (fieldsNeedAddress && !form.addressId ? "Pick an office address" : "Add contact")}
         >Add Contact</button>
       </div>
     </div>
