@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { Gavel, Briefcase, RefreshCw, LifeBuoy, LayoutDashboard } from "lucide-react";
+import { Gavel, Briefcase, RefreshCw, LifeBuoy, LayoutDashboard, ChevronRight } from "lucide-react";
 import { fmt, today } from "../utils/helpers";
 import { UserPill } from "./shared";
 
@@ -8,11 +8,18 @@ const daysFromToday = (d) => d ? Math.round((new Date(d) - new Date(today)) / 86
 const CLOSED = ["Won", "Lost", "closed_won", "closed_lost"];
 const isOpen = (o) => !CLOSED.includes(o.stage);
 
-const KPI = ({ label, value, sub, accent }) => (
-  <div style={{ background: "#1B6B5A", borderRadius: 10, padding: "13px 16px", color: "white", flex: 1, minWidth: 150 }}>
+const KPI = ({ label, value, sub, accent, onClick }) => (
+  <div
+    onClick={onClick}
+    role={onClick ? "button" : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+    title={onClick ? `View ${label} details` : undefined}
+    className={onClick ? "kpi-click" : undefined}
+    style={{ background: "#1B6B5A", borderRadius: 10, padding: "13px 16px", color: "white", flex: 1, minWidth: 150, cursor: onClick ? "pointer" : "default", transition: "transform .1s, box-shadow .1s", position: "relative" }}>
     <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", opacity: 0.8 }}>{label}</div>
     <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Outfit',sans-serif", marginTop: 2, color: accent || "white" }}>{value}</div>
-    {sub && <div style={{ fontSize: 11, opacity: 0.75, marginTop: 1 }}>{sub}</div>}
+    {sub && <div style={{ fontSize: 11, opacity: 0.75, marginTop: 1, display: "flex", alignItems: "center", gap: 4 }}>{sub}{onClick && <ChevronRight size={11} style={{ opacity: 0.7 }} />}</div>}
   </div>
 );
 const Card = ({ title, children, action }) => (
@@ -180,22 +187,22 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
             <span style={{ fontWeight: 600 }}>Scope:</span> strategic book — large opportunities (≥ ₹{LARGE_DEAL_LAKHS} L) plus all tenders. Smaller deals live in the Pipeline module.
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <KPI label="Total Pipeline" value={`₹${mgmt.totalPipe.toFixed(1)}L`} sub={`${mgmt.openCount} open deals`} />
-            <KPI label="Revenue Forecast" value={`₹${mgmt.weighted.toFixed(1)}L`} sub="Weighted pipeline" />
-            <KPI label="Tender Value" value={`₹${mgmt.tenderValue.toFixed(1)}L`} sub={`${tenders.filter(isOpen).length} active tenders`} />
-            <KPI label="Win Rate" value={`${mgmt.winRate}%`} sub="All deals" />
-            <KPI label="Bid Success" value={`${mgmt.bidSuccess}%`} sub="Tenders won/decided" />
-            <KPI label="Renewal/Expansion" value={`₹${mgmt.renewalPipe.toFixed(1)}L`} sub="In pipeline" />
+            <KPI label="Total Pipeline" value={`₹${mgmt.totalPipe.toFixed(1)}L`} sub={`${mgmt.openCount} open deals`} onClick={() => setPage("pipeline")} />
+            <KPI label="Revenue Forecast" value={`₹${mgmt.weighted.toFixed(1)}L`} sub="Weighted pipeline" onClick={() => setPage("pipeline")} />
+            <KPI label="Tender Value" value={`₹${mgmt.tenderValue.toFixed(1)}L`} sub={`${tenders.filter(isOpen).length} active tenders`} onClick={() => setTab("tender")} />
+            <KPI label="Win Rate" value={`${mgmt.winRate}%`} sub="All deals" onClick={() => setPage("reports")} />
+            <KPI label="Bid Success" value={`${mgmt.bidSuccess}%`} sub="Tenders won/decided" onClick={() => setTab("tender")} />
+            <KPI label="Renewal/Expansion" value={`₹${mgmt.renewalPipe.toFixed(1)}L`} sub="In pipeline" onClick={() => setTab("renewal")} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <Card title="Active Tenders by Stage">
+            <Card title="Active Tenders by Stage" action={<button className="btn btn-sec btn-xs" onClick={() => setTab("tender")}>Open Tender board</button>}>
               {tenderData.stages.length === 0 ? <Empty msg="No active tenders."/> : (
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={tenderData.stages}><XAxis dataKey="name" tick={{ fontSize: 10 }} tickLine={false} axisLine={false}/><YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false}/><Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }}/><Bar dataKey="value" fill="#1B6B5A" radius={[4, 4, 0, 0]}/></BarChart>
                 </ResponsiveContainer>
               )}
             </Card>
-            <Card title="Bid Decisions">
+            <Card title="Bid Decisions" action={<button className="btn btn-sec btn-xs" onClick={() => setTab("tender")}>Open Tender board</button>}>
               {tenderData.decision.length === 0 ? <Empty msg="No tenders yet."/> : (
                 <ResponsiveContainer width="100%" height={200}>
                   <PieChart><Pie data={tenderData.decision} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label={({ name, value }) => `${name}: ${value}`}>{tenderData.decision.map((d, i) => <Cell key={i} fill={PIE[i % PIE.length]}/>)}</Pie><Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }}/></PieChart>
@@ -210,10 +217,10 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
       {tab === "tender" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <KPI label="Active Bids" value={tenderData.activeCount} sub="Open tenders" />
-            <KPI label="Tender Value" value={`₹${tenderData.value.toFixed(1)}L`} sub="Active bid value" />
-            <KPI label="Bid-Approved" value={tenderData.submitted} sub="Cleared bid approval" />
-            <KPI label="Upcoming Deadlines" value={tenderData.upcoming.length} sub="Submissions ahead" accent={tenderData.upcoming.length ? "#FDE68A" : "white"} />
+            <KPI label="Active Bids" value={tenderData.activeCount} sub="Open tenders" onClick={() => setPage("pipeline")} />
+            <KPI label="Tender Value" value={`₹${tenderData.value.toFixed(1)}L`} sub="Active bid value" onClick={() => setPage("pipeline")} />
+            <KPI label="Bid-Approved" value={tenderData.submitted} sub="Cleared bid approval" onClick={() => setPage("pipeline")} />
+            <KPI label="Upcoming Deadlines" value={tenderData.upcoming.length} sub="Submissions ahead" accent={tenderData.upcoming.length ? "#FDE68A" : "white"} onClick={() => setPage("pipeline")} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <Card title="Upcoming Bid Deadlines" action={<button className="btn btn-sec btn-xs" onClick={() => setPage("pipeline")}>Pipeline</button>}>
@@ -235,10 +242,10 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
       {tab === "project" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <KPI label="Active Projects" value={projData.active} sub="In delivery" />
-            <KPI label="Avg Progress" value={`${projData.avgProgress}%`} sub="Across active" />
-            <KPI label="At Risk" value={projData.atRisk} sub="Tight timeline" accent={projData.atRisk ? "#FDE68A" : "white"} />
-            <KPI label="Delayed" value={projData.delayed.length} sub="Past go-live" accent={projData.delayed.length ? "#FCA5A5" : "white"} />
+            <KPI label="Active Projects" value={projData.active} sub="In delivery" onClick={() => setPage("projects")} />
+            <KPI label="Avg Progress" value={`${projData.avgProgress}%`} sub="Across active" onClick={() => setPage("projects")} />
+            <KPI label="At Risk" value={projData.atRisk} sub="Tight timeline" accent={projData.atRisk ? "#FDE68A" : "white"} onClick={() => setPage("projects")} />
+            <KPI label="Delayed" value={projData.delayed.length} sub="Past go-live" accent={projData.delayed.length ? "#FCA5A5" : "white"} onClick={() => setPage("projects")} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <Card title="Delayed Projects" action={<button className="btn btn-sec btn-xs" onClick={() => setPage("projects")}>Projects</button>}>
@@ -265,9 +272,9 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
       {tab === "renewal" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <KPI label="Renewals Due (90d)" value={renewalData.due.length} sub={`₹${renewalData.dueValue.toFixed(1)}L`} accent={renewalData.due.length ? "#FDE68A" : "white"} />
-            <KPI label="Auto-Renew On" value={renewalData.autoOn} sub="Contracts" />
-            <KPI label="Expansion Opps" value={renewalData.expansion.length} sub={`₹${renewalData.expansionValue.toFixed(1)}L pipeline`} />
+            <KPI label="Renewals Due (90d)" value={renewalData.due.length} sub={`₹${renewalData.dueValue.toFixed(1)}L`} accent={renewalData.due.length ? "#FDE68A" : "white"} onClick={() => setPage("contracts")} />
+            <KPI label="Auto-Renew On" value={renewalData.autoOn} sub="Contracts" onClick={() => setPage("contracts")} />
+            <KPI label="Expansion Opps" value={renewalData.expansion.length} sub={`₹${renewalData.expansionValue.toFixed(1)}L pipeline`} onClick={() => setPage("pipeline")} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <Card title="Upcoming Renewals (next 90 days)" action={<button className="btn btn-sec btn-xs" onClick={() => setPage("contracts")}>Contracts</button>}>
@@ -289,9 +296,9 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
       {tab === "support" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <KPI label="Open Tickets" value={supportData.open} sub="Unresolved" />
-            <KPI label="Critical" value={supportData.critical} sub="Open critical" accent={supportData.critical ? "#FCA5A5" : "white"} />
-            <KPI label="SLA Compliance" value={`${supportData.compliance}%`} sub={`${supportData.breached} breached`} accent={supportData.compliance < 80 ? "#FCA5A5" : "white"} />
+            <KPI label="Open Tickets" value={supportData.open} sub="Unresolved" onClick={() => setPage("tickets")} />
+            <KPI label="Critical" value={supportData.critical} sub="Open critical" accent={supportData.critical ? "#FCA5A5" : "white"} onClick={() => setPage("tickets")} />
+            <KPI label="SLA Compliance" value={`${supportData.compliance}%`} sub={`${supportData.breached} breached`} accent={supportData.compliance < 80 ? "#FCA5A5" : "white"} onClick={() => setPage("tickets")} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <Card title="Tickets by Status">

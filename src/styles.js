@@ -3,6 +3,8 @@ export const CSS = `
   *, *::before, *::after { box-sizing: border-box; margin:0; padding:0; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .spin { animation: spin 0.8s linear infinite; }
+  .kpi-click:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(13,31,45,0.18); }
+  .kpi-click:active { transform: translateY(0); }
   :root {
     --brand:#1B6B5A; --brand-d:#134D41; --brand-dd:#0D3830; --brand-l:#2A8A74;
     --brand-glow:rgba(27,107,90,0.15); --brand-bg:#EBF7F4;
