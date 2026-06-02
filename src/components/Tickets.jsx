@@ -75,6 +75,7 @@ function TicketsDataGrid({ rows, bulk, sort, openEdit, setDetail, setConfirm, ca
 
   return (
     <DataGrid
+      dense
       module="tickets_list"
       userId={currentUser}
       columns={COLS}

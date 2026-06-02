@@ -451,6 +451,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
           const DEFAULT = COLS.map(co => ({ key: co.key, visible: visibleSet.has(co.key), width: co.defaultWidth }));
           return (
             <DataGrid
+              dense
               module="contracts_list"
               userId={currentUser}
               columns={COLS}

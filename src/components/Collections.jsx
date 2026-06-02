@@ -248,6 +248,7 @@ function Collections({ collections, setCollections, accounts, contracts, current
           const DEFAULT = COLS.map(co => ({ key: co.key, visible: visibleSet.has(co.key), width: co.defaultWidth }));
           return (
             <DataGrid
+              dense
               module="collections_list"
               userId={currentUser}
               columns={COLS}

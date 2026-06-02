@@ -318,6 +318,7 @@ function ContactsDataGrid({ rows, accounts, bulk, toggleSort, sortKey, sortDir, 
 
   return (
     <DataGrid
+      dense
       module="contacts_list"
       userId={currentUser}
       columns={COLS}

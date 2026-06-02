@@ -2020,6 +2020,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           const DEFAULT = COLS.map(co => ({ key: co.key, visible: visibleSet.has(co.key), width: co.defaultWidth }));
           return (
             <DataGrid
+              dense
               module="quotations_list"
               userId={currentUser}
               columns={COLS}
