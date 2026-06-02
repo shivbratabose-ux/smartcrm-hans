@@ -1674,7 +1674,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
 
       {/* ═════════ ADD/EDIT MODAL ═════════ */}
       {modal && (
-        <Modal title={modal.mode === "add" ? "Add Deal" : "Edit Deal"} onClose={() => setModal(null)} lg footer={
+        <Modal title={modal.mode === "add" ? "Add Deal" : "Edit Deal"} onClose={() => setModal(null)} size="xl" footer={
           <>
             <button className="btn btn-sec" onClick={() => setModal(null)}>Cancel</button>
             <button className="btn btn-primary" onClick={save}><Check size={14} /> Save Deal</button>
@@ -1684,7 +1684,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
             <div className="form-group">
               <label>Deal Title *</label>
               <input value={form.title} onChange={e => { setForm(f => ({ ...f, title: e.target.value })); setFormErrors(p => ({ ...p, title: undefined })); }}
-                placeholder="e.g. WiseHandling \u2013 Colossal Avia Full Deploy" style={formErrors.title ? { borderColor: "#DC2626" } : {}} />
+                placeholder="e.g. WiseHandling - Colossal Avia Full Deploy" style={formErrors.title ? { borderColor: "#DC2626" } : {}} />
               <FormError error={formErrors.title} />
             </div>
           </div>
