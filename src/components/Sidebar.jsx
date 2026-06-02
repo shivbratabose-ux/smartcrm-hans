@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, Building2, Users, TrendingUp, Activity,
   BarChart3, Ticket, Layers, SlidersHorizontal, ChevronLeft, LogOut,
-  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase
+  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge
 } from "lucide-react";
 import { TEAM_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 
@@ -49,6 +49,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
       {id:"tickets",    label:"Tickets",     icon:<Ticket size={17}/>,badge:openTix},
     ]},
     {section:"Analytics",items:[
+      {id:"dashboards",label:"Dashboards",icon:<Gauge size={17}/>},
       {id:"targets",label:"Targets",icon:<Target size={17}/>},
       {id:"reports",label:"Reports",icon:<BarChart3 size={17}/>},
     ]},

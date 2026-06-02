@@ -30,6 +30,7 @@ import Pipeline from "./components/Pipeline";
 import Activities from "./components/Activities";
 import Tickets from "./components/Tickets";
 import Reports from "./components/Reports";
+import Dashboards from "./components/Dashboards";
 import Masters from "./components/Masters";
 import OrgHierarchy from "./components/OrgHierarchy";
 import TeamUsers from "./components/TeamUsers";
@@ -2179,6 +2180,7 @@ export default function SmartCRM() {
             {page==="communications"&& <CommLog commLogs={visibleCommLogs} setCommLogs={setCommLogs} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} canDelete={canDelete} orgUsers={orgUsers} catalog={catalog} onRespondEditAccess={respondEditAccess}/>}
             {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} currentUser={currentUser} canDelete={canDelete}/>}
             {page==="reports"    && <Reports accounts={visibleAccounts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} contacts={visibleContacts} contracts={visibleContracts} quotes={visibleQuotes} currentUser={currentUser} orgUsers={orgUsers} masters={masters}/>}
+            {page==="dashboards" && <Dashboards accounts={visibleAccounts} opps={visibleOpps} projects={visibleProjects} contracts={visibleContracts} tickets={visibleTickets} quotes={visibleQuotes} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
             {page==="updates"    && <Updates updates={visibleUpdates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} catalog={catalog} orgUsers={orgUsers} existingData={{ leads: visibleLeads, accounts: visibleAccounts, contacts: visibleContacts, collections: visibleCollections, tickets: visibleTickets, contracts: visibleContracts, invoices: visibleInvoices, opps: visibleOpps }}/>}
