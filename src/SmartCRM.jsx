@@ -607,6 +607,44 @@ export default function SmartCRM() {
     setPage("quotations");
   }, [currentUser]);
 
+  // ── Phase 5: Renewal/Expansion → Opportunity ──
+  // Pushes a renewal (or upsell/expansion) deal into the Pipeline so it's
+  // forecast & tracked like any other opportunity — not just a one-off quote.
+  // Value is escalated by the contract's GRI % when applicable. Idempotent:
+  // skips if an open renewal opp already exists for this contract's account.
+  const generateRenewalOpportunity = useCallback((contract) => {
+    if (!contract) return;
+    const title = `Renewal: ${contract.title || contract.contractNo || "Contract"}`;
+    const exists = opps.some(o => !o.isDeleted && o.accountId === contract.accountId && o.title === title
+      && !["Won", "Lost", "closed_won", "closed_lost"].includes(o.stage));
+    if (exists) { notify.info("An open renewal opportunity already exists for this contract."); setPage("pipeline"); return; }
+    const gri = contract.griApplicable === "Yes" && +contract.griPercentage > 0;
+    const value = gri ? Math.round((contract.value || 0) * (1 + (+contract.griPercentage) / 100) * 10) / 10 : (contract.value || 0);
+    const newOpp = {
+      ...BLANK_OPP,
+      id: uid(),
+      title,
+      accountId: contract.accountId || "",
+      products: (Array.isArray(contract.productSelection) && contract.productSelection.length)
+        ? contract.productSelection.map(s => s.productId).filter(Boolean)
+        : (contract.product ? [contract.product] : []),
+      productSelection: Array.isArray(contract.productSelection) ? [...contract.productSelection] : [],
+      stage: "Qualified",
+      value,
+      probability: 60,
+      owner: contract.owner || currentUser,
+      closeDate: contract.renewalDate || contract.endDate || "",
+      source: "Existing Customer – Upsell",
+      forecastCat: "Likely-Case",
+      upsellFlag: true,
+      notes: `Auto-created renewal/expansion from contract ${contract.contractNo || contract.id}.${gri ? ` GRI ${contract.griPercentage}% applied.` : ""}`,
+      createdDate: today,
+    };
+    setOpps(prev => [...prev, newOpp]);
+    notify.success(`Renewal opportunity created for "${contract.title || contract.contractNo}" — now in Pipeline.`);
+    setPage("pipeline");
+  }, [opps, currentUser]);
+
   // Roles allowed to soft-delete records. Tightened from the previous
   // (admin/md/director/vp_sales_mkt/line_mgr) per audit — irreversible
   // operations now require top-tier authority. Matches the *_delete RLS
@@ -2132,7 +2170,7 @@ export default function SmartCRM() {
             {page==="activities" && <Activities activities={visibleActivities} setActivities={setActivities} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="callreports"&& <CallReports callReports={visibleCallReports} setCallReports={setCallReports} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
             {page==="tickets"    && <Tickets tickets={visibleTickets} setTickets={setTickets} accounts={visibleAccounts} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete} catalog={catalog} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
-            {page==="contracts"  && <Contracts contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
+            {page==="contracts"  && <Contracts contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote} onGenerateRenewalOpp={generateRenewalOpportunity} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="collections"&& <Collections collections={visibleCollections} setCollections={setCollections} accounts={visibleAccounts} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="projects"   && <Projects projects={visibleProjects} setProjects={setProjects} accounts={visibleAccounts} opps={visibleOpps} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
             {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}

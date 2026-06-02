@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, FileText, AlertTriangle, Calendar, ShieldCheck, Clock, AlertCircle } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, FileText, AlertTriangle, Calendar, ShieldCheck, Clock, AlertCircle, TrendingUp } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, BILL_TERMS, BILL_TYPES, CONTRACT_STATUSES, CONTRACT_DOC_TYPES } from '../data/constants';
 import { BLANK_CONTRACT } from '../data/seed';
@@ -79,7 +79,7 @@ const buildTimelineData = (contracts) => {
   });
 };
 
-function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete, onGenerateRenewal, commLogs=[], onRequestEditAccess }) {
+function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete, onGenerateRenewal, onGenerateRenewalOpp, commLogs=[], onRequestEditAccess }) {
   const canEditCtr = (c) => canEditRecord({ownerId:c?.owner,currentUser,orgUsers,recordType:"contract",recordId:c?.id,commLogs,catalog,recordProductIds:c?.product?[c.product]:(c?.productSelection||[]).map(s=>s.productId)});
   const requestAccessCtr = (c) => onRequestEditAccess && onRequestEditAccess("contract", c.id, c.title||c.contractNo||"Contract", c.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
@@ -330,6 +330,32 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
         </div>
       </div>
 
+      {/* ── Renewal-due nudge: contracts expiring within 60 days without an open renewal opp ── */}
+      {onGenerateRenewalOpp && (() => {
+        const todayMid = new Date(today);
+        const cutoff = new Date(todayMid); cutoff.setDate(cutoff.getDate() + 60);
+        const due = contracts.filter(c => !c.isDeleted && (c.status === "Active" || c.status === "Live") && c.endDate
+            && new Date(c.endDate) >= todayMid && new Date(c.endDate) <= cutoff)
+          .filter(c => !(opps || []).some(o => !o.isDeleted && o.accountId === c.accountId
+            && o.title === `Renewal: ${c.title || c.contractNo || "Contract"}`
+            && !["Won", "Lost", "closed_won", "closed_lost"].includes(o.stage)));
+        if (due.length === 0) return null;
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 14px", marginBottom: 12, flexWrap: "wrap" }}>
+            <Clock size={16} style={{ color: "#B45309", flexShrink: 0 }}/>
+            <span style={{ flex: 1, fontSize: 12.5, color: "#92400E", minWidth: 200 }}><strong>{due.length}</strong> contract{due.length > 1 ? "s" : ""} due for renewal within 60 days — create a renewal opportunity to forecast &amp; track it.</span>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {due.slice(0, 4).map(c => (
+                <button key={c.id} className="btn btn-sec btn-xs" style={{ fontSize: 11 }} onClick={() => onGenerateRenewalOpp(c)} title={`Create renewal opportunity for ${c.title || c.contractNo}`}>
+                  <TrendingUp size={11}/>{(c.title || c.contractNo || "Contract").slice(0, 22)}
+                </button>
+              ))}
+              {due.length > 4 && <span style={{ fontSize: 11, color: "#92400E" }}>+{due.length - 4} more</span>}
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="filter-bar">
         {["All",...CONTRACT_STATUSES].map(s => (
           <button key={s} className={`btn btn-sm ${statusF===s?"btn-primary":"btn-sec"}`} onClick={() => setStatusF(s)}>{s}</button>
@@ -515,6 +541,12 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
         <Modal title={detail.title} onClose={() => setDetail(null)} lg
           footer={<>
             <button className="btn btn-sec btn-sm" onClick={() => setDetail(null)}>Close</button>
+            {onGenerateRenewalOpp && (
+              <button className="btn btn-sec btn-sm" title="Create a renewal / expansion opportunity in the Pipeline (value escalated by GRI % when applicable)"
+                onClick={() => { onGenerateRenewalOpp(detail); setDetail(null); }}>
+                <TrendingUp size={13}/>Create Renewal Opportunity
+              </button>
+            )}
             {onGenerateRenewal && (
               <button className="btn btn-sec btn-sm" title="Create a new draft quote pre-filled from this contract"
                 onClick={() => { onGenerateRenewal(detail); setDetail(null); }}>
