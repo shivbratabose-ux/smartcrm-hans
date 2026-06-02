@@ -997,16 +997,30 @@ export function subscribeToAll(handlers) {
  */
 export async function loadSettings(scope = "org") {
   if (!isSupabaseConfigured) return null;
-  const { data, error } = await supabase
+  // ai_config was added in add_ai_config_v1.sql. Select it defensively:
+  // on an org whose DB hasn't run that migration yet, asking for the
+  // column 400s the whole query. We try with ai_config first and fall
+  // back to the legacy column set so Masters/Catalog still load.
+  let data, error;
+  ({ data, error } = await supabase
     .from("app_settings")
-    .select("masters, catalog, updated_at, updated_by")
+    .select("masters, catalog, ai_config, updated_at, updated_by")
     .eq("scope", scope)
-    .maybeSingle();
+    .maybeSingle());
+  if (error) {
+    // Likely "column app_settings.ai_config does not exist" — retry legacy.
+    ({ data, error } = await supabase
+      .from("app_settings")
+      .select("masters, catalog, updated_at, updated_by")
+      .eq("scope", scope)
+      .maybeSingle());
+  }
   if (error) { dbLog('error', '[DB] loadSettings:', error); return null; }
   if (!data) return null;
   return {
     masters: data.masters || {},
     catalog: data.catalog || [],
+    aiConfig: data.ai_config || {},
     updatedAt: data.updated_at,
     updatedBy: data.updated_by,
   };
@@ -1048,6 +1062,28 @@ export async function saveSettings({ masters, catalog }, scope = "org") {
 }
 
 /**
+ * Upsert ONLY the ai_config blob (feature flags for the Claude assistant).
+ * Kept separate from saveSettings so the AI Settings panel can persist its
+ * toggles without round-tripping the (potentially large) masters/catalog
+ * blobs, and without colliding with the debounced Masters save path.
+ *
+ * PostgREST upsert (ON CONFLICT DO UPDATE) only writes the columns present
+ * in the payload, so masters/catalog on the existing row are preserved.
+ *
+ * IMPORTANT: never put the Anthropic API key in here — ai_config is
+ * company-wide-readable. The key lives only as the ANTHROPIC_API_KEY
+ * server-side secret consumed by the edge function. See add_ai_config_v1.sql.
+ */
+export async function saveAiConfig(aiConfig, scope = "org") {
+  if (!isSupabaseConfigured) return { error: null };
+  const { error } = await supabase
+    .from("app_settings")
+    .upsert({ scope, ai_config: aiConfig || {} }, { onConflict: "scope" });
+  if (error) dbLog('error', '[DB] saveAiConfig:', error);
+  return { error };
+}
+
+/**
  * Subscribe to remote changes on the org settings row. Called once from
  * SmartCRM after initial load; the callback receives `{ masters, catalog }`
  * whenever another user / another tab writes the row, so the React state
@@ -1066,6 +1102,7 @@ export function subscribeToSettings(scope = "org", callback) {
         callback({
           masters: row.masters || {},
           catalog: row.catalog || [],
+          aiConfig: row.ai_config || {},
           updatedAt: row.updated_at,
           updatedBy: row.updated_by,
         });

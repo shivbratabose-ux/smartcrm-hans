@@ -9,6 +9,7 @@ import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString, primaryProductId } from './ProductModulePicker';
+import { CallSummaryButton } from './AiActions';
 
 const TYPE_ICON = {
   "Telephone Call": <Phone size={14}/>, "Visit": <MapPin size={14}/>, "Web Call": <Video size={14}/>,
@@ -43,7 +44,7 @@ const CSV_COLS = [
   { label: "Duration (min)", accessor: r => r.duration },
 ];
 
-function CallReports({ callReports, setCallReports, accounts, contacts, opps, leads = [], currentUser, orgUsers, canDelete, catalog = [] }) {
+function CallReports({ callReports, setCallReports, accounts, contacts, opps, leads = [], currentUser, orgUsers, canDelete, catalog = [], aiConfig }) {
   // Resolve a display name for a call: stored leadName/company first, then
   // fall back to the linked account / lead / opportunity / contact, so calls
   // logged without an explicit company (e.g. from a lead's quick-log) still
@@ -336,6 +337,19 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
               placeholder="Discussion summary, objections, decisions, and next steps..."
               style={{...(formErrors.notes ? {borderColor:"#DC2626"} : {}), width:"100%",resize:"vertical"}}/>
             <FormError error={formErrors.notes}/>
+            <CallSummaryButton
+              note={form.notes}
+              meta={{ company: form.company, leadName: form.leadName, callType: form.callType, objective: form.objective, outcome: form.outcome }}
+              aiConfig={aiConfig}
+              onApply={(res) => {
+                const block = [
+                  "— AI summary —",
+                  res.summary,
+                  res.nextSteps?.length ? "Next steps: " + res.nextSteps.join("; ") : "",
+                ].filter(Boolean).join("\n");
+                setForm(f => ({ ...f, notes: [f.notes, block].filter(Boolean).join("\n\n") }));
+              }}
+            />
           </div>
         </Modal>
       )}

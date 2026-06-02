@@ -31,6 +31,7 @@ import { exportCSV } from "../utils/csv";
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect, EditLockActions } from "./shared";
 import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from "./ProductModulePicker";
 import DataGrid from "./DataGrid";
+import { TenderAiPanel } from "./AiActions";
 
 /* ───────── stages context ─────────
    Pipeline stages were hardcoded in constants.js; they're now editable in
@@ -713,7 +714,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
 /* ═══════════════════════════════════════════════════════
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
-function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete, commLogs=[], onRequestEditAccess }) {
+function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete, commLogs=[], onRequestEditAccess, aiConfig }) {
   const canEditOpp = (o) => canEditRecord({ownerId:o?.owner,currentUser,orgUsers,recordType:"opp",recordId:o?.id,commLogs,catalog,recordProductIds:(o?.products&&o.products.length)?o.products:(o?.product?[o.product]:[])});
   const requestAccessOpp = (o) => onRequestEditAccess && onRequestEditAccess("opp", o.id, o.title||o.id||"Opportunity", o.owner);
 
@@ -1828,6 +1829,9 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                   <div className="form-group"><label>OEM Requirements</label><textarea rows={2} value={form.oemReqs || ""} onChange={e => setForm(f => ({ ...f, oemReqs: e.target.value }))} placeholder="OEM tie-ups / MAF…" style={{ width: "100%", resize: "vertical" }}/></div>
                   <div className="form-group"><label>Mandatory Requirements</label><textarea rows={2} value={form.mandatoryReqs || ""} onChange={e => setForm(f => ({ ...f, mandatoryReqs: e.target.value }))} placeholder="Must-have compliance items…" style={{ width: "100%", resize: "vertical" }}/></div>
                 </div>
+
+                {/* ── AI Assist (Phase 8) — qualification, bid/no-bid, compliance matrix ── */}
+                <TenderAiPanel form={form} setForm={setForm} aiConfig={aiConfig} />
 
                 {/* ── Bid Qualification & Decision (Phase 2) ── */}
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.05em", margin: "10px 0 4px" }}>Bid Qualification</div>

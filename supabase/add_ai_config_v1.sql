@@ -1,0 +1,51 @@
+-- ═══════════════════════════════════════════════════════════════════
+-- AI CONFIG — feature toggles for the Claude-powered assistant
+-- ═══════════════════════════════════════════════════════════════════
+-- Phase 8 adds optional AI features (tender qualification scoring,
+-- bid/no-bid recommendation, meeting/call summaries, compliance matrix
+-- from RFP) that call the Claude API via the `ai-claude` edge function.
+--
+-- This migration adds a single `ai_config` JSONB blob to the existing
+-- org-wide app_settings row. It mirrors how `masters` / `catalog` are
+-- stored (JSONB on the one-row-per-scope table) so there is no new table,
+-- no new RLS surface, and no new realtime channel — the existing
+-- app_settings read/write policies and realtime publication cover it.
+--
+-- ── SECURITY: what does NOT live here ──────────────────────────────
+-- The Anthropic API key is NEVER stored in this column (or anywhere in
+-- the database). app_settings is company-wide-readable by every active
+-- CRM user (see app_settings_v1.sql RLS), so a key here would be
+-- readable by the browser of any logged-in user. Instead the key lives
+-- ONLY as a server-side Supabase secret consumed by the edge function:
+--
+--     supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+--
+-- This column stores only non-secret feature flags:
+--   {
+--     "enabled": false,                 // master switch — OFF by default
+--     "model":   "claude-opus-4-8",     // admin-selectable model
+--     "features": {                     // per-feature opt-in
+--       "tenderQualification": true,
+--       "bidRecommendation":   true,
+--       "callSummary":         true,
+--       "complianceMatrix":    true
+--     }
+--   }
+--
+-- OFF-by-default is enforced two ways: the column defaults to '{}'::jsonb
+-- (no `enabled` key → falsy), and the client treats a missing/false
+-- `enabled` as disabled. Nothing calls Claude until an admin flips the
+-- switch in the AI Settings panel AND the key secret is configured.
+-- ═══════════════════════════════════════════════════════════════════
+
+ALTER TABLE public.app_settings
+  ADD COLUMN IF NOT EXISTS ai_config JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- No RLS changes required: app_settings_read (every CRM user) and
+-- app_settings_write (management roles) from app_settings_v1.sql already
+-- govern this column. The AI Settings panel additionally gates the UI to
+-- admin/md/director client-side, but the DB policy is the real boundary.
+
+-- No realtime changes required: app_settings is already in the
+-- supabase_realtime publication (app_settings_v1.sql), so ai_config edits
+-- propagate to other tabs/users on the existing channel.

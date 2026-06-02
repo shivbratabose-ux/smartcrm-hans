@@ -5,3 +5,6 @@ dist/
 .DS_Store
 .claude/worktrees/
 .vercel/
+
+# Supabase CLI local temp/auth artifacts
+supabase/.temp/

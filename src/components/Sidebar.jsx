@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, Building2, Users, TrendingUp, Activity,
   BarChart3, Ticket, Layers, SlidersHorizontal, ChevronLeft, LogOut,
-  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge
+  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge, Sparkles
 } from "lucide-react";
 import { TEAM_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 
@@ -58,6 +58,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
       ...(canAccess(currentUser,"team",orgUsers,customPermissions)?[{id:"team",label:"Team & Users",icon:<Users size={17}/>}]:[]),
       {id:"bulkupload",label:"Bulk Upload",icon:<Upload size={17}/>},
       {id:"masters",label:"Masters",icon:<SlidersHorizontal size={17}/>},
+      ...(["admin","md","director"].includes(userRole)?[{id:"aisettings",label:"AI Settings",icon:<Sparkles size={17}/>}]:[]),
       ...(canRestore?[{id:"trash",label:"Trash",icon:<Trash2 size={17}/>}]:[]),
     ]},
     {section:"Support",items:[

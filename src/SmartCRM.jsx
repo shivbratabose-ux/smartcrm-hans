@@ -16,7 +16,8 @@ import { CSS } from "./styles";
 
 // Supabase integration
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, insertRecord, updateRecord, deleteRecord, restoreRecord, loadDeleted, loadSettings, saveSettings, subscribeToSettings } from "./lib/db";
+import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, insertRecord, updateRecord, deleteRecord, restoreRecord, loadDeleted, loadSettings, saveSettings, saveAiConfig, subscribeToSettings } from "./lib/db";
+import { DEFAULT_AI_CONFIG } from "./utils/ai";
 
 // Components
 import Login from "./components/Login";
@@ -32,6 +33,7 @@ import Tickets from "./components/Tickets";
 import Reports from "./components/Reports";
 import Dashboards from "./components/Dashboards";
 import Masters from "./components/Masters";
+import AiSettings from "./components/AiSettings";
 import OrgHierarchy from "./components/OrgHierarchy";
 import TeamUsers from "./components/TeamUsers";
 import Leads from "./components/Leads";
@@ -274,6 +276,7 @@ export default function SmartCRM() {
       leads: INIT_LEADS, callReports: INIT_CALL_REPORTS, contracts: INIT_CONTRACTS,
       collections: INIT_COLLECTIONS, projects: INIT_PROJECTS, invoices: INIT_INVOICES, targets: INIT_TARGETS, quotes: INIT_QUOTES,
       commLogs: INIT_COMM_LOGS, events: INIT_EVENTS, updates: INIT_UPDATES, customPermissions: {},
+      aiConfig: DEFAULT_AI_CONFIG,
     };
     return migrateState(base);
   }, []);
@@ -304,6 +307,7 @@ export default function SmartCRM() {
   const [files,setFiles]             = useState(saved?.files || INIT_FILES);
   const [masters,setMasters]         = useState(saved?.masters || INIT_MASTERS);
   const [catalog,setCatalog]         = useState(saved?.catalog || INIT_PRODUCT_CATALOG);
+  const [aiConfig,setAiConfig]       = useState(saved?.aiConfig || DEFAULT_AI_CONFIG);
   const [org,setOrg]                 = useState(saved?.org || INIT_ORG);
   const [teams,setTeams]             = useState(saved?.teams || INIT_TEAMS);
   const [orgUsers,setOrgUsers]       = useState(saved?.orgUsers || INIT_USERS);
@@ -1039,6 +1043,11 @@ export default function SmartCRM() {
         if (Array.isArray(remote.catalog) && remote.catalog.length > 0) {
           setCatalog(remote.catalog);
         }
+        if (remote.aiConfig && Object.keys(remote.aiConfig).length > 0) {
+          // Cloud is authoritative; merge over defaults so a newly added
+          // feature flag fills in for orgs whose blob pre-dates it.
+          setAiConfig(prev => ({ ...DEFAULT_AI_CONFIG, ...prev, ...remote.aiConfig, features: { ...DEFAULT_AI_CONFIG.features, ...(remote.aiConfig.features || {}) } }));
+        }
       }).catch(err => {
         // eslint-disable-next-line no-console
         console.error('[settings] load failed:', err);
@@ -1173,9 +1182,9 @@ export default function SmartCRM() {
 
   // Persist all data to localStorage on every change (works as primary store without Supabase, backup with Supabase)
   useEffect(() => {
-    saveState({ version: DATA_VERSION, accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
+    saveState({ version: DATA_VERSION, accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, aiConfig, org, teams, orgUsers,
       leads, callReports, contracts, collections, projects, invoices, targets, quotes, commLogs, events, updates, customPermissions });
-  }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, org, teams, orgUsers,
+  }, [accounts, contacts, opps, activities, tickets, notes, files, masters, catalog, aiConfig, org, teams, orgUsers,
     leads, callReports, contracts, collections, projects, invoices, targets, quotes, commLogs, events, updates, customPermissions]);
 
   // ── Auto-heal: backfill missing addressId on contacts ──
@@ -1263,7 +1272,7 @@ export default function SmartCRM() {
   // "updates from OTHER users only" feed, which is what users expect.
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    const unsubscribe = subscribeToSettings("org", ({ masters: m, catalog: c, updatedBy, updatedAt }) => {
+    const unsubscribe = subscribeToSettings("org", ({ masters: m, catalog: c, aiConfig: ai, updatedBy, updatedAt }) => {
       // Guard 1 — our own echo
       if (updatedBy && currentUser && updatedBy === currentUser) {
         return;
@@ -1277,9 +1286,21 @@ export default function SmartCRM() {
       }
       if (m && Object.keys(m).length > 0) setMasters(prev => ({ ...prev, ...m }));
       if (Array.isArray(c) && c.length > 0) setCatalog(c);
+      if (ai && Object.keys(ai).length > 0) setAiConfig(prev => ({ ...DEFAULT_AI_CONFIG, ...prev, ...ai, features: { ...DEFAULT_AI_CONFIG.features, ...(ai.features || {}) } }));
     });
     return unsubscribe;
   }, [currentUser]);
+
+  // ── Persist AI config (admin edits in AI Settings). Kept separate from the
+  //    debounced Masters/Catalog save so toggles write immediately and don't
+  //    round-trip the large masters blob. Off by default; nothing calls Claude
+  //    until an admin enables it AND the server key secret is configured.
+  const handleSaveAiConfig = useCallback(async (next) => {
+    setAiConfig(next);
+    if (!isSupabaseConfigured) return;
+    const { error } = await saveAiConfig(next);
+    if (error) notify.error(`Couldn't save AI settings to the cloud: ${error.message || "unknown error"}.`);
+  }, []);
 
   const addNote = note => setNotes(p=>[...p,note]);
   const addFile = file => setFiles(p=>[...p,file]);
@@ -2167,9 +2188,9 @@ export default function SmartCRM() {
             {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="accounts"   && <Accounts accounts={visibleAccounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={visibleContacts} setContacts={setContacts} tickets={visibleTickets} contracts={visibleContracts} collections={visibleCollections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="contacts"   && <Contacts contacts={visibleContacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={visibleAccounts} opps={visibleOpps} leads={visibleLeads} contracts={visibleContracts} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} canDelete={canDelete} currentUser={currentUser} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
-            {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} catalog={catalog} onDealWon={handleDealWon} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
+            {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} catalog={catalog} onDealWon={handleDealWon} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} aiConfig={aiConfig}/>}
             {page==="activities" && <Activities activities={visibleActivities} setActivities={setActivities} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
-            {page==="callreports"&& <CallReports callReports={visibleCallReports} setCallReports={setCallReports} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
+            {page==="callreports"&& <CallReports callReports={visibleCallReports} setCallReports={setCallReports} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog} aiConfig={aiConfig}/>}
             {page==="tickets"    && <Tickets tickets={visibleTickets} setTickets={setTickets} accounts={visibleAccounts} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete} catalog={catalog} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="contracts"  && <Contracts contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote} onGenerateRenewalOpp={generateRenewalOpportunity} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="collections"&& <Collections collections={visibleCollections} setCollections={setCollections} accounts={visibleAccounts} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
@@ -2185,6 +2206,7 @@ export default function SmartCRM() {
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} catalog={catalog} orgUsers={orgUsers} existingData={{ leads: visibleLeads, accounts: visibleAccounts, contacts: visibleContacts, collections: visibleCollections, tickets: visibleTickets, contracts: visibleContracts, invoices: visibleInvoices, opps: visibleOpps }}/>}
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog} opps={opps} orgUsers={orgUsers} currentUser={currentUser}/>}
+            {page==="aisettings" && <AiSettings aiConfig={aiConfig} onSave={handleSaveAiConfig} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
             {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
             {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers}/>}
