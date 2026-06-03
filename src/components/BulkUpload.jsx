@@ -850,7 +850,11 @@ function BulkUpload({ onUpload, existingData = {}, catalog = [], orgUsers = [] }
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", marginBottom: 10 }}>SELECT MODULE</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {UPLOAD_TYPES.map(t => (
+          {/* UPLOAD_TYPES is Masters-driven and can be overwritten by a saved
+              org blob that pre-dates newer types. Always include every type
+              that actually has an import SCHEMA so schema-backed modules (e.g.
+              Call Reports) can't go missing from the selector. */}
+          {[...UPLOAD_TYPES, ...Object.keys(SCHEMAS).filter(k => !UPLOAD_TYPES.includes(k))].map(t => (
             <button key={t}
               className={`btn btn-sm ${type === t ? "btn-primary" : "btn-sec"}`}
               onClick={() => { setType(t); setFileData(null); setResults(null); }}>
