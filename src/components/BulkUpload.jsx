@@ -181,7 +181,7 @@ const SCHEMAS = {
     uniqueKey: "name",
     mandatory: ["name","type","country"],
     optional:  [
-      "accountNo","erpAccountNo","finId","city","address","website","segment","status",
+      "accountNo","erpAccountNo","city","address","website","segment","status",
       "hierarchyLevel","parentId","products","productSelection","arrRevenue","potential","owner",
       "state","pincode","legalName","pan","gstin","cin","taxTreatment","tdsApplicable","poMandatory",
       "billingAddress","billingCity","billingState","billingPincode","billingCountry",

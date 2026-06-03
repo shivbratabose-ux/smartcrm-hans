@@ -2207,9 +2207,10 @@ export default function SmartCRM() {
         const leadByRef = {}; leads.forEach(l => { if (l.leadId) leadByRef[nrm(l.leadId)] = l; });
         const oppByRef = {};  opps.forEach(o => { if (o.oppNo) oppByRef[nrm(o.oppNo)] = o; });
         const accByRef = {};  accounts.forEach(a => { if (a.accountNo) accByRef[nrm(a.accountNo)] = a; if (a.id) accByRef[nrm(a.id)] = a; });
-        // FinID (finance/ERP customer code) → account. Also accept it in the
-        // accountId column for convenience.
-        const finByRef = {};  accounts.forEach(a => { if (a.finId) finByRef[nrm(a.finId)] = a; });
+        // FinID is the finance/ERP customer code stored on the account as
+        // erpAccountNo (FinID and ERP Code are the same field). Resolve the
+        // upload's finId column against it.
+        const finByRef = {};  accounts.forEach(a => { if (a.erpAccountNo) finByRef[nrm(a.erpAccountNo)] = a; });
         const resolveUser = (raw) => {
           if (!raw?.trim()) return currentUser || "u1";
           const m = orgUsers.find(u => u.id === raw || u.name?.toLowerCase() === raw.toLowerCase() || u.email?.toLowerCase() === raw.toLowerCase());
