@@ -416,6 +416,20 @@ export default function SmartCRM() {
     const r = (orgUsers || []).find(u => u.id === currentUser)?.role;
     return r === "finance";
   }, [currentUser, orgUsers]);
+  // Support roles (support engineer, tech lead) are cross-cutting: to service
+  // tickets they need to see ALL accounts, contacts, leads, opportunities and
+  // tickets (a ticket must link to an account they likely don't own). They are
+  // scoped like anyone else on everything else.
+  const _supportRole = useMemo(() => {
+    const r = (orgUsers || []).find(u => u.id === currentUser)?.role;
+    return r === "support" || r === "tech_lead";
+  }, [currentUser, orgUsers]);
+  // Can this user write the org Masters/Catalog (app_settings)? If not, we
+  // skip the cloud save so scoped users don't get a scary RLS-reject toast.
+  const _canWriteSettings = useMemo(() => {
+    const r = (orgUsers || []).find(u => u.id === currentUser)?.role;
+    return ["admin","md","director","vp_sales_mkt","line_mgr","country_mgr","bd_lead"].includes(r);
+  }, [currentUser, orgUsers]);
 
   // ── Auto-route unowned leads to their product's line manager ──────────
   // Bulk uploads regularly arrive with assignedTo blank. Without routing
@@ -703,15 +717,15 @@ export default function SmartCRM() {
   // finance-uploaded invoices that haven't been routed yet aren't hidden.
   const visibleLeads = useMemo(() => {
     const live = leads.filter(l => !l.isDeleted);
-    if (_globalRole) return live;
+    if (_globalRole || _supportRole) return live;
     return live.filter(l => l.assignedTo && _scopedIds.has(l.assignedTo));
-  }, [leads, _scopedIds, _globalRole]);
+  }, [leads, _scopedIds, _globalRole, _supportRole]);
 
   const visibleOpps = useMemo(() => {
     const live = opps.filter(o => !o.isDeleted);
-    if (_globalRole) return live;
+    if (_globalRole || _supportRole) return live;
     return live.filter(o => o.owner && _scopedIds.has(o.owner));
-  }, [opps, _scopedIds, _globalRole]);
+  }, [opps, _scopedIds, _globalRole, _supportRole]);
 
   const visibleActivities = useMemo(() => {
     const live = activities.filter(a => !a.isDeleted);
@@ -727,15 +741,15 @@ export default function SmartCRM() {
 
   const visibleAccounts    = useMemo(() => {
     const live = accounts.filter(a => !a.isDeleted);
-    if (_globalRole || _financeRole) return live;
+    if (_globalRole || _financeRole || _supportRole) return live;
     return live.filter(a => a.owner && _scopedIds.has(a.owner));
-  }, [accounts, _scopedIds, _globalRole, _financeRole]);
+  }, [accounts, _scopedIds, _globalRole, _financeRole, _supportRole]);
   const visibleContacts    = useMemo(() => contacts.filter(c => !c.isDeleted), [contacts]);
   const visibleTickets     = useMemo(() => {
     const live = tickets.filter(t => !t.isDeleted);
-    if (_globalRole) return live;
+    if (_globalRole || _supportRole) return live;
     return live.filter(t => t.assigned && _scopedIds.has(t.assigned));
-  }, [tickets, _scopedIds, _globalRole]);
+  }, [tickets, _scopedIds, _globalRole, _supportRole]);
   const visibleContracts   = useMemo(() => {
     const live = contracts.filter(c => !c.isDeleted);
     if (_globalRole || _financeRole) return live;
@@ -1306,6 +1320,11 @@ export default function SmartCRM() {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     if (!syncReady.current) return;
+    // Only management roles can write app_settings (Masters/Catalog). For
+    // everyone else, skip the cloud save entirely — otherwise the initial
+    // load (which hydrates masters/catalog from the cloud) would trigger a
+    // write that RLS rejects, showing a false "couldn't save" error.
+    if (!_canWriteSettings) return;
     lastLocalSettingsEditRef.current = Date.now();
     const t = setTimeout(() => {
       saveSettings({ masters, catalog }).then(({ error }) => {
@@ -1315,7 +1334,7 @@ export default function SmartCRM() {
       });
     }, 1500);
     return () => clearTimeout(t);
-  }, [masters, catalog]);
+  }, [masters, catalog, _canWriteSettings]);
 
   // ── Realtime: pull settings when another user / tab edits Masters ──
   // Reads the new row payload pushed by Supabase realtime and rehydrates
