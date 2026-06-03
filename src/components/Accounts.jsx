@@ -530,6 +530,10 @@ function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, 
     { key: "erpAccountNo", label: "ERP Code", defaultWidth: 120, render: a => (
       <span style={{fontFamily:"'Courier New',monospace",fontSize:11,color:"var(--text2)"}}>{a.erpAccountNo || "-"}</span>
     )},
+    // FinID — finance team's manually-maintained shared identifier.
+    { key: "finId", label: "FinID", defaultWidth: 120, render: a => (
+      <span style={{fontFamily:"'Courier New',monospace",fontSize:11,color:"var(--text2)"}}>{a.finId || "-"}</span>
+    )},
     { key: "legalName", label: "Legal Name", defaultWidth: 200, render: a => txt(a.legalName) },
     { key: "type", label: "Type", defaultWidth: 110, render: a => txt(a.type) },
     { key: "segment", label: "Segment", defaultWidth: 130, render: a => txt(a.segment) },
@@ -786,7 +790,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     // "SHP/2881" find the same record as reps who think in "ACC-2026-001".
     if (search) {
       const q = search.toLowerCase();
-      const haystack = [a.name, a.accountNo, a.erpAccountNo].filter(Boolean).join(" ").toLowerCase();
+      const haystack = [a.name, a.accountNo, a.erpAccountNo, a.finId].filter(Boolean).join(" ").toLowerCase();
       if (!haystack.includes(q)) return false;
     }
     return true;
@@ -1369,6 +1373,10 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           <div className="form-row">
             <div className="form-group"><label>Billing Contact Name</label><input value={form.billingContactName||""} onChange={e => setForm(f => ({...f,billingContactName:e.target.value}))} placeholder="Billing contact name"/></div>
             <div className="form-group"><label>Finance Contact Email</label><input value={form.financeContactEmail||""} onChange={e => setForm(f => ({...f,financeContactEmail:e.target.value}))} placeholder="Finance contact email"/></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Finance ID (FinID) <span style={{fontSize:10,color:"var(--text3)",fontWeight:400}}>· set by Finance</span></label><input value={form.finId||""} onChange={e => setForm(f => ({...f,finId:e.target.value}))} placeholder="Finance / accounting ID" style={{fontFamily:"'Courier New',monospace"}}/></div>
+            <div className="form-group"><label>ERP Code</label><input value={form.erpAccountNo||""} onChange={e => setForm(f => ({...f,erpAccountNo:e.target.value}))} placeholder="ERP / accounting code" style={{fontFamily:"'Courier New',monospace"}}/></div>
           </div>
           <div className="form-row">
             <div className="form-group"><label>Entity Type</label><select value={form.entityType||"Head Office"} onChange={e => setForm(f => ({...f,entityType:e.target.value}))}><option>Head Office</option><option>Branch Office</option><option>Sister Concern</option><option>Subsidiary</option><option>Franchise</option></select></div>

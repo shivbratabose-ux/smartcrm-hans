@@ -181,7 +181,7 @@ const SCHEMAS = {
     uniqueKey: "name",
     mandatory: ["name","type","country"],
     optional:  [
-      "accountNo","erpAccountNo","city","address","website","segment","status",
+      "accountNo","erpAccountNo","finId","city","address","website","segment","status",
       "hierarchyLevel","parentId","products","productSelection","arrRevenue","potential","owner",
       "state","pincode","legalName","pan","gstin","cin","taxTreatment","tdsApplicable","poMandatory",
       "billingAddress","billingCity","billingState","billingPincode","billingCountry",
@@ -384,20 +384,21 @@ const SCHEMAS = {
     uniqueKey: "callRef",
     mandatory: ["callDate"],
     optional:  [
-      "leadId","oppId","accountId","company","callType","objective","outcome",
+      "leadId","oppId","accountId","finId","company","callType","objective","outcome",
       "notes","nextCallDate","duration","marketingPerson","leadStage","product",
     ],
     sample: [
-      "leadId,oppId,accountId,callDate,callType,objective,outcome,notes,nextCallDate,duration,marketingPerson",
-      "#FL-2026-128,,,2026-06-02,Telephone Call,Demo,Completed,Discussed demo plan and pricing,2026-06-09,15,Adarsh Raj",
-      ",OPP-2026-001,,2026-06-03,Telephone Call,Negotiation,Completed,Reviewed commercial terms,,20,Amit Mopari",
-      ",,ACC-2026-001,2026-06-04,Meeting,General Followup,Completed,Onsite quarterly review,,30,Sunny Singh",
+      "leadId,oppId,accountId,finId,callDate,callType,objective,outcome,notes,nextCallDate,duration,marketingPerson",
+      "#FL-2026-128,,,,2026-06-02,Telephone Call,Demo,Completed,Discussed demo plan and pricing,2026-06-09,15,Adarsh Raj",
+      ",OPP-2026-001,,,2026-06-03,Telephone Call,Negotiation,Completed,Reviewed commercial terms,,20,Amit Mopari",
+      ",,ACC-2026-001,,2026-06-04,Meeting,General Followup,Completed,Onsite quarterly review,,30,Sunny Singh",
+      ",,,FIN-AC-7781,2026-06-05,Telephone Call,Support,Completed,Billing query resolved,,10,Sunny Singh",
     ].join("\n"),
     validate: (row) => {
       const e = [];
       if (!row.callDate?.trim()) e.push("Call date required");
-      if (!row.leadId?.trim() && !row.oppId?.trim() && !row.accountId?.trim())
-        e.push("Provide one of Lead ID, Opp ID, or Account ID to link the call");
+      if (!row.leadId?.trim() && !row.oppId?.trim() && !row.accountId?.trim() && !row.finId?.trim())
+        e.push("Provide one of Lead ID, Opp ID, Account ID, or FinID to link the call");
       if (!row.notes?.trim() && !row.outcome?.trim())
         e.push("Notes or outcome required");
       return e;

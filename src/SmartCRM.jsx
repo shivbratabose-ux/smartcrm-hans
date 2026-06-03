@@ -2207,6 +2207,9 @@ export default function SmartCRM() {
         const leadByRef = {}; leads.forEach(l => { if (l.leadId) leadByRef[nrm(l.leadId)] = l; });
         const oppByRef = {};  opps.forEach(o => { if (o.oppNo) oppByRef[nrm(o.oppNo)] = o; });
         const accByRef = {};  accounts.forEach(a => { if (a.accountNo) accByRef[nrm(a.accountNo)] = a; if (a.id) accByRef[nrm(a.id)] = a; });
+        // FinID (finance/ERP customer code) → account. Also accept it in the
+        // accountId column for convenience.
+        const finByRef = {};  accounts.forEach(a => { if (a.finId) finByRef[nrm(a.finId)] = a; });
         const resolveUser = (raw) => {
           if (!raw?.trim()) return currentUser || "u1";
           const m = orgUsers.find(u => u.id === raw || u.name?.toLowerCase() === raw.toLowerCase() || u.email?.toLowerCase() === raw.toLowerCase());
@@ -2217,7 +2220,9 @@ export default function SmartCRM() {
           const s = strip(r);
           const lead = s.leadId ? leadByRef[nrm(s.leadId)] : null;
           const opp  = s.oppId  ? oppByRef[nrm(s.oppId)]   : null;
-          const acct = s.accountId ? accByRef[nrm(s.accountId)] : null;
+          // FinID resolves to an account; an accountId column may also hold a FinID.
+          const acct = (s.finId ? finByRef[nrm(s.finId)] : null)
+            || (s.accountId ? (accByRef[nrm(s.accountId)] || finByRef[nrm(s.accountId)]) : null);
           const out = {
             ...BLANK_CALL_REPORT,
             id: `cr${uid()}`,

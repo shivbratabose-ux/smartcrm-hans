@@ -223,7 +223,7 @@ const toSnake = (obj, module) => {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
   const map = {
     accountId:"account_id", accountNo:"account_no", contactId:"contact_id",
-    erpAccountNo:"erp_account_no",
+    erpAccountNo:"erp_account_no", finId:"fin_id",
     arrRevenue:"arr_revenue", parentId:"parent_id", hierarchyLevel:"hierarchy_level",
     hierarchyPath:"hierarchy_path", createdDate:"created_date", closeDate:"close_date",
     primaryContactId:"primary_contact_id", secondaryContactIds:"secondary_contact_ids",
@@ -448,7 +448,7 @@ const toCamel = (obj, module) => {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
   const map = {
     account_id:"accountId", account_no:"accountNo", contact_id:"contactId",
-    erp_account_no:"erpAccountNo",
+    erp_account_no:"erpAccountNo", fin_id:"finId",
     arr_revenue:"arrRevenue", parent_id:"parentId", hierarchy_level:"hierarchyLevel",
     hierarchy_path:"hierarchyPath", created_date:"createdDate", close_date:"closeDate",
     primary_contact_id:"primaryContactId", secondary_contact_ids:"secondaryContactIds",
