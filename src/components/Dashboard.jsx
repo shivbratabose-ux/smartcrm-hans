@@ -114,11 +114,18 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
 
   // ─── Pipeline funnel ───
   const funnelData = useMemo(() => {
-    return FUNNEL_STAGES.map(stage => ({
+    // Build from the LIVE pipeline stages (Masters-driven), not a fixed list —
+    // otherwise deals in stages like "Demo" are invisible and the funnel
+    // doesn't reconcile with the pipeline total. Exclude Lost / Suspended.
+    const palette = ["#94A3B8", "#3B82F6", "#6366F1", "#F59E0B", "#7C3AED", "#EC4899", "#0D9488", "#22C55E"];
+    const stages = (STAGES && STAGES.length ? STAGES : FUNNEL_STAGES).filter(s => !/lost|suspend/i.test(s));
+    return stages.map((stage, i) => ({
       name: stage,
       count: opps.filter(o => o.stage === stage).length,
-      value: opps.filter(o => o.stage === stage).reduce((s, o) => s + (parseFloat(o.value) || 0), 0),
-      fill: FUNNEL_COLORS[stage]
+      // Round to 1 decimal so a sum of fractional ₹L values doesn't show
+      // floating-point noise (e.g. 10.7999999999L → 10.8L).
+      value: parseFloat(opps.filter(o => o.stage === stage).reduce((s, o) => s + (parseFloat(o.value) || 0), 0).toFixed(1)),
+      fill: FUNNEL_COLORS[stage] || palette[i % palette.length],
     }));
   }, [opps]);
 
@@ -193,7 +200,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       rMap[region].deals += opps.filter(o => o.accountId === acc.id && !["Won", "Lost"].includes(o.stage)).length;
     });
     return Object.entries(rMap)
-      .map(([name, d]) => ({ name, ...d, arr: parseFloat(d.arr.toFixed(1)) }))
+      .map(([name, d]) => ({ name, ...d, arr: parseFloat(d.arr.toFixed(1)), potential: parseFloat(d.potential.toFixed(1)) }))
       .sort((a, b) => b.arr - a.arr)
       .slice(0, 4);
   }, [accounts, opps]);
