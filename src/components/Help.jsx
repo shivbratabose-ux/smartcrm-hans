@@ -4,7 +4,8 @@ import {
   Phone, Ticket, FileText, DollarSign, Target, BarChart3, SlidersHorizontal,
   Layers, Upload, Calendar, Mail, Bell, ClipboardList, UserPlus,
   ChevronRight, Lightbulb, AlertCircle, Info, CheckCircle, Keyboard,
-  MessageSquare, BookOpen, Zap, Star, X
+  MessageSquare, BookOpen, Zap, Star, X,
+  Sparkles, Briefcase, Gauge, Gavel
 } from "lucide-react";
 
 // ══════════════════════════════════════════════════════════════════════
@@ -25,13 +26,14 @@ const HELP_DATA = [
           {type:"list", items:[
             "Capture and qualify leads using a structured scoring questionnaire (BFA)",
             "Manage accounts, contacts, and the full opportunity pipeline",
-            "Log calls, emails, meetings, and activities against any record",
+            "Run government Tenders / Bids end-to-end — eligibility, bid qualification, 3-tier approval, EMD/PBG register, pre-bid log and document repository",
+            "Track delivery Projects after a deal is Won (milestones, team, go-live)",
+            "Log calls, emails, meetings, and activities against any record — with a full Record Journey timeline",
             "Track support tickets with SLA monitoring",
-            "Generate quotations with tax calculations",
-            "Manage contracts, collections, and renewal tracking",
-            "View rich reports: pipeline, revenue, call performance, stalled deals",
-            "Post internal updates and announcements with read tracking",
-            "Set targets and measure team achievement",
+            "Generate quotations with tax calculations; manage contracts, collections, and renewal tracking",
+            "Use the optional AI assistant for tender scoring, bid/no-bid advice, call summaries and RFP compliance matrices",
+            "View executive Dashboards and rich reports: pipeline, revenue, tenders, projects, renewals, support",
+            "Post internal updates, set targets, and measure team achievement",
           ]},
           {type:"tip", text:"Quick start: Navigate using the left sidebar. Click any module to explore. Use Ctrl+1 through Ctrl+9 for instant keyboard navigation."},
         ]
@@ -66,20 +68,32 @@ const HELP_DATA = [
       {
         id:"roles", title:"User Roles & Permissions", tags:["roles","access","permissions","admin","viewer"],
         content:[
-          {type:"para", text:"SmartCRM uses a role-based permission system. Your role determines which modules you can view or edit."},
+          {type:"para", text:"SmartCRM uses a role-based permission system. Your role determines which modules you can open and what you can edit."},
           {type:"table", rows:[
             ["Admin",        "Full system access, user management, all modules read/write"],
             ["MD",           "All data visibility, strategy-level access, most modules read/write"],
             ["Director",     "Full read/write on all modules, read on org/team"],
-            ["Line Manager", "Team oversight, deals management, reports, read/write on most"],
+            ["VP Sales & Mktg","Org-wide visibility across all sales data"],
+            ["Line Manager", "Team oversight, deals management, reports, read/write on their team's records"],
             ["Country Mgr",  "Country-scoped accounts, pipeline, activities — read/write"],
             ["BD Lead",      "Cross-LOB BD, full sales access, read/write on contracts & collections"],
+            ["Finance",      "Approves accounts + issues account numbers; full access to accounts, contracts, collections, invoices"],
+            ["Head GM (Product)","Head GM – Product Delivery & Success: owns customer experience for one or more product lines"],
             ["Sales Exec",   "Own accounts, contacts, pipeline, activities — read-only tickets & leads"],
             ["Tech Lead",    "Technical modules, tickets full access, read-only on sales modules"],
             ["Support Engr", "Tickets full access, read-only on accounts and contacts"],
-            ["Viewer",       "Read-only across all visible modules"],
+            ["Viewer",       "Read-only across visible modules"],
           ]},
-          {type:"tip", text:"Admins can customise permissions per role — or even override for individual users — in the Team & Users → Permissions tab."},
+          {type:"heading", text:"Who Can See Which Records (Visibility)"},
+          {type:"para", text:"Record visibility is scoped to your reporting line: you see records you own plus those owned by your team (your direct and dotted-line reports). Global roles (Admin, MD, Director, VP Sales & Marketing) see everything. Finance additionally sees all accounts, contracts, collections and invoices so it can run the approval queue and billing."},
+          {type:"list", items:[
+            "You can EDIT a record you own, or one owned by someone in your reporting line.",
+            "To edit a record you don't own, use 'Request Edit Access' — the owner approves it from the Communications module.",
+            "Reassigning a record (e.g. handing a lead/deal to a teammate) is allowed to any active user, as long as you own or manage that record.",
+            "This is enforced both in the app and at the database (Row-Level Security), so it holds even outside the UI.",
+          ]},
+          {type:"warning", text:"Visibility depends on the org chart. A manager only sees a teammate's records if that teammate's 'Reports To' chains up to them. Keep the reporting lines current in Team & Users."},
+          {type:"tip", text:"Admins can customise module permissions per role — or override for individual users — in the Team & Users → Permissions tab."},
         ]
       },
       {
@@ -218,6 +232,22 @@ const HELP_DATA = [
           ]},
         ]
       },
+      {
+        id:"accounts-approval", title:"Account Approval, Account No. & FinID", tags:["approval","account number","finance","activate","finid","erp","prospect"],
+        content:[
+          {type:"para", text:"New accounts are not 'Active' until Finance approves them. A deal that is Won creates an account in 'Pending Approval' status; a Finance approver then issues the account number and the account becomes Active."},
+          {type:"heading", text:"Approval Flow"},
+          {type:"steps", items:[
+            "A Prospect / Won deal creates an account in 'Pending Approval' status",
+            "A banner on the Accounts page lists accounts awaiting a finance-issued number",
+            "A Finance / Admin / MD / Director clicks the approve action and enters the account number from the accounting/ERP system",
+            "The account becomes Active (and ARR is set from the won deal value)",
+          ]},
+          {type:"heading", text:"FinID / ERP Code"},
+          {type:"para", text:"The FinID / ERP Code is the finance/ERP customer code, set manually by the Finance team on the account (the system-generated Account No. is separate). Use it to reconcile the CRM with your accounting system. It is searchable from the Accounts search box."},
+          {type:"tip", text:"Bulk-logged call reports can be linked to a customer by FinID — see Bulk Upload → Call Reports."},
+        ]
+      },
     ]
   },
 
@@ -313,6 +343,55 @@ const HELP_DATA = [
           {type:"note", text:"Forecast Category and Deal Size are used in the Reports module's pipeline summary and weighted value calculations."},
         ]
       },
+      {
+        id:"pipeline-journey", title:"Record Journey & Reassigning Owners", tags:["journey","timeline","activities","reassign","owner","handoff"],
+        content:[
+          {type:"para", text:"Open any deal and go to the Activities tab to see its Record Journey — a unified, filterable timeline of everything that happened on the deal."},
+          {type:"list", items:[
+            "Filter chips: All Events, Calls, Activities, Stage Changes, System",
+            "Each event shows a type badge, status, date and who did it; click a card to expand notes",
+            "Log Call, Log Activity, and Set Follow-up buttons are right in the header",
+            "Calls linked to the deal (including bulk-uploaded ones) appear here automatically",
+          ]},
+          {type:"heading", text:"Reassigning a Deal Owner"},
+          {type:"steps", items:[
+            "Click the deal card to open its detail panel",
+            "In the Overview, click the Owner name (pencil icon) and pick the new owner — it saves instantly",
+            "No need to open the full Edit form, and Account / Close Date are not required just to reassign",
+          ]},
+          {type:"tip", text:"Editing an existing deal no longer forces you to fill Account and Close Date — those are only mandatory when creating a brand-new deal."},
+        ]
+      },
+    ]
+  },
+
+  // ── TENDER MANAGEMENT ─────────────────────────────────────────────
+  {
+    id:"tenders", label:"Tender Management", icon:<Gavel size={15}/>, color:"#B45309",
+    articles:[
+      {
+        id:"tenders-overview", title:"Government Tenders & Bids", tags:["tender","bid","government","rfp","emd","pbg","gem","eligibility"],
+        content:[
+          {type:"para", text:"Tenders are managed inside the Pipeline. Open (or create) an opportunity and tick 'This is a Government Tender / RFP / Bid' to reveal the tender section — the deal then carries all the bid details alongside the normal sales fields."},
+          {type:"heading", text:"What a Tender Captures"},
+          {type:"list", items:[
+            "Tender / Bid No., authority, department, portal (GeM / CPPP / state), category and state",
+            "Key dates: pre-bid, technical bid, financial bid, and submission deadline",
+            "EMD and PBG amounts and validity dates",
+            "Eligibility criteria, OEM requirements and mandatory compliance items",
+          ]},
+          {type:"heading", text:"Bid Qualification & Approval"},
+          {type:"para", text:"Score the bid against the qualification checklist and set a win probability, then route it through the 3-tier approval matrix (Sales Manager → Vertical Head → CEO/MD). Each approver acts in turn; the bid decision (Bid / Conditional / No-Bid) is recorded on the deal."},
+          {type:"heading", text:"EMD/PBG Register, Pre-Bid Log & Documents"},
+          {type:"list", items:[
+            "Instrument register: track each EMD / Bid Security / PBG — mode, amount, ref no., validity and status (Pending / Submitted / Returned / Forfeited / Expired)",
+            "Pre-bid log: queries, clarifications, minutes and corrigenda with dates",
+            "Document repository: technical bid, financial bid and supporting docs with links",
+          ]},
+          {type:"tip", text:"The startup bid-calendar alert flags tenders with a submission deadline in the next 7 days and EMD/PBG instruments expiring within 14 days, so nothing lapses."},
+          {type:"note", text:"All tender reference lists (portals, categories, instrument types/modes/statuses, pre-bid activity types, document categories, qualification ratings) are editable in Masters → Sales, so you can adjust them without development."},
+        ]
+      },
     ]
   },
 
@@ -365,6 +444,10 @@ const HELP_DATA = [
           {type:"heading", text:"Call Objectives"},
           {type:"list", items:["Maintenance/QBR","Maintenance/MBR","Issue Resolution","Renewal Followup","Payment Followup","Cross-Sales/New Offer","Training/Feature Adoption","VOC/Testimonials","Competition Info","General Followup"]},
           {type:"tip", text:"Assign a Next Call Date when logging a call — this auto-populates a follow-up reminder and keeps your pipeline moving forward."},
+          {type:"heading", text:"AI Summarise (optional)"},
+          {type:"para", text:"If the AI assistant is enabled, the call form has an 'AI summarise note' button that turns your raw notes into a structured brief (key points, decisions, action items, sentiment, next steps) which you can insert back into the note."},
+          {type:"heading", text:"Bulk Logging Calls"},
+          {type:"para", text:"You can import many calls at once via Bulk Upload → Call Reports, linking each by Lead ID, Opp ID, Account ID or FinID. See the Bulk Upload guide."},
           {type:"heading", text:"Bulk Delete"},
           {type:"para", text:"Select multiple call reports using the checkboxes, then click the Bulk Delete button. A confirmation dialog will appear before deletion."},
         ]
@@ -421,6 +504,30 @@ const HELP_DATA = [
           {type:"heading", text:"Renewal Alerts"},
           {type:"para", text:"The Contracts list highlights contracts expiring within 30 days in amber, and those already expired in red. The Dashboard also shows renewal risk counts."},
           {type:"tip", text:"Set up a Call Report with Objective = 'Renewal Followup' at least 60 days before contract expiry to start the renewal conversation early."},
+        ]
+      },
+    ]
+  },
+
+  // ── PROJECTS ──────────────────────────────────────────────────────
+  {
+    id:"projects", label:"Projects", icon:<Briefcase size={15}/>, color:"#0891B2",
+    articles:[
+      {
+        id:"projects-overview", title:"Project Delivery", tags:["project","delivery","implementation","milestone","go-live","handover","won"],
+        content:[
+          {type:"para", text:"The Projects module tracks delivery and implementation after a deal is Won. When a deal is marked Won, a Project is created automatically (idempotently) so the delivery team can pick it up."},
+          {type:"heading", text:"What a Project Tracks"},
+          {type:"list", items:[
+            "Phase / status (Requirement Gathering → … → Closed) and a progress percentage",
+            "Start date and go-live target / actual dates",
+            "Scope, deliverables and risks",
+            "Milestones with their own statuses, and a project team with roles",
+            "Linked account, opportunity and contract",
+          ]},
+          {type:"heading", text:"Project Health (KPIs)"},
+          {type:"para", text:"The Projects header shows Active, Avg Progress, Delayed and At-Risk counts. Health is computed from the go-live target vs progress — a project past its go-live with < 100% progress is Delayed; one with a tight timeline and low progress is At Risk."},
+          {type:"tip", text:"Project phases, team roles and milestone statuses are all editable in Masters → Support, so you can match your delivery process without development."},
         ]
       },
     ]
@@ -520,6 +627,30 @@ const HELP_DATA = [
     ]
   },
 
+  // ── DASHBOARDS ────────────────────────────────────────────────────
+  {
+    id:"dashboards", label:"Dashboards", icon:<Gauge size={15}/>, color:"#1B6B5A",
+    articles:[
+      {
+        id:"dashboards-overview", title:"Executive Dashboards", tags:["dashboard","management","tender","project","renewal","support","kpi","drill"],
+        content:[
+          {type:"para", text:"Dashboards is a 5-tab executive hub computed live from your data: Management, Tender, Project, Renewal and Support."},
+          {type:"table", rows:[
+            ["Management", "Strategic book — total pipeline, weighted forecast, win rate, tender value, bid success, renewal/expansion"],
+            ["Tender",     "Active bids, tender value, bid-approved count, upcoming deadlines, stage and decision charts"],
+            ["Project",    "Active projects, average progress, at-risk and delayed delivery"],
+            ["Renewal",    "Renewals due in 90 days, auto-renew count, expansion/upsell opportunities"],
+            ["Support",    "Open tickets, critical count, SLA compliance and breaches"],
+          ]},
+          {type:"heading", text:"Scope of the Management Tab"},
+          {type:"warning", text:"The Management tab is intentionally scoped to the strategic book: large opportunities (deal value ≥ ₹50 L) plus all tenders of any size. Smaller day-to-day deals stay in the Pipeline module, so the Total Pipeline here is lower than the full Pipeline figure by design."},
+          {type:"heading", text:"Drill-Through"},
+          {type:"tip", text:"Every KPI card is clickable — it jumps straight to the underlying records (Pipeline, Tender board, Projects, Contracts, Tickets or Reports). The Active Tenders and Bid Decisions cards also have an 'Open Tender board' button."},
+        ]
+      },
+    ]
+  },
+
   // ── REPORTS ───────────────────────────────────────────────────────
   {
     id:"reports", label:"Reports & Analytics", icon:<BarChart3 size={15}/>, color:"#2563EB",
@@ -609,6 +740,34 @@ const HELP_DATA = [
     ]
   },
 
+  // ── AI ASSISTANT ──────────────────────────────────────────────────
+  {
+    id:"aisettings", label:"AI Assistant", icon:<Sparkles size={15}/>, color:"#7C3AED",
+    articles:[
+      {
+        id:"ai-overview", title:"AI Assistant (Claude)", tags:["ai","claude","tender","bid","summary","compliance","rfp","settings"],
+        content:[
+          {type:"para", text:"SmartCRM includes an optional AI assistant powered by Claude. It produces suggestions only — a person always reviews and decides; the AI never edits records, sends anything, or makes decisions on its own."},
+          {type:"heading", text:"What It Can Do"},
+          {type:"table", rows:[
+            ["Tender Qualification", "Scores how well a tender fits, with strengths, risks and what to verify"],
+            ["Bid / No-Bid",        "A Bid / Conditional / No-Bid recommendation with rationale and next steps"],
+            ["Call Summaries",      "Turns a raw call note into a structured brief: decisions, action items, sentiment"],
+            ["Compliance Matrix",   "Extracts a requirement→compliance matrix from an uploaded RFP / tender PDF"],
+          ]},
+          {type:"heading", text:"Where To Use It"},
+          {type:"list", items:[
+            "Pipeline → open a tender deal → 'AI Assist' box: Qualification score, Bid/No-Bid, Compliance matrix (RFP PDF)",
+            "Call Reports → 'AI summarise note' on the call form",
+          ]},
+          {type:"heading", text:"Turning It On (Admins)"},
+          {type:"para", text:"AI is OFF by default. An Admin / MD / Director enables it in Admin → AI Settings, where they can pick the model and toggle individual features. The Anthropic API key is held securely on the server and is never stored in the app or visible in the browser."},
+          {type:"warning", text:"When AI is off, no AI buttons appear anywhere and nothing is ever sent to Claude. Only the specific record's fields (or the PDF you upload) are sent when a feature runs."},
+        ]
+      },
+    ]
+  },
+
   // ── BULK UPLOAD ───────────────────────────────────────────────────
   {
     id:"bulkupload", label:"Bulk Upload", icon:<Upload size={15}/>, color:"#D97706",
@@ -616,18 +775,25 @@ const HELP_DATA = [
       {
         id:"bulkupload-overview", title:"Bulk Upload Guide", tags:["bulk","csv","upload","import","format","contact","account"],
         content:[
-          {type:"para", text:"The Bulk Upload module lets you import large datasets via CSV files. It supports Leads, Customers (Accounts), Contacts, Collections, Support Tickets, and Contracts."},
+          {type:"para", text:"The Bulk Upload module lets you import large datasets via CSV files. It supports Leads, Customers (Accounts), Contacts, Collections, Support Tickets, Contracts, Invoices, Pipeline (opportunities), and Call Reports."},
           {type:"steps", items:[
-            "Select the data type from the dropdown (Leads, Customers, Contacts, etc.)",
-            "Click 'Download Template' to get the correct column headers",
+            "Select the module from the SELECT MODULE row (Leads, Customers, … Call Reports)",
+            "Click 'Download Sample CSV' to get the correct column headers",
             "Fill in your data using Excel or any spreadsheet app",
             "Save as CSV (Comma Separated Values)",
-            "Click Upload CSV and select your file",
-            "Review the preview table — check rows and counts",
+            "Click Upload / choose your file",
+            "Review the preview and validation — check rows and counts",
             "Click Import to save all records",
           ]},
+          {type:"heading", text:"Bulk-Logging Call Reports"},
+          {type:"para", text:"The Call Reports type lets you bulk-log calls against EXISTING records. Each row links by exactly one identifier — leadId (#FL-YYYY-NNN), oppId (OPP-YYYY-NNN), accountId (ACC-YYYY-NNN), or finId (the account's finance/ERP customer code) — plus call fields (date, type, objective, outcome, notes, next call, duration, marketing person)."},
+          {type:"list", items:[
+            "The ID is resolved to the record and the call appears on that record's Record Journey",
+            "Marketing person is matched to a user by name / email / id (blank defaults to you)",
+            "The import toast reports how many calls linked vs. were unlinked (ID not found)",
+          ]},
           {type:"warning", text:"Always use the downloaded template — column names must match exactly. Do not add or rename columns."},
-          {type:"tip", text:"For Leads and Contacts, if a matching email already exists in the system, the record will be linked (not duplicated). For Accounts, matching is by company name."},
+          {type:"tip", text:"To UPDATE an existing record, include its reference ID (e.g. leadId) in the row. Leave it blank to INSERT a new one. For Leads/Contacts, a matching email links instead of duplicating; for Accounts, matching is by Account No. You can also bulk-set an account's FinID via the Customers upload's erpAccountNo column."},
           {type:"note", text:"CSV files with commas inside field values must wrap those fields in double-quotes. Excel's 'Save As CSV' handles this automatically."},
         ]
       },
