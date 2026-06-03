@@ -371,6 +371,38 @@ const SCHEMAS = {
       return e;
     },
   },
+
+  // ── Call Reports ──────────────────────────────────────────────────
+  // Bulk-log calls against EXISTING leads / opportunities / accounts.
+  // Each row links via exactly one identifier: leadId (#FL-YYYY-NNN),
+  // oppId (OPP-YYYY-NNN), or accountId (ACC-YYYY-NNN / account number).
+  // refKey "callRef" is a sentinel column that never exists, so every row
+  // is treated as a new INSERT (we never dedup calls). The actual ID→record
+  // resolution + linking happens in SmartCRM.handleBulkUpload.
+  "Call Reports": {
+    refKey:    "callRef",
+    uniqueKey: "callRef",
+    mandatory: ["callDate"],
+    optional:  [
+      "leadId","oppId","accountId","company","callType","objective","outcome",
+      "notes","nextCallDate","duration","marketingPerson","leadStage","product",
+    ],
+    sample: [
+      "leadId,oppId,accountId,callDate,callType,objective,outcome,notes,nextCallDate,duration,marketingPerson",
+      "#FL-2026-128,,,2026-06-02,Telephone Call,Demo,Completed,Discussed demo plan and pricing,2026-06-09,15,Adarsh Raj",
+      ",OPP-2026-001,,2026-06-03,Telephone Call,Negotiation,Completed,Reviewed commercial terms,,20,Amit Mopari",
+      ",,ACC-2026-001,2026-06-04,Meeting,General Followup,Completed,Onsite quarterly review,,30,Sunny Singh",
+    ].join("\n"),
+    validate: (row) => {
+      const e = [];
+      if (!row.callDate?.trim()) e.push("Call date required");
+      if (!row.leadId?.trim() && !row.oppId?.trim() && !row.accountId?.trim())
+        e.push("Provide one of Lead ID, Opp ID, or Account ID to link the call");
+      if (!row.notes?.trim() && !row.outcome?.trim())
+        e.push("Notes or outcome required");
+      return e;
+    },
+  },
 };
 
 // ─── CSV parser ──────────────────────────────────────────────────────────────

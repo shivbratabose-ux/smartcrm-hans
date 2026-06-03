@@ -8,7 +8,7 @@ import {
   INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS, INIT_PROJECTS,
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
-  BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE
+  BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
@@ -2197,8 +2197,57 @@ export default function SmartCRM() {
           return [...withUpdates, ...enrichedInserts];
         });
       } break;
+
+      case "Call Reports": {
+        // Bulk-log calls against EXISTING records. Each row references one of
+        // leadId (#FL-…), oppId (OPP-…), or accountId (ACC-… / account number);
+        // we resolve it to the internal record id and link the call so it shows
+        // on that record's Record Journey. Unresolved ids import unlinked.
+        const nrm = (s) => String(s ?? "").toLowerCase().trim();
+        const leadByRef = {}; leads.forEach(l => { if (l.leadId) leadByRef[nrm(l.leadId)] = l; });
+        const oppByRef = {};  opps.forEach(o => { if (o.oppNo) oppByRef[nrm(o.oppNo)] = o; });
+        const accByRef = {};  accounts.forEach(a => { if (a.accountNo) accByRef[nrm(a.accountNo)] = a; if (a.id) accByRef[nrm(a.id)] = a; });
+        const resolveUser = (raw) => {
+          if (!raw?.trim()) return currentUser || "u1";
+          const m = orgUsers.find(u => u.id === raw || u.name?.toLowerCase() === raw.toLowerCase() || u.email?.toLowerCase() === raw.toLowerCase());
+          return m?.id || currentUser || "u1";
+        };
+        let linked = 0, unlinked = 0;
+        const newCalls = inserts.map(r => {
+          const s = strip(r);
+          const lead = s.leadId ? leadByRef[nrm(s.leadId)] : null;
+          const opp  = s.oppId  ? oppByRef[nrm(s.oppId)]   : null;
+          const acct = s.accountId ? accByRef[nrm(s.accountId)] : null;
+          const out = {
+            ...BLANK_CALL_REPORT,
+            id: `cr${uid()}`,
+            callDate: s.callDate || today,
+            callType: s.callType || "Telephone Call",
+            objective: s.objective || "General Followup",
+            outcome: s.outcome || "Completed",
+            notes: s.notes || "",
+            nextCallDate: s.nextCallDate || "",
+            duration: Number(s.duration) || 15,
+            leadStage: s.leadStage || "MQL",
+            product: s.product || "iCAFFE",
+            marketingPerson: resolveUser(s.marketingPerson),
+            leadId: lead ? lead.id : "",
+            oppId: opp ? opp.id : "",
+            accountId: acct ? acct.id : (opp?.accountId || lead?.accountId || ""),
+            company: s.company || "",
+            leadName: "",
+          };
+          if (lead) { out.leadName = lead.contact || lead.company || ""; out.company = out.company || lead.company || ""; if (!s.leadStage) out.leadStage = lead.stage || out.leadStage; if (!s.product) out.product = lead.product || out.product; }
+          if (opp)  { const oa = accounts.find(a => a.id === opp.accountId); out.company = out.company || oa?.name || ""; out.leadName = out.leadName || opp.title || ""; }
+          if (acct) { out.company = out.company || acct.name || ""; out.leadName = out.leadName || acct.name || ""; }
+          if (lead || opp || acct) linked++; else unlinked++;
+          return out;
+        });
+        setCallReports(p => [...p, ...newCalls]);
+        notify.success(`Imported ${newCalls.length} call report(s) — ${linked} linked${unlinked ? `, ${unlinked} unlinked (ID not found)` : ""}.`);
+      } break;
     }
-  }, [accounts, contacts, leads, tickets, contracts, collections, invoices, opps, orgUsers]);
+  }, [accounts, contacts, leads, tickets, contracts, collections, invoices, opps, orgUsers, currentUser]);
 
   if(!currentUser) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><ToastContainer /><Login onLogin={login} orgUsers={orgUsers}/></>
