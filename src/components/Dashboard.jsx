@@ -508,14 +508,18 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
           {topDeals.map(o => {
             const acc = accounts.find(a => a.id === o.accountId);
             const prob = STAGE_PROB[o.stage] || 0;
+            // Fall back to the deal's own name when no account is linked, so the
+            // badge shows real initials instead of "??".
+            const dispName = acc?.name || o.title || "Deal";
+            const initials = dispName.split(/[\s–-]+/).filter(Boolean).map(w => w[0]).join("").slice(0, 2).toUpperCase() || "—";
             return (
               <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
                 <div className="u-av" style={{ width: 34, height: 34, borderRadius: 8, fontSize: 11 }}>
-                  {acc ? acc.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() : "??"}
+                  {initials}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.title}</div>
-                  <div style={{ fontSize: 11, color: "var(--text3)" }}>{acc?.name} · {o.stage}</div>
+                  <div style={{ fontSize: 11, color: "var(--text3)" }}>{acc?.name || "No account linked"} · {o.stage}</div>
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Outfit',sans-serif" }}>₹{o.value}L</div>
