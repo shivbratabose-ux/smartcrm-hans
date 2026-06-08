@@ -35,9 +35,20 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
 
   // Generate random password
   const generatePassword=()=>{
-    const chars="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%";
-    let pw="";for(let i=0;i<12;i++) pw+=chars[Math.floor(Math.random()*chars.length)];
-    return pw;
+    // Supabase's password policy requires at least one lowercase, one uppercase
+    // AND one digit. A purely random pick from a mixed set can miss a class, so
+    // we seed one guaranteed char from each required class (plus a symbol),
+    // fill the rest, then shuffle so the guaranteed chars aren't predictable.
+    const upper="ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const lower="abcdefghjkmnpqrstuvwxyz";
+    const digit="23456789";
+    const sym="!@#$%";
+    const all=upper+lower+digit+sym;
+    const pick=s=>s[Math.floor(Math.random()*s.length)];
+    const arr=[pick(upper),pick(lower),pick(digit),pick(sym)];
+    while(arr.length<14) arr.push(pick(all));
+    for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}
+    return arr.join("");
   };
 
   // Password validation
