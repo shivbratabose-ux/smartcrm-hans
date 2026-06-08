@@ -16,7 +16,7 @@ import { CSS } from "./styles";
 
 // Supabase integration
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, insertRecord, updateRecord, deleteRecord, restoreRecord, loadDeleted, loadSettings, saveSettings, saveAiConfig, subscribeToSettings } from "./lib/db";
+import { loadAllData, subscribeToAll, signOut as supabaseSignOut, seedSupabase, insertRecord, updateRecord, deleteRecord, restoreRecord, loadDeleted, loadSettings, saveSettings, saveAiConfig, subscribeToSettings, batchUpsert } from "./lib/db";
 import { DEFAULT_AI_CONFIG } from "./utils/ai";
 
 // Components
@@ -1392,6 +1392,39 @@ export default function SmartCRM() {
     if (error) notify.error(`Couldn't save AI settings to the cloud: ${error.message || "unknown error"}.`);
   }, []);
 
+  // ── Global "Sync to Cloud" — push everything in this browser to Supabase.
+  // A one-click safety net: batch-upserts every module (idempotent, on id),
+  // plus Masters/Catalog and AI config. Useful when a record lives only in the
+  // local cache (e.g. a write that hit a transient RLS/FK/network error) and
+  // other users can't see it. Gated to admin/MD/director.
+  const [syncingAll, setSyncingAll] = useState(false);
+  const _canSyncAll = useMemo(() => {
+    const r = (orgUsers || []).find(u => u.id === currentUser)?.role;
+    return ["admin","md","director"].includes(r);
+  }, [currentUser, orgUsers]);
+  const syncAllToCloud = useCallback(async () => {
+    if (!isSupabaseConfigured) { notify.info("Cloud sync isn't configured in this environment."); return; }
+    if (syncingAll) return;
+    setSyncingAll(true);
+    const modules = {
+      accounts, contacts, leads, opps, activities, callReports, tickets, contracts,
+      collections, targets, quotes, commLogs, events, notes, files, projects, invoices,
+      users: orgUsers,
+    };
+    let total = 0; const failed = [];
+    for (const [mod, arr] of Object.entries(modules)) {
+      const live = (arr || []).filter(r => r && !r.isDeleted);
+      if (!live.length) continue;
+      const { error } = await batchUpsert(mod, live);
+      if (error) failed.push(mod); else total += live.length;
+    }
+    // Masters / Catalog and AI config (only writable by management roles)
+    if (_canWriteSettings) { const { error } = await saveSettings({ masters, catalog }); if (error) failed.push("masters/catalog"); }
+    setSyncingAll(false);
+    if (failed.length) notify.error(`Synced ${total} records. Couldn't sync: ${failed.join(", ")}.`);
+    else notify.success(`Synced ${total} records to the cloud. Everyone now sees the same data.`);
+  }, [accounts, contacts, leads, opps, activities, callReports, tickets, contracts, collections, targets, quotes, commLogs, events, notes, files, projects, invoices, orgUsers, masters, catalog, syncingAll, _canWriteSettings]);
+
   const addNote = note => setNotes(p=>[...p,note]);
   const addFile = file => setFiles(p=>[...p,file]);
   const logout  = () => { if(isSupabaseConfigured) supabaseSignOut(); clearSession(); setCurrentUser(null); setPage("dashboard"); };
@@ -2327,7 +2360,7 @@ export default function SmartCRM() {
       <div className="app">
         <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={visibleTickets} leads={visibleLeads} collections={visibleCollections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount} canRestore={canRestore}/>
         <div className="main">
-          <Header page={page} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={visibleUpdates} myUnreadCount={myUnreadCount}/>
+          <Header page={page} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={visibleUpdates} myUnreadCount={myUnreadCount} onSyncAll={_canSyncAll ? syncAllToCloud : undefined} syncing={syncingAll}/>
           <div className="content" id="main-content" role="main">
             {page==="dashboard"  && <Dashboard accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} setPage={setPage} orgUsers={orgUsers} currentUser={currentUser}/>}
             {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}

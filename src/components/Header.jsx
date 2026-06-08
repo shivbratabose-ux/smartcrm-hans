@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { Search, Bell, BarChart3, User, Settings, LogOut, Key, ChevronDown, HelpCircle } from "lucide-react";
+import { Search, Bell, BarChart3, User, Settings, LogOut, Key, ChevronDown, HelpCircle, UploadCloud, RefreshCw } from "lucide-react";
 import { TEAM_MAP, ROLE_MAP, INIT_USERS } from '../data/constants';
 
 export const PAGE_LABELS={
@@ -35,7 +35,7 @@ function timeAgoShort(iso) {
   return `${Math.floor(hrs/24)}d ago`;
 }
 
-function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,currentUser,onLogout,orgUsers,updates,myUnreadCount}) {
+function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,currentUser,onLogout,orgUsers,updates,myUnreadCount,onSyncAll,syncing}) {
   const [searchQ,setSearchQ]=useState("");
   const [results,setResults]=useState([]);
   const [showMenu,setShowMenu]=useState(false);
@@ -147,6 +147,13 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
             </div>
           )}
         </div>
+        {onSyncAll && (
+          <button className="icon-btn" onClick={onSyncAll} disabled={syncing}
+            title="Sync all local changes to the cloud (push everything in this browser to Supabase)"
+            aria-label="Sync to cloud">
+            {syncing ? <RefreshCw size={18} className="spin"/> : <UploadCloud size={18}/>}
+          </button>
+        )}
         <button className="icon-btn" onClick={()=>setPage("reports")} title="Reports" aria-label="Reports"><BarChart3 size={18}/></button>
         <button className="icon-btn help-btn" onClick={()=>setPage("help")}
           title={`Help: ${PAGE_LABELS[page]||page}`}
