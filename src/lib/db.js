@@ -684,12 +684,17 @@ export async function insertRecord(module, record) {
   // Remove undefined/null keys
   Object.keys(snaked).forEach(k => snaked[k] === undefined && delete snaked[k]);
 
-  // .maybeSingle() so a post-insert RLS visibility miss (row written, but
-  // RLS filter hides it from the caller) returns {data:null,error:null}
-  // instead of "Cannot coerce the result to a single JSON object". The
-  // insert itself still succeeded; we just can't read the row back.
+  // Upsert (on the `id` primary key), not a plain insert, so this is
+  // idempotent. Some create flows (e.g. Team & Users) insert a record
+  // explicitly AND then add it to React state, which the generic diff-sync
+  // sees as "new" and tries to insert again — a plain insert made that second
+  // write fail with a duplicate-pkey error ("users insert: duplicate key").
+  // Upsert turns the redundant second write into a harmless no-op update.
+  // .maybeSingle() so a post-write RLS visibility miss (row written, but RLS
+  // filter hides it from the caller) returns {data:null,error:null} instead
+  // of "Cannot coerce the result to a single JSON object".
   const { data, error } = await writeWithSchemaHeal(table, snaked,
-    payload => supabase.from(table).insert(payload).select().maybeSingle());
+    payload => supabase.from(table).upsert(payload, { onConflict: "id" }).select().maybeSingle());
   if (error) dbLog('error', `[DB] insert ${module}:`, error);
   return { data: data ? toCamel(data, module) : record, error };
 }
