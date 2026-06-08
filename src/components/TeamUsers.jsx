@@ -513,7 +513,7 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,customPe
 
       {tab==="users"&&(
         <div className="user-table">
-          <table className="tbl">
+          <table className="tbl tbl-dense">
             <thead><tr><th>User</th><th>Role</th><th>LOB</th><th>Branch</th><th>Dept</th><th>Status</th><th>Join Date</th>{canManage&&<th style={{width:120}}>Actions</th>}</tr></thead>
             <tbody>{orgUsers.map(u=>{
               const roleInfo=ROLE_MAP[u.role];
