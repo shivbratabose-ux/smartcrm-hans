@@ -8,6 +8,7 @@ import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWi
 import Pagination, { usePagination } from './Pagination';
 import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from './ProductModulePicker';
 import DynamicLeadFields from './DynamicLeadFields';
+import { computeLeadScore } from '../utils/leadScore';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
@@ -891,6 +892,9 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
                   {editField("Product Interest", "product", "select", PRODUCTS)}
                   {editField("Lead Source", "source", "select", LEAD_SOURCES.map(s => ({id:s, name:s})))}
                   {editField("Score", "score", "range")}
+                  <button type="button" className="btn btn-sec btn-xs" style={{marginTop:2}}
+                    title="Compute score from the sizing inputs (budget, volumes, staff, product scale)"
+                    onClick={() => updateLead({ score: computeLeadScore(lead) })}>Auto-score from inputs</button>
                   {editField("Est. Value (₹L)", "estimatedValue", "number")}
                   {editField("Lead Temperature", "temperature", "select", LEAD_TEMPERATURES.map(t => ({id:t, name:t})))}
                   {editField("Next Call Date", "nextCall", "date")}
@@ -2974,6 +2978,8 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
               <div style={{display:"flex",alignItems:"center",gap:10,marginTop:4}}>
                 <input type="range" min="0" max="100" value={form.score} onChange={e => setForm(f => ({...f, score:+e.target.value}))} style={{flex:1}}/>
                 <LeadScore score={form.score}/>
+                <button type="button" className="btn btn-sec btn-xs" title="Compute score from the sizing inputs (budget, volumes, staff, product scale)"
+                  onClick={() => setForm(f => ({...f, score: computeLeadScore(f, masters?.leadProductFields)}))}>Auto-score</button>
               </div>
               <FormError error={formErrors.score}/>
             </div>
