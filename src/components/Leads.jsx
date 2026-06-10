@@ -1659,25 +1659,28 @@ function GridCell({ value, onCommit, type = "text", placeholder = "", style = {}
   );
 }
 
-function GridSelect({ value, onCommit, options, style = {} }) {
+// Click-to-edit select: shows a clean read-only display (text, badge or pill)
+// until clicked, then becomes a focused <select>. Removes the wall of always-on
+// dropdowns that cluttered the grid.
+function GridSelect({ value, onCommit, options, style = {}, render }) {
+  const [editing, setEditing] = useState(false);
+  const label = options.find(o => o.value === value)?.label ?? (value || "");
+  if (editing) {
+    return (
+      <select autoFocus value={value ?? ""}
+        onChange={e => { onCommit(e.target.value); setEditing(false); }}
+        onBlur={() => setEditing(false)}
+        style={{ width: "100%", border: "1px solid var(--brand)", borderRadius: 4, padding: "3px 4px", fontSize: 12, outline: "none", ...style }}>
+        <option value="">—</option>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    );
+  }
   return (
-    <select
-      value={value ?? ""}
-      onChange={e => onCommit(e.target.value)}
-      style={{
-        width: "100%",
-        border: "1px solid transparent",
-        borderRadius: 3,
-        padding: "3px 4px",
-        fontSize: 12,
-        background: "transparent",
-        outline: "none",
-        cursor: "pointer",
-        ...style,
-      }}>
-      <option value="">—</option>
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <span className="grid-edit" onClick={() => setEditing(true)} title="Click to edit"
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer", padding: "2px 5px", borderRadius: 5, maxWidth: "100%", ...style }}>
+      {render ? render(value, label) : (label ? label : <span style={{ color: "var(--text3)" }}>—</span>)}
+    </span>
   );
 }
 
@@ -1688,8 +1691,8 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
   const ownerOpts = team.map(u => ({ value: u.id, label: u.name }));
 
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table className="tbl tbl-dense" style={{ minWidth: 1400 }}>
+    <div style={{ overflow: "auto", maxHeight: "calc(100vh - 300px)" }}>
+      <table className="tbl tbl-dense tbl-stick" style={{ minWidth: 1400 }}>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
             <th style={{ width: 32 }}><input type="checkbox" checked={bulk.allSelected} onChange={bulk.toggleAll}/></th>
@@ -1723,7 +1726,7 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
                 <td><GridCell value={l.contact} onCommit={v => updateLeadField(l.id, "contact", v)} style={{ textTransform: "capitalize" }}/></td>
                 <td><GridCell type="email" value={l.email} onCommit={v => updateLeadField(l.id, "email", v)} style={{ textTransform: "lowercase" }}/></td>
                 <td><GridCell value={l.phone} onCommit={v => updateLeadField(l.id, "phone", v)}/></td>
-                <td><GridSelect value={l.stage} options={stageOpts} onCommit={v => updateLeadField(l.id, "stage", v)}/></td>
+                <td><GridSelect value={l.stage} options={stageOpts} onCommit={v => updateLeadField(l.id, "stage", v)} render={(v, label) => <StatusBadge status={label || v}/>}/></td>
                 <td>
                   <GridCell
                     type="number"
@@ -1737,7 +1740,7 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
                 </td>
                 <td><GridSelect value={l.source} options={sourceOpts} onCommit={v => updateLeadField(l.id, "source", v)}/></td>
                 <td><GridSelect value={l.region} options={regionOpts} onCommit={v => updateLeadField(l.id, "region", v)}/></td>
-                <td><GridSelect value={l.assignedTo} options={ownerOpts} onCommit={v => updateLeadField(l.id, "assignedTo", v)}/></td>
+                <td><GridSelect value={l.assignedTo} options={ownerOpts} onCommit={v => updateLeadField(l.id, "assignedTo", v)} render={(v) => v ? <UserPill uid={v}/> : <span style={{color:"var(--text3)"}}>—</span>}/></td>
                 <td>
                   <GridCell
                     type="date"
