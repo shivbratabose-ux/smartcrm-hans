@@ -1689,16 +1689,16 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
 
   return (
     <div style={{ overflowX: "auto" }}>
-      <table className="tbl" style={{ minWidth: 1400 }}>
+      <table className="tbl tbl-dense" style={{ minWidth: 1400 }}>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
             <th style={{ width: 32 }}><input type="checkbox" checked={bulk.allSelected} onChange={bulk.toggleAll}/></th>
-            <th style={{cursor:"pointer",userSelect:"none",width:110}} onClick={() => toggleSort("leadId")}>Lead ID<SortIcon col="leadId"/></th>
+            <th style={{cursor:"pointer",userSelect:"none",width:118}} onClick={() => toggleSort("leadId")}>Lead ID<SortIcon col="leadId"/></th>
             <th style={{cursor:"pointer",userSelect:"none",minWidth:160}} onClick={() => toggleSort("company")}>Company<SortIcon col="company"/></th>
             <th style={{cursor:"pointer",userSelect:"none",minWidth:140}} onClick={() => toggleSort("contact")}>Contact<SortIcon col="contact"/></th>
             <th style={{minWidth:180}}>Email</th>
             <th style={{minWidth:120}}>Phone</th>
-            <th style={{cursor:"pointer",userSelect:"none",minWidth:120}} onClick={() => toggleSort("stage")}>Stage<SortIcon col="stage"/></th>
+            <th style={{cursor:"pointer",userSelect:"none",minWidth:150}} onClick={() => toggleSort("stage")}>Stage<SortIcon col="stage"/></th>
             <th style={{cursor:"pointer",userSelect:"none",width:80}} onClick={() => toggleSort("score")}>Score<SortIcon col="score"/></th>
             <th style={{minWidth:130}}>Source</th>
             <th style={{minWidth:120}}>Region</th>
@@ -1716,7 +1716,7 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
                 <td>
                   <span
                     onClick={() => onOpenDetail(l)}
-                    style={{fontFamily:"'Courier New',monospace",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"var(--s2)",color:"var(--brand)",cursor:"pointer"}}
+                    style={{fontFamily:"'Courier New',monospace",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"var(--s2)",color:"var(--brand)",cursor:"pointer",whiteSpace:"nowrap"}}
                     title="Open detail view">{l.leadId}</span>
                 </td>
                 <td><GridCell value={l.company} onCommit={v => updateLeadField(l.id, "company", v)} style={{ fontWeight: 600, textTransform: "uppercase" }}/></td>
