@@ -250,7 +250,7 @@ const toSnake = (obj, module) => {
     mustChangePassword:"must_change_password", tempPasswordExpiresAt:"temp_password_expires_at",
     // Lead fields
     assignedTo:"assigned_to", contactIds:"contact_ids", contactRoles:"contact_roles",
-    additionalProducts:"additional_products", estimatedValue:"estimated_value",
+    additionalProducts:"additional_products", estimatedValue:"estimated_value", productFields:"product_fields",
     stageHistory:"stage_history",
     // convertedOppId (singular) was renamed to convertedOppIds (plural,
     // array) when the schema started supporting partial conversions to
@@ -475,7 +475,7 @@ const toCamel = (obj, module) => {
     must_change_password:"mustChangePassword", temp_password_expires_at:"tempPasswordExpiresAt",
     // Lead fields
     assigned_to:"assignedTo", contact_ids:"contactIds", contact_roles:"contactRoles",
-    additional_products:"additionalProducts", estimated_value:"estimatedValue",
+    additional_products:"additionalProducts", estimated_value:"estimatedValue", product_fields:"productFields",
     stage_history:"stageHistory",
     // converted_opp_id (singular) intentionally omitted — see toSnake
     // header for context. The column doesn't exist in the schema, so

@@ -7,6 +7,7 @@ import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getSco
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from './ProductModulePicker';
+import DynamicLeadFields from './DynamicLeadFields';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
@@ -896,6 +897,14 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
                   {editField("Assigned To", "assignedTo", "select", _team)}
                   {editField("Created Date", "createdDate", "date")}
                 </div>
+              </div>
+              {/* Product-specific qualifying fields (dynamic per selected product) */}
+              <div style={{marginTop:12}}>
+                <DynamicLeadFields
+                  productKeys={[...(lead.productSelection || []).map(e => e.productId), lead.product, ...(lead.additionalProducts || [])].filter(Boolean)}
+                  value={lead.productFields || {}}
+                  onChange={(next) => updateLead({ productFields: next })}
+                />
               </div>
               {/* Notes section */}
               <div style={{marginTop:12}}>
@@ -2859,6 +2868,14 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
               }}
             />
           </div>
+          {/* Product-specific qualifying fields — appear for whichever products
+              are selected above. Answers stored in form.productFields. */}
+          <DynamicLeadFields
+            productKeys={[...(form.productSelection || []).map(e => e.productId), form.product, ...(form.additionalProducts || [])].filter(Boolean)}
+            value={form.productFields || {}}
+            onChange={(next) => setForm(f => ({ ...f, productFields: next }))}
+            dict={masters?.leadProductFields}
+          />
           <div className="form-row">
             <div className="form-group"><label>Industry / Vertical</label><select value={form.vertical} onChange={e => setForm(f => ({...f, vertical:e.target.value}))}>{VERTICALS.map(v => <option key={v}>{v}</option>)}</select></div>
             <div className="form-group"><label>Region</label><select value={form.region} onChange={e => setForm(f => ({...f, region:e.target.value}))}>{REGIONS.map(r => <option key={r}>{r}</option>)}</select></div>
