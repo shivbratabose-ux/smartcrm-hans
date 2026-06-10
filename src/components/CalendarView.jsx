@@ -27,6 +27,8 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   const [selectedEvent,setSelectedEvent]=useState(null);
   const [scheduleModal,setScheduleModal]=useState(false);
   const [scheduleForm,setScheduleForm]=useState({});
+  // Source filter: show calls, activities, events, or everything together.
+  const [sourceFilter,setSourceFilter]=useState("all");
 
   const year=viewDate.getFullYear(), month=viewDate.getMonth();
   const monthName=viewDate.toLocaleString("default",{month:"long",year:"numeric"});
@@ -103,7 +105,13 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
     return [...evItems, ...actItems, ...callItems];
   }, [events, activities, callReports, accounts]);
 
-  const itemsOn=(d)=>allItems.filter(e=>e.date===dateStr(d));
+  // Apply the Calls / Activities / Events source filter. "all" = everything.
+  const visibleItems = useMemo(
+    () => sourceFilter === "all" ? allItems : allItems.filter(e => e._source === sourceFilter),
+    [allItems, sourceFilter]
+  );
+
+  const itemsOn=(d)=>visibleItems.filter(e=>e.date===dateStr(d));
 
   const nav=(dir)=>{
     const d=new Date(viewDate);
@@ -113,12 +121,12 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   };
 
   const todayStats=useMemo(()=>{
-    const t=allItems.filter(e=>e.date===today);
+    const t=visibleItems.filter(e=>e.date===today);
     return {total:t.length,scheduled:t.filter(e=>e.status==="Scheduled").length,completed:t.filter(e=>e.status==="Completed").length};
-  },[allItems]);
+  },[visibleItems]);
 
-  const overdue=allItems.filter(e=>e.date<today&&e.status==="Scheduled").length;
-  const upcoming=allItems.filter(e=>e.date>=today&&e.status==="Scheduled").length;
+  const overdue=visibleItems.filter(e=>e.date<today&&e.status==="Scheduled").length;
+  const upcoming=visibleItems.filter(e=>e.date>=today&&e.status==="Scheduled").length;
 
   const openAdd=(date)=>{
     setForm({...BLANK_EVENT,id:`ev${uid()}`,date:date||today,owner:currentUser});
@@ -211,6 +219,15 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
           <div className="pg-sub">{todayStats.total} today ({todayStats.scheduled} pending) · {upcoming} upcoming{overdue>0&&<span style={{color:"var(--red)",fontWeight:700}}> · {overdue} overdue</span>}</div>
         </div>
         <div className="pg-actions">
+          {/* Source filter — show calls, activities, scheduled events, or all */}
+          <select value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)}
+            title="Choose which items appear on the calendar"
+            style={{fontSize:12,fontWeight:600,padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"var(--surface)",color:"var(--text2)",cursor:"pointer"}}>
+            <option value="all">Both — Calls + Activities</option>
+            <option value="call">Calls only</option>
+            <option value="activity">Activities only</option>
+            <option value="event">Events only</option>
+          </select>
           <div style={{display:"flex",gap:4,background:"var(--s2)",border:"1px solid var(--border)",borderRadius:8,padding:3}}>
             <button className={`btn btn-xs ${view==="week"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("week")}>Week</button>
             <button className={`btn btn-xs ${view==="month"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("month")}>Month</button>
@@ -289,7 +306,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         <div className="card" style={{padding:0}}>
           <table className="tbl">
             <thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Type</th><th>Status</th><th>Source</th><th>Account</th><th>Owner</th><th>Location</th><th></th></tr></thead>
-            <tbody>{[...allItems].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(ev=>{
+            <tbody>{[...visibleItems].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(ev=>{
               const col=SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)";
               const acc=accounts.find(a=>a.id===ev.accountId);
               const isOverdue=ev.date<today&&ev.status==="Scheduled";
