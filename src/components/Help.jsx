@@ -1024,12 +1024,17 @@ function Help({ currentPage }) {
   const searchResults = useMemo(() => {
     if (!search.trim()) return [];
     const q = search.toLowerCase();
+    // Content items aren't always strings: shortcut-group items are
+    // [keys, description] PAIRS (arrays). Coerce everything to a searchable
+    // string so one non-string item can't crash the whole Help page
+    // ("toLowerCase is not a function").
+    const txt = (v) => Array.isArray(v) ? v.map(txt).join(" ") : String(v ?? "");
     return allArticles.filter(a =>
-      a.title.toLowerCase().includes(q) ||
-      (a.tags || []).some(t => t.includes(q)) ||
-      a.content.some(s => (s.text || "").toLowerCase().includes(q) ||
-        (s.items || []).some(it => it.toLowerCase().includes(q)) ||
-        (s.rows  || []).some(r => r.join(" ").toLowerCase().includes(q))
+      txt(a.title).toLowerCase().includes(q) ||
+      (a.tags || []).some(t => txt(t).toLowerCase().includes(q)) ||
+      (a.content || []).some(s => txt(s.text).toLowerCase().includes(q) ||
+        (s.items || []).some(it => txt(it).toLowerCase().includes(q)) ||
+        (s.rows  || []).some(r => txt(r).toLowerCase().includes(q))
       )
     );
   }, [search, allArticles]);
