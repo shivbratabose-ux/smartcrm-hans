@@ -4,6 +4,7 @@ import { PROD_MAP } from '../data/constants';
 import { uid } from '../utils/helpers';
 import { Modal, Confirm, HelpTooltip, PageTip } from './shared';
 import { saveSettings } from '../lib/db';
+import LeadFieldsEditor from './LeadFieldsEditor';
 import { notify } from '../utils/toast';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -539,7 +540,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
       </div>
 
       <div style={{display:"flex",gap:8,marginBottom:18}}>
-        {[{id:"reference",label:"Reference Data"},{id:"products",label:"Product Catalogue"}].map(t=>(
+        {[{id:"reference",label:"Reference Data"},{id:"products",label:"Product Catalogue"},{id:"leadfields",label:"Lead Capture Fields"}].map(t=>(
           <button key={t.id} className={`btn btn-sm ${tab===t.id?"btn-primary":"btn-sec"}`} onClick={()=>setTab(t.id)}>{t.label}</button>
         ))}
       </div>
@@ -594,6 +595,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
       )}
 
       {tab==="products" && <ProductCatalogPage catalog={catalog} setCatalog={setCatalog} orgUsers={orgUsers} currentUser={currentUser}/>}
+      {tab==="leadfields" && <LeadFieldsEditor masters={masters} setMasters={setMasters} catalog={catalog}/>}
     </div>
   );
 }

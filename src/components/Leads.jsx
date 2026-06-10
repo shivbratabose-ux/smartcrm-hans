@@ -426,7 +426,7 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   );
 }
 
-function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts, setLeads }) {
+function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts, setLeads }) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -894,7 +894,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
                   {editField("Score", "score", "range")}
                   <button type="button" className="btn btn-sec btn-xs" style={{marginTop:2}}
                     title="Compute score from the sizing inputs (budget, volumes, staff, product scale)"
-                    onClick={() => updateLead({ score: computeLeadScore(lead) })}>Auto-score from inputs</button>
+                    onClick={() => updateLead({ score: computeLeadScore(lead, masters?.leadProductFields) })}>Auto-score from inputs</button>
                   {editField("Est. Value (₹L)", "estimatedValue", "number")}
                   {editField("Lead Temperature", "temperature", "select", LEAD_TEMPERATURES.map(t => ({id:t, name:t})))}
                   {editField("Next Call Date", "nextCall", "date")}
@@ -908,6 +908,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
                   productKeys={[...(lead.productSelection || []).map(e => e.productId), lead.product, ...(lead.additionalProducts || [])].filter(Boolean)}
                   value={lead.productFields || {}}
                   onChange={(next) => updateLead({ productFields: next })}
+                  dict={masters?.leadProductFields}
                 />
               </div>
               {/* Notes section */}
@@ -3010,6 +3011,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       {detail && (
         <LeadDetail
           lead={detail}
+          masters={masters}
           onClose={() => setDetail(null)}
           accounts={accounts}
           contacts={allContacts || []}
