@@ -575,7 +575,9 @@ export default function DataGrid({
                     key={c.key}
                     style={{
                       width: c.width, minWidth: c.width, maxWidth: c.width,
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      ...(c.wrap
+                        ? { whiteSpace: "normal", overflow: "hidden", wordBreak: "break-word" }
+                        : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }),
                     }}
                   >
                     {c.render ? c.render(r) : r[c.key]}

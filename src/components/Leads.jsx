@@ -1777,8 +1777,8 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
   // own views from this set; only DEFAULT_CONFIG visible:true ones show
   // on first visit.
   const LEADS_COLUMNS = useMemo(() => ([
-    { key: "leadId", label: "Lead ID", defaultWidth: 110, render: l => (
-      <span style={{fontFamily:"'Courier New',monospace", fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:4, background:"var(--s2)", color:"var(--text2)"}}>{l.leadId}</span>
+    { key: "leadId", label: "Lead ID", defaultWidth: 120, wrap: true, render: l => (
+      <span style={{display:"inline-block", fontFamily:"'Courier New',monospace", fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:4, background:"var(--s2)", color:"var(--text2)", whiteSpace:"normal", wordBreak:"break-word"}}>{l.leadId}</span>
     )},
     { key: "company", label: "Company", defaultWidth: 220, render: l => (
       <>
@@ -2252,6 +2252,17 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       const ev = Number(l.estimatedValue) || 0;
       return s + (ev > 0 ? ev : clampScore(l.score) * 0.5);
     }, 0);
+  // Converted leads are now opportunities (their value lives in the
+  // Pipeline module), so they're kept separate from `pipelineValue`.
+  // We surface the figure on the card too so the total matches the
+  // sum of the Est. Value column and gives a complete view.
+  const convertedValue = filtered
+    .filter(l => l.stage === "Converted")
+    .reduce((s, l) => {
+      const ev = Number(l.estimatedValue) || 0;
+      return s + (ev > 0 ? ev : clampScore(l.score) * 0.5);
+    }, 0);
+  const totalValue = pipelineValue + convertedValue;
   const overdueLeads = filtered.filter(l => l.nextCall && l.nextCall < today && l.stage !== "NA").length;
   const hotLeads = filtered.filter(l => l.score >= 70 && l.stage !== "NA").length;
   const avgAge = filtered.length > 0 ? Math.round(filtered.reduce((s, l) => s + (daysSince(l.createdDate) || 0), 0) / filtered.length) : 0;
@@ -2368,8 +2379,8 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
         </div>
         <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>PIPELINE VALUE</div>
-          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>₹{pipelineValue.toFixed(1)}L</div>
-          <div style={{fontSize:11,opacity:0.7}} title="Sum of Est. Value across active leads (Converted / NA excluded). Falls back to score×0.5 when a lead has no Est. Value entered.">Active leads · Est. Value</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>₹{totalValue.toFixed(1)}L</div>
+          <div style={{fontSize:11,opacity:0.7}} title="Total Est. Value across all leads (matches the Est. Value column). Active = pipeline stages; Converted = leads now tracked as opportunities. Falls back to score×0.5 when a lead has no Est. Value entered.">Active ₹{pipelineValue.toFixed(1)}L · Converted ₹{convertedValue.toFixed(1)}L</div>
         </div>
         <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>CONVERSION</div>
