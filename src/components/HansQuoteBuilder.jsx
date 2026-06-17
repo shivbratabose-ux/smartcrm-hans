@@ -1,0 +1,373 @@
+// ═══════════════════════════════════════════════════════════════════
+// HansQuoteBuilder — CRM-driven, engine-backed quotation builder
+// ═══════════════════════════════════════════════════════════════════
+// Phase C of the Quotation Module brief. Opportunity-first flow: pick an
+// opportunity → party auto-resolves (account or lead) → add catalogue
+// lines (qty / months / disc%) → the pure pricingEngine computes the
+// one-time / recurring split, prepayment, GST, ALR, grand total and TCV
+// live. Guardrails surface inline. Saving pushes a quote into the shared
+// `quotes` array (additive — engine breakdown under q.hans) so it shows
+// in the existing Quote Register and reuses the existing export/approval.
+//
+// This EXTENDS the existing Quotations module (it is launched from its
+// toolbar) without touching the legacy per-line-GST builder.
+// ═══════════════════════════════════════════════════════════════════
+
+import { useState, useMemo } from "react";
+import { Plus, Trash2, X, AlertTriangle, Check, Info } from "lucide-react";
+import {
+  QUOTE_CONFIG, HANS_CATALOGUE, PRICING_BANDS, ICAFFE_EDITIONS,
+  ICAFFE_BAND_FROM, ICAFFE_PLANS, QUOTE_TERMS,
+} from "../data/quotationMasters";
+import {
+  resolveUnitPrice, computeLine, computeQuote, isOneTimeModel,
+  evaluateDiscountGuardrail, validateCcsRule, validateWiseHandlingModules,
+  formatQuoteNumber,
+} from "../lib/quotation/pricingEngine";
+import { printHansQuote } from "../lib/quotation/printQuote";
+
+const today = () => new Date().toISOString().slice(0, 10);
+const inr = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
+const inr2 = (n) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const BLANK_LINE = { productCode: "", qty: 1, months: 12, discountPct: 0 };
+
+export default function HansQuoteBuilder({
+  opps = [], leads = [], accounts = [], contacts = [],
+  quotes = [], setQuotes, currentUser, orgUsers = [], onClose,
+  masters = null,
+}) {
+  // Masters resolve from persisted overrides if present, else seeded defaults.
+  const config = masters?.quoteConfig || QUOTE_CONFIG;
+  const catalogue = (masters?.catalogue && masters.catalogue.length ? masters.catalogue : HANS_CATALOGUE).filter(p => p.active !== false);
+  const bands = masters?.bands || PRICING_BANDS;
+  const editions = masters?.editions || ICAFFE_EDITIONS;
+  const bandFrom = masters?.bandFrom || ICAFFE_BAND_FROM;
+  const catByCode = useMemo(() => Object.fromEntries(catalogue.map(p => [p.code, p])), [catalogue]);
+
+  const me = orgUsers.find(u => u.id === currentUser);
+
+  // ── Header / party state ────────────────────────────────────────────
+  const [oppId, setOppId] = useState("");
+  const [party, setParty] = useState({ name: "", address: "", state: "", gstin: "" });
+  const [currency, setCurrency] = useState("INR");
+  const [overallDiscountPct, setOverallDiscountPct] = useState(0);
+  const [prepaymentApplicable, setPrepaymentApplicable] = useState(false);
+  const [prepaymentDiscountPct, setPrepaymentDiscountPct] = useState(config.prepaymentDiscountPctDefault);
+  const [notes, setNotes] = useState("");
+  const [lines, setLines] = useState([{ ...BLANK_LINE }]);
+  const [saved, setSaved] = useState(null);
+
+  // Resolve party from the picked opportunity. The app's opportunities
+  // link to an account (existing customer) and/or a source lead (new).
+  const onPickOpp = (id) => {
+    setOppId(id);
+    const opp = opps.find(o => o.id === id);
+    if (!opp) { setParty({ name: "", address: "", state: "", gstin: "" }); return; }
+    const acc = accounts.find(a => a.id === opp.accountId);
+    const lead = leads.find(l => l.id === opp.sourceLeadId || (Array.isArray(opp.sourceLeadIds) && opp.sourceLeadIds.includes(l.id)));
+    if (acc) {
+      setParty({
+        name: acc.legalName || acc.name || "",
+        address: acc.billingAddress || acc.address || "",
+        state: acc.billingState || acc.state || "",
+        gstin: acc.gstin || "",
+      });
+    } else if (lead) {
+      setParty({ name: lead.company || "", address: lead.address || "", state: lead.state || "", gstin: lead.gstin || "" });
+    }
+  };
+
+  // ── Line helpers ────────────────────────────────────────────────────
+  const addLine = () => setLines(ls => [...ls, { ...BLANK_LINE }]);
+  const removeLine = (i) => setLines(ls => ls.filter((_, idx) => idx !== i));
+  const updateLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+
+  // Enrich each line with its catalogue snapshot + resolved unit price,
+  // shaped exactly as the engine expects.
+  const pricedLines = useMemo(() => lines.map(l => {
+    const p = catByCode[l.productCode];
+    if (!p) return { ...l, _empty: true, pricingModel: "", unitPriceResolved: 0, missingRate: false };
+    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, config, fx: config.fx });
+    const oneTime = isOneTimeModel(p.pricingModel);
+    return {
+      ...l,
+      productCode: p.code, name: p.name, module: p.module, description: p.description,
+      pricingModel: p.pricingModel, unit: p.unit, minMonthFloor: p.minMonthFloor,
+      unitPriceResolved: unitPrice, missingRate,
+      months: oneTime ? 1 : l.months,
+      ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor }),
+    };
+  }), [lines, catByCode, bands, editions, bandFrom, config]);
+
+  const summary = useMemo(() => computeQuote(
+    pricedLines.filter(l => !l._empty),
+    { customerState: party.state, overallDiscountPct, prepaymentApplicable, prepaymentDiscountPct },
+    config
+  ), [pricedLines, party.state, overallDiscountPct, prepaymentApplicable, prepaymentDiscountPct, config]);
+
+  // ── Guardrails ──────────────────────────────────────────────────────
+  const discGuard = evaluateDiscountGuardrail(pricedLines, { overallDiscountPct }, config);
+  const usedCatalogueForCcs = catalogue; // CC03/CC04 validated against the active rate card
+  const ccsRule = validateCcsRule(usedCatalogueForCcs);
+  const usesBothCcs = pricedLines.some(l => l.productCode === "CC03") && pricedLines.some(l => l.productCode === "CC04");
+  const whRule = validateWiseHandlingModules(pricedLines);
+  const missingRateLines = pricedLines.filter(l => l.missingRate);
+  const needsApproval = discGuard.breached;
+
+  // ── Save ────────────────────────────────────────────────────────────
+  const canSave = oppId && party.name && pricedLines.some(l => !l._empty) && missingRateLines.length === 0;
+
+  const nextQuoteNo = () => {
+    // Per-FY incrementing sequence across engine-built quotes.
+    const fy = formatQuoteNumber(0).split("/").pop();
+    const seqs = quotes
+      .filter(q => typeof q.quoteNo === "string" && q.quoteNo.endsWith(fy) && q.quoteNo.startsWith(config.quoteNumberPrefix))
+      .map(q => parseInt(q.quoteNo.replace(config.quoteNumberPrefix, ""), 10) || 0);
+    const next = (seqs.length ? Math.max(...seqs) : 0) + 1;
+    return formatQuoteNumber(next);
+  };
+
+  const save = () => {
+    if (!canSave || !setQuotes) return;
+    const opp = opps.find(o => o.id === oppId);
+    const quoteNo = nextQuoteNo();
+    const id = `QT-${String(quotes.length + 1).padStart(3, "0")}`;
+    const items = pricedLines.filter(l => !l._empty).map((l, idx) => ({
+      lineNo: idx + 1, productCode: l.productCode, name: l.name, module: l.module,
+      description: l.description, pricingModel: l.pricingModel, unit: l.unit,
+      unitPriceResolved: +l.unitPriceResolved.toFixed(2), qty: Number(l.qty) || 0,
+      months: l.effectiveMonths, discountPct: Number(l.discountPct) || 0,
+      minMonthFloor: l.minMonthFloor ?? null,
+      lineOneTime: +l.lineOneTime.toFixed(2), lineRecurring: +l.lineRecurring.toFixed(2),
+      lineTotal: +l.lineTotal.toFixed(2),
+    }));
+    // Additive engine breakdown — absolute ₹, rounded to paise.
+    const round2 = (v) => +(Number(v) || 0).toFixed(2);
+    const hans = {
+      pricingMode: "hans-engine",
+      party, currency,
+      overallDiscountPct, prepaymentApplicable, prepaymentDiscountPct,
+      oneTimeSubtotal: round2(summary.oneTimeSubtotal),
+      recurringSubtotal: round2(summary.recurringSubtotal),
+      subtotal: round2(summary.subtotal),
+      overallDiscount: round2(summary.overallDiscount),
+      prepaymentDisc: round2(summary.prepaymentDisc),
+      taxableBase: round2(summary.taxableBase),
+      cgst: round2(summary.cgst), sgst: round2(summary.sgst), igst: round2(summary.igst),
+      gstTotal: round2(summary.gstTotal),
+      grandTotal: round2(summary.grandTotal),
+      licenceBase: round2(summary.licenceBase),
+      alrAnnual: round2(summary.alrAnnual),
+      tcv: round2(summary.tcv),
+      intraState: summary.intraState,
+      terms: QUOTE_TERMS,
+    };
+    const quote = {
+      id, quoteNo, title: opp?.title || opp?.name || party.name,
+      oppId, accountId: opp?.accountId || "", sourceLeadId: opp?.sourceLeadId || "",
+      status: needsApproval ? "Approval Required" : "Draft",
+      approvalStatus: needsApproval ? "Pending" : "Not Required",
+      // Register shows totals in ₹L (lakh) — keep its convention.
+      subtotal: +(summary.subtotal / 1e5).toFixed(2),
+      discount: +((summary.overallDiscount + summary.prepaymentDisc) / 1e5).toFixed(2),
+      taxAmount: +(summary.gstTotal / 1e5).toFixed(2),
+      total: +(summary.grandTotal / 1e5).toFixed(2),
+      currency, notes, preparedBy: me?.name || currentUser,
+      owner: currentUser, createdDate: today(),
+      items, hans,
+    };
+    setQuotes(p => [...p, quote]);
+    setSaved(quote);
+  };
+
+  // Build a transient quote object (same shape as save) for print preview.
+  const buildPrintPayload = () => {
+    const round2 = (v) => +(Number(v) || 0).toFixed(2);
+    const items = pricedLines.filter(l => !l._empty).map((l, idx) => ({
+      lineNo: idx + 1, name: l.name, module: l.module, description: l.description,
+      pricingModel: l.pricingModel, qty: Number(l.qty) || 0, months: l.effectiveMonths,
+      unitPriceResolved: round2(l.unitPriceResolved), discountPct: Number(l.discountPct) || 0,
+      lineTotal: round2(l.lineTotal),
+    }));
+    return {
+      quoteNo: nextQuoteNo() + " (preview)", status: needsApproval ? "Approval Required" : "Draft",
+      createdDate: today(), preparedBy: me?.name || currentUser, notes,
+      items,
+      hans: {
+        party, currency, intraState: summary.intraState,
+        oneTimeSubtotal: round2(summary.oneTimeSubtotal), recurringSubtotal: round2(summary.recurringSubtotal),
+        overallDiscount: round2(summary.overallDiscount), prepaymentDisc: round2(summary.prepaymentDisc),
+        taxableBase: round2(summary.taxableBase), cgst: round2(summary.cgst), sgst: round2(summary.sgst),
+        igst: round2(summary.igst), grandTotal: round2(summary.grandTotal), alrAnnual: round2(summary.alrAnnual),
+        tcv: round2(summary.tcv), terms: QUOTE_TERMS,
+      },
+    };
+  };
+  const previewPrint = () => printHansQuote(buildPrintPayload());
+
+  // ── Render ──────────────────────────────────────────────────────────
+  const planPreset = (key) => {
+    const plan = ICAFFE_PLANS[key];
+    if (!plan) return;
+    setLines(ls => ls.map(l => isOneTimeModel(catByCode[l.productCode]?.pricingModel) ? l : { ...l, months: plan.months, discountPct: plan.discountPct ?? l.discountPct }));
+    if (key === "saasAdvance") { setPrepaymentApplicable(true); setPrepaymentDiscountPct(plan.prepaymentDiscountPct); }
+  };
+
+  const lbl = { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text3)", marginBottom: 3 };
+  const sumRow = (label, val, opts = {}) => (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: opts.big ? 15 : 12.5, fontWeight: opts.big ? 800 : opts.bold ? 700 : 500, color: opts.color || "var(--text1)", borderTop: opts.divide ? "1px solid var(--border)" : "none", marginTop: opts.divide ? 4 : 0, paddingTop: opts.divide ? 8 : 4 }}>
+      <span>{label}</span><span style={{ fontFamily: "'Outfit',sans-serif" }}>{val}</span>
+    </div>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: 20 }} onClick={onClose}>
+      <div style={{ width: 1080, maxWidth: "98vw", background: "var(--surface)", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", margin: "auto" }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>New Quotation <span style={{ fontSize: 11, fontWeight: 600, color: "var(--brand)", background: "var(--s2)", padding: "2px 8px", borderRadius: 10, marginLeft: 6 }}>Hans pricing</span></div>
+          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        {saved ? (
+          <div style={{ padding: 40, textAlign: "center" }}>
+            <Check size={40} color="#16A34A" />
+            <div style={{ fontSize: 18, fontWeight: 800, marginTop: 10 }}>Quote {saved.quoteNo} saved</div>
+            <div style={{ color: "var(--text3)", fontSize: 13, marginTop: 4 }}>It's in the Quote Register{needsApproval ? " — flagged Approval Required (discount over policy)." : "."}</div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 18 }}>
+              <button className="btn btn-sec" onClick={() => printHansQuote(saved)}>Print / PDF</button>
+              <button className="btn btn-primary" onClick={onClose}>Back to Register</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: 18, display: "grid", gridTemplateColumns: "1fr 340px", gap: 18 }}>
+            {/* LEFT: party + lines */}
+            <div>
+              {/* Opportunity + party */}
+              <div className="form-row">
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label>Opportunity</label>
+                  <select value={oppId} onChange={e => onPickOpp(e.target.value)}>
+                    <option value="">— Select opportunity —</option>
+                    {opps.map(o => <option key={o.id} value={o.id}>{o.title || o.name || o.id}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ width: 110 }}>
+                  <label>Currency</label>
+                  <select value={currency} onChange={e => setCurrency(e.target.value)}>
+                    {config.currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group" style={{ flex: 2 }}><label>Party name</label><input value={party.name} onChange={e => setParty({ ...party, name: e.target.value })} placeholder="Auto-filled from opportunity" /></div>
+                <div className="form-group" style={{ flex: 1 }}><label>State (place of supply)</label><input value={party.state} onChange={e => setParty({ ...party, state: e.target.value })} placeholder="e.g. Delhi" /></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group" style={{ flex: 2 }}><label>Address</label><input value={party.address} onChange={e => setParty({ ...party, address: e.target.value })} /></div>
+                <div className="form-group" style={{ flex: 1 }}><label>GSTIN</label><input value={party.gstin} onChange={e => setParty({ ...party, gstin: e.target.value })} /></div>
+              </div>
+
+              {/* Plan presets */}
+              <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 10px" }}>
+                <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>iCAFFE plan:</span>
+                <button className="btn btn-sec btn-xs" onClick={() => planPreset("saasAdvance")}>SaaS Advance (12mo, 10% prepay)</button>
+                <button className="btn btn-sec btn-xs" onClick={() => planPreset("otpArr")}>OTP+ARR (42mo, 45% disc)</button>
+              </div>
+
+              {/* Line grid */}
+              <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, padding: "7px 10px", background: "var(--s2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--text3)" }}>
+                  <span>Product</span><span style={{ textAlign: "right" }}>Qty</span><span style={{ textAlign: "right" }}>Months</span><span style={{ textAlign: "right" }}>Disc%</span><span style={{ textAlign: "right" }}>Line total</span><span />
+                </div>
+                {pricedLines.map((l, i) => {
+                  const oneTime = isOneTimeModel(l.pricingModel);
+                  return (
+                    <div key={i} style={{ padding: "7px 10px", borderTop: "1px solid var(--border)", background: l.missingRate ? "#FEF2F2" : "transparent" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, alignItems: "center" }}>
+                        <select value={l.productCode} onChange={e => updateLine(i, { productCode: e.target.value })} style={{ fontSize: 12 }}>
+                          <option value="">— Pick product —</option>
+                          {catalogue.map(p => <option key={p.code} value={p.code}>{p.code} · {p.name}</option>)}
+                        </select>
+                        <input type="number" min={0} value={l.qty} onChange={e => updateLine(i, { qty: +e.target.value })} style={{ textAlign: "right", fontSize: 12 }} />
+                        <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })} style={{ textAlign: "right", fontSize: 12, opacity: oneTime ? 0.5 : 1 }} />
+                        <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: +e.target.value })} style={{ textAlign: "right", fontSize: 12, color: Number(l.discountPct) > config.maxUserDiscountPct ? "#DC2626" : "inherit", fontWeight: Number(l.discountPct) > config.maxUserDiscountPct ? 700 : 400 }} />
+                        <span style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, fontFamily: "'Outfit',sans-serif" }}>{l._empty ? "—" : inr(l.lineTotal)}</span>
+                        <button className="icon-btn" onClick={() => removeLine(i)} title="Remove"><Trash2 size={13} /></button>
+                      </div>
+                      {!l._empty && (
+                        <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <span>{l.module}</span>·<span>{l.pricingModel}</span>·<span>{bucketBadge(l.pricingModel)}</span>·
+                          <span>{l.missingRate ? <span style={{ color: "#DC2626", fontWeight: 700 }}>Enter rate in master</span> : `unit ${inr2(l.unitPriceResolved)}/${l.unit}`}</span>
+                          {l.minMonthFloor ? <span>· floor {inr(l.minMonthFloor)}/mo</span> : null}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <button className="btn btn-sec btn-xs" style={{ margin: 8 }} onClick={addLine}><Plus size={12} /> Add line</button>
+              </div>
+
+              <div className="form-group" style={{ marginTop: 12 }}><label>Notes</label><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>
+            </div>
+
+            {/* RIGHT: live summary + guardrails */}
+            <div>
+              <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
+                <div style={lbl}>Summary {summary.intraState ? "· intra-state (CGST+SGST)" : "· inter-state (IGST)"}</div>
+                {sumRow("One-time subtotal", inr(summary.oneTimeSubtotal))}
+                {sumRow("Recurring subtotal", inr(summary.recurringSubtotal))}
+                <div className="form-row" style={{ margin: "6px 0", gap: 6 }}>
+                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}><label style={lbl}>Overall disc %</label><input type="number" min={0} max={100} value={overallDiscountPct} onChange={e => setOverallDiscountPct(+e.target.value)} /></div>
+                </div>
+                {summary.overallDiscount > 0 && sumRow("Overall discount", "− " + inr(summary.overallDiscount), { color: "#B91C1C" })}
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, margin: "6px 0" }}>
+                  <input type="checkbox" checked={prepaymentApplicable} onChange={e => setPrepaymentApplicable(e.target.checked)} />
+                  Prepayment discount
+                  <input type="number" min={0} max={100} value={prepaymentDiscountPct} disabled={!prepaymentApplicable} onChange={e => setPrepaymentDiscountPct(+e.target.value)} style={{ width: 52, marginLeft: "auto" }} />%
+                </label>
+                {summary.prepaymentDisc > 0 && sumRow("Prepayment discount", "− " + inr(summary.prepaymentDisc), { color: "#B91C1C" })}
+                {sumRow("Taxable value", inr(summary.taxableBase), { bold: true, divide: true })}
+                {summary.cgst > 0 && sumRow(`CGST ${config.gstRatePct / 2}%`, inr(summary.cgst))}
+                {summary.sgst > 0 && sumRow(`SGST ${config.gstRatePct / 2}%`, inr(summary.sgst))}
+                {summary.igst > 0 && sumRow(`IGST ${config.gstRatePct}%`, inr(summary.igst))}
+                {sumRow("Grand Total (upfront)", inr(summary.grandTotal), { big: true, divide: true })}
+                {summary.alrAnnual > 0 && sumRow("ALR — annual (separate)", inr(summary.alrAnnual), { color: "var(--text3)" })}
+                {sumRow("TCV", inr(summary.tcv), { bold: true })}
+              </div>
+
+              {/* Guardrail banners */}
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                {needsApproval && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={`Approval required — ${discGuard.reasons.join("; ")}`} />}
+                {!ccsRule.ok && <Banner color="#B91C1C" bg="#FEF2F2" icon={<AlertTriangle size={14} />} text={ccsRule.error} />}
+                {ccsRule.ok && usesBothCcs && <Banner color="#B45309" bg="#FFFBEB" icon={<Info size={14} />} text="Quote uses both CC03 and CC04 — confirm CC03 is priced above CC04." />}
+                {whRule.warning && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={whRule.warning} />}
+                {missingRateLines.length > 0 && <Banner color="#B91C1C" bg="#FEF2F2" icon={<AlertTriangle size={14} />} text={`${missingRateLines.length} line(s) have no rate — enter the rate in the master before saving.`} />}
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <button className="btn btn-sec" style={{ flex: "0 0 auto" }} disabled={!pricedLines.some(l => !l._empty)} onClick={previewPrint} title="Preview the client-facing document">Preview</button>
+                <button className="btn btn-primary" style={{ flex: 1 }} disabled={!canSave} onClick={save}>
+                  {needsApproval ? "Save (route for approval)" : "Save quote"}
+                </button>
+              </div>
+              {!canSave && <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 6, textAlign: "center" }}>Pick an opportunity, a party, at least one priced line (no missing rates).</div>}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function bucketBadge(pm) {
+  return isOneTimeModel(pm) ? "One-time" : "Recurring";
+}
+function Banner({ color, bg, icon, text }) {
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "flex-start", background: bg, color, border: `1px solid ${color}33`, borderRadius: 8, padding: "7px 10px", fontSize: 11.5, fontWeight: 600 }}>
+      <span style={{ flexShrink: 0, marginTop: 1 }}>{icon}</span><span>{text}</span>
+    </div>
+  );
+}

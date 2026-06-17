@@ -11,6 +11,8 @@ import { useSort, SortHeader } from './Sort';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
+import HansQuoteBuilder from './HansQuoteBuilder';
+import { resolveQuotationMasters } from './QuotationMasters';
 
 const QuotesSortIcon = ({ col, sortKey, sortDir }) => {
   if (sortKey !== col) return <ChevronsUpDown size={11} style={{opacity:0.4,marginLeft:2}}/>;
@@ -592,7 +594,7 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
   );
 }
 
-function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,commLogs,setCommLogs,currentUser,orgUsers,catalog,canDelete,isManager=false,onRequestEditAccess}) {
+function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,commLogs,setCommLogs,currentUser,orgUsers,catalog,masters=null,canDelete,isManager=false,onRequestEditAccess}) {
   const canEditQuote = (q) => canEditRecord({ownerId:q?.owner,currentUser,orgUsers,recordType:"quote",recordId:q?.id,commLogs:commLogs||[]});
   const requestAccessQuote = (q) => onRequestEditAccess && onRequestEditAccess("quote", q.id, q.title||q.id||"Quote", q.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
@@ -602,6 +604,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const [dateFrom,setDateFrom]=useState("");
   const [dateTo,setDateTo]=useState("");
   const [modal,setModal]=useState(null);
+  const [hansBuilder,setHansBuilder]=useState(false); // engine-backed builder (Hans pricing)
   const [form,setForm]=useState(BLANK_QUOTE);
   const [detail,setDetail]=useState(null);
   const [confirm,setConfirm]=useState(null);
@@ -1860,9 +1863,19 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         </div>
         <div className="pg-actions">
           <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"quotations")}><Download size={14}/>Export</button>
+          <button className="btn btn-sec" onClick={()=>setHansBuilder(true)} title="CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment)"><FileText size={14}/>New (Hans pricing)</button>
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>New Quote</button>
         </div>
       </div>
+
+      {hansBuilder && (
+        <HansQuoteBuilder
+          opps={opps} leads={leads} accounts={accounts} contacts={contacts}
+          quotes={quotes} setQuotes={setQuotes} currentUser={currentUser} orgUsers={orgUsers}
+          masters={resolveQuotationMasters(masters)}
+          onClose={()=>setHansBuilder(false)}
+        />
+      )}
 
       {/* ── Analytics panel (manager-only) ── */}
       {isManager && (
