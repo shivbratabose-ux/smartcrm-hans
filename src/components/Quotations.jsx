@@ -1874,8 +1874,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         </div>
         <div className="pg-actions">
           <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"quotations")}><Download size={14}/>Export</button>
-          <button className="btn btn-sec" onClick={()=>{setHansEdit(null);setHansBuilder(true);}} title="CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment)"><FileText size={14}/>New (Hans pricing)</button>
-          <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>New Quote</button>
+          <button className="btn btn-sec" onClick={openAdd} title="Manual / ad-hoc quote — type your own line items and pricing (no catalogue engine)"><Plus size={14}/>Custom Quote</button>
+          <button className="btn btn-primary" onClick={()=>{setHansEdit(null);setHansBuilder(true);}} title="Recommended — CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment, guardrails)"><FileText size={14}/>New Quote (Pricing Engine)</button>
         </div>
       </div>
 
