@@ -1451,13 +1451,8 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
         // show on first visit.
         const PIPELINE_COLUMNS = [
           { key: "title", label: "Deal", defaultWidth: 240, render: o => (
-            <>
-              <span className="tbl-link" onClick={() => setDetail(o)}>{o.title}</span>
-              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginTop: 2 }}>
-                {/* Opp number lives in its own "Opp No." column; no sub-line here. */}
-                {(o.products||[]).slice(0, 2).map(p => <ProdTag key={p} pid={p} />)}
-              </div>
-            </>
+            // Just the deal name. Opp number and products each have their own column.
+            <span className="tbl-link" onClick={() => setDetail(o)}>{o.title}</span>
           )},
           { key: "oppNo", label: "Opp No.", defaultWidth: 120, render: o => (
             <span style={{fontFamily:"'Courier New',monospace",fontSize:11}}>{o.oppNo || "-"}</span>
