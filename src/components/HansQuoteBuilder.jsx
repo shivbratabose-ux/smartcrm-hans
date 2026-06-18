@@ -35,7 +35,7 @@ const BLANK_LINE = { productCode: "", qty: 1, months: 12, discountPct: 0 };
 export default function HansQuoteBuilder({
   opps = [], leads = [], accounts = [], contacts = [],
   quotes = [], setQuotes, currentUser, orgUsers = [], onClose,
-  masters = null,
+  masters = null, editQuote = null,
 }) {
   // Masters resolve from persisted overrides if present, else seeded defaults.
   const config = masters?.quoteConfig || QUOTE_CONFIG;
@@ -48,14 +48,21 @@ export default function HansQuoteBuilder({
   const me = orgUsers.find(u => u.id === currentUser);
 
   // ── Header / party state ────────────────────────────────────────────
-  const [oppId, setOppId] = useState("");
-  const [party, setParty] = useState({ name: "", address: "", state: "", gstin: "" });
-  const [currency, setCurrency] = useState("INR");
-  const [overallDiscountPct, setOverallDiscountPct] = useState(0);
-  const [prepaymentApplicable, setPrepaymentApplicable] = useState(false);
-  const [prepaymentDiscountPct, setPrepaymentDiscountPct] = useState(config.prepaymentDiscountPctDefault);
-  const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState([{ ...BLANK_LINE }]);
+  // When editing an existing engine quote, seed from its saved `hans`
+  // breakdown + `items` so the legacy editor never has to touch it.
+  const eh = editQuote && editQuote.hans ? editQuote.hans : null;
+  const [oppId, setOppId] = useState(editQuote?.oppId || "");
+  const [party, setParty] = useState(eh?.party || { name: "", address: "", state: "", gstin: "" });
+  const [currency, setCurrency] = useState(eh?.currency || "INR");
+  const [overallDiscountPct, setOverallDiscountPct] = useState(eh?.overallDiscountPct || 0);
+  const [prepaymentApplicable, setPrepaymentApplicable] = useState(!!eh?.prepaymentApplicable);
+  const [prepaymentDiscountPct, setPrepaymentDiscountPct] = useState(eh?.prepaymentDiscountPct ?? config.prepaymentDiscountPctDefault);
+  const [notes, setNotes] = useState(editQuote?.notes || "");
+  const [lines, setLines] = useState(
+    editQuote && Array.isArray(editQuote.items) && editQuote.items.length
+      ? editQuote.items.map(it => ({ productCode: it.productCode || "", qty: Number(it.qty) || 1, months: Number(it.months) || 1, discountPct: Number(it.discountPct) || 0 }))
+      : [{ ...BLANK_LINE }]
+  );
   const [saved, setSaved] = useState(null);
 
   // Resolve party from the picked opportunity. The app's opportunities
@@ -118,6 +125,16 @@ export default function HansQuoteBuilder({
   // ── Save ────────────────────────────────────────────────────────────
   const canSave = oppId && party.name && pricedLines.some(l => !l._empty) && missingRateLines.length === 0;
 
+  // Internal id from the max existing QT- sequence (not array length, which
+  // collides after a deletion or against the legacy builder in the same session).
+  const nextQuoteId = () => {
+    const max = quotes.reduce((m, q) => {
+      const x = typeof q.id === "string" && q.id.match(/^QT-(\d+)$/);
+      return x ? Math.max(m, parseInt(x[1], 10)) : m;
+    }, 0);
+    return `QT-${String(max + 1).padStart(3, "0")}`;
+  };
+
   const nextQuoteNo = () => {
     // Per-FY incrementing sequence across engine-built quotes.
     const fy = formatQuoteNumber(0).split("/").pop();
@@ -131,8 +148,9 @@ export default function HansQuoteBuilder({
   const save = () => {
     if (!canSave || !setQuotes) return;
     const opp = opps.find(o => o.id === oppId);
-    const quoteNo = nextQuoteNo();
-    const id = `QT-${String(quotes.length + 1).padStart(3, "0")}`;
+    const isEdit = !!editQuote;
+    const quoteNo = isEdit ? (editQuote.quoteNo || nextQuoteNo()) : nextQuoteNo();
+    const id = isEdit ? editQuote.id : nextQuoteId();
     const items = pricedLines.filter(l => !l._empty).map((l, idx) => ({
       lineNo: idx + 1, productCode: l.productCode, name: l.name, module: l.module,
       description: l.description, pricingModel: l.pricingModel, unit: l.unit,
@@ -166,7 +184,11 @@ export default function HansQuoteBuilder({
     const quote = {
       id, quoteNo, title: opp?.title || opp?.name || party.name,
       oppId, accountId: opp?.accountId || "", sourceLeadId: opp?.sourceLeadId || "",
-      status: needsApproval ? "Approval Required" : "Draft",
+      // Keep `status` within the register's known enum (Draft) and drive the
+      // approval queue via `approvalStatus` — the same mechanism legacy quotes
+      // use, so the quote stays visible under status filters/KPIs. Preserve a
+      // non-Draft status when re-saving an edit (e.g. already Sent).
+      status: isEdit ? (editQuote.status || "Draft") : "Draft",
       approvalStatus: needsApproval ? "Pending" : "Not Required",
       // Register shows totals in ₹L (lakh) — keep its convention.
       subtotal: +(summary.subtotal / 1e5).toFixed(2),
@@ -174,10 +196,14 @@ export default function HansQuoteBuilder({
       taxAmount: +(summary.gstTotal / 1e5).toFixed(2),
       total: +(summary.grandTotal / 1e5).toFixed(2),
       currency, notes, preparedBy: me?.name || currentUser,
-      owner: currentUser, createdDate: today(),
+      owner: isEdit ? (editQuote.owner || currentUser) : currentUser,
+      createdDate: isEdit ? (editQuote.createdDate || today()) : today(),
       items, hans,
     };
-    setQuotes(p => [...p, quote]);
+    // Edit → replace by id (preserving other fields like changeLog/emailLog);
+    // create → append.
+    if (isEdit) setQuotes(p => p.map(r => r.id === id ? { ...r, ...quote } : r));
+    else setQuotes(p => [...p, quote]);
     setSaved(quote);
   };
 

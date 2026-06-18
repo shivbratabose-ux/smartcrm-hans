@@ -605,6 +605,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const [dateTo,setDateTo]=useState("");
   const [modal,setModal]=useState(null);
   const [hansBuilder,setHansBuilder]=useState(false); // engine-backed builder (Hans pricing)
+  const [hansEdit,setHansEdit]=useState(null); // quote being edited in the Hans builder (null = new)
   const [form,setForm]=useState(BLANK_QUOTE);
   const [detail,setDetail]=useState(null);
   const [confirm,setConfirm]=useState(null);
@@ -974,13 +975,23 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     return { items: recomputed, subtotal, taxAmount, total, igstTotal, cgstTotal, sgstTotal };
   };
 
+  // Next internal id from the max existing QT- sequence — array length+1
+  // collides after a deletion or against the Hans builder's minting.
+  const nextQuoteId=()=>{
+    const max=quotes.reduce((m,q)=>{const x=typeof q.id==="string"&&q.id.match(/^QT-(\d+)$/);return x?Math.max(m,parseInt(x[1],10)):m;},0);
+    return `QT-${String(max+1).padStart(3,"0")}`;
+  };
   const openAdd=()=>{
-    const id=`QT-${String(quotes.length+1).padStart(3,"0")}`;
+    const id=nextQuoteId();
     setForm({...BLANK_QUOTE,id,owner:currentUser,createdDate:today,items:[]});
     setFormErrors({});setFormTab("details");setSourceMode("opportunity");setSourceLeadId("");setModal({mode:"add"});
   };
   const openEdit=(q)=>{
     if(q&&q.id&&!canEditQuote(q)){requestAccessQuote(q);return;}
+    // Engine-priced quotes (q.hans) must NOT go through the legacy editor —
+    // its recalc reads mrp/unitPrice (absent on engine items) and would zero
+    // the totals. Route them back to the Hans builder in edit mode.
+    if(q&&q.hans){setHansEdit(q);setHansBuilder(true);return;}
     const seeded=(Array.isArray(q.productSelection)&&q.productSelection.length>0)?q.productSelection:(q.product?[{productId:q.product,moduleIds:[],noAddons:false}]:[]);
     // Auto-derive the best contactId if not yet stored on the quote:
     // priority: stored q.contactId → opp.primaryContactId → lead.contactIds[0] → first account contact
@@ -1013,7 +1024,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     setFormErrors({});setFormTab("details");setSourceMode(q.oppId?"opportunity":q.accountId?"account":"opportunity");setSourceLeadId("");setModal({mode:"edit",lockedFinal:!!q.isFinal});
   };
   const duplicate=(q)=>{
-    const id=`QT-${String(quotes.length+1).padStart(3,"0")}`;
+    const id=nextQuoteId();
     // Create new revision linked to parent + flip parent → Revised (terminal/superseded)
     setQuotes(p=>{
       const next=[...p,{...q,id,status:"Draft",version:(q.version||1)+1,createdDate:today,sentDate:"",expiryDate:"",isFinal:false,supersedesQuoteId:q.id,notes:`Revised from ${q.id}. `+(q.notes||"")}];
@@ -1863,7 +1874,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         </div>
         <div className="pg-actions">
           <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"quotations")}><Download size={14}/>Export</button>
-          <button className="btn btn-sec" onClick={()=>setHansBuilder(true)} title="CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment)"><FileText size={14}/>New (Hans pricing)</button>
+          <button className="btn btn-sec" onClick={()=>{setHansEdit(null);setHansBuilder(true);}} title="CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment)"><FileText size={14}/>New (Hans pricing)</button>
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>New Quote</button>
         </div>
       </div>
@@ -1873,7 +1884,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           opps={opps} leads={leads} accounts={accounts} contacts={contacts}
           quotes={quotes} setQuotes={setQuotes} currentUser={currentUser} orgUsers={orgUsers}
           masters={resolveQuotationMasters(masters)}
-          onClose={()=>setHansBuilder(false)}
+          editQuote={hansEdit}
+          onClose={()=>{setHansBuilder(false);setHansEdit(null);}}
         />
       )}
 
