@@ -1454,7 +1454,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
             <>
               <span className="tbl-link" onClick={() => setDetail(o)}>{o.title}</span>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginTop: 2 }}>
-                {o.oppNo && <span style={{ fontSize: 10, fontFamily: "'Courier New',monospace", color: "#1B6B5A" }}>{o.oppNo}</span>}
+                {/* Opp number lives in its own "Opp No." column; no sub-line here. */}
                 {(o.products||[]).slice(0, 2).map(p => <ProdTag key={p} pid={p} />)}
               </div>
             </>
