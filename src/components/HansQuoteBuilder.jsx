@@ -58,6 +58,23 @@ export default function HansQuoteBuilder({
   const [prepaymentApplicable, setPrepaymentApplicable] = useState(!!eh?.prepaymentApplicable);
   const [prepaymentDiscountPct, setPrepaymentDiscountPct] = useState(eh?.prepaymentDiscountPct ?? config.prepaymentDiscountPctDefault);
   const [notes, setNotes] = useState(editQuote?.notes || "");
+  // Billing & tax snapshot — same fields the Custom Quote captures, so the
+  // saved quote is complete in the Verify checklist / register / print.
+  // Auto-filled from the account on opp-pick; editable.
+  const blankBilling = {
+    legalName: "", pan: "", taxTreatment: "", shippingAddress: "",
+    paymentTerms: "", creditDays: "", poMandatory: "", poNumber: "",
+    billingContactName: "", billingContactEmail: "", financeContactEmail: "",
+  };
+  const [billing, setBilling] = useState(eh?.billing || (editQuote ? {
+    legalName: editQuote.legalName || "", pan: editQuote.pan || "", taxTreatment: editQuote.taxTreatment || "",
+    shippingAddress: editQuote.shippingAddressSnapshot || "", paymentTerms: editQuote.paymentTerms || "",
+    creditDays: editQuote.creditDays ?? "", poMandatory: editQuote.poMandatory || "", poNumber: editQuote.poNumber || "",
+    billingContactName: editQuote.billingContactName || "", billingContactEmail: editQuote.billingContactEmail || "",
+    financeContactEmail: editQuote.financeContactEmail || "",
+  } : { ...blankBilling }));
+  const [showBilling, setShowBilling] = useState(false);
+  const setBill = (k, v) => setBilling(b => ({ ...b, [k]: v }));
   const [lines, setLines] = useState(
     editQuote && Array.isArray(editQuote.items) && editQuote.items.length
       ? editQuote.items.map(it => ({ productCode: it.productCode || "", qty: Number(it.qty) || 1, months: Number(it.months) || 1, discountPct: Number(it.discountPct) || 0 }))
@@ -70,7 +87,7 @@ export default function HansQuoteBuilder({
   const onPickOpp = (id) => {
     setOppId(id);
     const opp = opps.find(o => o.id === id);
-    if (!opp) { setParty({ name: "", address: "", state: "", gstin: "" }); return; }
+    if (!opp) { setParty({ name: "", address: "", state: "", gstin: "" }); setBilling({ ...blankBilling }); return; }
     const acc = accounts.find(a => a.id === opp.accountId);
     const lead = leads.find(l => l.id === opp.sourceLeadId || (Array.isArray(opp.sourceLeadIds) && opp.sourceLeadIds.includes(l.id)));
     if (acc) {
@@ -80,8 +97,22 @@ export default function HansQuoteBuilder({
         state: acc.billingState || acc.state || "",
         gstin: acc.gstin || "",
       });
+      setBilling({
+        legalName: acc.legalName || acc.name || "",
+        pan: acc.pan || "",
+        taxTreatment: acc.taxTreatment || "",
+        shippingAddress: acc.shippingAddress || "",
+        paymentTerms: acc.paymentTerms || "",
+        creditDays: acc.creditDays ?? "",
+        poMandatory: acc.poMandatory || "",
+        poNumber: "",
+        billingContactName: acc.billingContactName || acc.primaryContact || "",
+        billingContactEmail: acc.billingContactEmail || acc.primaryEmail || "",
+        financeContactEmail: acc.financeContactEmail || "",
+      });
     } else if (lead) {
       setParty({ name: lead.company || "", address: lead.address || "", state: lead.state || "", gstin: lead.gstin || "" });
+      setBilling({ ...blankBilling, legalName: lead.company || "", billingContactEmail: lead.email || "" });
     }
   };
 
@@ -180,6 +211,27 @@ export default function HansQuoteBuilder({
       tcv: round2(summary.tcv),
       intraState: summary.intraState,
       terms: QUOTE_TERMS,
+      billing, // snapshot for clean re-seed on edit
+    };
+    // Billing & tax snapshot mapped onto the quote with the same field names
+    // the Custom Quote / Verify checklist / register use, so an engine quote
+    // is complete everywhere (not just in the Hans builder).
+    const billingSnapshot = {
+      legalName: billing.legalName || party.name || "",
+      gstin: party.gstin || "",
+      pan: billing.pan || "",
+      taxTreatment: billing.taxTreatment || "",
+      billingAddressSnapshot: party.address || "",
+      shippingAddressSnapshot: billing.shippingAddress || "",
+      placeOfSupply: party.state || "",
+      paymentTerms: billing.paymentTerms || "",
+      creditDays: Number(billing.creditDays) || 0,
+      poMandatory: billing.poMandatory || "",
+      poNumber: billing.poNumber || "",
+      billingContactName: billing.billingContactName || "",
+      billingContactEmail: billing.billingContactEmail || "",
+      financeContactEmail: billing.financeContactEmail || "",
+      exchangeRate: config.currencies.find(c => c.code === currency)?.fxToInr || 1,
     };
     const quote = {
       id, quoteNo, title: opp?.title || opp?.name || party.name,
@@ -198,6 +250,7 @@ export default function HansQuoteBuilder({
       currency, notes, preparedBy: me?.name || currentUser,
       owner: isEdit ? (editQuote.owner || currentUser) : currentUser,
       createdDate: isEdit ? (editQuote.createdDate || today()) : today(),
+      ...billingSnapshot,
       items, hans,
     };
     // Edit → replace by id (preserving other fields like changeLog/emailLog);
@@ -293,6 +346,37 @@ export default function HansQuoteBuilder({
               <div className="form-row">
                 <div className="form-group" style={{ flex: 2 }}><label>Address</label><input value={party.address} onChange={e => setParty({ ...party, address: e.target.value })} /></div>
                 <div className="form-group" style={{ flex: 1 }}><label>GSTIN</label><input value={party.gstin} onChange={e => setParty({ ...party, gstin: e.target.value })} /></div>
+              </div>
+
+              {/* Billing & tax — collapsible; auto-filled from the account */}
+              <div style={{ border: "1px solid var(--border)", borderRadius: 8, margin: "8px 0 10px" }}>
+                <button type="button" onClick={() => setShowBilling(s => !s)} style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "var(--s2)", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--text2)" }}>
+                  <span>Billing &amp; tax details {billing.legalName ? "" : <span style={{ fontWeight: 500, color: "var(--text3)" }}>· auto-fills from the customer</span>}</span>
+                  <span style={{ fontSize: 11 }}>{showBilling ? "▲ hide" : "▼ show"}</span>
+                </button>
+                {showBilling && (
+                  <div style={{ padding: 12 }}>
+                    <div className="form-row">
+                      <div className="form-group" style={{ flex: 2 }}><label>Legal name</label><input value={billing.legalName} onChange={e => setBill("legalName", e.target.value)} /></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>PAN</label><input value={billing.pan} onChange={e => setBill("pan", e.target.value)} /></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Tax treatment</label><input value={billing.taxTreatment} onChange={e => setBill("taxTreatment", e.target.value)} placeholder="e.g. Registered" /></div>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group" style={{ flex: 2 }}><label>Shipping / service address</label><input value={billing.shippingAddress} onChange={e => setBill("shippingAddress", e.target.value)} /></div>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group" style={{ flex: 1 }}><label>Payment terms</label><input value={billing.paymentTerms} onChange={e => setBill("paymentTerms", e.target.value)} placeholder="e.g. Net 30" /></div>
+                      <div className="form-group" style={{ width: 100 }}><label>Credit days</label><input type="number" min={0} value={billing.creditDays} onChange={e => setBill("creditDays", e.target.value === "" ? "" : Number(e.target.value))} /></div>
+                      <div className="form-group" style={{ width: 120 }}><label>PO mandatory?</label><select value={billing.poMandatory} onChange={e => setBill("poMandatory", e.target.value)}><option value="">—</option><option>Yes</option><option>No</option></select></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>PO number</label><input value={billing.poNumber} onChange={e => setBill("poNumber", e.target.value)} /></div>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group" style={{ flex: 1 }}><label>Billing contact</label><input value={billing.billingContactName} onChange={e => setBill("billingContactName", e.target.value)} /></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Billing contact email</label><input value={billing.billingContactEmail} onChange={e => setBill("billingContactEmail", e.target.value)} /></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Finance / AP email</label><input value={billing.financeContactEmail} onChange={e => setBill("financeContactEmail", e.target.value)} /></div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Plan presets */}
