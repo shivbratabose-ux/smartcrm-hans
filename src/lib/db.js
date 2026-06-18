@@ -341,6 +341,7 @@ const toSnake = (obj, module) => {
     billingContactEmail:"billing_contact_email",
     financeContactEmail:"finance_contact_email",
     sourceLeadId:"source_lead_id", preparedBy:"prepared_by",
+    sourceOppId:"source_opp_id",
     salesEngineer:"sales_engineer", coverLetter:"cover_letter",
     placeOfSupply:"place_of_supply",
     // ── Account / Contact / Ticket / Event drift ──
@@ -556,6 +557,7 @@ const toCamel = (obj, module) => {
     billing_contact_email:"billingContactEmail",
     finance_contact_email:"financeContactEmail",
     source_lead_id:"sourceLeadId", prepared_by:"preparedBy",
+    source_opp_id:"sourceOppId",
     sales_engineer:"salesEngineer", cover_letter:"coverLetter",
     place_of_supply:"placeOfSupply",
     // ── Account / Contact / Ticket / Event drift ──

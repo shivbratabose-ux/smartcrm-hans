@@ -229,6 +229,14 @@ function migrateState(raw) {
 
   // ── 3. Opportunities: backfill missing fields ──
   if (Array.isArray(s.opps)) {
+    // Continue the OPP-<year>-<NNN> sequence for any deal created without a
+    // number (manual "Add Deal" historically left oppNo blank), so every
+    // deal shows a stable, sortable opportunity number in the Pipeline.
+    let oppSeq = s.opps.reduce((m, o) => {
+      const x = o.oppNo && o.oppNo.match(/OPP-\d+-(\d+)/);
+      return x ? Math.max(m, parseInt(x[1], 10)) : m;
+    }, 0);
+    const oppYear = new Date().getFullYear();
     s.opps = s.opps.map(o => ({
       sourceLeadIds: [],
       contactRoles: [],
@@ -237,6 +245,7 @@ function migrateState(raw) {
       ...o,
       // Ensure products is always an array
       products: Array.isArray(o.products) ? o.products : (o.products ? [o.products] : []),
+      oppNo: o.oppNo || `OPP-${oppYear}-${String(++oppSeq).padStart(3, "0")}`,
     }));
   }
 
@@ -1538,6 +1547,11 @@ export default function SmartCRM() {
         status: "Pending Approval",
         products: [...new Set([...(a.products || []), ...(opp.products || [])])],
         productSelection: mergeProductSelection(a, opp),
+        // Record lineage if this prospect account didn't already carry it.
+        sourceOppId: a.sourceOppId || opp.id,
+        oppNo: a.oppNo || opp.oppNo || "",
+        sourceLeadId: a.sourceLeadId || (opp.sourceLeadIds || [])[0] || "",
+        leadId: a.leadId || opp.leadId || "",
       }));
     } else {
       // Won deal with no linked account → create a Pending Approval account
@@ -1555,6 +1569,13 @@ export default function SmartCRM() {
         productSelection: Array.isArray(opp.productSelection) ? opp.productSelection : [],
         source: "Deal Won",
         arrRevenue: 0,
+        // ── End-to-end ID lineage (lead → opp → account) ──
+        // Finance issues accountNo on approval; carry the opportunity and
+        // originating-lead ids through so the full chain is recorded.
+        sourceOppId: opp.id,
+        oppNo: opp.oppNo || "",
+        sourceLeadId: (opp.sourceLeadIds || [])[0] || "",
+        leadId: opp.leadId || "",
       };
       setAccounts(p => [...p, newAcc]);
       setOpps(p => p.map(o => o.id === opp.id ? {...o, accountId: newAccId} : o));
@@ -1667,11 +1688,30 @@ export default function SmartCRM() {
         hierarchyLevel: "Parent Company",
         hierarchyPath: lead.company,
         accountNo: "",
+        // ── End-to-end ID lineage (lead → opp → account) ──
+        // accountNo (the Finance ID) is issued later on approval; these
+        // cross-references let us trace the account back to its opportunity
+        // and originating lead at any point.
+        sourceOppId: newOpp.id,
+        sourceLeadId: lead.id,
+        leadId: lead.leadId || "",
       };
       setAccounts(p => [...p, newAcc]);
       newOpp.accountId = newAccId;
     }
-    setOpps(p => [...p, newOpp]);
+    // Assign the opportunity its own canonical number (OPP-YYYY-NNN — the
+    // same scheme the Pipeline and bulk import use), generated against the
+    // freshest list inside the updater. The source lead's id is retained on
+    // the opp (leadId + sourceLeadIds) so the chain lead → opp stays
+    // traceable end-to-end.
+    setOpps(p => {
+      const maxSeq = p.reduce((m, o) => {
+        const x = o.oppNo && o.oppNo.match(/OPP-\d+-(\d+)/);
+        return x ? Math.max(m, parseInt(x[1], 10)) : m;
+      }, 0);
+      newOpp.oppNo = `OPP-${new Date().getFullYear()}-${String(maxSeq + 1).padStart(3, "0")}`;
+      return [...p, newOpp];
+    });
     // Handle "keep lead open for additional LOBs" vs full conversion
     if (data.keepLeadOpen) {
       setLeads(p => p.map(l => l.id === lead.id ? { ...l, convertedOppIds: [...(l.convertedOppIds||[]), newOpp.id], stageHistory: [...(l.stageHistory||[]), {from:l.stage,to:"Partial Convert",date:today,by:currentUser||""}] } : l));

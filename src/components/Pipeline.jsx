@@ -122,6 +122,16 @@ const getLastActivity = (oppId, activities) => {
   return done.sort((a, b) => b.date.localeCompare(a.date))[0];
 };
 
+// Next sequential opportunity number — OPP-<year>-<NNN>, continuing the
+// highest existing sequence (same format the bulk importer uses).
+const nextOppNo = (opps, year = new Date().getFullYear()) => {
+  const maxSeq = (opps || []).reduce((m, o) => {
+    const x = o.oppNo && o.oppNo.match(/OPP-\d+-(\d+)/);
+    return x ? Math.max(m, parseInt(x[1], 10)) : m;
+  }, 0);
+  return `OPP-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
+};
+
 const getNextAction = (oppId, activities) => {
   const planned = (activities || []).filter(a => a.oppId === oppId && a.status === "Planned");
   if (planned.length === 0) return null;
@@ -1002,7 +1012,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     if (modal.mode === "add") {
       const dup = opps.find(o => o.accountId === clean.accountId && o.products.length > 0 && clean.products.length > 0 && o.products.some(p => clean.products.includes(p)) && o.id !== clean.id);
       if (dup && !window.confirm(`Warning: A deal for this account with overlapping products already exists ("${dup.title}"). Continue?`)) return;
-      setOpps(p => [...p, { ...clean, probability: STAGE_PROB[clean.stage] || clean.probability }]);
+      setOpps(p => [...p, { ...clean, oppNo: clean.oppNo || nextOppNo(p), probability: STAGE_PROB[clean.stage] || clean.probability }]);
     } else {
       const prev = opps.find(o => o.id === clean.id);
       setOpps(p => p.map(o => o.id === clean.id ? { ...clean } : o));
@@ -1507,7 +1517,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
         ];
         const PIPELINE_DEFAULT_CONFIG = [
           { key: "title", visible: true, width: 240 },
-          { key: "oppNo", visible: false, width: 120 },
+          { key: "oppNo", visible: true, width: 120 },
           { key: "account", visible: true, width: 200 },
           { key: "stage", visible: true, width: 140 },
           { key: "value", visible: true, width: 100 },
