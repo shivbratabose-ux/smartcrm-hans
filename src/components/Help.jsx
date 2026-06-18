@@ -561,11 +561,54 @@ const HELP_DATA = [
     id:"quotations", label:"Quotations", icon:<ClipboardList size={15}/>, color:"#7C3AED",
     articles:[
       {
-        id:"quotations-overview", title:"Creating Quotations", tags:["quote","quotation","tax","gst","discount","item","pdf"],
+        id:"quotations-pricing-engine", title:"New Quote (Pricing Engine)", tags:["pricing engine","hans","quote","icaffe","band","alr","prepayment","tcv","gst","guardrail","matrix","wiseccs","wisehandling","catalogue"],
         content:[
-          {type:"para", text:"The Quotations module lets you build professional quote documents for your deals, with line items, tax calculations, and discount tracking."},
+          {type:"para", text:"There are two ways to start a quote. Use the green New Quote (Pricing Engine) button for standard product quoting — it pulls products from the catalogue and prices them with the Hans pricing engine (the validated Excel model). Use Custom Quote only for ad-hoc/manual pricing the engine doesn't cover."},
+          {type:"table", rows:[
+            ["New Quote (Pricing Engine)", "Recommended. Opportunity-driven; auto-resolves party and unit prices; handles one-time vs recurring, GST split, Licence + ALR, prepayment and TCV; enforces guardrails."],
+            ["Custom Quote", "Manual line items — you type description, MRP, qty and discount yourself. No catalogue/engine pricing."],
+          ]},
+          {type:"heading", text:"Building a quote"},
           {type:"steps", items:[
-            "Click + New Quotation",
+            "Click New Quote (Pricing Engine).",
+            "Pick the Opportunity — the customer/lead name, address, state and GSTIN auto-fill (editable).",
+            "(Optional) Apply a plan preset: SaaS Advance (12 months + 10% prepayment) or OTP + ARR (42 months, ~45% upfront discount).",
+            "Add line items — pick a product; module, charge type and unit auto-fill and the unit price resolves automatically.",
+            "Enter Qty, Months and Disc % per line. Months is forced to 1 for one-time items (licence/implementation).",
+            "Review the live summary on the right, then Save. Use Preview / Print for the client-facing PDF.",
+          ]},
+          {type:"heading", text:"How unit prices resolve"},
+          {type:"table", rows:[
+            ["Flat", "Uses the catalogue list price directly."],
+            ["Band", "Per-user/month rate picked from the pricing band that matches the user count (Qty)."],
+            ["iCAFFE", "2-D rate card — the edition (product) × user-band matrix; the band is chosen by Qty."],
+          ]},
+          {type:"note", text:"Prices are in INR and divided by the configured FX factor (default 1). If a priced line resolves to a blank rate, the line is flagged 'Enter rate in master' rather than silently showing 0 — an admin fills it in Masters → Quotation Pricing."},
+          {type:"heading", text:"The summary panel"},
+          {type:"list", items:[
+            "One-time subtotal and Recurring subtotal (split automatically by pricing model).",
+            "Overall discount and Prepayment discount.",
+            "GST split — CGST + SGST when the customer state matches the home state, else IGST.",
+            "Grand Total (upfront) — what the customer pays now.",
+            "ALR (Annual Licence Reconciliation) — shown separately and NOT included in the upfront Grand Total.",
+            "TCV (Total Contract Value).",
+          ]},
+          {type:"heading", text:"Guardrails"},
+          {type:"list", items:[
+            "Discount above the policy cap (per line or overall) → the quote is saved needing approval (approvalStatus = Pending) and routes through the existing approval flow.",
+            "CC03 (WiseCCS with infrastructure) must be priced higher than CC04 (without) — warned when both are used.",
+            "WiseHandling requires at least 3 functional modules — warned otherwise.",
+          ]},
+          {type:"tip", text:"To edit an engine quote later, open it from the register — it re-opens in this same builder (not the manual editor), so the pricing stays intact."},
+          {type:"warning", text:"Admin only: rates ship blank by design. Fill the catalogue list prices, pricing bands and iCAFFE rate card under Masters → Quotation Pricing before quoting, or lines will show 'Enter rate in master'."},
+        ]
+      },
+      {
+        id:"quotations-overview", title:"Custom Quote (manual line items)", tags:["quote","quotation","tax","gst","discount","item","pdf","custom","manual"],
+        content:[
+          {type:"para", text:"The Custom Quote builder lets you build a quote with manual line items, tax calculations and discount tracking — for ad-hoc pricing the Pricing Engine doesn't cover. For standard product quoting, prefer New Quote (Pricing Engine)."},
+          {type:"steps", items:[
+            "Click Custom Quote",
             "Select Account, Opportunity, and Contact",
             "Choose Product and set Validity period",
             "Add line items — description, quantity, unit price (auto-calculates amount)",
