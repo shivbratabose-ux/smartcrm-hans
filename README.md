@@ -115,8 +115,10 @@ are hard-coded in code; seed values are defaults. The **CC03 > CC04**
 rule is enforced inline (blocks an invalid rate card).
 
 ### Guardrails
-- Discount over `maxUserDiscountPct` (line or overall) → quote flagged
-  **Approval Required**.
+- Discount over `maxUserDiscountPct` (line or overall) → quote saved with
+  `approvalStatus: "Pending"` (status stays a normal `Draft`, so it remains
+  visible under the register's status filters/KPIs and flows through the
+  existing approval queue).
 - **CC03 > CC04** validated in admin and warned on quotes using both.
 - **WiseHandling** requires ≥ 3 functional modules (warned otherwise).
 - A priced line resolving to a blank rate is flagged "Enter rate in
@@ -126,3 +128,16 @@ rule is enforced inline (blocks an invalid rate card).
 - **Sales** — create quotes; over-policy discounts route to approval.
 - **Manager/Approver** — approve (existing approval flow).
 - **Admin** — edit the Quotation Pricing masters.
+
+### Database migrations
+Run these (in `supabase/`) so the related data persists to the cloud.
+Writes are guarded by the app's schema-heal, so the app won't break if a
+migration is pending — the affected columns are simply not persisted until
+it's applied.
+- `add_account_lineage_v1.sql` — lead → opp → account ID lineage on `accounts`.
+- `add_lead_duplicate_flag_v1.sql` — `duplicate_of` on `leads` (duplicate flag).
+- `add_quotation_hans_breakdown_v1.sql` — `hans` JSONB on `quotations` (engine breakdown).
+
+### Pricing engine tests
+`npm run test:pricing` runs the headless §11 acceptance vectors against
+`src/lib/quotation/pricingEngine.js`.

@@ -950,6 +950,24 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   }, [accounts, currentUser, setCallReports, setActivities]);
   const isManager = curUser && MGR_ROLES.includes(curUser.role);
 
+  /* Deal health, computed ONCE per (opps, activities) change.
+     getDealHealth is otherwise called ~5×/row in the List view (filter,
+     sort, KPIs, column render, body) and each call re-scanned all
+     activities. Group completed activities by oppId once, then derive
+     health per opp — O(activities + opps) instead of O(rows × activities). */
+  const healthById = useMemo(() => {
+    const byOpp = new Map();
+    for (const a of (activities || [])) {
+      if (a.status !== "Completed") continue;
+      if (!byOpp.has(a.oppId)) byOpp.set(a.oppId, []);
+      byOpp.get(a.oppId).push(a);
+    }
+    const m = new Map();
+    for (const o of opps) m.set(o.id, getDealHealth(o, byOpp.get(o.id) || []));
+    return m;
+  }, [opps, activities]);
+  const healthOf = (o) => (o && healthById.has(o.id) ? healthById.get(o.id) : getDealHealth(o, activities));
+
   /* filtered opps */
   const filtered = useMemo(() => opps.filter(o => {
     if (prodF !== "All" && !o.products.includes(prodF)) return false;
@@ -957,7 +975,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     if (regionF !== "All" && o.country !== regionF) return false;
     if (stageF !== "All" && o.stage !== stageF) return false;
     if (statusF !== "All") {
-      const h = getDealHealth(o, activities);
+      const h = healthById.get(o.id);
       if (statusF === "Active" && h !== "active") return false;
       if (statusF === "At Risk" && h !== "at-risk") return false;
       if (statusF === "Stalled" && h !== "stalled") return false;
@@ -968,7 +986,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       if (!o.title.toLowerCase().includes(q) && !(acc?.name || "").toLowerCase().includes(q)) return false;
     }
     return true;
-  }), [opps, prodF, ownerF, regionF, stageF, statusF, searchQ, activities, accounts]);
+  }), [opps, prodF, ownerF, regionF, stageF, statusF, searchQ, healthById, accounts]);
 
   /* KPIs */
   const openDeals = filtered.filter(o => !closingNames.includes(o.stage));
@@ -977,8 +995,8 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   const wonCount = filtered.filter(o => o.stage === wonName).length;
   const lostCount = filtered.filter(o => o.stage === lostName).length;
   const winRate = wonCount + lostCount > 0 ? Math.round((wonCount / (wonCount + lostCount)) * 100) : 0;
-  const atRiskCount = openDeals.filter(o => getDealHealth(o, activities) === "at-risk").length;
-  const stalledCount = openDeals.filter(o => getDealHealth(o, activities) === "stalled").length;
+  const atRiskCount = openDeals.filter(o => healthById.get(o.id) === "at-risk").length;
+  const stalledCount = openDeals.filter(o => healthById.get(o.id) === "stalled").length;
 
   /* form handlers */
   const openAdd = () => { setForm({ ...BLANK_OPP, id: `o${uid()}`, productSelection: [], owner: currentUser || BLANK_OPP.owner }); setFormErrors({}); setModal({ mode: "add" }); };
@@ -1133,13 +1151,13 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     arr.sort((a, b) => {
       let va, vb;
       if (sortKey === "account") { va = accounts.find(x => x.id === a.accountId)?.name || ""; vb = accounts.find(x => x.id === b.accountId)?.name || ""; }
-      else if (sortKey === "health") { va = getDealHealth(a, activities); vb = getDealHealth(b, activities); }
+      else if (sortKey === "health") { va = healthById.get(a.id); vb = healthById.get(b.id); }
       else { va = a[sortKey] ?? ""; vb = b[sortKey] ?? ""; }
       if (typeof va === "number") return sortDir === "asc" ? va - vb : vb - va;
       return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
     });
     return arr;
-  }, [filtered, sortKey, sortDir, accounts, activities]);
+  }, [filtered, sortKey, sortDir, accounts, healthById]);
 
   /* ── ANALYTICS DATA ── */
   // STAGES / closingNames / wonName / lostName resolved from masters (with
@@ -1285,7 +1303,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {mismatchDeals.slice(0, 8).map(o => {
                   const acc = accounts.find(a => a.id === o.accountId);
-                  const health = getDealHealth(o, activities);
+                  const health = healthOf(o);
                   return (
                     <div key={o.id} style={{
                       display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -1341,7 +1359,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
                   {cols.map(o => {
                     const acc = accounts.find(a => a.id === o.accountId);
-                    const health = getDealHealth(o, activities);
+                    const health = healthOf(o);
                     const lastAct = getLastActivity(o.id, activities);
                     const nextAct = getNextAction(o.id, activities);
                     const hCfg = HEALTH_CFG[health];
@@ -1463,7 +1481,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           { key: "decisionDate", label: "Decision Date", defaultWidth: 120, render: o => txt(fmt.short(o.decisionDate)) },
           { key: "createdDate", label: "Created", defaultWidth: 110, render: o => txt(fmt.short(o.createdDate)) },
           { key: "owner", label: "Owner", defaultWidth: 140, render: o => <UserPill uid={o.owner} /> },
-          { key: "health", label: "Status", defaultWidth: 110, render: o => <HealthBadge health={getDealHealth(o, activities)} /> },
+          { key: "health", label: "Status", defaultWidth: 110, render: o => <HealthBadge health={healthOf(o)} /> },
           { key: "lastActivity", label: "Last Activity", defaultWidth: 120, sortable: false, render: o => {
             const lastAct = getLastActivity(o.id, activities);
             return <span style={{ fontSize: 11, color: "var(--text3)" }}>{lastAct ? fmt.short(lastAct.date) : "-"}</span>;
@@ -1609,7 +1627,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
             <tbody>
               {sorted.map(o => {
                 const acc = accounts.find(a => a.id === o.accountId);
-                const health = getDealHealth(o, activities);
+                const health = healthOf(o);
                 const lastAct = getLastActivity(o.id, activities);
                 const nextAct = getNextAction(o.id, activities);
                 return (
