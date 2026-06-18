@@ -251,10 +251,28 @@ function migrateState(raw) {
 
   // ── 4. Accounts: ensure products is always an array ──
   if (Array.isArray(s.accounts)) {
-    s.accounts = s.accounts.map(a => ({
-      ...a,
-      products: Array.isArray(a.products) ? a.products : (a.products ? [a.products] : []),
-    }));
+    // One-time lineage backfill for accounts created before end-to-end ID
+    // tracking landed: match each account to its winning opportunity (the
+    // opp pointing at this account) and inherit oppNo + originating-lead ids
+    // so the lead → opp → account chain is complete for historical records.
+    // Idempotent — only fills blanks, so it no-ops once populated.
+    const oppByAccount = {};
+    (s.opps || []).forEach(o => {
+      if (!o.accountId) return;
+      // Prefer a Won opp; otherwise the first opp linked to the account.
+      if (!oppByAccount[o.accountId] || o.stage === "Won") oppByAccount[o.accountId] = o;
+    });
+    s.accounts = s.accounts.map(a => {
+      const src = oppByAccount[a.id];
+      return {
+        ...a,
+        products: Array.isArray(a.products) ? a.products : (a.products ? [a.products] : []),
+        sourceOppId:  a.sourceOppId  || src?.id || "",
+        oppNo:        a.oppNo         || src?.oppNo || "",
+        sourceLeadId: a.sourceLeadId || (src?.sourceLeadIds || [])[0] || "",
+        leadId:       a.leadId        || src?.leadId || "",
+      };
+    });
   }
 
   // ── 5. Add newly-created contacts ──
