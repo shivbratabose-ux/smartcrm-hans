@@ -37,7 +37,10 @@ export function printHansQuote(quote, opts = {}) {
     ? sumRow(`CGST`, inr(h.cgst)) + sumRow(`SGST`, inr(h.sgst))
     : sumRow(`IGST`, inr(h.igst));
 
-  const terms = (h.terms || []).map((t) => `<li><b>${esc(t.key)}:</b> ${esc(t.text)}</li>`).join("");
+  // Prefer the rep's edited free-text terms; fall back to the structured list.
+  const termsBlock = h.termsText && String(h.termsText).trim()
+    ? `<pre style="white-space:pre-wrap;font-family:inherit;font-size:12px;margin:0">${esc(h.termsText)}</pre>`
+    : `<ul>${(h.terms || []).map((t) => `<li><b>${esc(t.key)}:</b> ${esc(t.text)}</li>`).join("")}</ul>`;
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(quote.quoteNo || "Quotation")}</title>
   <style>
@@ -84,7 +87,7 @@ export function printHansQuote(quote, opts = {}) {
       ${sumRow("Total Contract Value (TCV)", inr(h.tcv), "sub")}
     </table>
     <h3 style="font-size:12px;margin:18px 0 4px">Terms &amp; Conditions</h3>
-    <ul>${terms}</ul>
+    ${termsBlock}
     ${quote.notes ? `<div class="muted" style="margin-top:10px"><b>Notes:</b> ${esc(quote.notes)}</div>` : ""}
     <script>window.onload=function(){window.print();}</script>
   </body></html>`;

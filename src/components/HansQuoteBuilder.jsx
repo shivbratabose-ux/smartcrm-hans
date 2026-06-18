@@ -24,6 +24,7 @@ import {
   evaluateDiscountGuardrail, validateCcsRule, validateWiseHandlingModules,
   formatQuoteNumber,
 } from "../lib/quotation/pricingEngine";
+import { TC_TEMPLATES, STANDARD_TERMS } from "../data/constants";
 import { printHansQuote } from "../lib/quotation/printQuote";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -58,6 +59,15 @@ export default function HansQuoteBuilder({
   const [prepaymentApplicable, setPrepaymentApplicable] = useState(!!eh?.prepaymentApplicable);
   const [prepaymentDiscountPct, setPrepaymentDiscountPct] = useState(eh?.prepaymentDiscountPct ?? config.prepaymentDiscountPctDefault);
   const [notes, setNotes] = useState(editQuote?.notes || "");
+  // Terms & conditions (free text). Seed from the edited quote, else the
+  // default Hans terms as a sensible starting block the rep can replace via
+  // a template. Same field (quote.terms) the Custom Quote / print use.
+  const defaultTermsText = QUOTE_TERMS.map((t, i) => `${i + 1}. ${t.text}`).join("\n");
+  const [termsText, setTermsText] = useState(
+    editQuote?.terms
+      ? (Array.isArray(editQuote.terms) ? editQuote.terms.join("\n") : editQuote.terms)
+      : (eh?.termsText || defaultTermsText)
+  );
   // Billing & tax snapshot — same fields the Custom Quote captures, so the
   // saved quote is complete in the Verify checklist / register / print.
   // Auto-filled from the account on opp-pick; editable.
@@ -211,6 +221,7 @@ export default function HansQuoteBuilder({
       tcv: round2(summary.tcv),
       intraState: summary.intraState,
       terms: QUOTE_TERMS,
+      termsText, // the rep's edited T&C (rendered by print)
       billing, // snapshot for clean re-seed on edit
     };
     // Billing & tax snapshot mapped onto the quote with the same field names
@@ -250,6 +261,7 @@ export default function HansQuoteBuilder({
       currency, notes, preparedBy: me?.name || currentUser,
       owner: isEdit ? (editQuote.owner || currentUser) : currentUser,
       createdDate: isEdit ? (editQuote.createdDate || today()) : today(),
+      terms: termsText, // legacy/register/verify read quote.terms
       ...billingSnapshot,
       items, hans,
     };
@@ -279,7 +291,7 @@ export default function HansQuoteBuilder({
         overallDiscount: round2(summary.overallDiscount), prepaymentDisc: round2(summary.prepaymentDisc),
         taxableBase: round2(summary.taxableBase), cgst: round2(summary.cgst), sgst: round2(summary.sgst),
         igst: round2(summary.igst), grandTotal: round2(summary.grandTotal), alrAnnual: round2(summary.alrAnnual),
-        tcv: round2(summary.tcv), terms: QUOTE_TERMS,
+        tcv: round2(summary.tcv), terms: QUOTE_TERMS, termsText, billing,
       },
     };
   };
@@ -420,6 +432,24 @@ export default function HansQuoteBuilder({
               </div>
 
               <div className="form-group" style={{ marginTop: 12 }}><label>Notes</label><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>
+
+              {/* Terms & conditions — templates + free text + standard-term chips */}
+              <div style={{ marginTop: 12 }}>
+                <div style={{ ...lbl, marginBottom: 6 }}>Terms &amp; conditions</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                  {TC_TEMPLATES.map(t => (
+                    <button key={t.id} type="button" className="btn btn-sec btn-xs" onClick={() => setTermsText(t.body)}>{t.name}</button>
+                  ))}
+                  <button type="button" className="btn btn-sec btn-xs" style={{ color: "#DC2626" }} onClick={() => setTermsText("")}>Clear</button>
+                </div>
+                <textarea rows={6} value={termsText} onChange={e => setTermsText(e.target.value)} placeholder="Pick a template above or type your own terms…" style={{ width: "100%", resize: "vertical", fontFamily: "monospace", fontSize: 12 }} />
+                <div style={{ ...lbl, margin: "8px 0 4px" }}>Standard terms (click to add)</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {STANDARD_TERMS.map((t, i) => (
+                    <button key={i} type="button" className="btn btn-sec btn-xs" style={{ fontSize: 10, maxWidth: 280, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={t} onClick={() => setTermsText(prev => prev ? prev + "\n" + t : t)}>{t.substring(0, 48)}…</button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* RIGHT: live summary + guardrails */}
