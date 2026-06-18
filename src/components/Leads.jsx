@@ -1714,13 +1714,14 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
           {rows.map(l => {
             const isOverdue = l.nextCall && l.nextCall < today && l.stage !== "NA";
             return (
-              <tr key={l.id} style={isOverdue ? { background: "#FEF2F2" } : undefined}>
+              <tr key={l.id} style={l.duplicateOf ? { background: "#FFF7ED" } : isOverdue ? { background: "#FEF2F2" } : undefined}>
                 <td><input type="checkbox" checked={bulk.isSelected(l.id)} onChange={() => bulk.toggle(l.id)}/></td>
                 <td>
                   <span
                     onClick={() => onOpenDetail(l)}
                     style={{fontFamily:"'Courier New',monospace",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:"var(--s2)",color:"var(--brand)",cursor:"pointer",whiteSpace:"nowrap"}}
                     title="Open detail view">{l.leadId}</span>
+                  {l.duplicateOf && <span title="Possible duplicate" style={{marginLeft:5,fontSize:8.5,fontWeight:700,color:"#B45309",background:"#FFF7ED",border:"1px solid #FED7AA",padding:"1px 4px",borderRadius:3}}>DUP</span>}
                 </td>
                 <td><GridCell value={l.company} onCommit={v => updateLeadField(l.id, "company", v)} style={{ fontWeight: 600, textTransform: "uppercase" }}/></td>
                 <td><GridCell value={l.contact} onCommit={v => updateLeadField(l.id, "contact", v)} style={{ textTransform: "capitalize" }}/></td>
@@ -1783,6 +1784,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
     { key: "company", label: "Company", defaultWidth: 220, render: l => (
       <>
         <span style={{ fontWeight: 600, fontSize: 13, color:"var(--brand)", cursor:"pointer" }} onClick={() => setDetail(l)}>{l.company}</span>
+        {l.duplicateOf && <span title="Possible duplicate — same company, matching contact/email, shared product" style={{marginLeft:6,fontSize:9,fontWeight:700,letterSpacing:"0.04em",color:"#B45309",background:"#FFF7ED",border:"1px solid #FED7AA",padding:"1px 6px",borderRadius:4,verticalAlign:"middle"}}>DUPLICATE</span>}
         <div style={{fontSize:11,color:"var(--text3)"}}>{l.source}{l.region ? ` · ${l.region}` : ""}</div>
       </>
     )},
@@ -1905,7 +1907,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
       onSort={toggleSort}
       SortIcon={SortIcon}
       selection={bulk}
-      rowStyle={l => (l.nextCall && l.nextCall < today && l.stage !== "NA") ? { background: "#FEF2F2" } : undefined}
+      rowStyle={l => l.duplicateOf ? { background: "#FFF7ED" } : (l.nextCall && l.nextCall < today && l.stage !== "NA") ? { background: "#FEF2F2" } : undefined}
       rowActions={l => {
         const editable = canEditLead ? canEditLead(l) : true;
         return (
@@ -2100,17 +2102,40 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     const normalisedForm = { ...form, productSelection: normaliseProductSelection(form.productSelection) };
     const errs = validateLead(normalisedForm);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
-    // Duplicate check
-    const isDup = leads.some(existing =>
-      existing.id !== normalisedForm.id && (
-        (normalisedForm.email && existing.email && existing.email.toLowerCase() === normalisedForm.email.toLowerCase()) ||
-        (normalisedForm.phone && existing.phone && existing.phone === normalisedForm.phone)
-      )
-    );
-    if (isDup && !window.confirm("A lead with the same email or phone already exists. Continue anyway?")) return;
-    const clean = sanitizeObj(normalisedForm);
-    if (modal.mode === "add") setLeads(p => [...p, { ...clean }]);
-    else setLeads(p => p.map(l => l.id === clean.id ? { ...clean } : l));
+    // Duplicate check — a lead is a likely duplicate when ALL THREE hold:
+    //   1. same Company name, AND
+    //   2. same Contact name OR same email, AND
+    //   3. at least one shared product (primary / selection / additional).
+    // Soft-deleted leads are ignored.
+    const norm = (s) => (s || "").trim().toLowerCase();
+    const leadProducts = (l) => {
+      const set = new Set();
+      if (l.product) set.add(l.product);
+      (l.productSelection || []).forEach(ps => ps && ps.productId && set.add(ps.productId));
+      (l.additionalProducts || []).forEach(p => p && set.add(p));
+      return set;
+    };
+    const myProducts = leadProducts(normalisedForm);
+    const dup = leads.find(existing => {
+      if (existing.id === normalisedForm.id || existing.isDeleted) return false;
+      const companyMatch = norm(existing.company) && norm(existing.company) === norm(normalisedForm.company);
+      if (!companyMatch) return false;
+      const contactMatch = norm(existing.contact) && norm(existing.contact) === norm(normalisedForm.contact);
+      const emailMatch = norm(existing.email) && norm(existing.email) === norm(normalisedForm.email);
+      if (!(contactMatch || emailMatch)) return false;
+      const existingProducts = leadProducts(existing);
+      return [...myProducts].some(p => existingProducts.has(p));
+    });
+    // Don't block — create the lead, but tag it so the list flags it
+    // (highlighted row + DUPLICATE badge) and the rep can act. Re-evaluated
+    // on every save, so editing away the overlap clears the flag.
+    const clean = sanitizeObj({ ...normalisedForm, duplicateOf: dup ? dup.id : "" });
+    if (modal.mode === "add") {
+      setLeads(p => [...p, { ...clean }]);
+      if (dup) notify.info(`Lead created and flagged as a possible duplicate of ${dup.leadId || dup.company}. It's highlighted in the list for review.`);
+    } else {
+      setLeads(p => p.map(l => l.id === clean.id ? { ...clean } : l));
+    }
     setModal(null);
     setFormErrors({});
   };
@@ -2530,7 +2555,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                     const isOverdue = l.nextCall && l.nextCall < today && l.stage !== "NA";
                     const age = daysSince(l.createdDate);
                     return (
-                    <tr key={l.id} style={isOverdue ? {background:"#FEF2F2"} : undefined}>
+                    <tr key={l.id} style={l.duplicateOf ? {background:"#FFF7ED"} : isOverdue ? {background:"#FEF2F2"} : undefined}>
                       <td><input type="checkbox" checked={bulk.isSelected(l.id)} onChange={() => bulk.toggle(l.id)}/></td>
                       <td><span style={{fontFamily:"'Courier New',monospace", fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:4, background:"var(--s2)", color:"var(--text2)"}}>{l.leadId}</span></td>
                       <td>
@@ -2539,6 +2564,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                           onMouseEnter={e => e.target.style.textDecoration="underline"}
                           onMouseLeave={e => e.target.style.textDecoration="none"}
                         >{l.company}</span>
+                        {l.duplicateOf && <span title="Possible duplicate — same company, matching contact/email, shared product" style={{marginLeft:6,fontSize:9,fontWeight:700,color:"#B45309",background:"#FFF7ED",border:"1px solid #FED7AA",padding:"1px 6px",borderRadius:4,verticalAlign:"middle"}}>DUPLICATE</span>}
                         <div style={{fontSize:11,color:"var(--text3)"}}>{l.source}{l.region ? ` · ${l.region}` : ""}</div>
                       </td>
                       <td>
