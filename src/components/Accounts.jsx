@@ -186,6 +186,37 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                   {a.address && infoRow("Address", a.address)}
                 </div>
 
+                {/* Record Lineage — end-to-end ID chain (lead → opp → account) */}
+                {(() => {
+                  const srcOpp = opps.find(o => o.id === a.sourceOppId) || opps.find(o => o.accountId === a.id);
+                  const srcLead = leads.find(l => l.id === a.sourceLeadId) || (a.leadId ? leads.find(l => l.leadId === a.leadId) : null);
+                  const leadNo = a.leadId || srcLead?.leadId || srcOpp?.leadId || "";
+                  const oppNo = a.oppNo || srcOpp?.oppNo || "";
+                  if (!leadNo && !oppNo && !a.accountNo) return null;
+                  const idChip = (label, val, sub) => (
+                    <div style={{flex:1,minWidth:0,background:"var(--s2)",border:"1px solid var(--border)",borderRadius:8,padding:"8px 10px"}}>
+                      <div style={{fontSize:9,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:"var(--text3)"}}>{label}</div>
+                      <div style={{fontFamily:"'Courier New',monospace",fontSize:12,fontWeight:700,color:val?"var(--brand)":"var(--text3)",wordBreak:"break-word"}}>{val || "—"}</div>
+                      {sub && <div style={{fontSize:10,color:"var(--text3)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={sub}>{sub}</div>}
+                    </div>
+                  );
+                  return (
+                    <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
+                      <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+                        <Building2 size={15} style={{color:"var(--brand)"}}/> Record Lineage
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        {idChip("Lead", leadNo, srcLead?.company)}
+                        <span style={{color:"var(--text3)",fontWeight:700}}>→</span>
+                        {idChip("Opportunity", oppNo, srcOpp?.title)}
+                        <span style={{color:"var(--text3)",fontWeight:700}}>→</span>
+                        {idChip("Account (Finance ID)", a.accountNo, a.status)}
+                      </div>
+                      <div style={{fontSize:10,color:"var(--text3)",marginTop:8}}>End-to-end trace: originating lead → opportunity → finance-approved account.</div>
+                    </div>
+                  );
+                })()}
+
                 {/* Legal & Tax */}
                 <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)"}}>
                   <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
@@ -715,11 +746,20 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
     if (!no) { setApproveErr("Account number is required to approve."); return; }
     const dup = accounts.some(a => a.id !== approveModal.id && (a.accountNo || "").trim().toLowerCase() === no.toLowerCase());
     if (dup) { setApproveErr("That account number is already in use by another account."); return; }
+    // Complete the end-to-end ID lineage at activation: pull the opportunity
+    // number + originating lead id from the linked opp if the account didn't
+    // already carry them. accountNo here IS the Finance ID.
+    const srcOpp = (opps || []).find(o => o.id === approveModal.sourceOppId)
+      || (opps || []).find(o => o.accountId === approveModal.id);
     setAccounts(p => p.map(a => a.id === approveModal.id ? {
       ...a,
       status: "Active",
       accountNo: no,
       arrRevenue: a.arrRevenue || wonValueFor(a.id),
+      sourceOppId: a.sourceOppId || srcOpp?.id || "",
+      oppNo: a.oppNo || srcOpp?.oppNo || "",
+      sourceLeadId: a.sourceLeadId || (srcOpp?.sourceLeadIds || [])[0] || "",
+      leadId: a.leadId || srcOpp?.leadId || "",
     } : a));
     notify.success(`${approveModal.name} approved & activated as ${no}.`);
     setApproveModal(null); setApproveAcctNo(""); setApproveErr("");

@@ -2,10 +2,12 @@
   "name": "smartcrm-hans",
   "version": "1.0.0",
   "description": "SmartCRM – Hans Infomatic Pvt. Ltd.",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:pricing": "node scripts/test-pricing-engine.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",

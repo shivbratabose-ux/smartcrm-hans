@@ -229,6 +229,14 @@ function migrateState(raw) {
 
   // ── 3. Opportunities: backfill missing fields ──
   if (Array.isArray(s.opps)) {
+    // Continue the OPP-<year>-<NNN> sequence for any deal created without a
+    // number (manual "Add Deal" historically left oppNo blank), so every
+    // deal shows a stable, sortable opportunity number in the Pipeline.
+    let oppSeq = s.opps.reduce((m, o) => {
+      const x = o.oppNo && o.oppNo.match(/OPP-\d+-(\d+)/);
+      return x ? Math.max(m, parseInt(x[1], 10)) : m;
+    }, 0);
+    const oppYear = new Date().getFullYear();
     s.opps = s.opps.map(o => ({
       sourceLeadIds: [],
       contactRoles: [],
@@ -237,15 +245,34 @@ function migrateState(raw) {
       ...o,
       // Ensure products is always an array
       products: Array.isArray(o.products) ? o.products : (o.products ? [o.products] : []),
+      oppNo: o.oppNo || `OPP-${oppYear}-${String(++oppSeq).padStart(3, "0")}`,
     }));
   }
 
   // ── 4. Accounts: ensure products is always an array ──
   if (Array.isArray(s.accounts)) {
-    s.accounts = s.accounts.map(a => ({
-      ...a,
-      products: Array.isArray(a.products) ? a.products : (a.products ? [a.products] : []),
-    }));
+    // One-time lineage backfill for accounts created before end-to-end ID
+    // tracking landed: match each account to its winning opportunity (the
+    // opp pointing at this account) and inherit oppNo + originating-lead ids
+    // so the lead → opp → account chain is complete for historical records.
+    // Idempotent — only fills blanks, so it no-ops once populated.
+    const oppByAccount = {};
+    (s.opps || []).forEach(o => {
+      if (!o.accountId) return;
+      // Prefer a Won opp; otherwise the first opp linked to the account.
+      if (!oppByAccount[o.accountId] || o.stage === "Won") oppByAccount[o.accountId] = o;
+    });
+    s.accounts = s.accounts.map(a => {
+      const src = oppByAccount[a.id];
+      return {
+        ...a,
+        products: Array.isArray(a.products) ? a.products : (a.products ? [a.products] : []),
+        sourceOppId:  a.sourceOppId  || src?.id || "",
+        oppNo:        a.oppNo         || src?.oppNo || "",
+        sourceLeadId: a.sourceLeadId || (src?.sourceLeadIds || [])[0] || "",
+        leadId:       a.leadId        || src?.leadId || "",
+      };
+    });
   }
 
   // ── 5. Add newly-created contacts ──
@@ -1538,6 +1565,11 @@ export default function SmartCRM() {
         status: "Pending Approval",
         products: [...new Set([...(a.products || []), ...(opp.products || [])])],
         productSelection: mergeProductSelection(a, opp),
+        // Record lineage if this prospect account didn't already carry it.
+        sourceOppId: a.sourceOppId || opp.id,
+        oppNo: a.oppNo || opp.oppNo || "",
+        sourceLeadId: a.sourceLeadId || (opp.sourceLeadIds || [])[0] || "",
+        leadId: a.leadId || opp.leadId || "",
       }));
     } else {
       // Won deal with no linked account → create a Pending Approval account
@@ -1555,6 +1587,13 @@ export default function SmartCRM() {
         productSelection: Array.isArray(opp.productSelection) ? opp.productSelection : [],
         source: "Deal Won",
         arrRevenue: 0,
+        // ── End-to-end ID lineage (lead → opp → account) ──
+        // Finance issues accountNo on approval; carry the opportunity and
+        // originating-lead ids through so the full chain is recorded.
+        sourceOppId: opp.id,
+        oppNo: opp.oppNo || "",
+        sourceLeadId: (opp.sourceLeadIds || [])[0] || "",
+        leadId: opp.leadId || "",
       };
       setAccounts(p => [...p, newAcc]);
       setOpps(p => p.map(o => o.id === opp.id ? {...o, accountId: newAccId} : o));
@@ -1667,11 +1706,30 @@ export default function SmartCRM() {
         hierarchyLevel: "Parent Company",
         hierarchyPath: lead.company,
         accountNo: "",
+        // ── End-to-end ID lineage (lead → opp → account) ──
+        // accountNo (the Finance ID) is issued later on approval; these
+        // cross-references let us trace the account back to its opportunity
+        // and originating lead at any point.
+        sourceOppId: newOpp.id,
+        sourceLeadId: lead.id,
+        leadId: lead.leadId || "",
       };
       setAccounts(p => [...p, newAcc]);
       newOpp.accountId = newAccId;
     }
-    setOpps(p => [...p, newOpp]);
+    // Assign the opportunity its own canonical number (OPP-YYYY-NNN — the
+    // same scheme the Pipeline and bulk import use), generated against the
+    // freshest list inside the updater. The source lead's id is retained on
+    // the opp (leadId + sourceLeadIds) so the chain lead → opp stays
+    // traceable end-to-end.
+    setOpps(p => {
+      const maxSeq = p.reduce((m, o) => {
+        const x = o.oppNo && o.oppNo.match(/OPP-\d+-(\d+)/);
+        return x ? Math.max(m, parseInt(x[1], 10)) : m;
+      }, 0);
+      newOpp.oppNo = `OPP-${new Date().getFullYear()}-${String(maxSeq + 1).padStart(3, "0")}`;
+      return [...p, newOpp];
+    });
     // Handle "keep lead open for additional LOBs" vs full conversion
     if (data.keepLeadOpen) {
       setLeads(p => p.map(l => l.id === lead.id ? { ...l, convertedOppIds: [...(l.convertedOppIds||[]), newOpp.id], stageHistory: [...(l.stageHistory||[]), {from:l.stage,to:"Partial Convert",date:today,by:currentUser||""}] } : l));
@@ -1721,6 +1779,31 @@ export default function SmartCRM() {
     }));
     if (!data.keepLeadOpen) setPage("pipeline");
   }, []);
+
+  // ── Opportunity-number backfill (runs on the LIVE opps state) ──
+  // migrateState only numbers opps on the localStorage path; cloud
+  // hydration (mergeOnLoad) treats the cloud row as source-of-truth and
+  // bypasses it, so opps that reached Supabase without an opp_no would
+  // still show "-" in the Pipeline. This effect fills any blank oppNo on
+  // the actual rendered state (OPP-YYYY-NNN, continuing the max sequence)
+  // and persists via the normal diff-sync. Idempotent: once every opp has
+  // a number, `missing` is empty and it no-ops (no render loop).
+  useEffect(() => {
+    if (!Array.isArray(opps) || opps.length === 0) return;
+    const missing = opps.filter(o => o && !o.isDeleted && !o.oppNo);
+    if (missing.length === 0) return;
+    let seq = opps.reduce((m, o) => {
+      const x = o.oppNo && o.oppNo.match(/OPP-\d+-(\d+)/);
+      return x ? Math.max(m, parseInt(x[1], 10)) : m;
+    }, 0);
+    const year = new Date().getFullYear();
+    const missingIds = new Set(missing.map(o => o.id));
+    setOpps(prev => prev.map(o =>
+      missingIds.has(o.id) && !o.oppNo
+        ? { ...o, oppNo: `OPP-${year}-${String(++seq).padStart(3, "0")}` }
+        : o
+    ));
+  }, [opps]);
 
   // Bulk upload handler — supports both INSERT (new records) and UPDATE (existing by ref ID).
   // Each record from BulkUpload carries _bulkMode ("insert"|"update") and _matchedId (for updates).
@@ -2373,7 +2456,7 @@ export default function SmartCRM() {
             {page==="contracts"  && <Contracts contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote} onGenerateRenewalOpp={generateRenewalOpportunity} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="collections"&& <Collections collections={visibleCollections} setCollections={setCollections} accounts={visibleAccounts} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="projects"   && <Projects projects={visibleProjects} setProjects={setProjects} accounts={visibleAccounts} opps={visibleOpps} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
-            {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}
+            {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} masters={masters} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}
             {page.startsWith("quote-accept/") && <QuoteAcceptLanding quoteId={page.replace(/^quote-accept\//,"")} quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} contracts={contracts} setContracts={setContracts} setActivities={setActivities} currentUser={currentUser} onBack={()=>setPage("quotations")}/>}
             {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="communications"&& <CommLog commLogs={visibleCommLogs} setCommLogs={setCommLogs} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} canDelete={canDelete} orgUsers={orgUsers} catalog={catalog} onRespondEditAccess={respondEditAccess}/>}

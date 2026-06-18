@@ -86,6 +86,9 @@ const HEALTH_CFG = {
   active:   { label: "Active",  color: "#22C55E", bg: "#F0FDF4", border: "#22C55E" },
   "at-risk": { label: "At Risk", color: "#F59E0B", bg: "#FFFBEB", border: "#F59E0B" },
   stalled:  { label: "Stalled", color: "#EF4444", bg: "#FEF2F2", border: "#EF4444" },
+  // Closed outcomes — no follow-up expected, so excluded from idle buckets.
+  won:      { label: "Won",     color: "#0D9488", bg: "#F0FDFA", border: "#0D9488" },
+  lost:     { label: "Lost",    color: "#94A3B8", bg: "#F8FAFC", border: "#CBD5E1" },
 };
 const MGR_ROLES = ["line_mgr", "bd_lead", "country_mgr", "admin", "md", "director"];
 const OUTCOME_OPTS = ["Positive", "Neutral", "Negative"];
@@ -97,10 +100,15 @@ const VIEWS = [
 const PIE_COLORS = ["#3B82F6", "#22C55E", "#F59E0B", "#EF4444", "#8B5CF6", "#F97316", "#94A3B8"];
 
 /* ───────── helpers ───────── */
-const getDealHealth = (oppId, activities) => {
+const getDealHealth = (opp, activities) => {
+  // Closed deals (Won / Lost) are done — no follow-up is expected, so they
+  // never fall into the activity-idle "at risk" / "stalled" buckets.
+  if (opp?.stage === "Won") return "won";
+  if (opp?.stage === "Lost") return "lost";
+  const oppId = opp?.id;
   const done = (activities || []).filter(a => a.oppId === oppId && a.status === "Completed");
   if (done.length === 0) return "stalled";
-  const lastDate = done.sort((a, b) => b.date.localeCompare(a.date))[0]?.date;
+  const lastDate = done.sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0]?.date;
   if (!lastDate) return "stalled";
   const days = Math.round((new Date(today) - new Date(lastDate)) / 864e5);
   if (days <= 7) return "active";
@@ -111,13 +119,23 @@ const getDealHealth = (oppId, activities) => {
 const getLastActivity = (oppId, activities) => {
   const done = (activities || []).filter(a => a.oppId === oppId && a.status === "Completed");
   if (done.length === 0) return null;
-  return done.sort((a, b) => b.date.localeCompare(a.date))[0];
+  return done.sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+};
+
+// Next sequential opportunity number — OPP-<year>-<NNN>, continuing the
+// highest existing sequence (same format the bulk importer uses).
+const nextOppNo = (opps, year = new Date().getFullYear()) => {
+  const maxSeq = (opps || []).reduce((m, o) => {
+    const x = o.oppNo && o.oppNo.match(/OPP-\d+-(\d+)/);
+    return x ? Math.max(m, parseInt(x[1], 10)) : m;
+  }, 0);
+  return `OPP-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
 };
 
 const getNextAction = (oppId, activities) => {
   const planned = (activities || []).filter(a => a.oppId === oppId && a.status === "Planned");
   if (planned.length === 0) return null;
-  return planned.sort((a, b) => a.date.localeCompare(b.date))[0];
+  return planned.sort((a, b) => (a.date || "").localeCompare(b.date || ""))[0];
 };
 
 function HealthBadge({ health }) {
@@ -502,7 +520,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
   const acc = accounts.find(a => a.id === detail.accountId);
   const primaryContact = (contacts || []).find(c => c.id === detail.primaryContactId);
   const secondaryContacts = (detail.secondaryContactIds || []).map(cid => (contacts || []).find(c => c.id === cid)).filter(Boolean);
-  const health = getDealHealth(detail.id, activities);
+  const health = getDealHealth(detail, activities);
   const tabs = [
     { id: "overview", label: "Overview" },
     { id: "timeline", label: "Timeline" },
@@ -864,7 +882,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     {label:"owner",           accessor:o=>teamMap[o.owner]?.name||o.owner||""},
     {label:"notes",           accessor:o=>o.notes||""},
   ];
-  const [view, setView] = useState("kanban");
+  const [view, setView] = useState("list");
   const [prodF, setProdF] = useState("All");
   const [ownerF, setOwnerF] = useState("All");
   const [regionF, setRegionF] = useState("All");
@@ -932,6 +950,24 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   }, [accounts, currentUser, setCallReports, setActivities]);
   const isManager = curUser && MGR_ROLES.includes(curUser.role);
 
+  /* Deal health, computed ONCE per (opps, activities) change.
+     getDealHealth is otherwise called ~5×/row in the List view (filter,
+     sort, KPIs, column render, body) and each call re-scanned all
+     activities. Group completed activities by oppId once, then derive
+     health per opp — O(activities + opps) instead of O(rows × activities). */
+  const healthById = useMemo(() => {
+    const byOpp = new Map();
+    for (const a of (activities || [])) {
+      if (a.status !== "Completed") continue;
+      if (!byOpp.has(a.oppId)) byOpp.set(a.oppId, []);
+      byOpp.get(a.oppId).push(a);
+    }
+    const m = new Map();
+    for (const o of opps) m.set(o.id, getDealHealth(o, byOpp.get(o.id) || []));
+    return m;
+  }, [opps, activities]);
+  const healthOf = (o) => (o && healthById.has(o.id) ? healthById.get(o.id) : getDealHealth(o, activities));
+
   /* filtered opps */
   const filtered = useMemo(() => opps.filter(o => {
     if (prodF !== "All" && !o.products.includes(prodF)) return false;
@@ -939,7 +975,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     if (regionF !== "All" && o.country !== regionF) return false;
     if (stageF !== "All" && o.stage !== stageF) return false;
     if (statusF !== "All") {
-      const h = getDealHealth(o.id, activities);
+      const h = healthById.get(o.id);
       if (statusF === "Active" && h !== "active") return false;
       if (statusF === "At Risk" && h !== "at-risk") return false;
       if (statusF === "Stalled" && h !== "stalled") return false;
@@ -950,7 +986,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
       if (!o.title.toLowerCase().includes(q) && !(acc?.name || "").toLowerCase().includes(q)) return false;
     }
     return true;
-  }), [opps, prodF, ownerF, regionF, stageF, statusF, searchQ, activities, accounts]);
+  }), [opps, prodF, ownerF, regionF, stageF, statusF, searchQ, healthById, accounts]);
 
   /* KPIs */
   const openDeals = filtered.filter(o => !closingNames.includes(o.stage));
@@ -959,8 +995,8 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
   const wonCount = filtered.filter(o => o.stage === wonName).length;
   const lostCount = filtered.filter(o => o.stage === lostName).length;
   const winRate = wonCount + lostCount > 0 ? Math.round((wonCount / (wonCount + lostCount)) * 100) : 0;
-  const atRiskCount = openDeals.filter(o => getDealHealth(o.id, activities) === "at-risk").length;
-  const stalledCount = openDeals.filter(o => getDealHealth(o.id, activities) === "stalled").length;
+  const atRiskCount = openDeals.filter(o => healthById.get(o.id) === "at-risk").length;
+  const stalledCount = openDeals.filter(o => healthById.get(o.id) === "stalled").length;
 
   /* form handlers */
   const openAdd = () => { setForm({ ...BLANK_OPP, id: `o${uid()}`, productSelection: [], owner: currentUser || BLANK_OPP.owner }); setFormErrors({}); setModal({ mode: "add" }); };
@@ -994,7 +1030,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     if (modal.mode === "add") {
       const dup = opps.find(o => o.accountId === clean.accountId && o.products.length > 0 && clean.products.length > 0 && o.products.some(p => clean.products.includes(p)) && o.id !== clean.id);
       if (dup && !window.confirm(`Warning: A deal for this account with overlapping products already exists ("${dup.title}"). Continue?`)) return;
-      setOpps(p => [...p, { ...clean, probability: STAGE_PROB[clean.stage] || clean.probability }]);
+      setOpps(p => [...p, { ...clean, oppNo: clean.oppNo || nextOppNo(p), probability: STAGE_PROB[clean.stage] || clean.probability }]);
     } else {
       const prev = opps.find(o => o.id === clean.id);
       setOpps(p => p.map(o => o.id === clean.id ? { ...clean } : o));
@@ -1115,13 +1151,13 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
     arr.sort((a, b) => {
       let va, vb;
       if (sortKey === "account") { va = accounts.find(x => x.id === a.accountId)?.name || ""; vb = accounts.find(x => x.id === b.accountId)?.name || ""; }
-      else if (sortKey === "health") { va = getDealHealth(a.id, activities); vb = getDealHealth(b.id, activities); }
+      else if (sortKey === "health") { va = healthById.get(a.id); vb = healthById.get(b.id); }
       else { va = a[sortKey] ?? ""; vb = b[sortKey] ?? ""; }
       if (typeof va === "number") return sortDir === "asc" ? va - vb : vb - va;
       return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
     });
     return arr;
-  }, [filtered, sortKey, sortDir, accounts, activities]);
+  }, [filtered, sortKey, sortDir, accounts, healthById]);
 
   /* ── ANALYTICS DATA ── */
   // STAGES / closingNames / wonName / lostName resolved from masters (with
@@ -1267,7 +1303,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {mismatchDeals.slice(0, 8).map(o => {
                   const acc = accounts.find(a => a.id === o.accountId);
-                  const health = getDealHealth(o.id, activities);
+                  const health = healthOf(o);
                   return (
                     <div key={o.id} style={{
                       display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -1323,7 +1359,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
                   {cols.map(o => {
                     const acc = accounts.find(a => a.id === o.accountId);
-                    const health = getDealHealth(o.id, activities);
+                    const health = healthOf(o);
                     const lastAct = getLastActivity(o.id, activities);
                     const nextAct = getNextAction(o.id, activities);
                     const hCfg = HEALTH_CFG[health];
@@ -1445,7 +1481,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
           { key: "decisionDate", label: "Decision Date", defaultWidth: 120, render: o => txt(fmt.short(o.decisionDate)) },
           { key: "createdDate", label: "Created", defaultWidth: 110, render: o => txt(fmt.short(o.createdDate)) },
           { key: "owner", label: "Owner", defaultWidth: 140, render: o => <UserPill uid={o.owner} /> },
-          { key: "health", label: "Status", defaultWidth: 110, render: o => <HealthBadge health={getDealHealth(o.id, activities)} /> },
+          { key: "health", label: "Status", defaultWidth: 110, render: o => <HealthBadge health={healthOf(o)} /> },
           { key: "lastActivity", label: "Last Activity", defaultWidth: 120, sortable: false, render: o => {
             const lastAct = getLastActivity(o.id, activities);
             return <span style={{ fontSize: 11, color: "var(--text3)" }}>{lastAct ? fmt.short(lastAct.date) : "-"}</span>;
@@ -1499,7 +1535,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
         ];
         const PIPELINE_DEFAULT_CONFIG = [
           { key: "title", visible: true, width: 240 },
-          { key: "oppNo", visible: false, width: 120 },
+          { key: "oppNo", visible: true, width: 120 },
           { key: "account", visible: true, width: 200 },
           { key: "stage", visible: true, width: 140 },
           { key: "value", visible: true, width: 100 },
@@ -1591,7 +1627,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
             <tbody>
               {sorted.map(o => {
                 const acc = accounts.find(a => a.id === o.accountId);
-                const health = getDealHealth(o.id, activities);
+                const health = healthOf(o);
                 const lastAct = getLastActivity(o.id, activities);
                 const nextAct = getNextAction(o.id, activities);
                 return (

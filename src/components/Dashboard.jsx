@@ -72,8 +72,12 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
   ), [opps, range, fActivities]);
 
   // ─── ALWAYS-CUMULATIVE KPIs (not date filtered) ───
-  const totalArr = accounts.reduce((s, a) => s + (parseFloat(a.arrRevenue) || 0), 0);
   const activeAccounts = accounts.filter(a => a.status === "Active").length;
+  // Sum ARR only across Active accounts so the card matches both its
+  // "N active accounts" subtitle and the Accounts page's Total ARR card.
+  const totalArr = accounts
+    .filter(a => a.status === "Active")
+    .reduce((s, a) => s + (parseFloat(a.arrRevenue) || 0), 0);
   const totalContacts = contacts.length;
   const openDeals = opps.filter(o => !["Won", "Lost"].includes(o.stage));
   const weighted = openDeals.reduce((s, o) => s + ((parseFloat(o.value) || 0) * (STAGE_PROB[o.stage] || 0) / 100), 0);
@@ -119,15 +123,27 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
     // doesn't reconcile with the pipeline total. Exclude Lost / Suspended.
     const palette = ["#94A3B8", "#3B82F6", "#6366F1", "#F59E0B", "#7C3AED", "#EC4899", "#0D9488", "#22C55E"];
     const stages = (STAGES && STAGES.length ? STAGES : FUNNEL_STAGES).filter(s => !/lost|suspend/i.test(s));
+    // Tie the funnel to the dashboard date range so it reconciles with the
+    // period KPIs. Won deals are scoped by close date — the same predicate
+    // the "Deals Won" / "Won Value" stats use — so the Won bar matches them
+    // exactly. Open-stage deals are scoped by the date they entered the
+    // pipeline (createdDate).
+    // Fall back to the other date when the primary one is blank, so a deal
+    // isn't silently dropped from the funnel just because (e.g.) a Won deal
+    // has no closeDate or an imported open deal has no createdDate.
+    const inPeriod = (o) => o.stage === "Won"
+      ? inRange(o.closeDate || o.createdDate, range)
+      : inRange(o.createdDate || o.closeDate, range);
+    const periodOpps = opps.filter(inPeriod);
     return stages.map((stage, i) => ({
       name: stage,
-      count: opps.filter(o => o.stage === stage).length,
+      count: periodOpps.filter(o => o.stage === stage).length,
       // Round to 1 decimal so a sum of fractional ₹L values doesn't show
       // floating-point noise (e.g. 10.7999999999L → 10.8L).
-      value: parseFloat(opps.filter(o => o.stage === stage).reduce((s, o) => s + (parseFloat(o.value) || 0), 0).toFixed(1)),
+      value: parseFloat(periodOpps.filter(o => o.stage === stage).reduce((s, o) => s + (parseFloat(o.value) || 0), 0).toFixed(1)),
       fill: FUNNEL_COLORS[stage] || palette[i % palette.length],
     }));
-  }, [opps]);
+  }, [opps, range]);
 
   // ─── Revenue by product ───
   const productRevenue = useMemo(() => {
@@ -293,7 +309,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}>
       <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.8 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "'Outfit',sans-serif", marginTop: 4 }}>
-        {unit === "₹" && <span style={{ fontSize: 18, fontWeight: 600, opacity: 0.8 }}>₹</span>}{value}{unit === "Cr" && <span style={{ fontSize: 16, opacity: 0.7 }}> L</span>}{unit === "%" && <span style={{ fontSize: 18, opacity: 0.7 }}>%</span>}{unit === "d" && <span style={{ fontSize: 16, opacity: 0.7 }}> Days</span>}
+        {unit === "₹" && <span style={{ fontSize: 18, fontWeight: 600, opacity: 0.8 }}>₹</span>}{value}{unit === "L" && <span style={{ fontSize: 16, opacity: 0.7 }}> L</span>}{unit === "%" && <span style={{ fontSize: 18, opacity: 0.7 }}>%</span>}{unit === "d" && <span style={{ fontSize: 16, opacity: 0.7 }}> Days</span>}
       </div>
       {sub && <div style={{ fontSize: 11, marginTop: 4, opacity: 0.75, color: subColor || "inherit" }}>{sub}</div>}
     </div>
@@ -343,8 +359,8 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
 
       {/* ──── PRIMARY KPI ROW ──── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 16 }}>
-        <KPI label="Total ARR" value={parseFloat(totalArr.toFixed(1))} unit="Cr" sub={`${activeAccounts} active accounts`} onClick={() => setPage("accounts")} />
-        <KPI label="Weighted Pipeline" value={parseFloat(weighted.toFixed(1))} unit="Cr" sub={`${openDeals.length} open deals`} onClick={() => setPage("pipeline")} />
+        <KPI label="Total ARR" value={parseFloat(totalArr.toFixed(1))} unit="L" sub={`${activeAccounts} active accounts`} onClick={() => setPage("accounts")} />
+        <KPI label="Weighted Pipeline" value={parseFloat(weighted.toFixed(1))} unit="L" sub={`${openDeals.length} open deals`} onClick={() => setPage("pipeline")} />
         <KPI label="Avg Deal Cycle" value={avgDealCycle} unit="d" sub={`Target: ${Math.round(avgDealCycle * 0.8)}d`} />
         <KPI label="Win Rate" value={periodTotalClosed > 0 ? periodWinRate : Math.round(opps.filter(o => o.stage === "Won").length / Math.max(1, opps.filter(o => ["Won", "Lost"].includes(o.stage)).length) * 100)} unit="%" sub={periodTotalClosed > 0 ? `${periodWon.length}W / ${periodLost.length}L in period` : "All time"} />
       </div>
@@ -363,7 +379,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18 }}>
         <div className="card" style={{ padding: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div className="card-title" style={{ marginBottom: 0 }}>Pipeline Funnel</div>
+            <div className="card-title" style={{ marginBottom: 0 }}>Pipeline Funnel <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text3)" }}>· {rangeLabel}</span></div>
             <button className="btn btn-sec btn-xs" onClick={() => setPage("pipeline")}>View All</button>
           </div>
           <ResponsiveContainer width="100%" height={200}>
