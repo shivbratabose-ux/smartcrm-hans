@@ -1780,6 +1780,31 @@ export default function SmartCRM() {
     if (!data.keepLeadOpen) setPage("pipeline");
   }, []);
 
+  // ── Opportunity-number backfill (runs on the LIVE opps state) ──
+  // migrateState only numbers opps on the localStorage path; cloud
+  // hydration (mergeOnLoad) treats the cloud row as source-of-truth and
+  // bypasses it, so opps that reached Supabase without an opp_no would
+  // still show "-" in the Pipeline. This effect fills any blank oppNo on
+  // the actual rendered state (OPP-YYYY-NNN, continuing the max sequence)
+  // and persists via the normal diff-sync. Idempotent: once every opp has
+  // a number, `missing` is empty and it no-ops (no render loop).
+  useEffect(() => {
+    if (!Array.isArray(opps) || opps.length === 0) return;
+    const missing = opps.filter(o => o && !o.isDeleted && !o.oppNo);
+    if (missing.length === 0) return;
+    let seq = opps.reduce((m, o) => {
+      const x = o.oppNo && o.oppNo.match(/OPP-\d+-(\d+)/);
+      return x ? Math.max(m, parseInt(x[1], 10)) : m;
+    }, 0);
+    const year = new Date().getFullYear();
+    const missingIds = new Set(missing.map(o => o.id));
+    setOpps(prev => prev.map(o =>
+      missingIds.has(o.id) && !o.oppNo
+        ? { ...o, oppNo: `OPP-${year}-${String(++seq).padStart(3, "0")}` }
+        : o
+    ));
+  }, [opps]);
+
   // Bulk upload handler — supports both INSERT (new records) and UPDATE (existing by ref ID).
   // Each record from BulkUpload carries _bulkMode ("insert"|"update") and _matchedId (for updates).
   const handleBulkUpload = useCallback((type, records) => {
