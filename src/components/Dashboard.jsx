@@ -128,9 +128,12 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
     // the "Deals Won" / "Won Value" stats use — so the Won bar matches them
     // exactly. Open-stage deals are scoped by the date they entered the
     // pipeline (createdDate).
+    // Fall back to the other date when the primary one is blank, so a deal
+    // isn't silently dropped from the funnel just because (e.g.) a Won deal
+    // has no closeDate or an imported open deal has no createdDate.
     const inPeriod = (o) => o.stage === "Won"
-      ? inRange(o.closeDate, range)
-      : inRange(o.createdDate, range);
+      ? inRange(o.closeDate || o.createdDate, range)
+      : inRange(o.createdDate || o.closeDate, range);
     const periodOpps = opps.filter(inPeriod);
     return stages.map((stage, i) => ({
       name: stage,
@@ -376,7 +379,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18 }}>
         <div className="card" style={{ padding: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div className="card-title" style={{ marginBottom: 0 }}>Pipeline Funnel</div>
+            <div className="card-title" style={{ marginBottom: 0 }}>Pipeline Funnel <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text3)" }}>· {rangeLabel}</span></div>
             <button className="btn btn-sec btn-xs" onClick={() => setPage("pipeline")}>View All</button>
           </div>
           <ResponsiveContainer width="100%" height={200}>

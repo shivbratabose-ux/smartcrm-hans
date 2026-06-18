@@ -91,7 +91,13 @@ export default function QuotationMasters({ masters, setMasters }) {
           ].map(([k, label, type]) => (
             <div className="form-group" key={k}>
               <label>{label}</label>
-              <input type={type} value={cur.quoteConfig[k]} onChange={e => setConfig(k, type === "number" ? Number(e.target.value) : e.target.value)} />
+              <input type={type} value={cur.quoteConfig[k]} onChange={e => {
+                const v = e.target.value;
+                // Don't let an emptied field silently persist as 0 (which would
+                // mean 0% GST / 0% discount cap). Keep the prior value when
+                // cleared; typing "0" still sets 0 explicitly.
+                setConfig(k, type === "number" ? (v === "" ? cur.quoteConfig[k] : Number(v)) : v);
+              }} />
             </div>
           ))}
           <div style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--text3)" }}>

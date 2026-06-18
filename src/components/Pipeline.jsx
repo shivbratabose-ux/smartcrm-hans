@@ -108,7 +108,7 @@ const getDealHealth = (opp, activities) => {
   const oppId = opp?.id;
   const done = (activities || []).filter(a => a.oppId === oppId && a.status === "Completed");
   if (done.length === 0) return "stalled";
-  const lastDate = done.sort((a, b) => b.date.localeCompare(a.date))[0]?.date;
+  const lastDate = done.sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0]?.date;
   if (!lastDate) return "stalled";
   const days = Math.round((new Date(today) - new Date(lastDate)) / 864e5);
   if (days <= 7) return "active";
@@ -119,7 +119,7 @@ const getDealHealth = (opp, activities) => {
 const getLastActivity = (oppId, activities) => {
   const done = (activities || []).filter(a => a.oppId === oppId && a.status === "Completed");
   if (done.length === 0) return null;
-  return done.sort((a, b) => b.date.localeCompare(a.date))[0];
+  return done.sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
 };
 
 // Next sequential opportunity number — OPP-<year>-<NNN>, continuing the
@@ -135,7 +135,7 @@ const nextOppNo = (opps, year = new Date().getFullYear()) => {
 const getNextAction = (oppId, activities) => {
   const planned = (activities || []).filter(a => a.oppId === oppId && a.status === "Planned");
   if (planned.length === 0) return null;
-  return planned.sort((a, b) => a.date.localeCompare(b.date))[0];
+  return planned.sort((a, b) => (a.date || "").localeCompare(b.date || ""))[0];
 };
 
 function HealthBadge({ health }) {
