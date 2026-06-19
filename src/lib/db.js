@@ -819,10 +819,33 @@ export async function batchUpsert(module, records) {
   const table = TABLE_MAP[module];
   if (!table) return { error: "Unknown module" };
 
-  const snaked = records.map(r => toSnake(r, module));
-  const { error } = await supabase.from(table).upsert(snaked, { onConflict: "id" });
-  if (error) dbLog('error', `[DB] batchUpsert ${module}:`, error);
-  return { error };
+  // Schema-heal the whole batch the same way single-record writes do: a bulk
+  // upsert fails wholesale if ANY row carries a column the table doesn't have
+  // (app-side BLANK_* templates drift ahead of the migrated schema). Strip the
+  // offending column from every row and retry, so one drifted field can't make
+  // a whole module report "Couldn't sync". Non-column errors (FK / RLS / NOT
+  // NULL / bad value) can't be healed and are returned as-is.
+  let snaked = records.map(r => pruneKnownUnknowns(table, toSnake(r, module)));
+  const MAX_RETRIES = 30;
+  let lastError = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const { error } = await supabase.from(table).upsert(snaked, { onConflict: "id" });
+    if (!error) return { error: null };
+    lastError = error;
+    const m = COLUMN_NOT_FOUND_RE.exec(error.message || "");
+    if (!m) break; // not a column-not-found error — can't strip our way out
+    const badCol = m[1];
+    if (!(table in UNKNOWN_COLUMNS)) UNKNOWN_COLUMNS[table] = new Set();
+    UNKNOWN_COLUMNS[table].add(badCol);
+    let stripped = false;
+    snaked = snaked.map(r => {
+      if (badCol in r) { stripped = true; const { [badCol]: _drop, ...rest } = r; return rest; }
+      return r;
+    });
+    if (!stripped) break; // column already absent — avoid an infinite loop
+  }
+  if (lastError) dbLog('error', `[DB] batchUpsert ${module}:`, lastError);
+  return { error: lastError };
 }
 
 // ═══════════════════════════════════════════════════════════════════
