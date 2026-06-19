@@ -365,6 +365,8 @@ export default function HansQuoteBuilder({
   };
 
   const lbl = { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text3)", marginBottom: 3 };
+  // Red asterisk marking a mandatory field (matches the Custom Quote form).
+  const Req = () => <span style={{ color: "#DC2626", marginLeft: 2 }}>*</span>;
   const sumRow = (label, val, opts = {}) => (
     <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: opts.big ? 15 : 12.5, fontWeight: opts.big ? 800 : opts.bold ? 700 : 500, color: opts.color || "var(--text1)", borderTop: opts.divide ? "1px solid var(--border)" : "none", marginTop: opts.divide ? 4 : 0, paddingTop: opts.divide ? 8 : 4 }}>
       <span>{label}</span><span style={{ fontFamily: "'Outfit',sans-serif" }}>{val}</span>
@@ -377,7 +379,10 @@ export default function HansQuoteBuilder({
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ fontWeight: 800, fontSize: 16 }}>New Quotation <span style={{ fontSize: 11, fontWeight: 600, color: "var(--brand)", background: "var(--s2)", padding: "2px 8px", borderRadius: 10, marginLeft: 6 }}>Hans pricing</span></div>
-          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 11, color: "var(--text3)" }}><span style={{ color: "#DC2626" }}>*</span> required</span>
+            <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+          </div>
         </div>
 
         {saved ? (
@@ -397,25 +402,25 @@ export default function HansQuoteBuilder({
               {/* Opportunity + party */}
               <div className="form-row">
                 <div className="form-group" style={{ flex: 1 }}>
-                  <label>Opportunity</label>
+                  <label>Opportunity<Req /></label>
                   <select value={oppId} onChange={e => onPickOpp(e.target.value)}>
                     <option value="">— Select opportunity —</option>
                     {opps.map(o => <option key={o.id} value={o.id}>{o.title || o.name || o.id}</option>)}
                   </select>
                 </div>
                 <div className="form-group" style={{ width: 110 }}>
-                  <label>Currency</label>
+                  <label>Currency<Req /></label>
                   <select value={currency} onChange={e => setCurrency(e.target.value)}>
                     {config.currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
                   </select>
                 </div>
               </div>
               <div className="form-row">
-                <div className="form-group" style={{ flex: 2 }}><label>Party name</label><input value={party.name} onChange={e => setParty({ ...party, name: e.target.value })} placeholder="Auto-filled from opportunity" /></div>
-                <div className="form-group" style={{ flex: 1 }}><label>State (place of supply)</label><input value={party.state} onChange={e => setParty({ ...party, state: e.target.value })} placeholder="e.g. Delhi" /></div>
+                <div className="form-group" style={{ flex: 2 }}><label>Party name<Req /></label><input value={party.name} onChange={e => setParty({ ...party, name: e.target.value })} placeholder="Auto-filled from opportunity" /></div>
+                <div className="form-group" style={{ flex: 1 }}><label>State (place of supply)<Req /></label><input value={party.state} onChange={e => setParty({ ...party, state: e.target.value })} placeholder="e.g. Delhi" /></div>
               </div>
               <div className="form-row">
-                <div className="form-group" style={{ flex: 2 }}><label>Address</label><input value={party.address} onChange={e => setParty({ ...party, address: e.target.value })} /></div>
+                <div className="form-group" style={{ flex: 2 }}><label>Address<Req /></label><input value={party.address} onChange={e => setParty({ ...party, address: e.target.value })} /></div>
                 <div className="form-group" style={{ flex: 1 }}><label>GSTIN</label><input value={party.gstin} onChange={e => setParty({ ...party, gstin: e.target.value })} /></div>
               </div>
 
@@ -436,7 +441,7 @@ export default function HansQuoteBuilder({
                       <div className="form-group" style={{ flex: 2 }}><label>Shipping / service address</label><input value={billing.shippingAddress} onChange={e => setBill("shippingAddress", e.target.value)} /></div>
                     </div>
                     <div className="form-row">
-                      <div className="form-group" style={{ flex: 1 }}><label>Payment terms</label><input value={billing.paymentTerms} onChange={e => setBill("paymentTerms", e.target.value)} placeholder="e.g. Net 30" /></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Payment terms<Req /></label><input value={billing.paymentTerms} onChange={e => setBill("paymentTerms", e.target.value)} placeholder="e.g. Net 30" /></div>
                       <div className="form-group" style={{ width: 100 }}><label>Credit days</label><input type="number" min={0} value={billing.creditDays} onChange={e => setBill("creditDays", e.target.value === "" ? "" : Number(e.target.value))} /></div>
                       <div className="form-group" style={{ width: 120 }}><label>PO mandatory?</label><select value={billing.poMandatory} onChange={e => setBill("poMandatory", e.target.value)}><option value="">—</option><option>Yes</option><option>No</option></select></div>
                       <div className="form-group" style={{ flex: 1 }}><label>PO number</label><input value={billing.poNumber} onChange={e => setBill("poNumber", e.target.value)} /></div>
@@ -452,7 +457,7 @@ export default function HansQuoteBuilder({
                         </select>
                       </div>
                       <div className="form-group" style={{ flex: 1 }}><label>Name</label><input value={billing.billingContactName} onChange={e => setBill("billingContactName", e.target.value)} placeholder="Or type a new contact" /></div>
-                      <div className="form-group" style={{ flex: 1 }}><label>Email</label><input value={billing.billingContactEmail} onChange={e => setBill("billingContactEmail", e.target.value)} /></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Email<Req /></label><input value={billing.billingContactEmail} onChange={e => setBill("billingContactEmail", e.target.value)} /></div>
                       <div className="form-group" style={{ flex: 1 }}><label>Phone</label><input value={billing.billingContactPhone} onChange={e => setBill("billingContactPhone", e.target.value)} /></div>
                     </div>
                     {/* Finance / AP contact — accounts payable / billing follow-up */}
@@ -483,7 +488,7 @@ export default function HansQuoteBuilder({
               {/* Line grid */}
               <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, padding: "7px 10px", background: "var(--s2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--text3)" }}>
-                  <span>Product</span><span style={{ textAlign: "right" }}>Qty</span><span style={{ textAlign: "right" }}>Months</span><span style={{ textAlign: "right" }}>Disc%</span><span style={{ textAlign: "right" }}>Line total</span><span />
+                  <span>Product<Req /></span><span style={{ textAlign: "right" }}>Qty</span><span style={{ textAlign: "right" }}>Months</span><span style={{ textAlign: "right" }}>Disc%</span><span style={{ textAlign: "right" }}>Line total</span><span />
                 </div>
                 {pricedLines.map((l, i) => {
                   const oneTime = isOneTimeModel(l.pricingModel);
