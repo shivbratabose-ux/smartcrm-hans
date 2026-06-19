@@ -17,7 +17,7 @@ import { useState, useMemo } from "react";
 import { Plus, Trash2, X, AlertTriangle, Check, Info } from "lucide-react";
 import {
   QUOTE_CONFIG, HANS_CATALOGUE, PRICING_BANDS, ICAFFE_EDITIONS,
-  ICAFFE_BAND_FROM, ICAFFE_PLANS, QUOTE_TERMS,
+  ICAFFE_BAND_FROM, ICAFFE_PLANS, QUOTE_TERMS, BILLING_FREQUENCIES,
 } from "../data/quotationMasters";
 import {
   resolveUnitPrice, computeLine, computeQuote, isOneTimeModel,
@@ -55,6 +55,7 @@ export default function HansQuoteBuilder({
   const [oppId, setOppId] = useState(editQuote?.oppId || "");
   const [party, setParty] = useState(eh?.party || { name: "", address: "", state: "", gstin: "" });
   const [currency, setCurrency] = useState(eh?.currency || "INR");
+  const [billingFrequency, setBillingFrequency] = useState(eh?.billingFrequency || editQuote?.billingFrequency || "Monthly");
   const [overallDiscountPct, setOverallDiscountPct] = useState(eh?.overallDiscountPct || 0);
   const [prepaymentApplicable, setPrepaymentApplicable] = useState(!!eh?.prepaymentApplicable);
   const [prepaymentDiscountPct, setPrepaymentDiscountPct] = useState(eh?.prepaymentDiscountPct ?? config.prepaymentDiscountPctDefault);
@@ -279,6 +280,7 @@ export default function HansQuoteBuilder({
       alrAnnual: round2(summary.alrAnnual),
       tcv: round2(summary.tcv),
       intraState: summary.intraState,
+      billingFrequency, // invoicing cadence (Monthly / Quarterly / …)
       terms: QUOTE_TERMS,
       termsText, // the rep's edited T&C (rendered by print)
       billing, // snapshot for clean re-seed on edit
@@ -318,6 +320,7 @@ export default function HansQuoteBuilder({
       taxAmount: +(summary.gstTotal / 1e5).toFixed(2),
       total: +(summary.grandTotal / 1e5).toFixed(2),
       currency, notes, preparedBy: me?.name || currentUser,
+      billingFrequency, // invoicing cadence — also lives in hans for print
       owner: isEdit ? (editQuote.owner || currentUser) : currentUser,
       createdDate: isEdit ? (editQuote.createdDate || today()) : today(),
       terms: termsText, // legacy/register/verify read quote.terms
@@ -350,7 +353,7 @@ export default function HansQuoteBuilder({
         overallDiscount: round2(summary.overallDiscount), prepaymentDisc: round2(summary.prepaymentDisc),
         taxableBase: round2(summary.taxableBase), cgst: round2(summary.cgst), sgst: round2(summary.sgst),
         igst: round2(summary.igst), grandTotal: round2(summary.grandTotal), alrAnnual: round2(summary.alrAnnual),
-        tcv: round2(summary.tcv), terms: QUOTE_TERMS, termsText, billing,
+        tcv: round2(summary.tcv), billingFrequency, terms: QUOTE_TERMS, termsText, billing,
       },
     };
   };
@@ -361,7 +364,9 @@ export default function HansQuoteBuilder({
     const plan = ICAFFE_PLANS[key];
     if (!plan) return;
     setLines(ls => ls.map(l => isOneTimeModel(catByCode[l.productCode]?.pricingModel) ? l : { ...l, months: plan.months, discountPct: plan.discountPct ?? l.discountPct }));
+    if (plan.billingFrequency) setBillingFrequency(plan.billingFrequency);
     if (key === "saasAdvance") { setPrepaymentApplicable(true); setPrepaymentDiscountPct(plan.prepaymentDiscountPct); }
+    else if (key === "saasMonthly") { setPrepaymentApplicable(false); }
   };
 
   const lbl = { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text3)", marginBottom: 3 };
@@ -479,10 +484,17 @@ export default function HansQuoteBuilder({
               </div>
 
               {/* Plan presets */}
-              <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 10px" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 10px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>iCAFFE plan:</span>
+                <button className="btn btn-sec btn-xs" onClick={() => planPreset("saasMonthly")}>SaaS Monthly (12mo)</button>
                 <button className="btn btn-sec btn-xs" onClick={() => planPreset("saasAdvance")}>SaaS Advance (12mo, 10% prepay)</button>
                 <button className="btn btn-sec btn-xs" onClick={() => planPreset("otpArr")}>OTP+ARR (42mo, 45% disc)</button>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
+                  <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>Billed</span>
+                  <select value={billingFrequency} onChange={e => setBillingFrequency(e.target.value)} style={{ fontSize: 11, padding: "3px 6px", borderRadius: 6, border: "1px solid var(--border)" }}>
+                    {BILLING_FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </span>
               </div>
 
               {/* Line grid */}
@@ -562,6 +574,7 @@ export default function HansQuoteBuilder({
                 {sumRow("Grand Total (upfront)", inr(summary.grandTotal), { big: true, divide: true })}
                 {summary.alrAnnual > 0 && sumRow("ALR — annual (separate)", inr(summary.alrAnnual), { color: "var(--text3)" })}
                 {sumRow("TCV", inr(summary.tcv), { bold: true })}
+                {summary.recurringSubtotal > 0 && sumRow("Billing", billingFrequency, { color: "var(--text3)" })}
               </div>
 
               {/* Guardrail banners */}
