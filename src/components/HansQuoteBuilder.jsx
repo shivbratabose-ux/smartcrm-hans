@@ -74,9 +74,13 @@ export default function HansQuoteBuilder({
   const blankBilling = {
     legalName: "", pan: "", taxTreatment: "", shippingAddress: "",
     paymentTerms: "", creditDays: "", poMandatory: "", poNumber: "",
-    billingContactName: "", billingContactEmail: "", financeContactEmail: "",
+    // Billing / Finance contacts — name+email persist to columns; phone and
+    // finance name/phone ride along in hans.billing (JSONB, no migration).
+    billingContactName: "", billingContactEmail: "", billingContactPhone: "",
+    financeContactName: "", financeContactEmail: "", financeContactPhone: "",
   };
   const [billing, setBilling] = useState(eh?.billing || (editQuote ? {
+    ...blankBilling,
     legalName: editQuote.legalName || "", pan: editQuote.pan || "", taxTreatment: editQuote.taxTreatment || "",
     shippingAddress: editQuote.shippingAddressSnapshot || "", paymentTerms: editQuote.paymentTerms || "",
     creditDays: editQuote.creditDays ?? "", poMandatory: editQuote.poMandatory || "", poNumber: editQuote.poNumber || "",
@@ -107,7 +111,12 @@ export default function HansQuoteBuilder({
         state: acc.billingState || acc.state || "",
         gstin: acc.gstin || "",
       });
+      // Pull the billing contact from the account's primary contact (name +
+      // phone + email) when present, falling back to the account-level fields.
+      const accContacts = (contacts || []).filter(c => c.accountId === acc.id);
+      const primary = accContacts.find(c => c.primary) || accContacts[0] || null;
       setBilling({
+        ...blankBilling,
         legalName: acc.legalName || acc.name || "",
         pan: acc.pan || "",
         taxTreatment: acc.taxTreatment || "",
@@ -116,14 +125,33 @@ export default function HansQuoteBuilder({
         creditDays: acc.creditDays ?? "",
         poMandatory: acc.poMandatory || "",
         poNumber: "",
-        billingContactName: acc.billingContactName || acc.primaryContact || "",
-        billingContactEmail: acc.billingContactEmail || acc.primaryEmail || "",
+        billingContactName: acc.billingContactName || primary?.name || acc.primaryContact || "",
+        billingContactEmail: acc.billingContactEmail || primary?.email || acc.primaryEmail || "",
+        billingContactPhone: primary?.phone || acc.primaryPhone || "",
+        financeContactName: "",
         financeContactEmail: acc.financeContactEmail || "",
+        financeContactPhone: "",
       });
     } else if (lead) {
       setParty({ name: lead.company || "", address: lead.address || "", state: lead.state || "", gstin: lead.gstin || "" });
-      setBilling({ ...blankBilling, legalName: lead.company || "", billingContactEmail: lead.email || "" });
+      setBilling({ ...blankBilling, legalName: lead.company || "", billingContactName: lead.contact || "", billingContactEmail: lead.email || "", billingContactPhone: lead.phone || "" });
     }
+  };
+
+  // Contacts belonging to the picked opportunity's account — drive the
+  // "pick existing contact" dropdowns for billing / finance.
+  const accountContacts = useMemo(() => {
+    const opp = opps.find(o => o.id === oppId);
+    if (!opp?.accountId) return [];
+    return (contacts || []).filter(c => c.accountId === opp.accountId);
+  }, [oppId, opps, contacts]);
+
+  // Apply a chosen contact into the billing/finance fields. role = "billing" | "finance".
+  const applyContact = (role, contactId) => {
+    const c = (contacts || []).find(x => x.id === contactId);
+    if (!c) return;
+    if (role === "billing") setBilling(b => ({ ...b, billingContactName: c.name || "", billingContactEmail: c.email || "", billingContactPhone: c.phone || "" }));
+    else setBilling(b => ({ ...b, financeContactName: c.name || "", financeContactEmail: c.email || "", financeContactPhone: c.phone || "" }));
   };
 
   // ── Line helpers ────────────────────────────────────────────────────
@@ -165,6 +193,15 @@ export default function HansQuoteBuilder({
 
   // ── Save ────────────────────────────────────────────────────────────
   const canSave = oppId && party.name && pricedLines.some(l => !l._empty) && missingRateLines.length === 0;
+
+  // Advisory billing-completeness hint (doesn't block save — the engine only
+  // needs opp + party + a priced line). Mirrors the Custom Quote's verify intent.
+  const billingMissing = [
+    !party.address && "Billing address",
+    !party.gstin && "GSTIN",
+    !billing.billingContactEmail && "Billing contact email",
+    !billing.paymentTerms && "Payment terms",
+  ].filter(Boolean);
 
   // Internal id from the max existing QT- sequence (not array length, which
   // collides after a deletion or against the legacy builder in the same session).
@@ -382,10 +419,33 @@ export default function HansQuoteBuilder({
                       <div className="form-group" style={{ width: 120 }}><label>PO mandatory?</label><select value={billing.poMandatory} onChange={e => setBill("poMandatory", e.target.value)}><option value="">—</option><option>Yes</option><option>No</option></select></div>
                       <div className="form-group" style={{ flex: 1 }}><label>PO number</label><input value={billing.poNumber} onChange={e => setBill("poNumber", e.target.value)} /></div>
                     </div>
+                    {/* Billing contact — pick an existing account contact or type a new one */}
+                    <div style={{ ...lbl, margin: "4px 0 4px" }}>Billing contact (for invoicing & follow-up)</div>
                     <div className="form-row">
-                      <div className="form-group" style={{ flex: 1 }}><label>Billing contact</label><input value={billing.billingContactName} onChange={e => setBill("billingContactName", e.target.value)} /></div>
-                      <div className="form-group" style={{ flex: 1 }}><label>Billing contact email</label><input value={billing.billingContactEmail} onChange={e => setBill("billingContactEmail", e.target.value)} /></div>
-                      <div className="form-group" style={{ flex: 1 }}><label>Finance / AP email</label><input value={billing.financeContactEmail} onChange={e => setBill("financeContactEmail", e.target.value)} /></div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>Pick existing</label>
+                        <select value="" onChange={e => { if (e.target.value) applyContact("billing", e.target.value); }} disabled={accountContacts.length === 0}>
+                          <option value="">{accountContacts.length ? "— Select account contact —" : "No account contacts"}</option>
+                          {accountContacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.designation ? ` · ${c.designation}` : ""}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Name</label><input value={billing.billingContactName} onChange={e => setBill("billingContactName", e.target.value)} placeholder="Or type a new contact" /></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Email</label><input value={billing.billingContactEmail} onChange={e => setBill("billingContactEmail", e.target.value)} /></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Phone</label><input value={billing.billingContactPhone} onChange={e => setBill("billingContactPhone", e.target.value)} /></div>
+                    </div>
+                    {/* Finance / AP contact — accounts payable / billing follow-up */}
+                    <div style={{ ...lbl, margin: "8px 0 4px" }}>Finance / AP contact (for payment follow-up)</div>
+                    <div className="form-row">
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>Pick existing</label>
+                        <select value="" onChange={e => { if (e.target.value) applyContact("finance", e.target.value); }} disabled={accountContacts.length === 0}>
+                          <option value="">{accountContacts.length ? "— Select account contact —" : "No account contacts"}</option>
+                          {accountContacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.designation ? ` · ${c.designation}` : ""}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Name</label><input value={billing.financeContactName} onChange={e => setBill("financeContactName", e.target.value)} placeholder="Or type a new contact" /></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Email</label><input value={billing.financeContactEmail} onChange={e => setBill("financeContactEmail", e.target.value)} /></div>
+                      <div className="form-group" style={{ flex: 1 }}><label>Phone</label><input value={billing.financeContactPhone} onChange={e => setBill("financeContactPhone", e.target.value)} /></div>
                     </div>
                   </div>
                 )}
@@ -493,6 +553,11 @@ export default function HansQuoteBuilder({
                 </button>
               </div>
               {!canSave && <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 6, textAlign: "center" }}>Pick an opportunity, a party, at least one priced line (no missing rates).</div>}
+              {canSave && billingMissing.length > 0 && (
+                <div style={{ fontSize: 10.5, color: "#B45309", marginTop: 6, textAlign: "center", cursor: "pointer" }} onClick={() => setShowBilling(true)} title="Open Billing & tax details">
+                  {billingMissing.length} billing detail{billingMissing.length > 1 ? "s" : ""} missing: {billingMissing.join(", ")} — click to complete.
+                </div>
+              )}
             </div>
           </div>
         )}
