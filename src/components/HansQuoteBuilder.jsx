@@ -142,9 +142,31 @@ export default function HansQuoteBuilder({
   // "pick existing contact" dropdowns for billing / finance.
   const accountContacts = useMemo(() => {
     const opp = opps.find(o => o.id === oppId);
-    if (!opp?.accountId) return [];
-    return (contacts || []).filter(c => c.accountId === opp.accountId);
-  }, [oppId, opps, contacts]);
+    if (!opp) return [];
+    const all = contacts || [];
+    const seen = new Set();
+    const out = [];
+    const add = (c) => { if (c && !seen.has(c.id)) { seen.add(c.id); out.push(c); } };
+    // 1) Contacts linked to the opp's account by id.
+    if (opp.accountId) all.filter(c => c.accountId === opp.accountId).forEach(add);
+    // 2) Fallback — match by account NAME (legacy data links contacts to the
+    //    company name, not the internal account id).
+    const acc = accounts.find(a => a.id === opp.accountId);
+    if (acc?.name) {
+      const norm = acc.name.trim().toLowerCase();
+      all.filter(c => {
+        const cAcc = accounts.find(a => a.id === c.accountId);
+        return cAcc && (cAcc.name || "").trim().toLowerCase() === norm;
+      }).forEach(add);
+    }
+    // 3) The opportunity's own primary / secondary contacts.
+    [opp.primaryContactId, ...(opp.secondaryContactIds || [])].filter(Boolean)
+      .forEach(id => add(all.find(c => c.id === id)));
+    // 4) For a lead-sourced opp, the lead's linked contacts.
+    const lead = leads.find(l => l.id === opp.sourceLeadId || (Array.isArray(opp.sourceLeadIds) && opp.sourceLeadIds.includes(l.id)));
+    (lead?.contactIds || []).forEach(id => add(all.find(c => c.id === id)));
+    return out;
+  }, [oppId, opps, contacts, accounts, leads]);
 
   // Apply a chosen contact into the billing/finance fields. role = "billing" | "finance".
   const applyContact = (role, contactId) => {
