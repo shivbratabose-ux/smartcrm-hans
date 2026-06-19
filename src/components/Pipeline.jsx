@@ -4,7 +4,8 @@ import {
   BarChart3, List, Kanban, Clock, AlertTriangle, TrendingUp,
   Phone, Users, FileText, Calendar, MessageSquare, Eye,
   ArrowRight, ArrowLeft, GripVertical, Activity, Target,
-  ChevronDown, Filter, Search, Download, Flag, Shield
+  ChevronDown, ChevronUp, Filter, Search, Download, Flag, Shield,
+  Building2, Star, Briefcase, ArrowRightCircle
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -454,8 +455,8 @@ function QuickUpdatePopover({ opp, onSave, onClose }) {
 /* ═══════════════════════════════════════════════════════
    DEAL DETAIL (Enhanced)
    ═══════════════════════════════════════════════════════ */
-function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, orgUsers = [], callReports = [], onLogCall }) {
-  const { STAGE_COL, STAGES } = useContext(StagesContext);
+function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, orgUsers = [], callReports = [], onLogCall }) {
+  const { STAGE_COL, STAGES, STAGE_PROB } = useContext(StagesContext);
   const [tab, setTab] = useState("overview");
 
   // ── Inline field editing ──
@@ -587,40 +588,74 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
     return evs.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   }, [detail, oppActs, oppCalls]);
 
+  // ── Lead-detail-style derived values (mirror the Lead Detail overview) ──
+  const stageOrder = (STAGES && STAGES.length ? STAGES : ["Prospect", "Qualified", "Demo", "Technical Evaluation", "Proposal", "Negotiation", "Won"]).filter(s => !/lost|suspend/i.test(s));
+  const curStageIdx = stageOrder.indexOf(detail.stage);
+  const nextStage = curStageIdx >= 0 && curStageIdx < stageOrder.length - 1 ? stageOrder[curStageIdx + 1] : null;
+  const dealValueL = Number(detail.value) || 0;
+  const winProb = Number(detail.probability) || (STAGE_PROB?.[detail.stage] ?? 0);
+  const weightedL = +(dealValueL * winProb / 100).toFixed(2);
+  const nextPlanned = getNextAction(detail.id, activities);
+  // The originating lead — so all qualification captured during Lead stays
+  // visible in Pipeline (no duplicate entry).
+  const srcLead = (leads || []).find(l =>
+    (Array.isArray(detail.sourceLeadIds) && detail.sourceLeadIds.includes(l.id)) ||
+    (detail.leadId && l.leadId === detail.leadId)
+  ) || null;
+  const advanceStage = (to) => {
+    if (!setOpps || !to) return;
+    setOpps(prev => prev.map(o => o.id === detail.id ? {
+      ...o, stage: to, probability: STAGE_PROB?.[to] ?? o.probability,
+      stageHistory: [...(o.stageHistory || []), { from: o.stage, to, date: today, by: o.owner || "" }],
+    } : o));
+  };
+  const kpiCard = (icon, label, value, sub, color = "#1B6B5A") => (
+    <div style={{ background: "white", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <span style={{ width: 26, height: 26, borderRadius: 8, background: color + "18", color, display: "flex", alignItems: "center", justifyContent: "center" }}>{icon}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text3)" }}>{label}</span>
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 800, fontFamily: "'Outfit',sans-serif" }}>{value}</div>
+      <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>{sub}</div>
+    </div>
+  );
+
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.5)",
       display: "flex", justifyContent: "center", alignItems: "stretch",
     }}>
       <div style={{
-        width: "90%", maxWidth: 900, background: "white", borderRadius: 16, margin: "24px 0",
+        width: "94%", maxWidth: 1100, background: "var(--bg,#F1F5F9)", borderRadius: 16, margin: "24px 0",
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
-        {/* Header */}
-        <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border)", background: "var(--s1)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        {/* ═══ Header (mirrors Lead Detail) ═══ */}
+        <div style={{ background: "white", padding: "18px 28px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: "#1B6B5A", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 16, fontWeight: 700 }}>
+              {(acc?.name || detail.title || "?").slice(0, 2).toUpperCase()}
+            </div>
             <div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 18, fontWeight: 800 }}>{detail.title}</span>
-                {detail.oppId && <span style={{ fontSize: 11, fontFamily: "'Courier New',monospace", color: "#1B6B5A", background: "#F0FDF4", padding: "2px 8px", borderRadius: 4 }}>{detail.oppId}</span>}
-                <HealthBadge health={health} />
-              </div>
-              <div style={{ display: "flex", gap: 12, alignItems: "center", fontSize: 13, color: "var(--text2)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: "var(--text1)" }}>{detail.title}</span>
                 <span style={{ padding: "3px 10px", borderRadius: 6, background: STAGE_COL[detail.stage], color: "white", fontSize: 11, fontWeight: 600 }}>{detail.stage}</span>
-                <span style={{ fontWeight: 700, fontFamily: "'Outfit',sans-serif" }}>{fmt.inr(detail.value)}</span>
-                {acc && <span>{acc.name}</span>}
+                <HealthBadge health={health} />
+                {detail.oppNo && <span style={{ fontSize: 11, fontFamily: "'Courier New',monospace", color: "var(--text3)", background: "var(--s2)", padding: "2px 8px", borderRadius: 4 }}>{detail.oppNo}</span>}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+                {[acc?.name, detail.country, detail.source].filter(Boolean).join(" · ") || "—"}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <button className="btn btn-xs btn-sec" onClick={() => onLogCall({ accountId: detail.accountId, oppId: detail.id, contactIds: detail.primaryContactId ? [detail.primaryContactId] : [] })}><Phone size={12} /> Log Call</button>
-              <button className="btn btn-xs btn-sec" onClick={() => logQuickActivity("Meeting")}><Users size={12} /> Log Meeting</button>
-              <button className="btn btn-xs btn-primary" onClick={onEdit}><Edit2 size={12} /> Edit</button>
-              <button className="icon-btn" onClick={onClose}><X size={18} /></button>
-            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="btn btn-sec" style={{ color: "#3B82F6" }} onClick={() => onLogCall({ accountId: detail.accountId, oppId: detail.id, contactIds: detail.primaryContactId ? [detail.primaryContactId] : [] })}><Phone size={14} /> Log Call</button>
+            <button className="btn btn-sec" onClick={() => logQuickActivity("Meeting")}><Users size={14} /> Log Meeting</button>
+            <button className="btn btn-sec" onClick={onEdit}><Edit2 size={14} /> Edit</button>
+            <button className="icon-btn" onClick={onClose} aria-label="Close" style={{ width: 32, height: 32, fontSize: 18 }}>&#10005;</button>
           </div>
         </div>
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", padding: "0 24px" }}>
+        <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", padding: "0 28px", background: "white" }}>
           {tabs.map(t => (
             <div key={t.id} onClick={() => setTab(t.id)} style={{
               padding: "10px 16px", fontSize: 13, fontWeight: tab === t.id ? 700 : 500, cursor: "pointer",
@@ -630,48 +665,117 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
           ))}
         </div>
         {/* Body */}
-        <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
+        <div style={{ flex: 1, overflow: "auto", padding: "20px 28px 28px" }}>
           {tab === "overview" && (
             <div>
-              <div className="dp-grid">
-                {/* Static rows */}
-                <div className="dp-row"><span className="dp-key">Account</span><span className="dp-val">{acc?.name || "—"}</span></div>
-                <div className="dp-row"><span className="dp-key">Health</span><span className="dp-val"><HealthBadge health={health}/></span></div>
-                {/* Editable rows */}
-                {editableRow("Stage", "stage", "select", STAGES)}
-                {editableRow("Value (₹L)", "value", "number")}
-                {editableRow("Probability (%)", "probability", "number")}
-                {editableRow("Close Date", "closeDate", "date")}
-                {/* Static rows */}
-                <div className="dp-row">
-                  <span className="dp-key">Owner</span>
-                  <span className="dp-val" style={{flex:1}}>
-                    {editingField === "owner" ? (
-                      <span style={{display:"flex",gap:4,alignItems:"center"}}>
-                        <select autoFocus value={fieldVal} onChange={e=>saveEdit("owner", e.target.value)}
-                          onBlur={cancelEdit} style={iStyle}>
-                          {(orgUsers||[]).filter(u=>u.active!==false).map(u=>(
-                            <option key={u.id} value={u.id}>{u.name}</option>
-                          ))}
-                        </select>
-                        <button onClick={cancelEdit} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text3)",padding:0,fontSize:16,lineHeight:1}}>✕</button>
-                      </span>
-                    ) : (
-                      <span style={{cursor:"pointer",display:"flex",alignItems:"center",gap:4}}
-                        onClick={()=>{ setEditingField("owner"); setFieldVal(detail.owner || ""); }} title="Click to reassign owner">
-                        {(orgUsers||[]).find(u=>u.id===detail.owner)?.name || TEAM_MAP[detail.owner]?.name || "—"}
-                        <Edit2 size={9} style={{color:"var(--text3)",opacity:0.4,flexShrink:0}}/>
-                      </span>
+              {/* ─── Stage Progression (mirrors Lead Detail) ─── */}
+              {detail.stage !== "Won" && detail.stage !== "Lost" && (
+                <div style={{ marginBottom: 16, background: "white", borderRadius: 10, border: "1px solid var(--border)", padding: "14px 18px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text3)", marginRight: 4 }}>Stage Progression:</span>
+                      {stageOrder.map((s, i) => {
+                        const isCurrent = s === detail.stage;
+                        const isPast = i < curStageIdx;
+                        return (
+                          <div key={s} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            {i > 0 && <div style={{ width: 18, height: 2, background: isPast ? "#22C55E" : "var(--border)" }} />}
+                            <span style={{ fontSize: 11, fontWeight: isCurrent ? 700 : 500, padding: "3px 8px", borderRadius: 6,
+                              background: isCurrent ? (STAGE_COL[s] || "#94A3B8") + "22" : isPast ? "#22C55E18" : "var(--s2)",
+                              color: isCurrent ? (STAGE_COL[s] || "#475569") : isPast ? "#22C55E" : "var(--text3)",
+                              border: isCurrent ? `1.5px solid ${STAGE_COL[s] || "#94A3B8"}` : "1px solid transparent" }}>{s}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {nextStage && (
+                      <button className="btn btn-sm" style={{ fontSize: 11, padding: "4px 12px", borderRadius: 6, background: "var(--brand)", color: "white", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                        onClick={() => advanceStage(nextStage)}>
+                        <ArrowRightCircle size={12} /> Advance to {nextStage}
+                      </button>
                     )}
-                  </span>
+                  </div>
                 </div>
-                <div className="dp-row"><span className="dp-key">Source</span><span className="dp-val">{detail.source || "—"}</span></div>
-                <div className="dp-row"><span className="dp-key">Primary Contact</span><span className="dp-val">{primaryContact?.name || "—"}</span></div>
-                <div className="dp-row"><span className="dp-key">Hierarchy Level</span><span className="dp-val">{detail.hierarchyLevel || "—"}</span></div>
-                <div className="dp-row"><span className="dp-key">Country</span><span className="dp-val">{detail.country || "—"}</span></div>
-                <div className="dp-row"><span className="dp-key">Forecast</span><span className="dp-val">{detail.forecastCat || "—"}</span></div>
-                <div className="dp-row"><span className="dp-key">Deal Size</span><span className="dp-val">{detail.dealSize || "—"}</span></div>
+              )}
+
+              {/* ─── KPI cards (mirrors Lead Detail) ─── */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+                {kpiCard(<TrendingUp size={15} />, "Deal Value", fmt.inr(dealValueL), "Open deal value")}
+                {kpiCard(<Star size={15} />, "Win Probability", `${winProb}%`, detail.stage, "#3B82F6")}
+                {kpiCard(<Briefcase size={15} />, "Pipeline Value", fmt.inr(weightedL), "Weighted value", "#8B5CF6")}
+                {kpiCard(<Calendar size={15} />, "Close / Next", detail.closeDate ? fmt.short(detail.closeDate) : (nextPlanned ? fmt.short(nextPlanned.date) : "—"), detail.closeDate ? "Expected close" : "Next action", "#F59E0B")}
               </div>
+
+              {/* ─── General Information — inline editable (mirrors Lead Detail) ─── */}
+              <div style={{ background: "white", borderRadius: 12, padding: "18px 20px", border: "1px solid var(--border)" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text1)", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                  <Building2 size={15} style={{ color: "var(--brand)" }} /> General Information
+                  <span style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>(click any field to edit)</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
+                  <div>
+                    <div className="dp-row"><span className="dp-key">Account</span><span className="dp-val">{acc?.name || "—"}</span></div>
+                    {editableRow("Stage", "stage", "select", STAGES)}
+                    {editableRow("Value (₹L)", "value", "number")}
+                    {editableRow("Probability (%)", "probability", "number")}
+                    {editableRow("Close Date", "closeDate", "date")}
+                    <div className="dp-row">
+                      <span className="dp-key">Owner</span>
+                      <span className="dp-val" style={{ flex: 1 }}>
+                        {editingField === "owner" ? (
+                          <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            <select autoFocus value={fieldVal} onChange={e => saveEdit("owner", e.target.value)} onBlur={cancelEdit} style={iStyle}>
+                              {(orgUsers || []).filter(u => u.active !== false).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                            </select>
+                            <button onClick={cancelEdit} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text3)", padding: 0, fontSize: 16, lineHeight: 1 }}>✕</button>
+                          </span>
+                        ) : (
+                          <span style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                            onClick={() => { setEditingField("owner"); setFieldVal(detail.owner || ""); }} title="Click to reassign owner">
+                            {(orgUsers || []).find(u => u.id === detail.owner)?.name || TEAM_MAP[detail.owner]?.name || "—"}
+                            <Edit2 size={9} style={{ color: "var(--text3)", opacity: 0.4, flexShrink: 0 }} />
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="dp-row"><span className="dp-key">Source</span><span className="dp-val">{detail.source || "—"}</span></div>
+                    <div className="dp-row"><span className="dp-key">Primary Contact</span><span className="dp-val">{primaryContact?.name || "—"}</span></div>
+                    {editableRow("Country", "country", "text")}
+                    {editableRow("Hierarchy Level", "hierarchyLevel", "text")}
+                    {editableRow("Forecast", "forecastCat", "text")}
+                    {editableRow("Deal Size", "dealSize", "text")}
+                  </div>
+                </div>
+              </div>
+
+              {/* ─── From the originating lead — qualification carry-over (read-only) ─── */}
+              {srcLead && (
+                <div style={{ background: "white", borderRadius: 12, padding: "18px 20px", border: "1px solid var(--border)", marginTop: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text1)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                    <ArrowRightCircle size={15} style={{ color: "var(--brand)" }} /> From the originating lead
+                    <span style={{ fontSize: 11, fontFamily: "'Courier New',monospace", color: "var(--text3)", background: "var(--s2)", padding: "2px 8px", borderRadius: 4 }}>{srcLead.leadId}</span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
+                    <div>
+                      <div className="dp-row"><span className="dp-key">Industry / Vertical</span><span className="dp-val">{srcLead.vertical || "—"}</span></div>
+                      <div className="dp-row"><span className="dp-key">Region</span><span className="dp-val">{srcLead.region || "—"}</span></div>
+                      <div className="dp-row"><span className="dp-key">Lead Source</span><span className="dp-val">{srcLead.source || "—"}</span></div>
+                      <div className="dp-row"><span className="dp-key">Lead Score</span><span className="dp-val">{srcLead.score ?? "—"}</span></div>
+                    </div>
+                    <div>
+                      <div className="dp-row"><span className="dp-key">Temperature</span><span className="dp-val">{srcLead.temperature || "—"}</span></div>
+                      <div className="dp-row"><span className="dp-key">Budget Range</span><span className="dp-val">{srcLead.budgetRange || "—"}</span></div>
+                      <div className="dp-row"><span className="dp-key">Decision Timeline</span><span className="dp-val">{srcLead.decisionTimeline || "—"}</span></div>
+                      <div className="dp-row"><span className="dp-key">Pain Points</span><span className="dp-val">{(srcLead.painPoints || []).join(", ") || "—"}</span></div>
+                    </div>
+                  </div>
+                  {srcLead.location && <div className="dp-row"><span className="dp-key">Location</span><span className="dp-val">{srcLead.location}</span></div>}
+                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, fontStyle: "italic" }}>Captured during lead qualification — edit on the lead record to keep it in sync.</div>
+                </div>
+              )}
+
               {secondaryContacts.length > 0 && (
                 <div style={{ marginTop: 14 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Secondary Contacts</div>
@@ -1747,7 +1851,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
         <DealDetail
           detail={opps.find(o => o.id === detail.id) || detail} onClose={() => setDetail(null)}
           onEdit={() => { openEdit(opps.find(o => o.id === detail.id) || detail); setDetail(null); }}
-          accounts={accounts} contacts={contacts} notes={notes} files={files}
+          accounts={accounts} contacts={contacts} leads={leads} notes={notes} files={files}
           onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser}
           activities={activities} setActivities={setActivities} opps={opps} setOpps={setOpps}
           orgUsers={orgUsers} callReports={callReports}
