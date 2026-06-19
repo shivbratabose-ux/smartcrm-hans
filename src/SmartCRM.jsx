@@ -1443,12 +1443,27 @@ export default function SmartCRM() {
       const live = (arr || []).filter(r => r && !r.isDeleted);
       if (!live.length) continue;
       const { error } = await batchUpsert(mod, live);
-      if (error) failed.push(mod); else total += live.length;
+      if (!error) { total += live.length; continue; }
+      // The bulk upsert fails wholesale on the first bad row (FK / RLS /
+      // NOT NULL / bad value that schema-heal can't fix). Fall back to
+      // per-record so the good rows still sync, and capture the actual
+      // reason + count of the rows that genuinely can't be saved.
+      let ok = 0; const reasons = new Set();
+      for (const rec of live) {
+        const res = await insertRecord(mod, rec);
+        if (res?.error) reasons.add(res.error.message || String(res.error));
+        else ok++;
+      }
+      total += ok;
+      if (ok < live.length) {
+        const why = [...reasons][0] ? ` — ${[...reasons][0]}` : "";
+        failed.push(`${mod} (${live.length - ok}/${live.length}${why})`);
+      }
     }
     // Masters / Catalog and AI config (only writable by management roles)
     if (_canWriteSettings) { const { error } = await saveSettings({ masters, catalog }); if (error) failed.push("masters/catalog"); }
     setSyncingAll(false);
-    if (failed.length) notify.error(`Synced ${total} records. Couldn't sync: ${failed.join(", ")}.`);
+    if (failed.length) notify.error(`Synced ${total} records. Couldn't sync: ${failed.join("; ")}.`, { duration: 15000 });
     else notify.success(`Synced ${total} records to the cloud. Everyone now sees the same data.`);
   }, [accounts, contacts, leads, opps, activities, callReports, tickets, contracts, collections, targets, quotes, commLogs, events, notes, files, projects, invoices, orgUsers, masters, catalog, syncingAll, _canWriteSettings]);
 
