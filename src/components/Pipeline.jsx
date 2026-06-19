@@ -5,7 +5,7 @@ import {
   Phone, Users, FileText, Calendar, MessageSquare, Eye,
   ArrowRight, ArrowLeft, GripVertical, Activity, Target,
   ChevronDown, ChevronUp, Filter, Search, Download, Flag, Shield,
-  Building2, Star, Briefcase, ArrowRightCircle
+  Building2, Star, Briefcase, ArrowRightCircle, MapPin, User, Mail
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -522,8 +522,32 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], n
   const primaryContact = (contacts || []).find(c => c.id === detail.primaryContactId);
   const secondaryContacts = (detail.secondaryContactIds || []).map(cid => (contacts || []).find(c => c.id === cid)).filter(Boolean);
   const health = getDealHealth(detail, activities);
+  // ── Account-sourced data for the Contacts / Addresses / Team tabs ──
+  // The Account is the source of truth, so these inherit (no duplicate entry):
+  // the deal's contacts, the account's address book, and the internal team.
+  const dealContacts = useMemo(() => {
+    const seen = new Set(); const out = [];
+    const add = (c, primary = false) => { if (c && !seen.has(c.id)) { seen.add(c.id); out.push({ ...c, _isPrimary: primary || c.id === detail.primaryContactId }); } };
+    add((contacts || []).find(c => c.id === detail.primaryContactId), true);
+    (detail.secondaryContactIds || []).forEach(id => add((contacts || []).find(c => c.id === id)));
+    if (detail.accountId) (contacts || []).filter(c => c.accountId === detail.accountId).forEach(c => add(c));
+    return out;
+  }, [contacts, detail.primaryContactId, detail.secondaryContactIds, detail.accountId]);
+  const dealAddresses = useMemo(() => {
+    if (Array.isArray(acc?.addresses) && acc.addresses.length) return acc.addresses;
+    // Fall back to the account's flat billing address fields as one entry.
+    if (acc && (acc.billingAddress || acc.city || acc.state)) return [{ label: "Billing", line1: acc.billingAddress, city: acc.billingCity || acc.city, state: acc.billingState || acc.state, pincode: acc.billingPincode || acc.pincode, country: acc.billingCountry || acc.country }];
+    return [];
+  }, [acc]);
+  const teamMembers = useMemo(() => {
+    const ids = [detail.owner, ...(detail.team || [])].filter(Boolean);
+    return [...new Set(ids)].map(id => (orgUsers || []).find(u => u.id === id) || { id, name: userName(id) });
+  }, [detail.owner, detail.team, orgUsers]);
   const tabs = [
     { id: "overview", label: "Overview" },
+    { id: "contacts", label: `Contacts (${dealContacts.length})` },
+    { id: "addresses", label: `Addresses (${dealAddresses.length})` },
+    { id: "team", label: `Team (${teamMembers.length})` },
     { id: "timeline", label: "Timeline" },
     { id: "activities", label: `Activities (${oppActs.length})` },
     { id: "notes", label: `Notes (${oppNotes.length})` },
@@ -836,6 +860,84 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], n
               {detail.lossReason && <div style={{ marginTop: 10, fontSize: 12 }}><strong>Loss Reason:</strong> {detail.lossReason}</div>}
             </div>
           )}
+
+          {/* ─── CONTACTS (inherited from the account) ─── */}
+          {tab === "contacts" && (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text1)" }}>Contacts ({dealContacts.length})</div>
+                <span style={{ fontSize: 11, color: "var(--text3)" }}>From {acc?.name || "the account"} · managed on the Account</span>
+              </div>
+              {dealContacts.length === 0 && <div style={{ color: "var(--text3)", fontSize: 13, padding: "20px 0" }}>No contacts linked to this account yet.</div>}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
+                {dealContacts.map(c => (
+                  <div key={c.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", background: "white" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 10, background: "#1B6B5A", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                        {(c.name || "?").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text1)" }}>{c.name}</div>
+                        {c.designation && <div style={{ fontSize: 11, color: "var(--text3)" }}>{c.designation}</div>}
+                      </div>
+                      {c._isPrimary && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#F59E0B18", color: "#D97706" }}>PRIMARY</span>}
+                    </div>
+                    {c.role && <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#64748B18", color: "#64748B" }}>{c.role}</span></div>}
+                    {c.email && <div style={{ fontSize: 11, color: "var(--text2)", marginBottom: 2, display: "flex", alignItems: "center", gap: 4 }}><Mail size={11} style={{ color: "var(--text3)" }} />{c.email}</div>}
+                    {c.phone && <div style={{ fontSize: 11, color: "var(--text2)", display: "flex", alignItems: "center", gap: 4 }}><Phone size={11} style={{ color: "var(--text3)" }} />{c.phone}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ─── ADDRESSES (inherited from the account address book) ─── */}
+          {tab === "addresses" && (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text1)" }}>Addresses ({dealAddresses.length})</div>
+                <span style={{ fontSize: 11, color: "var(--text3)" }}>From {acc?.name || "the account"} · managed on the Account</span>
+              </div>
+              {dealAddresses.length === 0 && <div style={{ color: "var(--text3)", fontSize: 13, padding: "20px 0" }}>No addresses on the account yet.</div>}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
+                {dealAddresses.map((addr, i) => (
+                  <div key={addr.id || i} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", background: "white" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <MapPin size={14} style={{ color: "var(--brand)" }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text1)" }}>{addr.label || `Address ${i + 1}`}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.5 }}>
+                      {[addr.line1, [addr.city, addr.state].filter(Boolean).join(", "), [addr.pincode, addr.country].filter(Boolean).join(" · ")].filter(Boolean).map((ln, j) => <div key={j}>{ln}</div>)}
+                      {!(addr.line1 || addr.city || addr.state || addr.pincode || addr.country) && <span style={{ color: "var(--text3)" }}>—</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ─── TEAM (internal deal team) ─── */}
+          {tab === "team" && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text1)", marginBottom: 14 }}>Team ({teamMembers.length})</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 12 }}>
+                {teamMembers.map((u, i) => (
+                  <div key={u.id || i} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", background: "white", display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: "#3B82F6", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                      {(u.name || "?").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text1)" }}>{u.name || "—"}</div>
+                      <div style={{ fontSize: 11, color: "var(--text3)" }}>{u.id === detail.owner ? "Deal Owner" : (u.role || "Team member")}</div>
+                    </div>
+                    {u.id === detail.owner && <User size={14} style={{ color: "var(--brand)" }} />}
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 10, fontStyle: "italic" }}>Reassign the owner from the Overview tab.</div>
+            </div>
+          )}
+
           {tab === "timeline" && (
             <div>
               {timeline.length === 0 && <div style={{ color: "var(--text3)", fontSize: 13, padding: "20px 0" }}>No timeline events yet.</div>}
