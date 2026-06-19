@@ -522,23 +522,51 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], n
   const primaryContact = (contacts || []).find(c => c.id === detail.primaryContactId);
   const secondaryContacts = (detail.secondaryContactIds || []).map(cid => (contacts || []).find(c => c.id === cid)).filter(Boolean);
   const health = getDealHealth(detail, activities);
-  // ── Account-sourced data for the Contacts / Addresses / Team tabs ──
-  // The Account is the source of truth, so these inherit (no duplicate entry):
-  // the deal's contacts, the account's address book, and the internal team.
+  // Originating lead — its contacts & addresses flow into the deal so the
+  // qualification captured at lead stage stays visible (no duplicate entry).
+  const srcLead = (leads || []).find(l =>
+    (Array.isArray(detail.sourceLeadIds) && detail.sourceLeadIds.includes(l.id)) ||
+    (detail.leadId && l.leadId === detail.leadId)
+  ) || null;
+  // ── Contacts / Addresses / Team for the deal — sourced from the LEAD
+  //    first (its captured contacts/addresses), then the account. Deduped. ──
   const dealContacts = useMemo(() => {
     const seen = new Set(); const out = [];
     const add = (c, primary = false) => { if (c && !seen.has(c.id)) { seen.add(c.id); out.push({ ...c, _isPrimary: primary || c.id === detail.primaryContactId }); } };
     add((contacts || []).find(c => c.id === detail.primaryContactId), true);
     (detail.secondaryContactIds || []).forEach(id => add((contacts || []).find(c => c.id === id)));
+    // From the originating lead: its linked contact records…
+    if (srcLead) {
+      (srcLead.contactIds || []).forEach(id => add((contacts || []).find(c => c.id === id)));
+      // …and the lead's own captured contact, even if it was never saved as a
+      // Contact record (synthesise a card so it isn't lost).
+      if (srcLead.contact || srcLead.email || srcLead.phone) {
+        const synthId = `lead:${srcLead.id}`;
+        if (!seen.has(synthId) && !out.some(c => srcLead.email && (c.email || "").toLowerCase() === srcLead.email.toLowerCase())) {
+          seen.add(synthId);
+          out.push({ id: synthId, name: srcLead.contact || srcLead.company, email: srcLead.email, phone: srcLead.phone, designation: srcLead.designation, role: "Lead Contact", _isPrimary: out.length === 0, _fromLead: true });
+        }
+      }
+    }
     if (detail.accountId) (contacts || []).filter(c => c.accountId === detail.accountId).forEach(c => add(c));
     return out;
-  }, [contacts, detail.primaryContactId, detail.secondaryContactIds, detail.accountId]);
+  }, [contacts, detail.primaryContactId, detail.secondaryContactIds, detail.accountId, srcLead]);
   const dealAddresses = useMemo(() => {
-    if (Array.isArray(acc?.addresses) && acc.addresses.length) return acc.addresses;
-    // Fall back to the account's flat billing address fields as one entry.
-    if (acc && (acc.billingAddress || acc.city || acc.state)) return [{ label: "Billing", line1: acc.billingAddress, city: acc.billingCity || acc.city, state: acc.billingState || acc.state, pincode: acc.billingPincode || acc.pincode, country: acc.billingCountry || acc.country }];
-    return [];
-  }, [acc]);
+    const seen = new Set(); const out = [];
+    const key = (a) => [a.label, a.line1, a.city, a.state, a.pincode].filter(Boolean).join("|").toLowerCase();
+    const add = (a, src) => { if (!a) return; const k = key(a); if (k && !seen.has(k)) { seen.add(k); out.push({ ...a, _src: src }); } };
+    // Lead's captured addresses first…
+    (srcLead?.addresses || []).forEach(a => add(a, "lead"));
+    if (srcLead && !(srcLead.addresses || []).length && (srcLead.location || srcLead.city || srcLead.state)) {
+      add({ label: "Lead location", line1: srcLead.location, city: srcLead.city, state: srcLead.state, pincode: srcLead.pincode, country: srcLead.country }, "lead");
+    }
+    // …then the account's address book / flat billing fields.
+    (Array.isArray(acc?.addresses) ? acc.addresses : []).forEach(a => add(a, "account"));
+    if (acc && !(acc.addresses || []).length && (acc.billingAddress || acc.city || acc.state)) {
+      add({ label: "Billing", line1: acc.billingAddress, city: acc.billingCity || acc.city, state: acc.billingState || acc.state, pincode: acc.billingPincode || acc.pincode, country: acc.billingCountry || acc.country }, "account");
+    }
+    return out;
+  }, [acc, srcLead]);
   const teamMembers = useMemo(() => {
     const ids = [detail.owner, ...(detail.team || [])].filter(Boolean);
     return [...new Set(ids)].map(id => (orgUsers || []).find(u => u.id === id) || { id, name: userName(id) });
@@ -620,12 +648,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], n
   const winProb = Number(detail.probability) || (STAGE_PROB?.[detail.stage] ?? 0);
   const weightedL = +(dealValueL * winProb / 100).toFixed(2);
   const nextPlanned = getNextAction(detail.id, activities);
-  // The originating lead — so all qualification captured during Lead stays
-  // visible in Pipeline (no duplicate entry).
-  const srcLead = (leads || []).find(l =>
-    (Array.isArray(detail.sourceLeadIds) && detail.sourceLeadIds.includes(l.id)) ||
-    (detail.leadId && l.leadId === detail.leadId)
-  ) || null;
+  // srcLead is computed earlier (drives the Contacts / Addresses tabs too).
   const advanceStage = (to) => {
     if (!setOpps || !to) return;
     setOpps(prev => prev.map(o => o.id === detail.id ? {
@@ -866,7 +889,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], n
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text1)" }}>Contacts ({dealContacts.length})</div>
-                <span style={{ fontSize: 11, color: "var(--text3)" }}>From {acc?.name || "the account"} · managed on the Account</span>
+                <span style={{ fontSize: 11, color: "var(--text3)" }}>{srcLead ? `Flows from lead ${srcLead.leadId}` : `From ${acc?.name || "the account"}`} · managed on the lead / account</span>
               </div>
               {dealContacts.length === 0 && <div style={{ color: "var(--text3)", fontSize: 13, padding: "20px 0" }}>No contacts linked to this account yet.</div>}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
@@ -896,15 +919,16 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], n
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text1)" }}>Addresses ({dealAddresses.length})</div>
-                <span style={{ fontSize: 11, color: "var(--text3)" }}>From {acc?.name || "the account"} · managed on the Account</span>
+                <span style={{ fontSize: 11, color: "var(--text3)" }}>{srcLead ? `Flows from lead ${srcLead.leadId}` : `From ${acc?.name || "the account"}`} · managed on the lead / account</span>
               </div>
-              {dealAddresses.length === 0 && <div style={{ color: "var(--text3)", fontSize: 13, padding: "20px 0" }}>No addresses on the account yet.</div>}
+              {dealAddresses.length === 0 && <div style={{ color: "var(--text3)", fontSize: 13, padding: "20px 0" }}>No addresses captured on the lead or account yet.</div>}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
                 {dealAddresses.map((addr, i) => (
                   <div key={addr.id || i} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", background: "white" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                       <MapPin size={14} style={{ color: "var(--brand)" }} />
                       <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text1)" }}>{addr.label || `Address ${i + 1}`}</span>
+                      {addr._src === "lead" && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "#1B6B5A18", color: "#1B6B5A" }}>LEAD</span>}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.5 }}>
                       {[addr.line1, [addr.city, addr.state].filter(Boolean).join(", "), [addr.pincode, addr.country].filter(Boolean).join(" · ")].filter(Boolean).map((ln, j) => <div key={j}>{ln}</div>)}
