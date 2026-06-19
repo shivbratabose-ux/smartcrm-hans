@@ -77,17 +77,21 @@ const TEXT_ARRAY_COLUMNS = new Set([
   "attendees",
 ]);
 
+// Normalise any value into a TEXT[]-safe string array. Postgres rejects a
+// TEXT[] column with "malformed array literal" / "expected JSON array" for a
+// non-array (or an array whose elements aren't text), so we coerce element
+// types too: objects → JSON string, primitives → String, null → "".
+const toArrElem = (x) => x == null ? "" : (typeof x === "string" ? x : (typeof x === "object" ? JSON.stringify(x) : String(x)));
 const coerceToTextArray = (v) => {
-  if (Array.isArray(v)) return v;
+  if (Array.isArray(v)) return v.map(toArrElem);
   if (v == null) return [];
   if (typeof v === "string") {
     const trimmed = v.trim();
     if (trimmed === "") return [];
     return trimmed.split(/;/).map(s => s.trim()).filter(Boolean);
   }
-  // numbers / booleans / objects shouldn't land here — wrap as a single-element
-  // array so we don't 400; downstream UI will surface the bad value to the user.
-  return [String(v)];
+  // numbers / booleans / objects: wrap as a single-element array so we don't 400.
+  return [toArrElem(v)];
 };
 
 // ── DB columns typed as INTEGER / NUMERIC ──
@@ -429,7 +433,10 @@ const toSnake = (obj, module) => {
     // contact_ids / etc, which made every retry-insert loop forever with
     // the same 400 — these leads never reached the cloud, so a second
     // browser logging in saw a smaller list ("Edge has 60, Chrome 14").
-    else if (typeof value === "string" && TEXT_ARRAY_COLUMNS.has(key)) {
+    else if (TEXT_ARRAY_COLUMNS.has(key)) {
+      // Run for every value type (string, object, number, null, even an
+      // existing array) so a TEXT[] column always receives a clean string[]
+      // — fixes "expected JSON array" / "malformed array literal" wholesale.
       value = coerceToTextArray(value);
     }
     // Coerce empty strings / non-numbers → 0 for NUMERIC columns. Postgres
