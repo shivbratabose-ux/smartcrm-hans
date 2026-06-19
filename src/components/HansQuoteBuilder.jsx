@@ -370,6 +370,9 @@ export default function HansQuoteBuilder({
   };
 
   const lbl = { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text3)", marginBottom: 3 };
+  // Match the app's standard form inputs (.form-group input/select) so the
+  // line-grid boxes and terms area look consistent with the rest of the app.
+  const fieldStyle = { padding: "7px 9px", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: 12.5, color: "var(--text)", background: "white", outline: "none", fontFamily: "inherit", width: "100%", boxSizing: "border-box" };
   // Red asterisk marking a mandatory field (matches the Custom Quote form).
   const Req = () => <span style={{ color: "#DC2626", marginLeft: 2 }}>*</span>;
   const sumRow = (label, val, opts = {}) => (
@@ -507,13 +510,13 @@ export default function HansQuoteBuilder({
                   return (
                     <div key={i} style={{ padding: "7px 10px", borderTop: "1px solid var(--border)", background: l.missingRate ? "#FEF2F2" : "transparent" }}>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, alignItems: "center" }}>
-                        <select value={l.productCode} onChange={e => updateLine(i, { productCode: e.target.value })} style={{ fontSize: 12 }}>
+                        <select value={l.productCode} onChange={e => updateLine(i, { productCode: e.target.value })} style={{ ...fieldStyle, cursor: "pointer" }}>
                           <option value="">— Pick product —</option>
                           {catalogue.map(p => <option key={p.code} value={p.code}>{p.code} · {p.name}</option>)}
                         </select>
-                        <input type="number" min={0} value={l.qty} onChange={e => updateLine(i, { qty: +e.target.value })} style={{ textAlign: "right", fontSize: 12 }} />
-                        <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })} style={{ textAlign: "right", fontSize: 12, opacity: oneTime ? 0.5 : 1 }} />
-                        <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: +e.target.value })} style={{ textAlign: "right", fontSize: 12, color: Number(l.discountPct) > config.maxUserDiscountPct ? "#DC2626" : "inherit", fontWeight: Number(l.discountPct) > config.maxUserDiscountPct ? 700 : 400 }} />
+                        <input type="number" min={0} value={l.qty} onChange={e => updateLine(i, { qty: +e.target.value })} style={{ ...fieldStyle, textAlign: "right" }} />
+                        <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })} style={{ ...fieldStyle, textAlign: "right", opacity: oneTime ? 0.5 : 1 }} />
+                        <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: +e.target.value })} style={{ ...fieldStyle, textAlign: "right", color: Number(l.discountPct) > config.maxUserDiscountPct ? "#DC2626" : "var(--text)", fontWeight: Number(l.discountPct) > config.maxUserDiscountPct ? 700 : 400 }} />
                         <span style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, fontFamily: "'Outfit',sans-serif" }}>{l._empty ? "—" : inr(l.lineTotal)}</span>
                         <button className="icon-btn" onClick={() => removeLine(i)} title="Remove"><Trash2 size={13} /></button>
                       </div>
@@ -541,7 +544,7 @@ export default function HansQuoteBuilder({
                   ))}
                   <button type="button" className="btn btn-sec btn-xs" style={{ color: "#DC2626" }} onClick={() => setTermsText("")}>Clear</button>
                 </div>
-                <textarea rows={6} value={termsText} onChange={e => setTermsText(e.target.value)} placeholder="Pick a template above or type your own terms…" style={{ width: "100%", resize: "vertical", fontFamily: "monospace", fontSize: 12 }} />
+                <textarea rows={6} value={termsText} onChange={e => setTermsText(e.target.value)} placeholder="Pick a template above or type your own terms…" style={{ ...fieldStyle, resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }} />
                 <div style={{ ...lbl, margin: "8px 0 4px" }}>Standard terms (click to add)</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {STANDARD_TERMS.map((t, i) => (
