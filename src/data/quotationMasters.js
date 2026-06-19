@@ -151,10 +151,16 @@ export const ICAFFE_EDITIONS = [
 
 // Section B — plan presets (set Months + discountPct/prepayment on the quote).
 export const ICAFFE_PLANS = {
-  saasAdvance: { label: "SaaS Advance", months: 12, prepaymentDiscountPct: 10 },
+  // Month-to-month subscription — no prepayment discount; billed monthly or
+  // quarterly (cadence is invoicing only, it doesn't change the total).
+  saasMonthly: { label: "SaaS Monthly", months: 12, prepaymentDiscountPct: 0, billingFrequency: "Monthly" },
+  saasAdvance: { label: "SaaS Advance", months: 12, prepaymentDiscountPct: 10, billingFrequency: "Annual" },
   // OTP factor 0.55 ≈ 45% discount applied as discountPct on the 42-month value.
-  otpArr: { label: "OTP + ARR (42-mo adv)", months: 42, otpFactor: 0.55, discountPct: 45, prebillingDiscPct: 10, arrPct: 25, griPct: 10 },
+  otpArr: { label: "OTP + ARR (42-mo adv)", months: 42, otpFactor: 0.55, discountPct: 45, prebillingDiscPct: 10, arrPct: 25, griPct: 10, billingFrequency: "Annual" },
 };
+
+// Billing cadence options for recurring SaaS (invoicing schedule only).
+export const BILLING_FREQUENCIES = ["Monthly", "Quarterly", "Half-Yearly", "Annual"];
 
 // Section C — VAS price list (informational; chargeable equivalents are AS04–AS10).
 export const ICAFFE_VAS = [
