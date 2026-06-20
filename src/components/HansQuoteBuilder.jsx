@@ -56,6 +56,7 @@ export default function HansQuoteBuilder({
   const [party, setParty] = useState(eh?.party || { name: "", address: "", state: "", gstin: "" });
   const [currency, setCurrency] = useState(eh?.currency || "INR");
   const [billingFrequency, setBillingFrequency] = useState(eh?.billingFrequency || editQuote?.billingFrequency || "Monthly");
+  const [selectedPlan, setSelectedPlan] = useState(eh?.plan || "");
   const [overallDiscountPct, setOverallDiscountPct] = useState(eh?.overallDiscountPct || 0);
   const [prepaymentApplicable, setPrepaymentApplicable] = useState(!!eh?.prepaymentApplicable);
   const [prepaymentDiscountPct, setPrepaymentDiscountPct] = useState(eh?.prepaymentDiscountPct ?? config.prepaymentDiscountPctDefault);
@@ -281,6 +282,7 @@ export default function HansQuoteBuilder({
       tcv: round2(summary.tcv),
       intraState: summary.intraState,
       billingFrequency, // invoicing cadence (Monthly / Quarterly / …)
+      plan: selectedPlan, // chosen iCAFFE plan preset (for re-seed on edit)
       terms: QUOTE_TERMS,
       termsText, // the rep's edited T&C (rendered by print)
       billing, // snapshot for clean re-seed on edit
@@ -363,6 +365,7 @@ export default function HansQuoteBuilder({
   const planPreset = (key) => {
     const plan = ICAFFE_PLANS[key];
     if (!plan) return;
+    setSelectedPlan(key);
     setLines(ls => ls.map(l => isOneTimeModel(catByCode[l.productCode]?.pricingModel) ? l : { ...l, months: plan.months, discountPct: plan.discountPct ?? l.discountPct }));
     if (plan.billingFrequency) setBillingFrequency(plan.billingFrequency);
     if (key === "saasAdvance") { setPrepaymentApplicable(true); setPrepaymentDiscountPct(plan.prepaymentDiscountPct); }
@@ -489,9 +492,9 @@ export default function HansQuoteBuilder({
               {/* Plan presets */}
               <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 10px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>iCAFFE plan:</span>
-                <button className="btn btn-sec btn-xs" onClick={() => planPreset("saasMonthly")}>SaaS Monthly (12mo)</button>
-                <button className="btn btn-sec btn-xs" onClick={() => planPreset("saasAdvance")}>SaaS Advance (12mo, 10% prepay)</button>
-                <button className="btn btn-sec btn-xs" onClick={() => planPreset("otpArr")}>OTP+ARR (42mo, 45% disc)</button>
+                <button className={`btn btn-xs ${selectedPlan === "saasMonthly" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("saasMonthly")}>{selectedPlan === "saasMonthly" && <Check size={11} />}SaaS Monthly (12mo)</button>
+                <button className={`btn btn-xs ${selectedPlan === "saasAdvance" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("saasAdvance")}>{selectedPlan === "saasAdvance" && <Check size={11} />}SaaS Advance (12mo, 10% prepay)</button>
+                <button className={`btn btn-xs ${selectedPlan === "otpArr" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("otpArr")}>{selectedPlan === "otpArr" && <Check size={11} />}OTP+ARR (42mo, 45% disc)</button>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
                   <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>Billed</span>
                   <select value={billingFrequency} onChange={e => setBillingFrequency(e.target.value)} style={{ fontSize: 11, padding: "3px 6px", borderRadius: 6, border: "1px solid var(--border)" }}>
