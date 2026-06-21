@@ -122,6 +122,21 @@ export function resolveUnitPrice(product, opts = {}) {
   const editions = opts.editions || ICAFFE_EDITIONS;
   const bandFrom = opts.bandFrom || ICAFFE_BAND_FROM;
 
+  // Phase 2e: generic rate-card matrix (mirrors iCAFFE). A product attached
+  // to a rate card carries matrixId + matrixRow; its rate is the card's row
+  // for the qty's user band, per country (→ Default), then /fx.
+  if (product.matrixId) {
+    const card = (opts.rateCards || []).find((c) => c.id === product.matrixId);
+    const idx = icaffeBandIndex(qty, bandFrom);
+    const ctryObj = card && opts.country ? card.rates?.[opts.country] : null;
+    const defObj = card && (card.rates?.Default || card.rates?.default);
+    // Country row → its Default row (per-row fallback) → missing.
+    const row = (ctryObj && ctryObj[product.matrixRow]) || (defObj && defObj[product.matrixRow]);
+    const v = Array.isArray(row) && row[idx] != null ? num(row[idx]) : null;
+    if (v == null) return { unitPrice: 0, missingRate: true };
+    return { unitPrice: v / fx, missingRate: false };
+  }
+
   // Phase 2c: an explicit native price for the quote currency (Flat only)
   // is used as-is, bypassing FX. INR (base) typically has no entry → FX path.
   if (product.rateSource === "Flat" && opts.currency && product.currencyPrices && product.currencyPrices[opts.currency] != null) {
