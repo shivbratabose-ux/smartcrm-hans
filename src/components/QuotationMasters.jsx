@@ -11,13 +11,25 @@
 // blocks an invalid rate card (brief §9).
 // ═══════════════════════════════════════════════════════════════════
 
-import { useState } from "react";
-import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X, Tag, Globe } from "lucide-react";
+import { useState, useRef } from "react";
+import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X, Tag, Globe, Download, Upload } from "lucide-react";
 import {
   QUOTE_CONFIG, HANS_CATALOGUE, PRICING_BANDS, ICAFFE_EDITIONS,
   ICAFFE_BAND_LABELS, QUOTE_TERMS, QUOTE_SEGMENTS,
 } from "../data/quotationMasters";
 import { validateCcsRule } from "../lib/quotation/pricingEngine";
+import { exportCSV, parseCSV } from "../utils/csv";
+
+// Columns for catalogue CSV round-trip (identifiers + the simple editable
+// numeric/flag fields; nested schedule/segment/currency stay in the UI).
+const CATALOGUE_CSV_COLS = [
+  { key: "code", label: "Code" }, { key: "name", label: "Name" },
+  { key: "pricingModel", label: "Pricing model" }, { key: "unit", label: "Unit" },
+  { key: "rateSource", label: "Rate source" },
+  { key: "listPrice", label: "List price" }, { key: "costPrice", label: "Cost" },
+  { key: "minMonthFloor", label: "Floor per month" },
+  { key: "active", label: "Active", accessor: p => p.active !== false },
+];
 
 // Resolve current masters with seeded fallbacks.
 export function resolveQuotationMasters(masters) {
@@ -40,6 +52,36 @@ export default function QuotationMasters({ masters, setMasters }) {
   const [schedFor, setSchedFor] = useState(null); // {kind,key} whose rate schedule is open
   const [segFor, setSegFor] = useState(null); // product code whose segment prices are open
   const [curFor, setCurFor] = useState(null); // product code whose currency prices are open
+  const [importMsg, setImportMsg] = useState(null); // catalogue CSV import summary
+  const fileRef = useRef(null);
+
+  // Bulk catalogue CSV: export the current rates, or import to update list
+  // price / cost / floor / active by Code (merge — unmatched codes ignored).
+  const exportCatalogue = () => exportCSV(cur.catalogue, CATALOGUE_CSV_COLS, "quotation_catalogue");
+  const importCatalogue = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const rows = parseCSV(reader.result);
+      const byCode = new Map(rows.filter(r => r.Code).map(r => [r.Code.trim().toUpperCase(), r]));
+      let updated = 0;
+      const numOr = (v, fallback) => { const s = String(v ?? "").trim(); if (s === "") return fallback; const n = Number(s); return Number.isFinite(n) ? n : fallback; };
+      const next = cur.catalogue.map(p => {
+        const r = byCode.get(String(p.code).toUpperCase());
+        if (!r) return p;
+        updated++;
+        const out = { ...p };
+        if ("List price" in r) out.listPrice = r["List price"].trim() === "" ? null : numOr(r["List price"], p.listPrice);
+        if ("Cost" in r) out.costPrice = r["Cost"].trim() === "" ? null : numOr(r["Cost"], p.costPrice);
+        if ("Floor per month" in r) out.minMonthFloor = r["Floor per month"].trim() === "" ? null : numOr(r["Floor per month"], p.minMonthFloor);
+        if ("Active" in r) out.active = !/^(false|no|0)$/i.test(r["Active"].trim());
+        return out;
+      });
+      writeQ({ catalogue: next });
+      setImportMsg({ matched: updated, rows: rows.length });
+    };
+    reader.readAsText(file);
+  };
 
   // Write a slice back into masters.quotation (merging with current resolved set).
   const writeQ = (patch) => setMasters(m => ({ ...m, quotation: { ...cur, ...(m?.quotation || {}), ...patch } }));
@@ -158,8 +200,16 @@ export default function QuotationMasters({ masters, setMasters }) {
       {/* ── Catalogue rates ── */}
       {sub === "catalogue" && (
         <div style={{ overflowX: "auto" }}>
-          <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6 }}>
-            Edit list price (Flat models) and per-month floor (PaaS). Band/iCAFFE products price from their own tabs — list price stays blank for them.
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 11, color: "var(--text3)" }}>
+              Edit list price (Flat models) and per-month floor (PaaS). Band/iCAFFE products price from their own tabs — list price stays blank for them.
+            </div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+              {importMsg && <span style={{ fontSize: 11, color: "#15803D" }}>Updated {importMsg.matched} of {importMsg.rows} row(s)</span>}
+              <button className="btn btn-sec btn-xs" onClick={exportCatalogue}><Download size={12} /> Export CSV</button>
+              <button className="btn btn-sec btn-xs" onClick={() => fileRef.current?.click()}><Upload size={12} /> Import CSV</button>
+              <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; importCatalogue(f); }} />
+            </div>
           </div>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 760 }}>
             <thead>

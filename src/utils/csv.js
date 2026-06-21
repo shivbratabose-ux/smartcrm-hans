@@ -21,3 +21,33 @@ export function exportCSV(data, columns, filename) {
   link.click();
   URL.revokeObjectURL(url);
 }
+
+// CSV parser \u2192 array of row objects keyed by the header row. Handles quoted
+// fields with embedded commas/newlines and "" escapes, and a leading BOM.
+export function parseCSV(text) {
+  const s = String(text || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const rows = [];
+  let field = "", row = [], inQ = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (s[i + 1] === '"') { field += '"'; i++; } else { inQ = false; }
+      } else { field += ch; }
+    } else if (ch === '"') {
+      inQ = true;
+    } else if (ch === ",") {
+      row.push(field); field = "";
+    } else if (ch === "\n") {
+      row.push(field); rows.push(row); row = []; field = "";
+    } else {
+      field += ch;
+    }
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  if (!rows.length) return [];
+  const header = rows[0].map(h => h.trim());
+  return rows.slice(1)
+    .filter(r => r.some(c => (c ?? "").trim() !== ""))
+    .map(r => { const o = {}; header.forEach((h, i) => { o[h] = (r[i] ?? "").trim(); }); return o; });
+}
