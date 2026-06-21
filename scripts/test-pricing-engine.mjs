@@ -4,7 +4,7 @@
 
 import {
   resolveUnitPrice, computeLine, computeQuote, computeGst,
-  evaluateDiscountGuardrail, validateCcsRule, validateWiseHandlingModules,
+  evaluateDiscountGuardrail, evaluateMarginGuardrail, lineMargin, validateCcsRule, validateWiseHandlingModules,
   formatQuoteNumber, fiscalYearSuffix,
 } from "../src/lib/quotation/pricingEngine.js";
 import { HANS_CATALOGUE } from "../src/data/quotationMasters.js";
@@ -86,6 +86,26 @@ console.log("§11.7 Discount guardrail");
   check("line disc 15% (policy 10%) → breached", g.breached, true);
   const ok = evaluateDiscountGuardrail([{ discountPct: 10 }], {});
   check("line disc 10% (== policy) → not breached", ok.breached, false);
+}
+
+console.log("Margin floor guardrail (Phase 3a)");
+{
+  // lineMargin: post-discount margin vs cost
+  check("margin: price 100, cost 80 → 20%", lineMargin(100, 80), 20);
+  check("margin: price 100, cost 50, 10% disc → ~44.4%", lineMargin(100, 50, 10), 44.4444);
+  check("margin: no cost → null", lineMargin(100, 0), null);
+  // off when minMarginPct = 0 (default)
+  const off = evaluateMarginGuardrail([{ productCode: "X", unitPriceResolved: 100, costPerUnit: 99 }], { minMarginPct: 0 });
+  check("minMargin 0 → never breaches", off.breached, false);
+  // breaches when margin below floor
+  const bad = evaluateMarginGuardrail([{ productCode: "X", unitPriceResolved: 100, costPerUnit: 85 }], { minMarginPct: 25 });
+  check("margin 15% < floor 25% → breached", bad.breached, true);
+  // ok when margin above floor
+  const ok = evaluateMarginGuardrail([{ productCode: "X", unitPriceResolved: 100, costPerUnit: 50 }], { minMarginPct: 25 });
+  check("margin 50% ≥ floor 25% → not breached", ok.breached, false);
+  // no cost on the line → not assessed, not breached
+  const noCost = evaluateMarginGuardrail([{ productCode: "X", unitPriceResolved: 100, costPerUnit: null }], { minMarginPct: 25 });
+  check("no cost → not breached", noCost.breached, false);
 }
 
 console.log("§11.8 CC03 > CC04 rule");
