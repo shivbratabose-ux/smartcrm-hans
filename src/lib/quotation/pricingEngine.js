@@ -59,20 +59,38 @@ export function icaffeBandIndex(qty, bandFrom = ICAFFE_BAND_FROM) {
 }
 
 /**
- * Effective Flat list price for a product as of a date (roadmap Phase 2a).
- * `product.rateSchedule` is an optional array of { effectiveFrom, listPrice }
- * (ISO YYYY-MM-DD). The price on `asOf` is the latest schedule entry whose
- * effectiveFrom ≤ asOf; if none applies (or no schedule / no asOf), the base
- * `listPrice` is used. Additive: products without a schedule are unchanged.
+ * Generic effective-dated picker (roadmap Phase 2a). From a `rateSchedule`
+ * array of { effectiveFrom, [valueKey] } (ISO YYYY-MM-DD), return the value
+ * of the latest entry whose effectiveFrom ≤ asOf, or `undefined` if none
+ * applies / no schedule / no asOf. Additive — callers fall back to the base.
  */
+function pickEffective(schedule, asOf, valueKey) {
+  if (!Array.isArray(schedule) || !schedule.length || !asOf) return undefined;
+  const eligible = schedule
+    .filter((s) => s && s.effectiveFrom && s[valueKey] != null && String(s.effectiveFrom) <= String(asOf))
+    .sort((a, b) => (String(a.effectiveFrom) < String(b.effectiveFrom) ? -1 : 1));
+  return eligible.length ? eligible[eligible.length - 1][valueKey] : undefined;
+}
+
+/** Effective Flat list price for a product as of a date. */
 export function effectiveListPrice(product, asOf) {
   const base = product && product.listPrice != null ? num(product.listPrice) : null;
-  const sched = Array.isArray(product?.rateSchedule) ? product.rateSchedule : [];
-  if (!sched.length || !asOf) return base;
-  const eligible = sched
-    .filter((s) => s && s.effectiveFrom && s.listPrice != null && String(s.effectiveFrom) <= String(asOf))
-    .sort((a, b) => (String(a.effectiveFrom) < String(b.effectiveFrom) ? -1 : 1));
-  return eligible.length ? num(eligible[eligible.length - 1].listPrice) : base;
+  const v = pickEffective(product?.rateSchedule, asOf, "listPrice");
+  return v != null ? num(v) : base;
+}
+
+/** Effective per-user/month rate for a pricing band as of a date. */
+export function effectiveBandRate(band, asOf) {
+  const base = band && band.ratePerUserMonth != null ? num(band.ratePerUserMonth) : null;
+  const v = pickEffective(band?.rateSchedule, asOf, "ratePerUserMonth");
+  return v != null ? num(v) : base;
+}
+
+/** Effective iCAFFE rates row (array, one per band) for an edition as of a date. */
+export function effectiveEditionRates(edition, asOf) {
+  const base = Array.isArray(edition?.rates) ? edition.rates : [];
+  const v = pickEffective(edition?.rateSchedule, asOf, "rates");
+  return Array.isArray(v) ? v : base;
 }
 
 /**
@@ -98,13 +116,14 @@ export function resolveUnitPrice(product, opts = {}) {
   switch (product.rateSource) {
     case "Band": {
       const band = bands.find((b) => qty >= num(b.fromUsers) && qty <= num(b.toUsers));
-      raw = band && band.ratePerUserMonth != null ? num(band.ratePerUserMonth) : null;
+      const r = band ? effectiveBandRate(band, opts.asOf) : null;
+      raw = r != null ? num(r) : null;
       break;
     }
     case "iCAFFE": {
       const ed = editions.find((e) => e.name === product.name);
       if (ed) {
-        const val = ed.rates[icaffeBandIndex(qty, bandFrom)];
+        const val = effectiveEditionRates(ed, opts.asOf)[icaffeBandIndex(qty, bandFrom)];
         raw = val != null ? num(val) : null;
       }
       break;

@@ -5,7 +5,7 @@
 import {
   resolveUnitPrice, computeLine, computeQuote, computeGst,
   evaluateDiscountGuardrail, evaluateMarginGuardrail, lineMargin, validateCcsRule, validateWiseHandlingModules,
-  formatQuoteNumber, fiscalYearSuffix, effectiveListPrice,
+  formatQuoteNumber, fiscalYearSuffix, effectiveListPrice, effectiveBandRate, effectiveEditionRates,
 } from "../src/lib/quotation/pricingEngine.js";
 import { HANS_CATALOGUE } from "../src/data/quotationMasters.js";
 
@@ -103,6 +103,22 @@ console.log("Effective-dated rates (Phase 2a)");
   // resolveUnitPrice threads asOf for Flat products (fx=1)
   const r = resolveUnitPrice(sched, { qty: 1, asOf: "2026-09-15" });
   check("resolveUnitPrice picks scheduled 1300", r.unitPrice, 1300);
+
+  // Band rate scheduling
+  const band = { fromUsers: 0, toUsers: 150, ratePerUserMonth: 3000, rateSchedule: [{ effectiveFrom: "2026-07-01", ratePerUserMonth: 3300 }] };
+  check("band: before schedule → base 3000", effectiveBandRate(band, "2026-06-30"), 3000);
+  check("band: on/after schedule → 3300", effectiveBandRate(band, "2026-07-01"), 3300);
+  const bandProd = { rateSource: "Band", name: "iCAFFE" };
+  const rb = resolveUnitPrice(bandProd, { qty: 10, bands: [band], asOf: "2026-08-01" });
+  check("resolveUnitPrice Band picks scheduled 3300", rb.unitPrice, 3300);
+
+  // iCAFFE edition rate-row scheduling
+  const ed = { name: "EDI", rates: [2400, 2350, 2300], rateSchedule: [{ effectiveFrom: "2026-07-01", rates: [2500, 2450, 2400] }] };
+  check("edition: before schedule → base row", effectiveEditionRates(ed, "2026-06-30")[0], 2400);
+  check("edition: on/after schedule → new row", effectiveEditionRates(ed, "2026-07-01")[0], 2500);
+  const icProd = { rateSource: "iCAFFE", name: "EDI" };
+  const ri = resolveUnitPrice(icProd, { qty: 5, editions: [ed], asOf: "2026-08-01" });
+  check("resolveUnitPrice iCAFFE picks scheduled 2500 (band0)", ri.unitPrice, 2500);
 }
 
 console.log("Margin floor guardrail (Phase 3a)");
