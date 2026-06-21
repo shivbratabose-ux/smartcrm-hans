@@ -107,8 +107,11 @@ export function effectiveEditionRates(edition, asOf) {
  * master" rather than silently producing 0 (brief §9).
  *
  * @param {object} product  catalogue row (rateSource, listPrice, name…)
- * @param {object} opts     { qty, bands, editions, bandFrom, fx, config, asOf }
- *                          `asOf` (ISO date) selects the effective Flat rate.
+ * @param {object} opts     { qty, bands, editions, bandFrom, fx, config,
+ *                            asOf, segment, currency }
+ *   asOf selects the date-effective rate; segment a segment price list;
+ *   currency picks an explicit native price (product.currencyPrices) when
+ *   set, bypassing FX conversion.
  */
 export function resolveUnitPrice(product, opts = {}) {
   if (!product) return { unitPrice: 0, missingRate: true };
@@ -118,6 +121,12 @@ export function resolveUnitPrice(product, opts = {}) {
   const bands = opts.bands || PRICING_BANDS;
   const editions = opts.editions || ICAFFE_EDITIONS;
   const bandFrom = opts.bandFrom || ICAFFE_BAND_FROM;
+
+  // Phase 2c: an explicit native price for the quote currency (Flat only)
+  // is used as-is, bypassing FX. INR (base) typically has no entry → FX path.
+  if (product.rateSource === "Flat" && opts.currency && product.currencyPrices && product.currencyPrices[opts.currency] != null) {
+    return { unitPrice: num(product.currencyPrices[opts.currency]), missingRate: false };
+  }
 
   let raw = null; // pre-FX resolved rate
   switch (product.rateSource) {

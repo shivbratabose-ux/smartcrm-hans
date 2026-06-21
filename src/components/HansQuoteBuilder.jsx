@@ -189,12 +189,15 @@ export default function HansQuoteBuilder({
   // The quote date drives effective-dated (scheduled) rates — an edited
   // quote keeps its original date; a new one prices as of today.
   const quoteDate = editQuote?.createdDate || today();
+  // FX divisor for the selected currency (INR base → /fxToInr). A product
+  // with an explicit native price for the currency bypasses this entirely.
+  const fxForCurrency = (config.currencies || []).find(c => c.code === currency)?.fxToInr || Number(config.fx) || 1;
   // Enrich each line with its catalogue snapshot + resolved unit price,
   // shaped exactly as the engine expects.
   const pricedLines = useMemo(() => lines.map(l => {
     const p = catByCode[l.productCode];
     if (!p) return { ...l, _empty: true, pricingModel: "", unitPriceResolved: 0, missingRate: false };
-    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, config, fx: config.fx, asOf: quoteDate, segment });
+    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, config, fx: fxForCurrency, asOf: quoteDate, segment, currency });
     const oneTime = isOneTimeModel(p.pricingModel);
     return {
       ...l,
@@ -203,11 +206,11 @@ export default function HansQuoteBuilder({
       unitPriceResolved: unitPrice, missingRate,
       // Per-unit cost (same scale as the resolved unit price) for the margin
       // guardrail — only present when the product has a cost in masters.
-      costPerUnit: p.costPrice != null ? (Number(p.costPrice) || 0) / (Number(config.fx) || 1) : null,
+      costPerUnit: p.costPrice != null ? (Number(p.costPrice) || 0) / fxForCurrency : null,
       months: oneTime ? 1 : l.months,
       ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor }),
     };
-  }), [lines, catByCode, bands, editions, bandFrom, config, quoteDate, segment]);
+  }), [lines, catByCode, bands, editions, bandFrom, config, quoteDate, segment, currency, fxForCurrency]);
 
   const summary = useMemo(() => computeQuote(
     pricedLines.filter(l => !l._empty),

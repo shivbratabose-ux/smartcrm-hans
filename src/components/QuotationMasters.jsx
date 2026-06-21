@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { useState } from "react";
-import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X, Tag } from "lucide-react";
+import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X, Tag, Globe } from "lucide-react";
 import {
   QUOTE_CONFIG, HANS_CATALOGUE, PRICING_BANDS, ICAFFE_EDITIONS,
   ICAFFE_BAND_LABELS, QUOTE_TERMS, QUOTE_SEGMENTS,
@@ -39,6 +39,7 @@ export default function QuotationMasters({ masters, setMasters }) {
   const [sub, setSub] = useState("config");
   const [schedFor, setSchedFor] = useState(null); // {kind,key} whose rate schedule is open
   const [segFor, setSegFor] = useState(null); // product code whose segment prices are open
+  const [curFor, setCurFor] = useState(null); // product code whose currency prices are open
 
   // Write a slice back into masters.quotation (merging with current resolved set).
   const writeQ = (patch) => setMasters(m => ({ ...m, quotation: { ...cur, ...(m?.quotation || {}), ...patch } }));
@@ -191,6 +192,12 @@ export default function QuotationMasters({ masters, setMasters }) {
                               <button type="button" title="Segment price overrides" onClick={() => setSegFor(p.code)}
                                 style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: n ? "#F0FDFA" : "transparent", color: n ? "#0D9488" : "var(--text3)", borderRadius: 5, padding: "1px 5px", cursor: "pointer", fontSize: 10, flexShrink: 0 }}>
                                 <Tag size={11} />{n || ""}
+                              </button>
+                            ); })()}
+                            {(() => { const n = Object.values(p.currencyPrices || {}).filter(v => v != null).length; return (
+                              <button type="button" title="Currency price overrides (native, bypasses FX)" onClick={() => setCurFor(p.code)}
+                                style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: n ? "#FFF7ED" : "transparent", color: n ? "#B45309" : "var(--text3)", borderRadius: 5, padding: "1px 5px", cursor: "pointer", fontSize: 10, flexShrink: 0 }}>
+                                <Globe size={11} />{n || ""}
                               </button>
                             ); })()}
                           </span>
@@ -381,6 +388,43 @@ export default function QuotationMasters({ masters, setMasters }) {
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", padding: 12, borderTop: "1px solid var(--border)" }}>
                 <button className="btn btn-primary btn-xs" onClick={() => setSegFor(null)}>Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Currency price overrides (currency price lists · Phase 2c) ── */}
+      {curFor && (() => {
+        const p = cur.catalogue.find(x => x.code === curFor);
+        if (!p) return null;
+        const curMap = p.currencyPrices || {};
+        const setCur = (code, val) => setCatRow(p.code, "currencyPrices", { ...curMap, [code]: val });
+        const foreign = (cur.quoteConfig.currencies || []).filter(c => c.code !== "INR");
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setCurFor(null)}>
+            <div style={{ width: 420, maxWidth: "94vw", background: "var(--surface)", borderRadius: 12, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}><Globe size={15} /> Currency prices · {p.code} {p.name}</div>
+                <button className="icon-btn" onClick={() => setCurFor(null)}><X size={16} /></button>
+              </div>
+              <div style={{ padding: 16 }}>
+                <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 10 }}>
+                  A native price for a currency is used as-is (no FX conversion). Leave blank to convert the INR base by FX. INR uses the base list price.
+                </div>
+                <div className="form-group" style={{ marginBottom: 8 }}>
+                  <label>INR (base list price)</label>
+                  <input type="number" value={p.listPrice ?? ""} onChange={e => setCatRow(p.code, "listPrice", e.target.value === "" ? null : Number(e.target.value))} />
+                </div>
+                {foreign.map(c => (
+                  <div key={c.code} className="form-group" style={{ marginBottom: 8 }}>
+                    <label>{c.code} <span style={{ fontWeight: 400, color: "var(--text3)" }}>(else ≈ ₹{p.listPrice ?? "—"} ÷ {c.fxToInr})</span></label>
+                    <input type="number" placeholder="— convert by FX —" value={curMap[c.code] ?? ""} onChange={e => setCur(c.code, e.target.value === "" ? null : Number(e.target.value))} />
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", padding: 12, borderTop: "1px solid var(--border)" }}>
+                <button className="btn btn-primary btn-xs" onClick={() => setCurFor(null)}>Done</button>
               </div>
             </div>
           </div>

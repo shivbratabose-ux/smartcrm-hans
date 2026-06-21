@@ -136,6 +136,19 @@ console.log("Segment price lists (Phase 2b)");
   check("no segment → schedule still applies", effectiveListPrice(both, "2026-06-01", "Commercial"), 1100);
 }
 
+console.log("Currency price lists (Phase 2c)");
+{
+  const prod = { rateSource: "Flat", listPrice: 8350, currencyPrices: { USD: 99 } };
+  // FX path: INR base / fx
+  check("INR base / fx 83.5 → 100", resolveUnitPrice(prod, { qty: 1, currency: "INR", fx: 1 }).unitPrice, 8350);
+  check("USD via fx (no... has native) → native 99", resolveUnitPrice(prod, { qty: 1, currency: "USD", fx: 83.5 }).unitPrice, 99);
+  // currency with no native price → FX-converted
+  const prod2 = { rateSource: "Flat", listPrice: 8350 };
+  check("EUR no native → 8350/90 ≈ 92.78", resolveUnitPrice(prod2, { qty: 1, currency: "EUR", fx: 90 }).unitPrice, 92.7778);
+  // native price bypasses FX (fx ignored)
+  check("USD native ignores fx", resolveUnitPrice(prod, { qty: 1, currency: "USD", fx: 83.5 }).unitPrice, 99);
+}
+
 console.log("Margin floor guardrail (Phase 3a)");
 {
   // lineMargin: post-discount margin vs cost
