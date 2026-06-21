@@ -171,6 +171,24 @@ console.log("Per-product / per-country band rates (Phase 2d)");
   check("band: India null cell → global 3000", resolveUnitPrice(p3, { qty: 10, bands: gbands, country: "India" }).unitPrice, 3000);
 }
 
+console.log("Generic rate-card matrix (Phase 2e)");
+{
+  // Card: rows Basic/Pro × 10 iCAFFE bands, per country. Band index by qty.
+  const card = { id: "rc1", rows: [{ name: "Basic", productCode: "X1" }, { name: "Pro", productCode: "X2" }],
+    rates: {
+      Default: { Basic: [500,490,480,470,460,450,440,430,420,400], Pro: [900,880,860,840,820,800,780,760,740,700] },
+      UAE: { Pro: [1200,1180,1160,1140,1120,1100,1080,1060,1040,1000] },
+    } };
+  const basic = { rateSource: "Flat", name: "Basic", matrixId: "rc1", matrixRow: "Basic" };
+  const pro = { rateSource: "Flat", name: "Pro", matrixId: "rc1", matrixRow: "Pro" };
+  check("matrix Basic, 5 users (band0) → 500", resolveUnitPrice(basic, { qty: 5, rateCards: [card] }).unitPrice, 500);
+  check("matrix Pro, 8 users (band1) → 880", resolveUnitPrice(pro, { qty: 8, rateCards: [card] }).unitPrice, 880);
+  check("matrix Pro, 200 users (band9) → 700", resolveUnitPrice(pro, { qty: 200, rateCards: [card] }).unitPrice, 700);
+  check("matrix Pro UAE band0 → 1200", resolveUnitPrice(pro, { qty: 5, rateCards: [card], country: "UAE" }).unitPrice, 1200);
+  check("matrix Pro UAE missing→ Default 900", resolveUnitPrice(basic, { qty: 5, rateCards: [card], country: "UAE" }).unitPrice, 500);
+  check("matrix no card → missing rate", resolveUnitPrice(pro, { qty: 5, rateCards: [] }).missingRate, true);
+}
+
 console.log("Margin floor guardrail (Phase 3a)");
 {
   // lineMargin: post-discount margin vs cost

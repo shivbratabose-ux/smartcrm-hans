@@ -44,6 +44,7 @@ export default function HansQuoteBuilder({
   const bands = masters?.bands || PRICING_BANDS;
   const editions = masters?.editions || ICAFFE_EDITIONS;
   const bandFrom = masters?.bandFrom || ICAFFE_BAND_FROM;
+  const rateCards = masters?.rateCards || [];
   const catByCode = useMemo(() => Object.fromEntries(catalogue.map(p => [p.code, p])), [catalogue]);
 
   const me = orgUsers.find(u => u.id === currentUser);
@@ -198,7 +199,7 @@ export default function HansQuoteBuilder({
   const pricedLines = useMemo(() => lines.map(l => {
     const p = catByCode[l.productCode];
     if (!p) return { ...l, _empty: true, pricingModel: "", unitPriceResolved: 0, missingRate: false };
-    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, config, fx: fxForCurrency, asOf: quoteDate, segment, currency, country: party.country });
+    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, rateCards, config, fx: fxForCurrency, asOf: quoteDate, segment, currency, country: party.country });
     const oneTime = isOneTimeModel(p.pricingModel);
     return {
       ...l,
@@ -211,7 +212,7 @@ export default function HansQuoteBuilder({
       months: oneTime ? 1 : l.months,
       ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor }),
     };
-  }), [lines, catByCode, bands, editions, bandFrom, config, quoteDate, segment, currency, fxForCurrency, party.country]);
+  }), [lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
 
   const summary = useMemo(() => computeQuote(
     pricedLines.filter(l => !l._empty),
