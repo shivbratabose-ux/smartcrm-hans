@@ -166,6 +166,11 @@ export const ICAFFE_PLANS = {
 // Billing cadence options for recurring SaaS (invoicing schedule only).
 export const BILLING_FREQUENCIES = ["Monthly", "Quarterly", "Half-Yearly", "Annual"];
 
+// Customer segments for segment-based price lists (roadmap Phase 2b).
+// "Commercial" is the default (the base list price); others can carry a
+// per-product override in product.segmentPrices.
+export const QUOTE_SEGMENTS = ["Commercial", "Government / PSU", "SME", "Enterprise"];
+
 // Section C — VAS price list (informational; chargeable equivalents are AS04–AS10).
 export const ICAFFE_VAS = [
   { service: "eAWB Charges", rate: 65, unit: "Per MAWB/HAWB" },

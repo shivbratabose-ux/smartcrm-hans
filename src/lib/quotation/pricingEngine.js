@@ -72,8 +72,15 @@ function pickEffective(schedule, asOf, valueKey) {
   return eligible.length ? eligible[eligible.length - 1][valueKey] : undefined;
 }
 
-/** Effective Flat list price for a product as of a date. */
-export function effectiveListPrice(product, asOf) {
+/**
+ * Effective Flat list price for a product as of a date, for a segment.
+ * A per-segment override (product.segmentPrices[segment]) wins when present
+ * (Phase 2b); otherwise the date-effective base price (Phase 2a). Both
+ * additive — no segment map / schedule → the base listPrice.
+ */
+export function effectiveListPrice(product, asOf, segment) {
+  const segMap = product && product.segmentPrices;
+  if (segment && segMap && segMap[segment] != null) return num(segMap[segment]);
   const base = product && product.listPrice != null ? num(product.listPrice) : null;
   const v = pickEffective(product?.rateSchedule, asOf, "listPrice");
   return v != null ? num(v) : base;
@@ -130,8 +137,8 @@ export function resolveUnitPrice(product, opts = {}) {
     }
     case "Flat":
     default:
-      // Effective-dated when a rateSchedule is present; else the base price.
-      raw = effectiveListPrice(product, opts.asOf);
+      // Segment override → date-effective → base list price.
+      raw = effectiveListPrice(product, opts.asOf, opts.segment);
       break;
   }
 

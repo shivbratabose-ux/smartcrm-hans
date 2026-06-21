@@ -121,6 +121,21 @@ console.log("Effective-dated rates (Phase 2a)");
   check("resolveUnitPrice iCAFFE picks scheduled 2500 (band0)", ri.unitPrice, 2500);
 }
 
+console.log("Segment price lists (Phase 2b)");
+{
+  const prod = { rateSource: "Flat", listPrice: 1000, segmentPrices: { "Government / PSU": 1200, "SME": 850 } };
+  check("no segment → base", effectiveListPrice(prod, null, null), 1000);
+  check("Commercial (no override) → base", effectiveListPrice(prod, null, "Commercial"), 1000);
+  check("Government segment → 1200", effectiveListPrice(prod, null, "Government / PSU"), 1200);
+  check("SME segment → 850", effectiveListPrice(prod, null, "SME"), 850);
+  const r = resolveUnitPrice(prod, { qty: 1, segment: "SME" });
+  check("resolveUnitPrice applies segment 850", r.unitPrice, 850);
+  // Segment override wins over a schedule
+  const both = { rateSource: "Flat", listPrice: 1000, rateSchedule: [{ effectiveFrom: "2026-01-01", listPrice: 1100 }], segmentPrices: { "SME": 900 } };
+  check("segment override wins over schedule", effectiveListPrice(both, "2026-06-01", "SME"), 900);
+  check("no segment → schedule still applies", effectiveListPrice(both, "2026-06-01", "Commercial"), 1100);
+}
+
 console.log("Margin floor guardrail (Phase 3a)");
 {
   // lineMargin: post-discount margin vs cost
