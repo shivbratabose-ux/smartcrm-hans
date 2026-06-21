@@ -53,7 +53,7 @@ export default function HansQuoteBuilder({
   // breakdown + `items` so the legacy editor never has to touch it.
   const eh = editQuote && editQuote.hans ? editQuote.hans : null;
   const [oppId, setOppId] = useState(editQuote?.oppId || "");
-  const [party, setParty] = useState(eh?.party || { name: "", address: "", state: "", gstin: "" });
+  const [party, setParty] = useState(eh?.party || { name: "", address: "", state: "", gstin: "", country: "" });
   const [currency, setCurrency] = useState(eh?.currency || "INR");
   const [billingFrequency, setBillingFrequency] = useState(eh?.billingFrequency || editQuote?.billingFrequency || "Monthly");
   const [selectedPlan, setSelectedPlan] = useState(eh?.plan || "");
@@ -104,7 +104,7 @@ export default function HansQuoteBuilder({
   const onPickOpp = (id) => {
     setOppId(id);
     const opp = opps.find(o => o.id === id);
-    if (!opp) { setParty({ name: "", address: "", state: "", gstin: "" }); setBilling({ ...blankBilling }); return; }
+    if (!opp) { setParty({ name: "", address: "", state: "", gstin: "", country: "" }); setBilling({ ...blankBilling }); return; }
     const acc = accounts.find(a => a.id === opp.accountId);
     const lead = leads.find(l => l.id === opp.sourceLeadId || (Array.isArray(opp.sourceLeadIds) && opp.sourceLeadIds.includes(l.id)));
     // Inherit the customer segment when it matches a known quote segment.
@@ -115,6 +115,7 @@ export default function HansQuoteBuilder({
         address: acc.billingAddress || acc.address || "",
         state: acc.billingState || acc.state || "",
         gstin: acc.gstin || "",
+        country: acc.country || opp.country || "",
       });
       // Pull the billing contact from the account's primary contact (name +
       // phone + email) when present, falling back to the account-level fields.
@@ -138,7 +139,7 @@ export default function HansQuoteBuilder({
         financeContactPhone: "",
       });
     } else if (lead) {
-      setParty({ name: lead.company || "", address: lead.address || "", state: lead.state || "", gstin: lead.gstin || "" });
+      setParty({ name: lead.company || "", address: lead.address || "", state: lead.state || "", gstin: lead.gstin || "", country: lead.country || opp.country || "" });
       setBilling({ ...blankBilling, legalName: lead.company || "", billingContactName: lead.contact || "", billingContactEmail: lead.email || "", billingContactPhone: lead.phone || "" });
     }
   };
@@ -197,7 +198,7 @@ export default function HansQuoteBuilder({
   const pricedLines = useMemo(() => lines.map(l => {
     const p = catByCode[l.productCode];
     if (!p) return { ...l, _empty: true, pricingModel: "", unitPriceResolved: 0, missingRate: false };
-    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, config, fx: fxForCurrency, asOf: quoteDate, segment, currency });
+    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, config, fx: fxForCurrency, asOf: quoteDate, segment, currency, country: party.country });
     const oneTime = isOneTimeModel(p.pricingModel);
     return {
       ...l,
@@ -210,7 +211,7 @@ export default function HansQuoteBuilder({
       months: oneTime ? 1 : l.months,
       ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor }),
     };
-  }), [lines, catByCode, bands, editions, bandFrom, config, quoteDate, segment, currency, fxForCurrency]);
+  }), [lines, catByCode, bands, editions, bandFrom, config, quoteDate, segment, currency, fxForCurrency, party.country]);
 
   const summary = useMemo(() => computeQuote(
     pricedLines.filter(l => !l._empty),
@@ -454,6 +455,7 @@ export default function HansQuoteBuilder({
               <div className="form-row">
                 <div className="form-group" style={{ flex: 2 }}><label>Address<Req /></label><input value={party.address} onChange={e => setParty({ ...party, address: e.target.value })} /></div>
                 <div className="form-group" style={{ flex: 1 }}><label>GSTIN</label><input value={party.gstin} onChange={e => setParty({ ...party, gstin: e.target.value })} /></div>
+                <div className="form-group" style={{ flex: 1 }}><label>Country</label><input value={party.country} onChange={e => setParty({ ...party, country: e.target.value })} placeholder="for country pricing" title="Drives per-country band rates" /></div>
               </div>
 
               {/* Billing & tax — collapsible; auto-filled from the account */}

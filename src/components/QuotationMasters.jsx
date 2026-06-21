@@ -52,6 +52,9 @@ export default function QuotationMasters({ masters, setMasters }) {
   const [schedFor, setSchedFor] = useState(null); // {kind,key} whose rate schedule is open
   const [segFor, setSegFor] = useState(null); // product code whose segment prices are open
   const [curFor, setCurFor] = useState(null); // product code whose currency prices are open
+  const [bandProd, setBandProd] = useState(""); // Band product for per-product/country rates
+  const [bandCountry, setBandCountry] = useState("Default");
+  const [newCountry, setNewCountry] = useState("");
   const [importMsg, setImportMsg] = useState(null); // catalogue CSV import summary
   const fileRef = useRef(null);
 
@@ -91,6 +94,16 @@ export default function QuotationMasters({ masters, setMasters }) {
   const setBandRate = (band, val) => writeQ({ bands: cur.bands.map(b => b.band === band ? { ...b, ratePerUserMonth: val } : b) });
   const setEditionRate = (name, idx, val) => writeQ({ editions: cur.editions.map(e => e.name === name ? { ...e, rates: e.rates.map((r, i) => i === idx ? val : r) } : e) });
   const setBandSchedule = (band, arr) => writeQ({ bands: cur.bands.map(b => b.band === band ? { ...b, rateSchedule: arr } : b) });
+  // Per-product, per-country band rate (Phase 2d): product.bandRates =
+  // { Default: [r…], <Country>: [r…] } aligned to the band order.
+  const setProductBandRate = (code, country, idx, val) => writeQ({ catalogue: cur.catalogue.map(p => {
+    if (p.code !== code) return p;
+    const map = { ...(p.bandRates || {}) };
+    const row = Array.isArray(map[country]) ? [...map[country]] : cur.bands.map(() => null);
+    row[idx] = val;
+    map[country] = row;
+    return { ...p, bandRates: map };
+  }) });
   const setEditionSchedule = (name, arr) => writeQ({ editions: cur.editions.map(e => e.name === name ? { ...e, rateSchedule: arr } : e) });
   const setTerm = (key, text) => writeQ({ terms: cur.terms.map(t => t.key === key ? { ...t, text } : t) });
 
@@ -275,29 +288,88 @@ export default function QuotationMasters({ masters, setMasters }) {
 
       {/* ── Pricing Bands ── */}
       {sub === "bands" && (
-        <table style={{ borderCollapse: "collapse", maxWidth: 560 }}>
-          <thead>
-            <tr style={{ background: "var(--s2)", textAlign: "left" }}>
-              {["Band", "From users", "To users", "₹ / user / month", "Schedule"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {cur.bands.map(b => (
-              <tr key={b.band}>
-                <td style={cell}>{b.band}</td>
-                <td style={{ ...cell, textAlign: "right" }}>{b.fromUsers}</td>
-                <td style={{ ...cell, textAlign: "right" }}>{b.toUsers}</td>
-                <td style={cell}><input style={numInput} type="number" value={b.ratePerUserMonth ?? ""} onChange={e => setBandRate(b.band, numOrNull(e.target.value))} /></td>
-                <td style={{ ...cell, textAlign: "center" }}>
-                  <button type="button" title="Scheduled rate changes (effective-dated)" onClick={() => setSchedFor({ kind: "band", key: b.band })}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: (b.rateSchedule || []).length ? "#EFF6FF" : "transparent", color: (b.rateSchedule || []).length ? "#1E40AF" : "var(--text3)", borderRadius: 5, padding: "1px 6px", cursor: "pointer", fontSize: 10 }}>
-                    <Clock size={11} />{(b.rateSchedule || []).length || ""}
-                  </button>
-                </td>
+        <div>
+          <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6 }}>Shared band thresholds + the global default rate per band. A quote's user count picks the band; per-product / per-country rates below override the global rate.</div>
+          <table style={{ borderCollapse: "collapse", maxWidth: 560 }}>
+            <thead>
+              <tr style={{ background: "var(--s2)", textAlign: "left" }}>
+                {["Band", "From users", "To users", "₹ / user / month (global)", "Schedule"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {cur.bands.map(b => (
+                <tr key={b.band}>
+                  <td style={cell}>{b.band}</td>
+                  <td style={{ ...cell, textAlign: "right" }}>{b.fromUsers}</td>
+                  <td style={{ ...cell, textAlign: "right" }}>{b.toUsers}</td>
+                  <td style={cell}><input style={numInput} type="number" value={b.ratePerUserMonth ?? ""} onChange={e => setBandRate(b.band, numOrNull(e.target.value))} /></td>
+                  <td style={{ ...cell, textAlign: "center" }}>
+                    <button type="button" title="Scheduled rate changes (effective-dated)" onClick={() => setSchedFor({ kind: "band", key: b.band })}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: (b.rateSchedule || []).length ? "#EFF6FF" : "transparent", color: (b.rateSchedule || []).length ? "#1E40AF" : "var(--text3)", borderRadius: 5, padding: "1px 6px", cursor: "pointer", fontSize: 10 }}>
+                      <Clock size={11} />{(b.rateSchedule || []).length || ""}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Per-product / per-country band rates */}
+          {(() => {
+            const bandProducts = cur.catalogue.filter(p => p.rateSource === "Band");
+            const prod = bandProducts.find(p => p.code === bandProd);
+            const countries = ["Default", ...Object.keys(prod?.bandRates || {}).filter(k => k !== "Default" && k !== "default")];
+            return (
+              <div style={{ marginTop: 20, maxWidth: 720 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text1)", marginBottom: 4 }}>Per-product band rates (by country)</div>
+                <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 10 }}>Different Band products can have different rates, and the same product can be priced per country. A quote uses the product's row for its country, else its <b>Default</b> row, else the global rate above.</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+                  <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
+                    <label style={{ fontSize: 9 }}>Band product</label>
+                    <select value={bandProd} onChange={e => { setBandProd(e.target.value); setBandCountry("Default"); }}>
+                      <option value="">— Select a Band product —</option>
+                      {bandProducts.map(p => <option key={p.code} value={p.code}>{p.code} · {p.name}</option>)}
+                    </select>
+                  </div>
+                  {prod && (
+                    <>
+                      <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
+                        <label style={{ fontSize: 9 }}>Country</label>
+                        <select value={bandCountry} onChange={e => setBandCountry(e.target.value)}>
+                          {countries.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label style={{ fontSize: 9 }}>Add country</label>
+                        <span style={{ display: "flex", gap: 4 }}>
+                          <input value={newCountry} onChange={e => setNewCountry(e.target.value)} placeholder="e.g. UAE" style={{ width: 120 }} />
+                          <button className="btn btn-sec btn-xs" onClick={() => { const c = newCountry.trim(); if (c) { setBandCountry(c); setProductBandRate(prod.code, c, 0, prod.bandRates?.[c]?.[0] ?? null); setNewCountry(""); } }}><Plus size={12} /></button>
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {prod && (
+                  <table style={{ borderCollapse: "collapse", maxWidth: 560 }}>
+                    <thead>
+                      <tr style={{ background: "var(--s2)", textAlign: "left" }}>
+                        {["Band", `₹/user/mo · ${bandCountry}`].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cur.bands.map((b, i) => (
+                        <tr key={b.band}>
+                          <td style={cell}>{b.band}</td>
+                          <td style={cell}><input style={numInput} type="number" placeholder={`global ${b.ratePerUserMonth ?? "—"}`} value={prod.bandRates?.[bandCountry]?.[i] ?? ""} onChange={e => setProductBandRate(prod.code, bandCountry, i, numOrNull(e.target.value))} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            );
+          })()}
+        </div>
       )}
 
       {/* ── iCAFFE matrix ── */}

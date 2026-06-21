@@ -131,8 +131,18 @@ export function resolveUnitPrice(product, opts = {}) {
   let raw = null; // pre-FX resolved rate
   switch (product.rateSource) {
     case "Band": {
-      const band = bands.find((b) => qty >= num(b.fromUsers) && qty <= num(b.toUsers));
-      const r = band ? effectiveBandRate(band, opts.asOf) : null;
+      const bandIdx = bands.findIndex((b) => qty >= num(b.fromUsers) && qty <= num(b.toUsers));
+      const band = bands[bandIdx];
+      // Per-product, per-country band rates win (Phase 2d): product.bandRates
+      // is { Default: [r…], <Country>: [r…] } aligned to the band order.
+      // Fall back to the shared (date-effective) global band rate.
+      let r = null;
+      const pr = product.bandRates;
+      if (pr && bandIdx >= 0) {
+        const row = pr[opts.country] || pr.Default || pr.default;
+        if (Array.isArray(row) && row[bandIdx] != null) r = num(row[bandIdx]);
+      }
+      if (r == null) r = band ? effectiveBandRate(band, opts.asOf) : null;
       raw = r != null ? num(r) : null;
       break;
     }
