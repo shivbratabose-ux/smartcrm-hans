@@ -73,8 +73,10 @@ export function resolveQuotationMasters(masters) {
   };
 }
 
-const cell = { padding: "5px 7px", border: "1px solid var(--border)", fontSize: 12 };
-const numInput = { width: "100%", border: "none", background: "transparent", fontSize: 12, textAlign: "right", fontFamily: "'Outfit',sans-serif" };
+// Match the app's .tbl tables (row-separated, not full-grid borders) and its
+// bordered form inputs, so the masters editors look native to the app.
+const cell = { padding: "8px 12px", borderBottom: "1px solid var(--border)", fontSize: 12.5, verticalAlign: "middle" };
+const numInput = { width: "100%", border: "1.5px solid var(--border)", borderRadius: 6, background: "white", fontSize: 12, padding: "5px 7px", textAlign: "right", fontFamily: "'Outfit',sans-serif", outline: "none", boxSizing: "border-box" };
 
 export default function QuotationMasters({ masters, setMasters }) {
   const cur = resolveQuotationMasters(masters);
