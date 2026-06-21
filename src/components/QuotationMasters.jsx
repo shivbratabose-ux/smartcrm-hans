@@ -12,10 +12,10 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { useState } from "react";
-import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X, Tag } from "lucide-react";
 import {
   QUOTE_CONFIG, HANS_CATALOGUE, PRICING_BANDS, ICAFFE_EDITIONS,
-  ICAFFE_BAND_LABELS, QUOTE_TERMS,
+  ICAFFE_BAND_LABELS, QUOTE_TERMS, QUOTE_SEGMENTS,
 } from "../data/quotationMasters";
 import { validateCcsRule } from "../lib/quotation/pricingEngine";
 
@@ -37,7 +37,8 @@ const numInput = { width: "100%", border: "none", background: "transparent", fon
 export default function QuotationMasters({ masters, setMasters }) {
   const cur = resolveQuotationMasters(masters);
   const [sub, setSub] = useState("config");
-  const [schedFor, setSchedFor] = useState(null); // product code whose rate schedule is open
+  const [schedFor, setSchedFor] = useState(null); // {kind,key} whose rate schedule is open
+  const [segFor, setSegFor] = useState(null); // product code whose segment prices are open
 
   // Write a slice back into masters.quotation (merging with current resolved set).
   const writeQ = (patch) => setMasters(m => ({ ...m, quotation: { ...cur, ...(m?.quotation || {}), ...patch } }));
@@ -186,6 +187,12 @@ export default function QuotationMasters({ masters, setMasters }) {
                               style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: (p.rateSchedule || []).length ? "#EFF6FF" : "transparent", color: (p.rateSchedule || []).length ? "#1E40AF" : "var(--text3)", borderRadius: 5, padding: "1px 5px", cursor: "pointer", fontSize: 10, flexShrink: 0 }}>
                               <Clock size={11} />{(p.rateSchedule || []).length || ""}
                             </button>
+                            {(() => { const n = Object.values(p.segmentPrices || {}).filter(v => v != null).length; return (
+                              <button type="button" title="Segment price overrides" onClick={() => setSegFor(p.code)}
+                                style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: n ? "#F0FDFA" : "transparent", color: n ? "#0D9488" : "var(--text3)", borderRadius: 5, padding: "1px 5px", cursor: "pointer", fontSize: 10, flexShrink: 0 }}>
+                                <Tag size={11} />{n || ""}
+                              </button>
+                            ); })()}
                           </span>
                         : <span style={{ color: "var(--text3)", fontSize: 11 }}>— {p.rateSource} —</span>}
                     </td>
@@ -340,6 +347,40 @@ export default function QuotationMasters({ masters, setMasters }) {
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", padding: 12, borderTop: "1px solid var(--border)" }}>
                 <button className="btn btn-primary btn-xs" onClick={() => setSchedFor(null)}>Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Segment price overrides (segment price lists · Phase 2b) ── */}
+      {segFor && (() => {
+        const p = cur.catalogue.find(x => x.code === segFor);
+        if (!p) return null;
+        const segMap = p.segmentPrices || {};
+        const setSeg = (seg, val) => setCatRow(p.code, "segmentPrices", { ...segMap, [seg]: val });
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSegFor(null)}>
+            <div style={{ width: 420, maxWidth: "94vw", background: "var(--surface)", borderRadius: 12, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}><Tag size={15} /> Segment prices · {p.code} {p.name}</div>
+                <button className="icon-btn" onClick={() => setSegFor(null)}><X size={16} /></button>
+              </div>
+              <div style={{ padding: 16 }}>
+                <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 10 }}>
+                  A quote prices by its customer segment. Leave a segment blank to fall back to the base list price.
+                </div>
+                {QUOTE_SEGMENTS.map(seg => (
+                  <div key={seg} className="form-group" style={{ marginBottom: 8 }}>
+                    <label>{seg}{seg === "Commercial" ? " (base list price)" : ""}</label>
+                    {seg === "Commercial"
+                      ? <input type="number" value={p.listPrice ?? ""} onChange={e => setCatRow(p.code, "listPrice", e.target.value === "" ? null : Number(e.target.value))} />
+                      : <input type="number" placeholder="— base —" value={segMap[seg] ?? ""} onChange={e => setSeg(seg, e.target.value === "" ? null : Number(e.target.value))} />}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", padding: 12, borderTop: "1px solid var(--border)" }}>
+                <button className="btn btn-primary btn-xs" onClick={() => setSegFor(null)}>Done</button>
               </div>
             </div>
           </div>

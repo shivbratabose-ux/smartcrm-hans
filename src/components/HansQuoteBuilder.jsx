@@ -17,7 +17,7 @@ import { useState, useMemo } from "react";
 import { Plus, Trash2, X, AlertTriangle, Check, Info } from "lucide-react";
 import {
   QUOTE_CONFIG, HANS_CATALOGUE, PRICING_BANDS, ICAFFE_EDITIONS,
-  ICAFFE_BAND_FROM, ICAFFE_PLANS, QUOTE_TERMS, BILLING_FREQUENCIES,
+  ICAFFE_BAND_FROM, ICAFFE_PLANS, QUOTE_TERMS, BILLING_FREQUENCIES, QUOTE_SEGMENTS,
 } from "../data/quotationMasters";
 import {
   resolveUnitPrice, computeLine, computeQuote, isOneTimeModel,
@@ -57,6 +57,7 @@ export default function HansQuoteBuilder({
   const [currency, setCurrency] = useState(eh?.currency || "INR");
   const [billingFrequency, setBillingFrequency] = useState(eh?.billingFrequency || editQuote?.billingFrequency || "Monthly");
   const [selectedPlan, setSelectedPlan] = useState(eh?.plan || "");
+  const [segment, setSegment] = useState(eh?.segment || editQuote?.segment || "Commercial");
   const [overallDiscountPct, setOverallDiscountPct] = useState(eh?.overallDiscountPct || 0);
   const [prepaymentApplicable, setPrepaymentApplicable] = useState(!!eh?.prepaymentApplicable);
   const [prepaymentDiscountPct, setPrepaymentDiscountPct] = useState(eh?.prepaymentDiscountPct ?? config.prepaymentDiscountPctDefault);
@@ -106,6 +107,8 @@ export default function HansQuoteBuilder({
     if (!opp) { setParty({ name: "", address: "", state: "", gstin: "" }); setBilling({ ...blankBilling }); return; }
     const acc = accounts.find(a => a.id === opp.accountId);
     const lead = leads.find(l => l.id === opp.sourceLeadId || (Array.isArray(opp.sourceLeadIds) && opp.sourceLeadIds.includes(l.id)));
+    // Inherit the customer segment when it matches a known quote segment.
+    if (acc && QUOTE_SEGMENTS.includes(acc.segment)) setSegment(acc.segment);
     if (acc) {
       setParty({
         name: acc.legalName || acc.name || "",
@@ -191,7 +194,7 @@ export default function HansQuoteBuilder({
   const pricedLines = useMemo(() => lines.map(l => {
     const p = catByCode[l.productCode];
     if (!p) return { ...l, _empty: true, pricingModel: "", unitPriceResolved: 0, missingRate: false };
-    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, config, fx: config.fx, asOf: quoteDate });
+    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, config, fx: config.fx, asOf: quoteDate, segment });
     const oneTime = isOneTimeModel(p.pricingModel);
     return {
       ...l,
@@ -204,7 +207,7 @@ export default function HansQuoteBuilder({
       months: oneTime ? 1 : l.months,
       ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor }),
     };
-  }), [lines, catByCode, bands, editions, bandFrom, config, quoteDate]);
+  }), [lines, catByCode, bands, editions, bandFrom, config, quoteDate, segment]);
 
   const summary = useMemo(() => computeQuote(
     pricedLines.filter(l => !l._empty),
@@ -289,6 +292,7 @@ export default function HansQuoteBuilder({
       tcv: round2(summary.tcv),
       intraState: summary.intraState,
       billingFrequency, // invoicing cadence (Monthly / Quarterly / …)
+      segment, // customer segment driving segment price lists
       plan: selectedPlan, // chosen iCAFFE plan preset (for re-seed on edit)
       terms: QUOTE_TERMS,
       termsText, // the rep's edited T&C (rendered by print)
@@ -330,6 +334,7 @@ export default function HansQuoteBuilder({
       total: +(summary.grandTotal / 1e5).toFixed(2),
       currency, notes, preparedBy: me?.name || currentUser,
       billingFrequency, // invoicing cadence — also lives in hans for print
+      segment, // also in hans
       owner: isEdit ? (editQuote.owner || currentUser) : currentUser,
       createdDate: isEdit ? (editQuote.createdDate || today()) : today(),
       terms: termsText, // legacy/register/verify read quote.terms
@@ -424,6 +429,12 @@ export default function HansQuoteBuilder({
                   <select value={oppId} onChange={e => onPickOpp(e.target.value)}>
                     <option value="">— Select opportunity —</option>
                     {opps.map(o => <option key={o.id} value={o.id}>{o.title || o.name || o.id}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ width: 150 }}>
+                  <label>Segment</label>
+                  <select value={segment} onChange={e => setSegment(e.target.value)} title="Drives segment price lists">
+                    {QUOTE_SEGMENTS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div className="form-group" style={{ width: 110 }}>
