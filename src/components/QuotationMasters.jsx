@@ -51,6 +51,34 @@ export default function QuotationMasters({ masters, setMasters }) {
 
   const numOrNull = (v) => v === "" ? null : Number(v);
 
+  // ── Masters health / coverage — surface the gaps centrally instead of
+  //    only discovering them when a rep builds a quote. ──
+  // A Flat product with listPrice === 0 is a deliberate "inclusive / at
+  // actuals" rate, not a gap. Band/iCAFFE products price from their own tabs.
+  const flatActive = cur.catalogue.filter(p => p.rateSource === "Flat" && p.active !== false);
+  const flatMissing = flatActive.filter(p => p.listPrice == null);
+  const bandsTotal = cur.bands.length;
+  const bandsFilled = cur.bands.filter(b => b.ratePerUserMonth != null).length;
+  const usesBand = cur.catalogue.some(p => p.rateSource === "Band" && p.active !== false);
+  const icaffeCells = cur.editions.reduce((s, e) => s + e.rates.length, 0);
+  const icaffeFilled = cur.editions.reduce((s, e) => s + e.rates.filter(r => r != null).length, 0);
+  // Per-product coverage status (drives the catalogue Status chips).
+  const rowStatus = (p) => {
+    if (p.rateSource === "Band") return usesBand && bandsFilled < bandsTotal ? { label: "Needs bands", c: "#B45309", bg: "#FFFBEB" } : { label: "From bands", c: "#1E40AF", bg: "#EFF6FF" };
+    if (p.rateSource === "iCAFFE") return icaffeFilled < icaffeCells ? { label: "Rate card gaps", c: "#B45309", bg: "#FFFBEB" } : { label: "From rate card", c: "#1E40AF", bg: "#EFF6FF" };
+    if (p.listPrice == null) return { label: "Rate missing", c: "#B91C1C", bg: "#FEF2F2" };
+    if (Number(p.listPrice) === 0) return { label: "Inclusive", c: "#64748B", bg: "#F1F5F9" };
+    return { label: "Priced", c: "#15803D", bg: "#F0FDF4" };
+  };
+  const healthChip = (label, ok, detail, tab) => (
+    <button type="button" onClick={() => tab && setSub(tab)} title={tab ? "Go to tab" : ""}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 8, border: `1px solid ${ok ? "#A7F3D0" : "#FDE68A"}`, background: ok ? "#F0FDF4" : "#FFFBEB", cursor: tab ? "pointer" : "default", fontSize: 11.5 }}>
+      <span style={{ width: 8, height: 8, borderRadius: "50%", background: ok ? "#22C55E" : "#F59E0B" }} />
+      <span style={{ fontWeight: 700, color: "var(--text2)" }}>{label}</span>
+      <span style={{ color: "var(--text3)" }}>{detail}</span>
+    </button>
+  );
+
   const SUBS = [
     { id: "config", label: "Config" },
     { id: "catalogue", label: "Catalogue rates" },
@@ -71,6 +99,21 @@ export default function QuotationMasters({ masters, setMasters }) {
           <RotateCcw size={12} /> Reset to defaults
         </button>
       </div>
+
+      {/* ── Masters health / coverage strip ── */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12, alignItems: "center" }}>
+        <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text3)" }}>Pricing coverage</span>
+        {healthChip("Catalogue", flatMissing.length === 0, `${flatActive.length - flatMissing.length}/${flatActive.length} flat rates`, "catalogue")}
+        {healthChip("Pricing bands", !usesBand || bandsFilled === bandsTotal, `${bandsFilled}/${bandsTotal} filled`, "bands")}
+        {healthChip("iCAFFE rate card", icaffeFilled === icaffeCells, `${icaffeFilled}/${icaffeCells} cells`, "icaffe")}
+        {healthChip("CC03 > CC04", ccs.ok, ccs.ok ? "valid" : "invalid", "catalogue")}
+      </div>
+
+      {flatMissing.length > 0 && sub !== "catalogue" && (
+        <div style={{ fontSize: 12, color: "#B45309", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
+          {flatMissing.length} product{flatMissing.length > 1 ? "s" : ""} need a list price before they can be quoted (e.g. {flatMissing.slice(0, 3).map(p => p.code).join(", ")}{flatMissing.length > 3 ? "…" : ""}). <button type="button" onClick={() => setSub("catalogue")} style={{ background: "none", border: "none", color: "var(--brand)", fontWeight: 700, cursor: "pointer", padding: 0 }}>Open Catalogue rates →</button>
+        </div>
+      )}
 
       {!ccs.ok && (
         <div style={{ display: "flex", gap: 6, alignItems: "center", background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FCA5A5", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, marginBottom: 12 }}>
@@ -115,13 +158,15 @@ export default function QuotationMasters({ masters, setMasters }) {
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 760 }}>
             <thead>
               <tr style={{ background: "var(--s2)", textAlign: "left" }}>
-                {["Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Floor/mo (₹)", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
+                {["Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Floor/mo (₹)", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {cur.catalogue.map(p => {
                 const editablePrice = p.rateSource === "Flat";
                 const ccRow = (p.code === "CC03" || p.code === "CC04") && !ccs.ok;
+                const st = rowStatus(p);
+                const priceMissing = editablePrice && p.listPrice == null && p.active !== false;
                 return (
                   <tr key={p.code} style={{ background: ccRow ? "#FEF2F2" : "transparent" }}>
                     <td style={{ ...cell, fontFamily: "monospace", fontWeight: 700 }}>{p.code}</td>
@@ -129,13 +174,16 @@ export default function QuotationMasters({ masters, setMasters }) {
                     <td style={{ ...cell, color: "var(--text3)" }}>{p.pricingModel}</td>
                     <td style={{ ...cell, color: "var(--text3)" }}>{p.unit}</td>
                     <td style={{ ...cell, color: "var(--text3)" }}>{p.rateSource}</td>
-                    <td style={cell}>
+                    <td style={{ ...cell, ...(priceMissing ? { background: "#FEF2F2", boxShadow: "inset 0 0 0 1px #FCA5A5" } : {}) }}>
                       {editablePrice
-                        ? <input style={numInput} type="number" value={p.listPrice ?? ""} onChange={e => setCatRow(p.code, "listPrice", numOrNull(e.target.value))} />
+                        ? <input style={numInput} type="number" placeholder={priceMissing ? "enter rate" : ""} value={p.listPrice ?? ""} onChange={e => setCatRow(p.code, "listPrice", numOrNull(e.target.value))} />
                         : <span style={{ color: "var(--text3)", fontSize: 11 }}>— {p.rateSource} —</span>}
                     </td>
                     <td style={cell}>
                       <input style={numInput} type="number" value={p.minMonthFloor ?? ""} onChange={e => setCatRow(p.code, "minMonthFloor", numOrNull(e.target.value))} />
+                    </td>
+                    <td style={cell}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, color: st.c, background: st.bg, whiteSpace: "nowrap" }}>{st.label}</span>
                     </td>
                     <td style={{ ...cell, textAlign: "center" }}>
                       <input type="checkbox" checked={p.active !== false} onChange={e => setCatRow(p.code, "active", e.target.checked)} />
