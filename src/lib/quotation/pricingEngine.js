@@ -59,6 +59,29 @@ export function icaffeBandIndex(qty, bandFrom = ICAFFE_BAND_FROM) {
 }
 
 /**
+ * Tier/column index for a generic rate card, given that card's own `from`
+ * thresholds (Phase 2e+: per-card custom columns). Unlike icaffeBandIndex
+ * this does NOT assume the thresholds are sorted ascending — it picks the
+ * column with the greatest `from` ≤ qty, and falls back to the lowest-`from`
+ * column when qty is below every threshold. This lets admins reorder /
+ * rename tiers freely without breaking pricing.
+ */
+export function cardBandIndex(qty, fromArr = []) {
+  const q = num(qty);
+  if (!Array.isArray(fromArr) || fromArr.length === 0) return 0;
+  let idx = -1, best = -Infinity;
+  for (let i = 0; i < fromArr.length; i++) {
+    const f = num(fromArr[i]);
+    if (f <= q && f > best) { best = f; idx = i; }
+  }
+  if (idx === -1) { // qty below all thresholds → the lowest tier
+    let min = Infinity;
+    for (let i = 0; i < fromArr.length; i++) { const f = num(fromArr[i]); if (f < min) { min = f; idx = i; } }
+  }
+  return idx < 0 ? 0 : idx;
+}
+
+/**
  * Generic effective-dated picker (roadmap Phase 2a). From a `rateSchedule`
  * array of { effectiveFrom, [valueKey] } (ISO YYYY-MM-DD), return the value
  * of the latest entry whose effectiveFrom ≤ asOf, or `undefined` if none
@@ -127,7 +150,12 @@ export function resolveUnitPrice(product, opts = {}) {
   // for the qty's user band, per country (→ Default), then /fx.
   if (product.matrixId) {
     const card = (opts.rateCards || []).find((c) => c.id === product.matrixId);
-    const idx = icaffeBandIndex(qty, bandFrom);
+    // Each card may define its own columns/tiers (card.bands = [{label, from}]).
+    // Fall back to the shared iCAFFE thresholds for legacy cards without them.
+    const fromArr = card && Array.isArray(card.bands) && card.bands.length
+      ? card.bands.map((b) => num(b.from))
+      : bandFrom;
+    const idx = cardBandIndex(qty, fromArr);
     const ctryObj = card && opts.country ? card.rates?.[opts.country] : null;
     const defObj = card && (card.rates?.Default || card.rates?.default);
     // Country row → its Default row (per-row fallback) → missing.
