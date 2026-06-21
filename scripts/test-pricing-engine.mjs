@@ -5,7 +5,7 @@
 import {
   resolveUnitPrice, computeLine, computeQuote, computeGst,
   evaluateDiscountGuardrail, evaluateMarginGuardrail, lineMargin, validateCcsRule, validateWiseHandlingModules,
-  formatQuoteNumber, fiscalYearSuffix,
+  formatQuoteNumber, fiscalYearSuffix, effectiveListPrice,
 } from "../src/lib/quotation/pricingEngine.js";
 import { HANS_CATALOGUE } from "../src/data/quotationMasters.js";
 
@@ -86,6 +86,23 @@ console.log("§11.7 Discount guardrail");
   check("line disc 15% (policy 10%) → breached", g.breached, true);
   const ok = evaluateDiscountGuardrail([{ discountPct: 10 }], {});
   check("line disc 10% (== policy) → not breached", ok.breached, false);
+}
+
+console.log("Effective-dated rates (Phase 2a)");
+{
+  const base = { rateSource: "Flat", listPrice: 1000 };
+  check("no schedule → base price", effectiveListPrice(base, "2026-06-21"), 1000);
+  check("no asOf → base price", effectiveListPrice({ ...base, rateSchedule: [{ effectiveFrom: "2026-01-01", listPrice: 1200 }] }, null), 1000);
+  const sched = { rateSource: "Flat", listPrice: 1000, rateSchedule: [
+    { effectiveFrom: "2026-04-01", listPrice: 1100 },
+    { effectiveFrom: "2026-09-01", listPrice: 1300 },
+  ] };
+  check("before first schedule → base", effectiveListPrice(sched, "2026-03-31"), 1000);
+  check("on/after first schedule → 1100", effectiveListPrice(sched, "2026-06-21"), 1100);
+  check("after second schedule → 1300", effectiveListPrice(sched, "2026-10-01"), 1300);
+  // resolveUnitPrice threads asOf for Flat products (fx=1)
+  const r = resolveUnitPrice(sched, { qty: 1, asOf: "2026-09-15" });
+  check("resolveUnitPrice picks scheduled 1300", r.unitPrice, 1300);
 }
 
 console.log("Margin floor guardrail (Phase 3a)");

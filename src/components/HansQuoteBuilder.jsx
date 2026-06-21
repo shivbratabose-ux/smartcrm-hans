@@ -183,12 +183,15 @@ export default function HansQuoteBuilder({
   const removeLine = (i) => setLines(ls => ls.filter((_, idx) => idx !== i));
   const updateLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
 
+  // The quote date drives effective-dated (scheduled) rates — an edited
+  // quote keeps its original date; a new one prices as of today.
+  const quoteDate = editQuote?.createdDate || today();
   // Enrich each line with its catalogue snapshot + resolved unit price,
   // shaped exactly as the engine expects.
   const pricedLines = useMemo(() => lines.map(l => {
     const p = catByCode[l.productCode];
     if (!p) return { ...l, _empty: true, pricingModel: "", unitPriceResolved: 0, missingRate: false };
-    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, config, fx: config.fx });
+    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, config, fx: config.fx, asOf: quoteDate });
     const oneTime = isOneTimeModel(p.pricingModel);
     return {
       ...l,
@@ -201,7 +204,7 @@ export default function HansQuoteBuilder({
       months: oneTime ? 1 : l.months,
       ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor }),
     };
-  }), [lines, catByCode, bands, editions, bandFrom, config]);
+  }), [lines, catByCode, bands, editions, bandFrom, config, quoteDate]);
 
   const summary = useMemo(() => computeQuote(
     pricedLines.filter(l => !l._empty),

@@ -59,13 +59,31 @@ export function icaffeBandIndex(qty, bandFrom = ICAFFE_BAND_FROM) {
 }
 
 /**
+ * Effective Flat list price for a product as of a date (roadmap Phase 2a).
+ * `product.rateSchedule` is an optional array of { effectiveFrom, listPrice }
+ * (ISO YYYY-MM-DD). The price on `asOf` is the latest schedule entry whose
+ * effectiveFrom ≤ asOf; if none applies (or no schedule / no asOf), the base
+ * `listPrice` is used. Additive: products without a schedule are unchanged.
+ */
+export function effectiveListPrice(product, asOf) {
+  const base = product && product.listPrice != null ? num(product.listPrice) : null;
+  const sched = Array.isArray(product?.rateSchedule) ? product.rateSchedule : [];
+  if (!sched.length || !asOf) return base;
+  const eligible = sched
+    .filter((s) => s && s.effectiveFrom && s.listPrice != null && String(s.effectiveFrom) <= String(asOf))
+    .sort((a, b) => (String(a.effectiveFrom) < String(b.effectiveFrom) ? -1 : 1));
+  return eligible.length ? num(eligible[eligible.length - 1].listPrice) : base;
+}
+
+/**
  * Resolve a per-unit price for a catalogue product at a given quantity.
  * Returns { unitPrice, missingRate }. `missingRate` is true when a priced
  * model resolves to a blank/0 rate, so the UI can flag "enter rate in
  * master" rather than silently producing 0 (brief §9).
  *
  * @param {object} product  catalogue row (rateSource, listPrice, name…)
- * @param {object} opts     { qty, bands, editions, bandFrom, fx, config }
+ * @param {object} opts     { qty, bands, editions, bandFrom, fx, config, asOf }
+ *                          `asOf` (ISO date) selects the effective Flat rate.
  */
 export function resolveUnitPrice(product, opts = {}) {
   if (!product) return { unitPrice: 0, missingRate: true };
@@ -93,13 +111,14 @@ export function resolveUnitPrice(product, opts = {}) {
     }
     case "Flat":
     default:
-      raw = product.listPrice != null ? num(product.listPrice) : null;
+      // Effective-dated when a rateSchedule is present; else the base price.
+      raw = effectiveListPrice(product, opts.asOf);
       break;
   }
 
-  // An explicitly-zero list price (e.g. WiseHandling Inclusive / "at
-  // actuals" modules) is a deliberate 0, not a missing rate.
-  const explicitZero = product.rateSource !== "iCAFFE" && product.rateSource !== "Band" && product.listPrice === 0;
+  // An explicitly-zero rate (e.g. WiseHandling Inclusive / "at actuals"
+  // modules) is a deliberate 0, not a missing rate.
+  const explicitZero = product.rateSource !== "iCAFFE" && product.rateSource !== "Band" && raw === 0;
   if (raw == null && !explicitZero) {
     return { unitPrice: 0, missingRate: true };
   }
