@@ -130,6 +130,7 @@ export default function QuotationMasters({ masters, setMasters }) {
             ["maxUserDiscountPct", "Max discount % (approval)", "number"],
             ["alrPctOfLicence", "ALR % of licence", "number"],
             ["prepaymentDiscountPctDefault", "Default prepayment %", "number"],
+            ["minMarginPct", "Min margin % (0 = off)", "number"],
             ["fx", "FX to INR (divisor)", "number"],
           ].map(([k, label, type]) => (
             <div className="form-group" key={k}>
@@ -158,7 +159,7 @@ export default function QuotationMasters({ masters, setMasters }) {
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 760 }}>
             <thead>
               <tr style={{ background: "var(--s2)", textAlign: "left" }}>
-                {["Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Floor/mo (₹)", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
+                {["Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Cost (₹)", "Floor/mo (₹)", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -178,6 +179,9 @@ export default function QuotationMasters({ masters, setMasters }) {
                       {editablePrice
                         ? <input style={numInput} type="number" placeholder={priceMissing ? "enter rate" : ""} value={p.listPrice ?? ""} onChange={e => setCatRow(p.code, "listPrice", numOrNull(e.target.value))} />
                         : <span style={{ color: "var(--text3)", fontSize: 11 }}>— {p.rateSource} —</span>}
+                    </td>
+                    <td style={cell}>
+                      <input style={numInput} type="number" placeholder="—" title="Per-unit cost — drives the margin guardrail" value={p.costPrice ?? ""} onChange={e => setCatRow(p.code, "costPrice", numOrNull(e.target.value))} />
                     </td>
                     <td style={cell}>
                       <input style={numInput} type="number" value={p.minMonthFloor ?? ""} onChange={e => setCatRow(p.code, "minMonthFloor", numOrNull(e.target.value))} />

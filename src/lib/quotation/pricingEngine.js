@@ -220,6 +220,42 @@ export function evaluateDiscountGuardrail(lines = [], header = {}, config = QUOT
 }
 
 /**
+ * Gross margin % for a line, after its line discount, given a per-unit cost.
+ * Returns null when no cost is set (can't assess) or the price is non-positive.
+ */
+export function lineMargin(unitPrice, costPerUnit, discountPct = 0) {
+  const up = num(unitPrice) * (1 - num(discountPct) / 100);
+  const c = num(costPerUnit);
+  if (!(up > 0) || !(c > 0)) return null;
+  return ((up - c) / up) * 100;
+}
+
+/**
+ * Margin-floor guardrail (roadmap Phase 3a). Flags any line whose post-
+ * discount gross margin falls below Config.minMarginPct. Off (never
+ * breaches) when minMarginPct is 0/unset or a line has no cost — so it's
+ * additive and changes nothing until costs + a floor are configured.
+ *
+ * @param {Array} lines  each may carry { productCode, unitPriceResolved,
+ *                        costPerUnit, discountPct }
+ */
+export function evaluateMarginGuardrail(lines = [], config = QUOTE_CONFIG) {
+  const min = num(config.minMarginPct);
+  if (!(min > 0)) return { breached: false, min: 0, reasons: [], lines: [] };
+  const flagged = [];
+  for (const l of lines) {
+    const m = lineMargin(l.unitPriceResolved, l.costPerUnit, l.discountPct);
+    if (m != null && m < min) flagged.push({ code: l.productCode, margin: +m.toFixed(1) });
+  }
+  return {
+    breached: flagged.length > 0,
+    min,
+    lines: flagged,
+    reasons: flagged.map((f) => `${f.code || "line"} margin ${f.margin}% < floor ${min}%`),
+  };
+}
+
+/**
  * CC03 unit price must be strictly greater than CC04 (brief §9). Returns
  * { ok, error } — hard-block in admin save, warn on a quote using both.
  */

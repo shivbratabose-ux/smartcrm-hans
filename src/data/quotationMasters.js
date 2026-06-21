@@ -33,6 +33,10 @@ export const QUOTE_CONFIG = {
   ],
   gstRateOptions: [0, 5, 12, 18, 28],
   validityDays: 30,
+  // Margin-floor guardrail (roadmap Phase 3a). 0 = off; set e.g. 20 to flag
+  // any line whose post-discount gross margin (vs the product's cost) drops
+  // below it. Only acts when products also have a cost set.
+  minMarginPct: 0,
   quoteNumberPrefix: "SQ/M",
   quoteNumberSeqWidth: 6,
 };

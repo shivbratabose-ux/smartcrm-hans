@@ -21,7 +21,7 @@ import {
 } from "../data/quotationMasters";
 import {
   resolveUnitPrice, computeLine, computeQuote, isOneTimeModel,
-  evaluateDiscountGuardrail, validateCcsRule, validateWiseHandlingModules,
+  evaluateDiscountGuardrail, evaluateMarginGuardrail, validateCcsRule, validateWiseHandlingModules,
   formatQuoteNumber,
 } from "../lib/quotation/pricingEngine";
 import { TC_TEMPLATES, STANDARD_TERMS } from "../data/constants";
@@ -195,6 +195,9 @@ export default function HansQuoteBuilder({
       productCode: p.code, name: p.name, module: p.module, description: p.description,
       pricingModel: p.pricingModel, unit: p.unit, minMonthFloor: p.minMonthFloor,
       unitPriceResolved: unitPrice, missingRate,
+      // Per-unit cost (same scale as the resolved unit price) for the margin
+      // guardrail — only present when the product has a cost in masters.
+      costPerUnit: p.costPrice != null ? (Number(p.costPrice) || 0) / (Number(config.fx) || 1) : null,
       months: oneTime ? 1 : l.months,
       ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor }),
     };
@@ -208,12 +211,13 @@ export default function HansQuoteBuilder({
 
   // ── Guardrails ──────────────────────────────────────────────────────
   const discGuard = evaluateDiscountGuardrail(pricedLines, { overallDiscountPct }, config);
+  const marginGuard = evaluateMarginGuardrail(pricedLines, config);
   const usedCatalogueForCcs = catalogue; // CC03/CC04 validated against the active rate card
   const ccsRule = validateCcsRule(usedCatalogueForCcs);
   const usesBothCcs = pricedLines.some(l => l.productCode === "CC03") && pricedLines.some(l => l.productCode === "CC04");
   const whRule = validateWiseHandlingModules(pricedLines);
   const missingRateLines = pricedLines.filter(l => l.missingRate);
-  const needsApproval = discGuard.breached;
+  const needsApproval = discGuard.breached || marginGuard.breached;
 
   // ── Save ────────────────────────────────────────────────────────────
   const canSave = oppId && party.name && pricedLines.some(l => !l._empty) && missingRateLines.length === 0;
@@ -585,7 +589,7 @@ export default function HansQuoteBuilder({
 
               {/* Guardrail banners */}
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                {needsApproval && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={`Approval required — ${discGuard.reasons.join("; ")}`} />}
+                {needsApproval && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={`Approval required — ${[...discGuard.reasons, ...marginGuard.reasons].join("; ")}`} />}
                 {!ccsRule.ok && <Banner color="#B91C1C" bg="#FEF2F2" icon={<AlertTriangle size={14} />} text={ccsRule.error} />}
                 {ccsRule.ok && usesBothCcs && <Banner color="#B45309" bg="#FFFBEB" icon={<Info size={14} />} text="Quote uses both CC03 and CC04 — confirm CC03 is priced above CC04." />}
                 {whRule.warning && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={whRule.warning} />}
