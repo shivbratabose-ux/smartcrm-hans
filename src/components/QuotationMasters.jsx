@@ -31,12 +31,36 @@ const CATALOGUE_CSV_COLS = [
   { key: "active", label: "Active", accessor: p => p.active !== false },
 ];
 
+// Admin-editable fields overlaid from a saved catalogue row onto the seed
+// structure. Structural fields (name, module, pricingModel, unit, rateSource)
+// always come from the seed/code, so new products and rate-source changes
+// ship without an admin reset; entered rates/overrides are preserved.
+const CATALOGUE_OVERLAY_FIELDS = [
+  "listPrice", "costPrice", "minMonthFloor", "active", "notes",
+  "rateSchedule", "segmentPrices", "currencyPrices", "bandRates",
+];
+
+// Merge a saved catalogue onto the seed: seed = structure, saved = rates.
+function mergeCatalogue(saved) {
+  const savedByCode = new Map((saved || []).map(p => [p.code, p]));
+  const merged = HANS_CATALOGUE.map(seed => {
+    const sv = savedByCode.get(seed.code);
+    if (!sv) return seed;
+    const out = { ...seed };
+    for (const f of CATALOGUE_OVERLAY_FIELDS) if (f in sv) out[f] = sv[f];
+    return out;
+  });
+  // Keep any saved-only custom products not in the seed (future-proof).
+  (saved || []).forEach(sv => { if (!HANS_CATALOGUE.some(s => s.code === sv.code)) merged.push(sv); });
+  return merged;
+}
+
 // Resolve current masters with seeded fallbacks.
 export function resolveQuotationMasters(masters) {
   const qm = (masters && masters.quotation) || {};
   return {
     quoteConfig: { ...QUOTE_CONFIG, ...(qm.quoteConfig || {}) },
-    catalogue: qm.catalogue && qm.catalogue.length ? qm.catalogue : HANS_CATALOGUE,
+    catalogue: mergeCatalogue(qm.catalogue),
     bands: qm.bands && qm.bands.length ? qm.bands : PRICING_BANDS,
     editions: qm.editions && qm.editions.length ? qm.editions : ICAFFE_EDITIONS,
     terms: qm.terms && qm.terms.length ? qm.terms : QUOTE_TERMS,
