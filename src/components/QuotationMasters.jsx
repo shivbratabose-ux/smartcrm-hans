@@ -218,7 +218,7 @@ export default function QuotationMasters({ masters, setMasters }) {
 
   const SUBS = [
     { id: "config", label: "Config" },
-    { id: "catalogue", label: "Catalogue rates" },
+    { id: "catalogue", label: "Product rates" },
     { id: "bands", label: "Pricing Bands" },
     { id: "icaffe", label: "iCAFFE Rate Card" },
     { id: "ratecards", label: "Rate Cards" },
@@ -227,13 +227,20 @@ export default function QuotationMasters({ masters, setMasters }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", gap: 6 }}>
+      {/* Secondary (underline) tabs — visually subordinate to the top group
+          tabs so the two rows don't read as duplicate tab bars. */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", gap: 8, borderBottom: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", gap: 2 }}>
           {SUBS.map(s => (
-            <button key={s.id} className={`btn btn-xs ${sub === s.id ? "btn-primary" : "btn-sec"}`} onClick={() => setSub(s.id)}>{s.label}</button>
+            <button key={s.id} onClick={() => setSub(s.id)}
+              style={{ padding: "8px 14px", fontSize: 12.5, fontWeight: sub === s.id ? 700 : 500, cursor: "pointer", background: "none", border: "none",
+                color: sub === s.id ? "var(--brand)" : "var(--text3)",
+                borderBottom: sub === s.id ? "2px solid var(--brand)" : "2px solid transparent" }}>
+              {s.label}
+            </button>
           ))}
         </div>
-        <button className="btn btn-sec btn-xs" onClick={() => { if (window.confirm("Reset quotation masters to the workbook defaults?")) setMasters(m => ({ ...m, quotation: undefined })); }}>
+        <button className="btn btn-sec btn-xs" style={{ marginBottom: 6 }} onClick={() => { if (window.confirm("Reset quotation masters to the workbook defaults?")) setMasters(m => ({ ...m, quotation: undefined })); }}>
           <RotateCcw size={12} /> Reset to defaults
         </button>
       </div>
@@ -249,7 +256,7 @@ export default function QuotationMasters({ masters, setMasters }) {
 
       {flatMissing.length > 0 && sub !== "catalogue" && (
         <div style={{ fontSize: 12, color: "#B45309", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
-          {flatMissing.length} product{flatMissing.length > 1 ? "s" : ""} need a list price before they can be quoted (e.g. {flatMissing.slice(0, 3).map(p => p.code).join(", ")}{flatMissing.length > 3 ? "…" : ""}). <button type="button" onClick={() => setSub("catalogue")} style={{ background: "none", border: "none", color: "var(--brand)", fontWeight: 700, cursor: "pointer", padding: 0 }}>Open Catalogue rates →</button>
+          {flatMissing.length} product{flatMissing.length > 1 ? "s" : ""} need a list price before they can be quoted (e.g. {flatMissing.slice(0, 3).map(p => p.code).join(", ")}{flatMissing.length > 3 ? "…" : ""}). <button type="button" onClick={() => setSub("catalogue")} style={{ background: "none", border: "none", color: "var(--brand)", fontWeight: 700, cursor: "pointer", padding: 0 }}>Open Product rates →</button>
         </div>
       )}
 
@@ -293,7 +300,7 @@ export default function QuotationMasters({ masters, setMasters }) {
         <div style={{ overflowX: "auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
             <div style={{ fontSize: 11, color: "var(--text3)" }}>
-              Edit list price (Flat models) and per-month floor (PaaS). Band/iCAFFE products price from their own tabs — list price stays blank for them.
+              Quotation rates for each product. (The product list itself lives in the <b>Product Catalogue</b> master tab.) Edit list price (Flat models) and per-month floor (PaaS); Band/iCAFFE products price from their own tabs.
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
               {importMsg && <span style={{ fontSize: 11, color: "#15803D" }}>Updated {importMsg.matched} of {importMsg.rows} row(s)</span>}
