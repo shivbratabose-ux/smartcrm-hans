@@ -149,6 +149,28 @@ console.log("Currency price lists (Phase 2c)");
   check("USD native ignores fx", resolveUnitPrice(prod, { qty: 1, currency: "USD", fx: 83.5 }).unitPrice, 99);
 }
 
+console.log("Per-product / per-country band rates (Phase 2d)");
+{
+  const gbands = [
+    { fromUsers: 0, toUsers: 150, ratePerUserMonth: 3000 },
+    { fromUsers: 151, toUsers: 250, ratePerUserMonth: 2800 },
+  ];
+  // no bandRates → global band rate
+  const p0 = { rateSource: "Band", name: "iCAFFE" };
+  check("band: no product override → global 3000", resolveUnitPrice(p0, { qty: 10, bands: gbands }).unitPrice, 3000);
+  // per-product Default row overrides global
+  const p1 = { rateSource: "Band", name: "iCAFFE", bandRates: { Default: [3500, 3300] } };
+  check("band: product Default row → 3500", resolveUnitPrice(p1, { qty: 10, bands: gbands }).unitPrice, 3500);
+  check("band: product Default row band2 → 3300", resolveUnitPrice(p1, { qty: 200, bands: gbands }).unitPrice, 3300);
+  // per-country row wins over Default
+  const p2 = { rateSource: "Band", name: "iCAFFE", bandRates: { Default: [3500, 3300], UAE: [4000, 3800] } };
+  check("band: UAE country row → 4000", resolveUnitPrice(p2, { qty: 10, bands: gbands, country: "UAE" }).unitPrice, 4000);
+  check("band: country with no row → Default 3500", resolveUnitPrice(p2, { qty: 10, bands: gbands, country: "India" }).unitPrice, 3500);
+  // missing country cell falls back to global
+  const p3 = { rateSource: "Band", name: "iCAFFE", bandRates: { India: [null, 2900] } };
+  check("band: India null cell → global 3000", resolveUnitPrice(p3, { qty: 10, bands: gbands, country: "India" }).unitPrice, 3000);
+}
+
 console.log("Margin floor guardrail (Phase 3a)");
 {
   // lineMargin: post-discount margin vs cost
