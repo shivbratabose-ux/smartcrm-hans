@@ -15,8 +15,10 @@ import { useState, useRef } from "react";
 import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X, Tag, Globe, Download, Upload } from "lucide-react";
 import {
   QUOTE_CONFIG, HANS_CATALOGUE, PRICING_BANDS, ICAFFE_EDITIONS,
-  ICAFFE_BAND_LABELS, QUOTE_TERMS, QUOTE_SEGMENTS,
+  ICAFFE_BAND_LABELS, QUOTE_TERMS, QUOTE_SEGMENTS, PRICING_MODELS, QUOTE_UNITS,
 } from "../data/quotationMasters";
+
+const RATE_SOURCES = ["Flat", "Band", "iCAFFE"];
 import { validateCcsRule } from "../lib/quotation/pricingEngine";
 import { exportCSV, parseCSV } from "../utils/csv";
 
@@ -39,6 +41,8 @@ const CATALOGUE_OVERLAY_FIELDS = [
   "listPrice", "costPrice", "minMonthFloor", "active", "notes",
   "rateSchedule", "segmentPrices", "currencyPrices", "bandRates",
   "matrixId", "matrixRow", // rate-card attachment (Phase 2e)
+  // Structural fields are now admin-editable too, so they overlay the seed.
+  "name", "module", "pricingModel", "unit", "rateSource",
 ];
 
 // Merge a saved catalogue onto the seed: seed = structure, saved = rates.
@@ -311,10 +315,22 @@ export default function QuotationMasters({ masters, setMasters }) {
                 return (
                   <tr key={p.code} style={{ background: ccRow ? "#FEF2F2" : "transparent" }}>
                     <td style={{ ...cell, fontFamily: "monospace", fontWeight: 700 }}>{p.code}</td>
-                    <td style={cell}>{p.name}</td>
-                    <td style={{ ...cell, color: "var(--text3)" }}>{p.pricingModel}</td>
-                    <td style={{ ...cell, color: "var(--text3)" }}>{p.unit}</td>
-                    <td style={{ ...cell, color: "var(--text3)" }}>{p.rateSource}</td>
+                    <td style={cell}><input style={{ ...numInput, textAlign: "left" }} value={p.name ?? ""} onChange={e => setCatRow(p.code, "name", e.target.value)} /></td>
+                    <td style={cell}>
+                      <select style={{ ...numInput, textAlign: "left", cursor: "pointer" }} value={p.pricingModel || ""} onChange={e => setCatRow(p.code, "pricingModel", e.target.value)}>
+                        {PRICING_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </td>
+                    <td style={cell}>
+                      <select style={{ ...numInput, textAlign: "left", cursor: "pointer" }} value={p.unit || ""} onChange={e => setCatRow(p.code, "unit", e.target.value)}>
+                        {QUOTE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </td>
+                    <td style={cell}>
+                      <select style={{ ...numInput, textAlign: "left", cursor: "pointer" }} value={p.rateSource || "Flat"} onChange={e => setCatRow(p.code, "rateSource", e.target.value)}>
+                        {RATE_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
                     <td style={{ ...cell, ...(priceMissing ? { background: "#FEF2F2", boxShadow: "inset 0 0 0 1px #FCA5A5" } : {}) }}>
                       {editablePrice
                         ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
