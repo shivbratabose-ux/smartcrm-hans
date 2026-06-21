@@ -597,7 +597,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
 
       {tab==="products" && <ProductCatalogPage catalog={catalog} setCatalog={setCatalog} orgUsers={orgUsers} currentUser={currentUser}/>}
       {tab==="leadfields" && <LeadFieldsEditor masters={masters} setMasters={setMasters} catalog={catalog}/>}
-      {tab==="quotation" && <QuotationMasters masters={masters} setMasters={setMasters}/>}
+      {tab==="quotation" && <QuotationMasters masters={masters} setMasters={setMasters} catalog={catalog}/>}
     </div>
   );
 }

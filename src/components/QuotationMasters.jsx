@@ -45,27 +45,48 @@ const CATALOGUE_OVERLAY_FIELDS = [
   "name", "module", "pricingModel", "unit", "rateSource",
 ];
 
-// Merge a saved catalogue onto the seed: seed = structure, saved = rates.
-function mergeCatalogue(saved) {
+// Merge the quotation price book onto the seed, then UNION in the Product
+// Catalogue master so it's the single product list (auto-sync, keep price
+// book). seed = structure, saved = rates; any master product not already
+// priced is added as a default Flat row to price (engine unchanged).
+function mergeCatalogue(saved, appCatalog) {
   const savedByCode = new Map((saved || []).map(p => [p.code, p]));
-  const merged = HANS_CATALOGUE.map(seed => {
-    const sv = savedByCode.get(seed.code);
-    if (!sv) return seed;
-    const out = { ...seed };
+  const overlay = (base) => {
+    const sv = savedByCode.get(base.code);
+    if (!sv) return base;
+    const out = { ...base };
     for (const f of CATALOGUE_OVERLAY_FIELDS) if (f in sv) out[f] = sv[f];
     return out;
+  };
+  const merged = HANS_CATALOGUE.map(overlay);
+  // Saved-only custom products not in the seed.
+  (saved || []).forEach(sv => { if (!HANS_CATALOGUE.some(s => s.code === sv.code)) merged.push(overlay(sv)); });
+  // Union in Product Catalogue master products not already represented
+  // (by code or name) — adding once in Product Catalogue surfaces it here.
+  const norm = (s) => (s || "").trim().toLowerCase();
+  const have = new Set(merged.map(p => norm(p.name)));
+  const haveCodes = new Set(merged.map(p => p.code));
+  (appCatalog || []).forEach(ap => {
+    if (!ap || !ap.id || haveCodes.has(ap.id) || have.has(norm(ap.name))) return;
+    const base = {
+      code: ap.id, name: ap.name || ap.id, module: ap.desc || "From Product Catalogue",
+      pricingModel: "SaaS Subscription", unit: "User", listPrice: null,
+      rateSource: "Flat", minMonthFloor: null, notes: "From Product Catalogue", active: true,
+      _fromCatalog: true,
+    };
+    merged.push(overlay(base));
+    have.add(norm(base.name)); haveCodes.add(base.code);
   });
-  // Keep any saved-only custom products not in the seed (future-proof).
-  (saved || []).forEach(sv => { if (!HANS_CATALOGUE.some(s => s.code === sv.code)) merged.push(sv); });
   return merged;
 }
 
-// Resolve current masters with seeded fallbacks.
-export function resolveQuotationMasters(masters) {
+// Resolve current masters with seeded fallbacks. `catalog` is the Product
+// Catalogue master (the single product list) unioned into the price book.
+export function resolveQuotationMasters(masters, catalog) {
   const qm = (masters && masters.quotation) || {};
   return {
     quoteConfig: { ...QUOTE_CONFIG, ...(qm.quoteConfig || {}) },
-    catalogue: mergeCatalogue(qm.catalogue),
+    catalogue: mergeCatalogue(qm.catalogue, catalog),
     bands: qm.bands && qm.bands.length ? qm.bands : PRICING_BANDS,
     editions: qm.editions && qm.editions.length ? qm.editions : ICAFFE_EDITIONS,
     rateCards: Array.isArray(qm.rateCards) ? qm.rateCards : [],
@@ -78,8 +99,8 @@ export function resolveQuotationMasters(masters) {
 const cell = { padding: "8px 12px", borderBottom: "1px solid var(--border)", fontSize: 12.5, verticalAlign: "middle" };
 const numInput = { width: "100%", border: "1.5px solid var(--border)", borderRadius: 6, background: "white", fontSize: 12, padding: "5px 7px", textAlign: "right", fontFamily: "'Outfit',sans-serif", outline: "none", boxSizing: "border-box" };
 
-export default function QuotationMasters({ masters, setMasters }) {
-  const cur = resolveQuotationMasters(masters);
+export default function QuotationMasters({ masters, setMasters, catalog = [] }) {
+  const cur = resolveQuotationMasters(masters, catalog);
   const [sub, setSub] = useState("config");
   const [schedFor, setSchedFor] = useState(null); // {kind,key} whose rate schedule is open
   const [segFor, setSegFor] = useState(null); // product code whose segment prices are open

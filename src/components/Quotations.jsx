@@ -1883,7 +1883,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
         <HansQuoteBuilder
           opps={opps} leads={leads} accounts={accounts} contacts={contacts}
           quotes={quotes} setQuotes={setQuotes} currentUser={currentUser} orgUsers={orgUsers}
-          masters={resolveQuotationMasters(masters)}
+          masters={resolveQuotationMasters(masters, catalog)}
           editQuote={hansEdit}
           onClose={()=>{setHansBuilder(false);setHansEdit(null);}}
         />
