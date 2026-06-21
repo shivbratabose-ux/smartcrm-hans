@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { useState } from "react";
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X } from "lucide-react";
 import {
   QUOTE_CONFIG, HANS_CATALOGUE, PRICING_BANDS, ICAFFE_EDITIONS,
   ICAFFE_BAND_LABELS, QUOTE_TERMS,
@@ -37,6 +37,7 @@ const numInput = { width: "100%", border: "none", background: "transparent", fon
 export default function QuotationMasters({ masters, setMasters }) {
   const cur = resolveQuotationMasters(masters);
   const [sub, setSub] = useState("config");
+  const [schedFor, setSchedFor] = useState(null); // product code whose rate schedule is open
 
   // Write a slice back into masters.quotation (merging with current resolved set).
   const writeQ = (patch) => setMasters(m => ({ ...m, quotation: { ...cur, ...(m?.quotation || {}), ...patch } }));
@@ -177,7 +178,13 @@ export default function QuotationMasters({ masters, setMasters }) {
                     <td style={{ ...cell, color: "var(--text3)" }}>{p.rateSource}</td>
                     <td style={{ ...cell, ...(priceMissing ? { background: "#FEF2F2", boxShadow: "inset 0 0 0 1px #FCA5A5" } : {}) }}>
                       {editablePrice
-                        ? <input style={numInput} type="number" placeholder={priceMissing ? "enter rate" : ""} value={p.listPrice ?? ""} onChange={e => setCatRow(p.code, "listPrice", numOrNull(e.target.value))} />
+                        ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <input style={numInput} type="number" placeholder={priceMissing ? "enter rate" : ""} value={p.listPrice ?? ""} onChange={e => setCatRow(p.code, "listPrice", numOrNull(e.target.value))} />
+                            <button type="button" title="Scheduled rate changes (effective-dated)" onClick={() => setSchedFor(p.code)}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: (p.rateSchedule || []).length ? "#EFF6FF" : "transparent", color: (p.rateSchedule || []).length ? "#1E40AF" : "var(--text3)", borderRadius: 5, padding: "1px 5px", cursor: "pointer", fontSize: 10, flexShrink: 0 }}>
+                              <Clock size={11} />{(p.rateSchedule || []).length || ""}
+                            </button>
+                          </span>
                         : <span style={{ color: "var(--text3)", fontSize: 11 }}>— {p.rateSource} —</span>}
                     </td>
                     <td style={cell}>
@@ -256,6 +263,48 @@ export default function QuotationMasters({ masters, setMasters }) {
           ))}
         </div>
       )}
+
+      {/* ── Rate schedule editor (effective-dated rates · Phase 2a) ── */}
+      {schedFor && (() => {
+        const p = cur.catalogue.find(x => x.code === schedFor);
+        if (!p) return null;
+        const sched = Array.isArray(p.rateSchedule) ? p.rateSchedule : [];
+        const setSched = (arr) => setCatRow(p.code, "rateSchedule", arr);
+        const update = (i, patch) => setSched(sched.map((s, idx) => idx === i ? { ...s, ...patch } : s));
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSchedFor(null)}>
+            <div style={{ width: 480, maxWidth: "94vw", background: "var(--surface)", borderRadius: 12, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}><Clock size={15} /> Rate schedule · {p.code} {p.name}</div>
+                <button className="icon-btn" onClick={() => setSchedFor(null)}><X size={16} /></button>
+              </div>
+              <div style={{ padding: 16 }}>
+                <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 10 }}>
+                  Base list price <b style={{ color: "var(--text1)" }}>{p.listPrice ?? "—"}</b> applies until a scheduled date. A quote uses the latest scheduled rate effective on/before its quote date.
+                </div>
+                {sched.length === 0 && <div style={{ fontSize: 12, color: "var(--text3)", padding: "8px 0" }}>No scheduled changes — the base price always applies.</div>}
+                {sched.map((s, i) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 28px", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: 9 }}>Effective from</label>
+                      <input type="date" value={s.effectiveFrom || ""} onChange={e => update(i, { effectiveFrom: e.target.value })} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: 9 }}>List price (₹)</label>
+                      <input type="number" value={s.listPrice ?? ""} onChange={e => update(i, { listPrice: e.target.value === "" ? null : Number(e.target.value) })} />
+                    </div>
+                    <button className="icon-btn" title="Remove" style={{ color: "#DC2626", marginTop: 14 }} onClick={() => setSched(sched.filter((_, idx) => idx !== i))}><Trash2 size={14} /></button>
+                  </div>
+                ))}
+                <button className="btn btn-sec btn-xs" style={{ marginTop: 4 }} onClick={() => setSched([...sched, { effectiveFrom: "", listPrice: null }])}><Plus size={12} /> Add scheduled rate</button>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", padding: 12, borderTop: "1px solid var(--border)" }}>
+                <button className="btn btn-primary btn-xs" onClick={() => setSchedFor(null)}>Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
