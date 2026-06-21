@@ -46,6 +46,8 @@ export default function QuotationMasters({ masters, setMasters }) {
   const setCatRow = (code, key, val) => writeQ({ catalogue: cur.catalogue.map(p => p.code === code ? { ...p, [key]: val } : p) });
   const setBandRate = (band, val) => writeQ({ bands: cur.bands.map(b => b.band === band ? { ...b, ratePerUserMonth: val } : b) });
   const setEditionRate = (name, idx, val) => writeQ({ editions: cur.editions.map(e => e.name === name ? { ...e, rates: e.rates.map((r, i) => i === idx ? val : r) } : e) });
+  const setBandSchedule = (band, arr) => writeQ({ bands: cur.bands.map(b => b.band === band ? { ...b, rateSchedule: arr } : b) });
+  const setEditionSchedule = (name, arr) => writeQ({ editions: cur.editions.map(e => e.name === name ? { ...e, rateSchedule: arr } : e) });
   const setTerm = (key, text) => writeQ({ terms: cur.terms.map(t => t.key === key ? { ...t, text } : t) });
 
   const ccs = validateCcsRule(cur.catalogue);
@@ -180,7 +182,7 @@ export default function QuotationMasters({ masters, setMasters }) {
                       {editablePrice
                         ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                             <input style={numInput} type="number" placeholder={priceMissing ? "enter rate" : ""} value={p.listPrice ?? ""} onChange={e => setCatRow(p.code, "listPrice", numOrNull(e.target.value))} />
-                            <button type="button" title="Scheduled rate changes (effective-dated)" onClick={() => setSchedFor(p.code)}
+                            <button type="button" title="Scheduled rate changes (effective-dated)" onClick={() => setSchedFor({ kind: "flat", key: p.code })}
                               style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: (p.rateSchedule || []).length ? "#EFF6FF" : "transparent", color: (p.rateSchedule || []).length ? "#1E40AF" : "var(--text3)", borderRadius: 5, padding: "1px 5px", cursor: "pointer", fontSize: 10, flexShrink: 0 }}>
                               <Clock size={11} />{(p.rateSchedule || []).length || ""}
                             </button>
@@ -212,7 +214,7 @@ export default function QuotationMasters({ masters, setMasters }) {
         <table style={{ borderCollapse: "collapse", maxWidth: 560 }}>
           <thead>
             <tr style={{ background: "var(--s2)", textAlign: "left" }}>
-              {["Band", "From users", "To users", "₹ / user / month"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
+              {["Band", "From users", "To users", "₹ / user / month", "Schedule"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -222,6 +224,12 @@ export default function QuotationMasters({ masters, setMasters }) {
                 <td style={{ ...cell, textAlign: "right" }}>{b.fromUsers}</td>
                 <td style={{ ...cell, textAlign: "right" }}>{b.toUsers}</td>
                 <td style={cell}><input style={numInput} type="number" value={b.ratePerUserMonth ?? ""} onChange={e => setBandRate(b.band, numOrNull(e.target.value))} /></td>
+                <td style={{ ...cell, textAlign: "center" }}>
+                  <button type="button" title="Scheduled rate changes (effective-dated)" onClick={() => setSchedFor({ kind: "band", key: b.band })}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: (b.rateSchedule || []).length ? "#EFF6FF" : "transparent", color: (b.rateSchedule || []).length ? "#1E40AF" : "var(--text3)", borderRadius: 5, padding: "1px 6px", cursor: "pointer", fontSize: 10 }}>
+                    <Clock size={11} />{(b.rateSchedule || []).length || ""}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -236,6 +244,7 @@ export default function QuotationMasters({ masters, setMasters }) {
               <tr style={{ background: "var(--s2)" }}>
                 <th style={{ ...cell, textAlign: "left", fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>Edition</th>
                 {ICAFFE_BAND_LABELS.map(l => <th key={l} style={{ ...cell, fontSize: 10, color: "var(--text3)" }}>{l}</th>)}
+                <th style={{ ...cell, fontSize: 10, color: "var(--text3)" }}>Sched</th>
               </tr>
             </thead>
             <tbody>
@@ -245,6 +254,12 @@ export default function QuotationMasters({ masters, setMasters }) {
                   {e.rates.map((r, i) => (
                     <td key={i} style={cell}><input style={numInput} type="number" value={r ?? ""} onChange={ev => setEditionRate(e.name, i, numOrNull(ev.target.value))} /></td>
                   ))}
+                  <td style={{ ...cell, textAlign: "center" }}>
+                    <button type="button" title="Scheduled rate-row changes (effective-dated)" onClick={() => setSchedFor({ kind: "edition", key: e.name })}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: (e.rateSchedule || []).length ? "#EFF6FF" : "transparent", color: (e.rateSchedule || []).length ? "#1E40AF" : "var(--text3)", borderRadius: 5, padding: "1px 6px", cursor: "pointer", fontSize: 10 }}>
+                      <Clock size={11} />{(e.rateSchedule || []).length || ""}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -266,37 +281,62 @@ export default function QuotationMasters({ masters, setMasters }) {
 
       {/* ── Rate schedule editor (effective-dated rates · Phase 2a) ── */}
       {schedFor && (() => {
-        const p = cur.catalogue.find(x => x.code === schedFor);
-        if (!p) return null;
-        const sched = Array.isArray(p.rateSchedule) ? p.rateSchedule : [];
-        const setSched = (arr) => setCatRow(p.code, "rateSchedule", arr);
+        const { kind, key } = schedFor;
+        const obj = kind === "flat" ? cur.catalogue.find(x => x.code === key)
+          : kind === "band" ? cur.bands.find(b => b.band === key)
+          : cur.editions.find(e => e.name === key);
+        if (!obj) return null;
+        const sched = Array.isArray(obj.rateSchedule) ? obj.rateSchedule : [];
+        const setSched = (arr) => kind === "flat" ? setCatRow(key, "rateSchedule", arr)
+          : kind === "band" ? setBandSchedule(key, arr) : setEditionSchedule(key, arr);
         const update = (i, patch) => setSched(sched.map((s, idx) => idx === i ? { ...s, ...patch } : s));
+        const title = kind === "flat" ? `${obj.code} ${obj.name}` : kind === "band" ? `Band ${obj.band}` : obj.name;
+        const blankEntry = kind === "edition"
+          ? { effectiveFrom: "", rates: obj.rates.map(() => null) }
+          : kind === "band" ? { effectiveFrom: "", ratePerUserMonth: null } : { effectiveFrom: "", listPrice: null };
+        const baseLabel = kind === "flat" ? `Base list price ${obj.listPrice ?? "—"}`
+          : kind === "band" ? `Base rate ${obj.ratePerUserMonth ?? "—"}/user/mo` : "Base rate-row (per band)";
+        const wide = kind === "edition";
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSchedFor(null)}>
-            <div style={{ width: 480, maxWidth: "94vw", background: "var(--surface)", borderRadius: 12, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: wide ? 900 : 480, maxWidth: "96vw", background: "var(--surface)", borderRadius: 12, boxShadow: "0 20px 50px rgba(0,0,0,0.25)", maxHeight: "90vh", overflow: "auto" }} onClick={e => e.stopPropagation()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}><Clock size={15} /> Rate schedule · {p.code} {p.name}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}><Clock size={15} /> Rate schedule · {title}</div>
                 <button className="icon-btn" onClick={() => setSchedFor(null)}><X size={16} /></button>
               </div>
               <div style={{ padding: 16 }}>
                 <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 10 }}>
-                  Base list price <b style={{ color: "var(--text1)" }}>{p.listPrice ?? "—"}</b> applies until a scheduled date. A quote uses the latest scheduled rate effective on/before its quote date.
+                  <b style={{ color: "var(--text1)" }}>{baseLabel}</b> applies until a scheduled date. A quote uses the latest scheduled rate effective on/before its quote date.
                 </div>
-                {sched.length === 0 && <div style={{ fontSize: 12, color: "var(--text3)", padding: "8px 0" }}>No scheduled changes — the base price always applies.</div>}
+                {sched.length === 0 && <div style={{ fontSize: 12, color: "var(--text3)", padding: "8px 0" }}>No scheduled changes — the base rate always applies.</div>}
                 {sched.map((s, i) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 28px", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8, flexWrap: wide ? "wrap" : "nowrap" }}>
+                    <div className="form-group" style={{ marginBottom: 0, width: 150 }}>
                       <label style={{ fontSize: 9 }}>Effective from</label>
                       <input type="date" value={s.effectiveFrom || ""} onChange={e => update(i, { effectiveFrom: e.target.value })} />
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label style={{ fontSize: 9 }}>List price (₹)</label>
-                      <input type="number" value={s.listPrice ?? ""} onChange={e => update(i, { listPrice: e.target.value === "" ? null : Number(e.target.value) })} />
-                    </div>
-                    <button className="icon-btn" title="Remove" style={{ color: "#DC2626", marginTop: 14 }} onClick={() => setSched(sched.filter((_, idx) => idx !== i))}><Trash2 size={14} /></button>
+                    {kind === "flat" && (
+                      <div className="form-group" style={{ marginBottom: 0, width: 150 }}><label style={{ fontSize: 9 }}>List price (₹)</label>
+                        <input type="number" value={s.listPrice ?? ""} onChange={e => update(i, { listPrice: e.target.value === "" ? null : Number(e.target.value) })} /></div>
+                    )}
+                    {kind === "band" && (
+                      <div className="form-group" style={{ marginBottom: 0, width: 150 }}><label style={{ fontSize: 9 }}>₹ / user / mo</label>
+                        <input type="number" value={s.ratePerUserMonth ?? ""} onChange={e => update(i, { ratePerUserMonth: e.target.value === "" ? null : Number(e.target.value) })} /></div>
+                    )}
+                    {kind === "edition" && (
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", flex: 1 }}>
+                        {(s.rates || []).map((rv, ri) => (
+                          <div key={ri} style={{ width: 64 }}>
+                            <div style={{ fontSize: 8, color: "var(--text3)" }}>{ICAFFE_BAND_LABELS[ri]}</div>
+                            <input style={numInput} type="number" value={rv ?? ""} onChange={e => update(i, { rates: s.rates.map((x, xi) => xi === ri ? (e.target.value === "" ? null : Number(e.target.value)) : x) })} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button className="icon-btn" title="Remove" style={{ color: "#DC2626" }} onClick={() => setSched(sched.filter((_, idx) => idx !== i))}><Trash2 size={14} /></button>
                   </div>
                 ))}
-                <button className="btn btn-sec btn-xs" style={{ marginTop: 4 }} onClick={() => setSched([...sched, { effectiveFrom: "", listPrice: null }])}><Plus size={12} /> Add scheduled rate</button>
+                <button className="btn btn-sec btn-xs" style={{ marginTop: 4 }} onClick={() => setSched([...sched, blankEntry])}><Plus size={12} /> Add scheduled rate</button>
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", padding: 12, borderTop: "1px solid var(--border)" }}>
                 <button className="btn btn-primary btn-xs" onClick={() => setSchedFor(null)}>Done</button>
