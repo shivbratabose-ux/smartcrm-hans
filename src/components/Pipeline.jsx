@@ -24,7 +24,8 @@ import {
   WIN_REASONS, LOSS_REASONS, LOSS_IMPACT_AREAS, SUSPEND_REASONS, ACT_TYPES, INIT_USERS,
   CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, TENDER_CATEGORIES, TENDER_PORTALS,
   BID_INSTRUMENT_TYPES, BID_INSTRUMENT_MODES, PREBID_ACTIVITY_TYPES, TENDER_DOC_CATEGORIES,
-  BID_INSTRUMENT_STATUSES, BID_QUAL_RATINGS
+  BID_INSTRUMENT_STATUSES, BID_QUAL_RATINGS,
+  VERTICALS, LEAD_SOURCES, REGIONS, LEAD_TEMPERATURES, BUDGET_RANGES, DECISION_TIMELINES
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds, canEditRecord, hasPendingAccessReq } from "../utils/helpers";
@@ -491,9 +492,9 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], s
           {isEditing ? (
             <span style={{display:"flex",gap:4,alignItems:"center"}}>
               {type === "select" ? (
-                <select autoFocus value={fieldVal} onChange={e=>setFieldVal(e.target.value)}
-                  onBlur={()=>saveEdit(field)} style={iStyle}>
-                  {(options||[]).map(o=><option key={o}>{o}</option>)}
+                <select autoFocus value={fieldVal} onChange={e=>saveEdit(field, e.target.value)}
+                  onBlur={cancelEdit} style={iStyle}>
+                  {[...new Set([detail[field], ...(options||[])].filter(v=>v!==undefined&&v!==null&&v!==""))].map(o=><option key={o}>{o}</option>)}
                 </select>
               ) : (
                 <input type={type || "text"} autoFocus value={fieldVal}
@@ -538,8 +539,8 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], s
           {isEditing ? (
             <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
               {type === "select" ? (
-                <select autoFocus value={fieldVal} onChange={e => setFieldVal(e.target.value)} onBlur={() => saveLeadEdit(field)} style={iStyle}>
-                  {(options || []).map(o => <option key={o}>{o}</option>)}
+                <select autoFocus value={fieldVal} onChange={e => saveLeadEdit(field, e.target.value)} onBlur={cancelEdit} style={iStyle}>
+                  {[...new Set([srcLead?.[field], ...(options || [])].filter(v => v !== undefined && v !== null && v !== ""))].map(o => <option key={o}>{o}</option>)}
                 </select>
               ) : (
                 <input type={type || "text"} autoFocus value={fieldVal}
@@ -835,10 +836,10 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], s
                   <div>
                     <div className="dp-row"><span className="dp-key">Source</span><span className="dp-val">{detail.source || "—"}</span></div>
                     <div className="dp-row"><span className="dp-key">Primary Contact</span><span className="dp-val">{primaryContact?.name || "—"}</span></div>
-                    {editableRow("Country", "country", "text")}
-                    {editableRow("Hierarchy Level", "hierarchyLevel", "text")}
-                    {editableRow("Forecast", "forecastCat", "text")}
-                    {editableRow("Deal Size", "dealSize", "text")}
+                    {editableRow("Country", "country", "select", COUNTRIES)}
+                    {editableRow("Hierarchy Level", "hierarchyLevel", "select", HIERARCHY_LEVELS)}
+                    {editableRow("Forecast", "forecastCat", "select", FORECAST_CATS)}
+                    {editableRow("Deal Size", "dealSize", "select", OPP_SIZES)}
                   </div>
                 </div>
               </div>
@@ -853,16 +854,16 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], s
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
                     <div>
-                      {editableLeadRow("Industry / Vertical", "vertical", "text")}
-                      {editableLeadRow("Region", "region", "text")}
-                      {editableLeadRow("Lead Source", "source", "text")}
+                      {editableLeadRow("Industry / Vertical", "vertical", "select", VERTICALS)}
+                      {editableLeadRow("Region", "region", "select", REGIONS)}
+                      {editableLeadRow("Lead Source", "source", "select", LEAD_SOURCES)}
                       {editableLeadRow("Lead Score", "score", "number")}
                       {editableLeadRow("Location", "location", "text")}
                     </div>
                     <div>
-                      {editableLeadRow("Temperature", "temperature", "select", ["Hot", "Warm", "Cool", "Cold"])}
-                      {editableLeadRow("Budget Range", "budgetRange", "text")}
-                      {editableLeadRow("Decision Timeline", "decisionTimeline", "text")}
+                      {editableLeadRow("Temperature", "temperature", "select", LEAD_TEMPERATURES)}
+                      {editableLeadRow("Budget Range", "budgetRange", "select", BUDGET_RANGES)}
+                      {editableLeadRow("Decision Timeline", "decisionTimeline", "select", DECISION_TIMELINES)}
                       {editableLeadRow("Pain Points", "painPoints", "text", null, true)}
                     </div>
                   </div>
