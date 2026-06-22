@@ -455,7 +455,7 @@ function QuickUpdatePopover({ opp, onSave, onClose }) {
 /* ═══════════════════════════════════════════════════════
    DEAL DETAIL (Enhanced)
    ═══════════════════════════════════════════════════════ */
-function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, orgUsers = [], callReports = [], onLogCall }) {
+function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], setLeads, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, orgUsers = [], callReports = [], onLogCall }) {
   const { STAGE_COL, STAGES, STAGE_PROB } = useContext(StagesContext);
   const [tab, setTab] = useState("overview");
 
@@ -509,6 +509,52 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], n
               title="Click to edit">
               {field === "stage" ? <StatusBadge status={display}/> : display}
               <Edit2 size={9} style={{color:"var(--text3)",opacity:0.4,flexShrink:0}}/>
+            </span>
+          )}
+        </span>
+      </div>
+    );
+  };
+
+  // Inline edit for the originating-lead fields — writes back to the LEAD
+  // record (setLeads) so the deal panel and the lead stay in sync. Editing
+  // keys are namespaced "lead.<field>" so they never clash with opp fields.
+  const saveLeadEdit = (field, v, isArr) => {
+    const raw = v !== undefined ? v : fieldVal;
+    const val = isArr ? String(raw).split(",").map(s => s.trim()).filter(Boolean) : raw;
+    if (setLeads && srcLead) setLeads(prev => prev.map(l => l.id === srcLead.id ? { ...l, [field]: val } : l));
+    setEditingField(null); setFieldVal("");
+  };
+  const editableLeadRow = (key, field, type, options, isArr) => {
+    const ekey = `lead.${field}`;
+    const isEditing = editingField === ekey;
+    const cur = srcLead ? srcLead[field] : undefined;
+    const display = isArr ? ((cur || []).join(", ") || "—") : (cur === 0 ? 0 : (cur || "—"));
+    const startVal = isArr ? (cur || []).join(", ") : (cur ?? "");
+    return (
+      <div className="dp-row" key={key}>
+        <span className="dp-key">{key}</span>
+        <span className="dp-val" style={{ flex: 1 }}>
+          {isEditing ? (
+            <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              {type === "select" ? (
+                <select autoFocus value={fieldVal} onChange={e => setFieldVal(e.target.value)} onBlur={() => saveLeadEdit(field)} style={iStyle}>
+                  {(options || []).map(o => <option key={o}>{o}</option>)}
+                </select>
+              ) : (
+                <input type={type || "text"} autoFocus value={fieldVal}
+                  onChange={e => setFieldVal(type === "number" ? +e.target.value : e.target.value)}
+                  onBlur={() => saveLeadEdit(field, type === "number" ? +fieldVal : fieldVal, isArr)}
+                  onKeyDown={e => { if (e.key === "Enter") saveLeadEdit(field, type === "number" ? +fieldVal : fieldVal, isArr); if (e.key === "Escape") cancelEdit(); }}
+                  style={{ ...iStyle, maxWidth: 180 }} min={type === "number" ? 0 : undefined} />
+              )}
+              <button onClick={cancelEdit} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text3)", padding: 0, fontSize: 16, lineHeight: 1 }}>✕</button>
+            </span>
+          ) : (
+            <span style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+              onClick={() => { setEditingField(ekey); setFieldVal(startVal); }} title="Click to edit (saves to the lead)">
+              {display}
+              <Edit2 size={9} style={{ color: "var(--text3)", opacity: 0.4, flexShrink: 0 }} />
             </span>
           )}
         </span>
@@ -797,29 +843,30 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], n
                 </div>
               </div>
 
-              {/* ─── From the originating lead — qualification carry-over (read-only) ─── */}
+              {/* ─── From the originating lead — qualification carry-over (inline editable → writes to the lead) ─── */}
               {srcLead && (
                 <div style={{ background: "white", borderRadius: 12, padding: "18px 20px", border: "1px solid var(--border)", marginTop: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text1)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
                     <ArrowRightCircle size={15} style={{ color: "var(--brand)" }} /> From the originating lead
                     <span style={{ fontSize: 11, fontFamily: "'Courier New',monospace", color: "var(--text3)", background: "var(--s2)", padding: "2px 8px", borderRadius: 4 }}>{srcLead.leadId}</span>
+                    <span style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>(click any field to edit)</span>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
                     <div>
-                      <div className="dp-row"><span className="dp-key">Industry / Vertical</span><span className="dp-val">{srcLead.vertical || "—"}</span></div>
-                      <div className="dp-row"><span className="dp-key">Region</span><span className="dp-val">{srcLead.region || "—"}</span></div>
-                      <div className="dp-row"><span className="dp-key">Lead Source</span><span className="dp-val">{srcLead.source || "—"}</span></div>
-                      <div className="dp-row"><span className="dp-key">Lead Score</span><span className="dp-val">{srcLead.score ?? "—"}</span></div>
+                      {editableLeadRow("Industry / Vertical", "vertical", "text")}
+                      {editableLeadRow("Region", "region", "text")}
+                      {editableLeadRow("Lead Source", "source", "text")}
+                      {editableLeadRow("Lead Score", "score", "number")}
+                      {editableLeadRow("Location", "location", "text")}
                     </div>
                     <div>
-                      <div className="dp-row"><span className="dp-key">Temperature</span><span className="dp-val">{srcLead.temperature || "—"}</span></div>
-                      <div className="dp-row"><span className="dp-key">Budget Range</span><span className="dp-val">{srcLead.budgetRange || "—"}</span></div>
-                      <div className="dp-row"><span className="dp-key">Decision Timeline</span><span className="dp-val">{srcLead.decisionTimeline || "—"}</span></div>
-                      <div className="dp-row"><span className="dp-key">Pain Points</span><span className="dp-val">{(srcLead.painPoints || []).join(", ") || "—"}</span></div>
+                      {editableLeadRow("Temperature", "temperature", "select", ["Hot", "Warm", "Cool", "Cold"])}
+                      {editableLeadRow("Budget Range", "budgetRange", "text")}
+                      {editableLeadRow("Decision Timeline", "decisionTimeline", "text")}
+                      {editableLeadRow("Pain Points", "painPoints", "text", null, true)}
                     </div>
                   </div>
-                  {srcLead.location && <div className="dp-row"><span className="dp-key">Location</span><span className="dp-val">{srcLead.location}</span></div>}
-                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, fontStyle: "italic" }}>Captured during lead qualification — edit on the lead record to keep it in sync.</div>
+                  <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, fontStyle: "italic" }}>Click any field to edit — changes save to lead {srcLead.leadId} and stay in sync.</div>
                 </div>
               )}
 
@@ -1017,7 +1064,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], n
 /* ═══════════════════════════════════════════════════════
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
-function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete, commLogs=[], onRequestEditAccess, aiConfig }) {
+function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLeads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete, commLogs=[], onRequestEditAccess, aiConfig }) {
   const canEditOpp = (o) => canEditRecord({ownerId:o?.owner,currentUser,orgUsers,recordType:"opp",recordId:o?.id,commLogs,catalog,recordProductIds:(o?.products&&o.products.length)?o.products:(o?.product?[o.product]:[])});
   const requestAccessOpp = (o) => onRequestEditAccess && onRequestEditAccess("opp", o.id, o.title||o.id||"Opportunity", o.owner);
 
@@ -1977,7 +2024,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes
         <DealDetail
           detail={opps.find(o => o.id === detail.id) || detail} onClose={() => setDetail(null)}
           onEdit={() => { openEdit(opps.find(o => o.id === detail.id) || detail); setDetail(null); }}
-          accounts={accounts} contacts={contacts} leads={leads} notes={notes} files={files}
+          accounts={accounts} contacts={contacts} leads={leads} setLeads={setLeads} notes={notes} files={files}
           onAddNote={onAddNote} onAddFile={onAddFile} currentUser={currentUser}
           activities={activities} setActivities={setActivities} opps={opps} setOpps={setOpps}
           orgUsers={orgUsers} callReports={callReports}
