@@ -96,6 +96,8 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   const reportStageColor = Object.fromEntries(stageList.map(s => [s.name, s.color || "#94A3B8"]));
   const [tab,setTab]=useState("executive");
   const [periodFilter,setPeriodFilter]=useState("all");
+  const [customFrom,setCustomFrom]=useState("");
+  const [customTo,setCustomTo]=useState("");
   const [ownerFilter,setOwnerFilter]=useState("all");
   const [expandedSection,setExpandedSection]=useState(null);
 
@@ -110,15 +112,43 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   }, [orgUsers, _reportIsGlobal, _reportScopedIds]);
 
   // ── Filtered opps based on period ──
+  // Resolve the selected period into a [start, end] window, then keep opps
+  // whose closeDate falls inside it. Relative ranges are anchored to today;
+  // "custom" uses the From/To date pickers (either bound optional).
   const filteredOpps = useMemo(()=>{
     if(periodFilter==="all") return opps;
-    const now = new Date(today);
-    const start = new Date(today);
-    if(periodFilter==="month") start.setDate(1);
-    else if(periodFilter==="quarter") { start.setMonth(Math.floor(start.getMonth()/3)*3); start.setDate(1); }
-    else if(periodFilter==="year") { start.setMonth(0); start.setDate(1); }
-    return opps.filter(o=>new Date(o.closeDate)>=start && new Date(o.closeDate)<=now);
-  },[opps,periodFilter]);
+    const base = new Date(today); base.setHours(0,0,0,0);          // midnight today
+    const now = new Date(today); now.setHours(23,59,59,999);        // end of today
+    const m = base.getMonth(), y = base.getFullYear();
+    let start = null, end = now;
+    const daysAgo = (n)=>{ const d=new Date(base); d.setDate(d.getDate()-n); return d; };
+    const eod = (d)=>{ d.setHours(23,59,59,999); return d; };
+    switch(periodFilter){
+      case "today":       start = new Date(base); break;
+      case "7d":          start = daysAgo(6); break;
+      case "30d":         start = daysAgo(29); break;
+      case "90d":         start = daysAgo(89); break;
+      case "month":       start = new Date(y, m, 1); break;
+      case "lastMonth":   start = new Date(y, m-1, 1); end = eod(new Date(y, m, 0)); break;
+      case "quarter":     start = new Date(y, Math.floor(m/3)*3, 1); break;
+      case "lastQuarter":{ const q=Math.floor(m/3); start = new Date(y, (q-1)*3, 1); end = eod(new Date(y, q*3, 0)); break; }
+      case "year":        start = new Date(y, 0, 1); break;
+      case "lastYear":    start = new Date(y-1, 0, 1); end = eod(new Date(y-1, 11, 31)); break;
+      case "fy":        { const fy = m>=3 ? y : y-1; start = new Date(fy, 3, 1); break; }   // India FY Apr–Mar
+      case "12m":         start = new Date(y, m-12, base.getDate()); break;
+      case "custom":
+        start = customFrom ? new Date(customFrom+"T00:00:00") : null;
+        end = customTo ? eod(new Date(customTo+"T00:00:00")) : now;
+        if(!customFrom && !customTo) return opps;
+        break;
+      default: return opps;
+    }
+    return opps.filter(o=>{
+      if(!o.closeDate) return false;
+      const d = new Date(o.closeDate);
+      return (!start || d>=start) && (!end || d<=end);
+    });
+  },[opps,periodFilter,customFrom,customTo]);
 
   const ownerOpps = useMemo(()=> ownerFilter==="all" ? filteredOpps : filteredOpps.filter(o=>o.owner===ownerFilter), [filteredOpps,ownerFilter]);
 
@@ -422,10 +452,29 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <select value={periodFilter} onChange={e=>setPeriodFilter(e.target.value)} style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:12,background:"#fff"}}>
             <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
+            <option value="90d">Last 90 Days</option>
             <option value="month">This Month</option>
+            <option value="lastMonth">Last Month</option>
             <option value="quarter">This Quarter</option>
+            <option value="lastQuarter">Last Quarter</option>
             <option value="year">This Year</option>
+            <option value="lastYear">Last Year</option>
+            <option value="fy">This FY (Apr–Mar)</option>
+            <option value="12m">Last 12 Months</option>
+            <option value="custom">Custom Range…</option>
           </select>
+          {periodFilter==="custom" && (
+            <>
+              <input type="date" value={customFrom} max={customTo||undefined} onChange={e=>setCustomFrom(e.target.value)} title="From date"
+                style={{padding:"5px 8px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:12,background:"#fff"}} />
+              <span style={{fontSize:12,color:"#64748B"}}>→</span>
+              <input type="date" value={customTo} min={customFrom||undefined} onChange={e=>setCustomTo(e.target.value)} title="To date"
+                style={{padding:"5px 8px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:12,background:"#fff"}} />
+            </>
+          )}
           <select value={ownerFilter} onChange={e=>setOwnerFilter(e.target.value)} style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:12,background:"#fff"}}>
             <option value="all">All Owners</option>
             {_scopedTeamSrc.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
