@@ -111,12 +111,12 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     return _reportIsGlobal ? src : src.filter(u => _reportScopedIds.has(u.id));
   }, [orgUsers, _reportIsGlobal, _reportScopedIds]);
 
-  // ── Filtered opps based on period ──
-  // Resolve the selected period into a [start, end] window, then keep opps
-  // whose closeDate falls inside it. Relative ranges are anchored to today;
-  // "custom" uses the From/To date pickers (either bound optional).
-  const filteredOpps = useMemo(()=>{
-    if(periodFilter==="all") return opps;
+  // ── Date range → [start, end] window ──
+  // Resolve the selected period into a single window every tab can reuse.
+  // Relative ranges are anchored to today; "custom" uses the From/To pickers
+  // (either bound optional). null = "All Time" (no filtering).
+  const periodWindow = useMemo(()=>{
+    if(periodFilter==="all") return null;
     const base = new Date(today); base.setHours(0,0,0,0);          // midnight today
     const now = new Date(today); now.setHours(23,59,59,999);        // end of today
     const m = base.getMonth(), y = base.getFullYear();
@@ -139,16 +139,29 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
       case "custom":
         start = customFrom ? new Date(customFrom+"T00:00:00") : null;
         end = customTo ? eod(new Date(customTo+"T00:00:00")) : now;
-        if(!customFrom && !customTo) return opps;
+        if(!customFrom && !customTo) return null;
         break;
-      default: return opps;
+      default: return null;
     }
-    return opps.filter(o=>{
-      if(!o.closeDate) return false;
-      const d = new Date(o.closeDate);
-      return (!start || d>=start) && (!end || d<=end);
-    });
-  },[opps,periodFilter,customFrom,customTo]);
+    return { start, end };
+  },[periodFilter,customFrom,customTo]);
+
+  // True when a record's date falls in the active window (or no window set).
+  const inWindow = (d)=>{
+    if(!periodWindow) return true;
+    if(!d) return false;
+    const t = new Date(d);
+    return (!periodWindow.start || t>=periodWindow.start) && (!periodWindow.end || t<=periodWindow.end);
+  };
+
+  // ── Date-windowed datasets — every tab reads these so the period filter
+  //    applies app-wide. Each record type is windowed by its natural date. ──
+  const filteredOpps = useMemo(()=> (opps||[]).filter(o=>inWindow(o.closeDate)), [opps,periodWindow]);
+  const wLeads   = useMemo(()=> (leads||[]).filter(l=>inWindow(l.createdDate)), [leads,periodWindow]);
+  const wActs    = useMemo(()=> (activities||[]).filter(a=>inWindow(a.date)), [activities,periodWindow]);
+  const wCalls   = useMemo(()=> (callReports||[]).filter(r=>inWindow(r.callDate)), [callReports,periodWindow]);
+  const wColls   = useMemo(()=> (collections||[]).filter(c=>inWindow(c.invoiceDate)), [collections,periodWindow]);
+  const wTickets = useMemo(()=> (tickets||[]).filter(t=>inWindow(t.reportedDate||t.created)), [tickets,periodWindow]);
 
   const ownerOpps = useMemo(()=> ownerFilter==="all" ? filteredOpps : filteredOpps.filter(o=>o.owner===ownerFilter), [filteredOpps,ownerFilter]);
 
@@ -157,9 +170,9 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   // ═══════════════════════════════════════════════════════════════
 
   const metrics = useMemo(()=>{
-    const activeOpps = opps.filter(o=>!["Won","Lost","closed_won","closed_lost"].includes(o.stage));
-    const wonOpps = opps.filter(o=>o.stage==="Won"||o.stage==="closed_won");
-    const lostOpps = opps.filter(o=>o.stage==="Lost"||o.stage==="closed_lost");
+    const activeOpps = filteredOpps.filter(o=>!["Won","Lost","closed_won","closed_lost"].includes(o.stage));
+    const wonOpps = filteredOpps.filter(o=>o.stage==="Won"||o.stage==="closed_won");
+    const lostOpps = filteredOpps.filter(o=>o.stage==="Lost"||o.stage==="closed_lost");
     const totalPipeline = activeOpps.reduce((s,o)=>s+o.value,0);
     const weightedPipeline = activeOpps.reduce((s,o)=>s+(o.value*(o.probability||0)/100),0);
     const wonValue = wonOpps.reduce((s,o)=>s+o.value,0);
@@ -172,33 +185,34 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     const closedDeals = wonOpps.filter(o=>o.closeDate);
     const avgCycleTime = closedDeals.length ? Math.round(closedDeals.reduce((s,o)=>s+daysBetween(o.createdDate||"2025-12-01",o.closeDate),0)/closedDeals.length) : 0;
 
-    // Activity metrics
-    const totalActivities = activities.length;
-    const completedActs = activities.filter(a=>a.status==="Completed").length;
-    const totalCalls = (callReports||[]).length;
+    // Activity metrics (windowed)
+    const totalActivities = wActs.length;
+    const completedActs = wActs.filter(a=>a.status==="Completed").length;
+    const totalCalls = wCalls.length;
 
-    // Lead metrics
-    const totalLeads = (leads||[]).length;
-    const convertedLeads = (leads||[]).filter(l=>l.stage==="Converted"||l.stage==="SAL").length;
+    // Lead metrics (windowed)
+    const totalLeads = wLeads.length;
+    const convertedLeads = wLeads.filter(l=>l.stage==="Converted"||l.stage==="SAL").length;
     const leadConvRate = pct(convertedLeads, totalLeads);
 
-    // Support metrics
-    const openTickets = tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
-    const criticalTickets = tickets.filter(t=>t.priority==="Critical"&&!["Resolved","Closed"].includes(t.status)).length;
+    // Support metrics (windowed)
+    const openTickets = wTickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
+    const criticalTickets = wTickets.filter(t=>t.priority==="Critical"&&!["Resolved","Closed"].includes(t.status)).length;
     const avgResTime = (() => {
-      const resolved = tickets.filter(t=>t.resolved && t.created);
+      const resolved = wTickets.filter(t=>t.resolved && t.created);
       return resolved.length ? Math.round(resolved.reduce((s,t)=>s+daysBetween(t.created,t.resolved),0)/resolved.length) : 0;
     })();
 
-    // Collection metrics
-    const totalBilled = (collections||[]).reduce((s,c)=>s+c.billedAmount,0);
-    const totalCollected = (collections||[]).reduce((s,c)=>s+c.collectedAmount,0);
-    const totalPending = (collections||[]).reduce((s,c)=>s+c.pendingAmount,0);
+    // Collection metrics (windowed)
+    const totalBilled = wColls.reduce((s,c)=>s+c.billedAmount,0);
+    const totalCollected = wColls.reduce((s,c)=>s+c.collectedAmount,0);
+    const totalPending = wColls.reduce((s,c)=>s+c.pendingAmount,0);
     const collectionRate = pct(totalCollected, totalBilled);
 
-    // Build last-activity map per opp (O(n) instead of O(n²))
+    // Build last-activity map per opp from FULL activities (recency vs today
+    // must not be limited by the selected window).
     const lastActByOpp = {};
-    activities.forEach(a => {
+    (activities||[]).forEach(a => {
       if (!a.oppId) return;
       if (!lastActByOpp[a.oppId] || (a.date||"") > (lastActByOpp[a.oppId].date||"")) lastActByOpp[a.oppId] = a;
     });
@@ -217,8 +231,8 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
       return days >= 7 && days <= 14;
     });
 
-    // Overdue collections
-    const overdueCollections = (collections||[]).filter(c=>c.status==="Overdue"||isOverdue(c.dueDate));
+    // Overdue collections (windowed)
+    const overdueCollections = wColls.filter(c=>c.status==="Overdue"||isOverdue(c.dueDate));
 
     // Contracts expiring soon
     const expiringContracts = (contracts||[]).filter(c=>{
@@ -234,7 +248,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
       totalBilled,totalCollected,totalPending,collectionRate,stalledDeals,atRiskDeals,
       overdueCollections,expiringContracts
     };
-  },[opps,activities,leads,tickets,collections,contracts,accounts,callReports]);
+  },[filteredOpps,activities,wActs,wLeads,wTickets,wColls,wCalls,contracts,accounts]);
 
   // ── Pipeline by Stage ──
   const stageData = useMemo(()=> reportStages.map(s=>({
@@ -262,14 +276,14 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   // Use orgUsers (live) instead of the static TEAM constant so dynamically added users appear.
   const _reportTeam = _scopedTeamSrc;
   const teamPerf = useMemo(()=>_reportTeam.map(u=>{
-    const userOpps = opps.filter(o=>o.owner===u.id);
+    const userOpps = filteredOpps.filter(o=>o.owner===u.id);
     const active = userOpps.filter(o=>!["Won","Lost"].includes(o.stage));
     const won = userOpps.filter(o=>o.stage==="Won");
     const lost = userOpps.filter(o=>o.stage==="Lost");
-    const userActs = activities.filter(a=>a.owner===u.id);
-    const userCalls = (callReports||[]).filter(r=>r.marketingPerson===u.id);
+    const userActs = wActs.filter(a=>a.owner===u.id);
+    const userCalls = wCalls.filter(r=>r.marketingPerson===u.id);
     // leads use assignedTo, not owner
-    const userLeads = (leads||[]).filter(l=>l.assignedTo===u.id);
+    const userLeads = wLeads.filter(l=>l.assignedTo===u.id);
     const userTargets = (targets||[]).filter(t=>t.userId===u.id&&t.period==="2026-Q1");
     const targetVal = userTargets.reduce((s,t)=>s+t.targetValue,0);
     const achievedVal = userTargets.reduce((s,t)=>s+t.achievedValue,0);
@@ -286,38 +300,38 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
       winRate:wr, calls:userCalls.length, meetings, demos, activities:userActs.length, leads:userLeads.length,
       targetVal, achievedVal, targetPct:pct(achievedVal,targetVal), actScore
     };
-  }).filter(u=>u.activeDeals>0||u.wonDeals>0||u.calls>0||u.activities>0),[_reportTeam,opps,activities,callReports,leads,targets]);
+  }).filter(u=>u.activeDeals>0||u.wonDeals>0||u.calls>0||u.activities>0),[_reportTeam,filteredOpps,wActs,wCalls,wLeads,targets]);
 
   // ── Lead Analytics ──
   const leadData = useMemo(()=>{
-    if(!leads?.length) return {stages:[],sources:[],temps:[],funnel:[],aging:[]};
-    const stages = LEAD_STAGES.filter(s=>s.id!=="NA").map(s=>({id:s.id,name:s.name.split("–")[0].trim(),count:leads.filter(l=>l.stage===s.id).length,color:s.color}));
-    const sources = [...new Set(leads.map(l=>l.source))].map(s=>({source:s,count:leads.filter(l=>l.source===s).length})).sort((a,b)=>b.count-a.count);
-    const temps = ["Hot","Warm","Cool","Cold"].map(t=>({temp:t,count:leads.filter(l=>l.temperature===t).length}));
+    if(!wLeads.length) return {stages:[],sources:[],temps:[],funnel:[],aging:[]};
+    const stages = LEAD_STAGES.filter(s=>s.id!=="NA").map(s=>({id:s.id,name:s.name.split("–")[0].trim(),count:wLeads.filter(l=>l.stage===s.id).length,color:s.color}));
+    const sources = [...new Set(wLeads.map(l=>l.source))].map(s=>({source:s,count:wLeads.filter(l=>l.source===s).length})).sort((a,b)=>b.count-a.count);
+    const temps = ["Hot","Warm","Cool","Cold"].map(t=>({temp:t,count:wLeads.filter(l=>l.temperature===t).length}));
     const aging = [
-      {label:"< 7 days",count:leads.filter(l=>daysBetween(l.createdDate,today)<7).length,color:"#22C55E"},
-      {label:"7-14 days",count:leads.filter(l=>{const d=daysBetween(l.createdDate,today);return d>=7&&d<14;}).length,color:"#F59E0B"},
-      {label:"14-30 days",count:leads.filter(l=>{const d=daysBetween(l.createdDate,today);return d>=14&&d<30;}).length,color:"#F97316"},
-      {label:"30+ days",count:leads.filter(l=>daysBetween(l.createdDate,today)>=30).length,color:"#DC2626"},
+      {label:"< 7 days",count:wLeads.filter(l=>daysBetween(l.createdDate,today)<7).length,color:"#22C55E"},
+      {label:"7-14 days",count:wLeads.filter(l=>{const d=daysBetween(l.createdDate,today);return d>=7&&d<14;}).length,color:"#F59E0B"},
+      {label:"14-30 days",count:wLeads.filter(l=>{const d=daysBetween(l.createdDate,today);return d>=14&&d<30;}).length,color:"#F97316"},
+      {label:"30+ days",count:wLeads.filter(l=>daysBetween(l.createdDate,today)>=30).length,color:"#DC2626"},
     ];
     return {stages,sources,temps,aging};
-  },[leads]);
+  },[wLeads]);
 
   // ── Call Analytics ──
   const callData = useMemo(()=>{
-    if(!callReports?.length) return {byType:[],byPerson:[],byOutcome:[],byObjective:[],trend:[]};
-    const byType = CALL_TYPES.map(t=>({type:t,count:callReports.filter(r=>r.callType===t).length})).filter(c=>c.count>0);
-    const byPerson = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],calls:callReports.filter(r=>r.marketingPerson===u.id).length})).filter(c=>c.calls>0).sort((a,b)=>b.calls-a.calls);
-    const byOutcome = [...new Set(callReports.map(r=>r.outcome))].map(o=>({outcome:o||"N/A",count:callReports.filter(r=>(r.outcome||"N/A")===o).length})).sort((a,b)=>b.count-a.count);
-    const byObjective = [...new Set(callReports.map(r=>r.objective))].filter(Boolean).map(o=>({objective:o.length>20?o.slice(0,20)+"...":o,full:o,count:callReports.filter(r=>r.objective===o).length})).sort((a,b)=>b.count-a.count).slice(0,8);
+    if(!wCalls.length) return {byType:[],byPerson:[],byOutcome:[],byObjective:[],trend:[]};
+    const byType = CALL_TYPES.map(t=>({type:t,count:wCalls.filter(r=>r.callType===t).length})).filter(c=>c.count>0);
+    const byPerson = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],calls:wCalls.filter(r=>r.marketingPerson===u.id).length})).filter(c=>c.calls>0).sort((a,b)=>b.calls-a.calls);
+    const byOutcome = [...new Set(wCalls.map(r=>r.outcome))].map(o=>({outcome:o||"N/A",count:wCalls.filter(r=>(r.outcome||"N/A")===o).length})).sort((a,b)=>b.count-a.count);
+    const byObjective = [...new Set(wCalls.map(r=>r.objective))].filter(Boolean).map(o=>({objective:o.length>20?o.slice(0,20)+"...":o,full:o,count:wCalls.filter(r=>r.objective===o).length})).sort((a,b)=>b.count-a.count).slice(0,8);
     return {byType,byPerson,byOutcome,byObjective};
-  },[callReports,_scopedTeamSrc]);
+  },[wCalls,_scopedTeamSrc]);
 
   // ── Collection Analytics ──
   const collData = useMemo(()=>{
-    if(!collections?.length) return {byAccount:[],aging:[],byStatus:[]};
+    if(!wColls.length) return {byAccount:[],aging:[],byStatus:[]};
     const byAccount = {};
-    collections.forEach(c=>{
+    wColls.forEach(c=>{
       const name = accounts.find(a=>a.id===c.accountId)?.name||"Unknown";
       if(!byAccount[name]) byAccount[name]={name,billed:0,collected:0,pending:0};
       byAccount[name].billed+=c.billedAmount;
@@ -326,33 +340,33 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     });
     const aging = AGEING_BUCKETS.map(b=>{
       const [min,max] = b.includes("+") ? [parseInt(b),9999] : b.split("-").map(Number);
-      const inBucket = collections.filter(c=>{
+      const inBucket = wColls.filter(c=>{
         const days = daysBetween(c.dueDate, today);
         return days >= min && days < (max||9999);
       });
       return {bucket:b+"d",count:inBucket.length,value:inBucket.reduce((s,c)=>s+c.pendingAmount,0)};
     }).filter(b=>b.count>0);
-    const byStatus = [...new Set(collections.map(c=>c.status))].map(s=>({status:s,count:collections.filter(c=>c.status===s).length,value:collections.filter(c=>c.status===s).reduce((sum,c)=>sum+c.pendingAmount,0)}));
+    const byStatus = [...new Set(wColls.map(c=>c.status))].map(s=>({status:s,count:wColls.filter(c=>c.status===s).length,value:wColls.filter(c=>c.status===s).reduce((sum,c)=>sum+c.pendingAmount,0)}));
     return {byAccount:Object.values(byAccount).sort((a,b)=>b.pending-a.pending).slice(0,10),aging,byStatus};
-  },[collections,accounts]);
+  },[wColls,accounts]);
 
   // ── Support Analytics ──
   const supportData = useMemo(()=>{
-    const byProduct = PRODUCTS.map(p=>({name:p.name,open:tickets.filter(t=>t.product===p.id&&!["Resolved","Closed"].includes(t.status)).length,resolved:tickets.filter(t=>t.product===p.id&&["Resolved","Closed"].includes(t.status)).length})).filter(p=>p.open+p.resolved>0);
-    const byPriority = PRIORITIES.map((p,i)=>({name:p,value:tickets.filter(t=>t.priority===p&&!["Resolved","Closed"].includes(t.status)).length,color:["#DC2626","#F97316","#3B82F6","#94A3B8"][i]})).filter(p=>p.value>0);
-    const byType = TICKET_TYPES.map(t=>({type:t.length>15?t.slice(0,15)+"...":t,count:tickets.filter(tk=>tk.type===t).length})).filter(t=>t.count>0);
-    const slaBreaches = tickets.filter(t=>{
+    const byProduct = PRODUCTS.map(p=>({name:p.name,open:wTickets.filter(t=>t.product===p.id&&!["Resolved","Closed"].includes(t.status)).length,resolved:wTickets.filter(t=>t.product===p.id&&["Resolved","Closed"].includes(t.status)).length})).filter(p=>p.open+p.resolved>0);
+    const byPriority = PRIORITIES.map((p,i)=>({name:p,value:wTickets.filter(t=>t.priority===p&&!["Resolved","Closed"].includes(t.status)).length,color:["#DC2626","#F97316","#3B82F6","#94A3B8"][i]})).filter(p=>p.value>0);
+    const byType = TICKET_TYPES.map(t=>({type:t.length>15?t.slice(0,15)+"...":t,count:wTickets.filter(tk=>tk.type===t).length})).filter(t=>t.count>0);
+    const slaBreaches = wTickets.filter(t=>{
       if(["Resolved","Closed"].includes(t.status)) return false;
       const hrs = daysBetween(t.created, today)*24;
       return hrs > (SLA_HOURS[t.priority]||48);
     });
-    const byAssignee = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],open:tickets.filter(t=>t.assigned===u.id&&!["Resolved","Closed"].includes(t.status)).length,resolved:tickets.filter(t=>t.assigned===u.id&&["Resolved","Closed"].includes(t.status)).length})).filter(u=>u.open+u.resolved>0);
+    const byAssignee = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],open:wTickets.filter(t=>t.assigned===u.id&&!["Resolved","Closed"].includes(t.status)).length,resolved:wTickets.filter(t=>t.assigned===u.id&&["Resolved","Closed"].includes(t.status)).length})).filter(u=>u.open+u.resolved>0);
     return {byProduct,byPriority,byType,slaBreaches,byAssignee};
-  },[tickets,_scopedTeamSrc]);
+  },[wTickets,_scopedTeamSrc]);
 
   // ── Forecast Data ──
   const forecastData = useMemo(()=>{
-    const active = opps.filter(o=>!["Won","Lost","closed_won","closed_lost"].includes(o.stage));
+    const active = filteredOpps.filter(o=>!["Won","Lost","closed_won","closed_lost"].includes(o.stage));
     const weighted = active.reduce((s,o)=>s+(o.value*(o.probability||0)/100),0);
     const bestCase = active.filter(o=>(o.probability||0)>=40).reduce((s,o)=>s+o.value,0);
     const likelyCase = active.filter(o=>(o.probability||0)>=60).reduce((s,o)=>s+o.value,0);
@@ -380,18 +394,18 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     }).filter(d=>d.target>0);
 
     return {weighted,bestCase,likelyCase,committed,months,targetVsAchieved};
-  },[opps,targets,_scopedTeamSrc]);
+  },[filteredOpps,targets,_scopedTeamSrc]);
 
   // ── Activity Analytics ──
   const actData = useMemo(()=>{
-    const byType = ACT_TYPES.map(t=>({type:t,count:activities.filter(a=>a.type===t).length})).filter(a=>a.count>0).sort((a,b)=>b.count-a.count);
-    const byOwner = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],count:activities.filter(a=>a.owner===u.id).length,completed:activities.filter(a=>a.owner===u.id&&a.status==="Completed").length})).filter(u=>u.count>0).sort((a,b)=>b.count-a.count);
-    const byStatus = ["Planned","Completed","Cancelled"].map(s=>({status:s,count:activities.filter(a=>a.status===s).length}));
-    const completionRate = pct(activities.filter(a=>a.status==="Completed").length, activities.length);
+    const byType = ACT_TYPES.map(t=>({type:t,count:wActs.filter(a=>a.type===t).length})).filter(a=>a.count>0).sort((a,b)=>b.count-a.count);
+    const byOwner = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],count:wActs.filter(a=>a.owner===u.id).length,completed:wActs.filter(a=>a.owner===u.id&&a.status==="Completed").length})).filter(u=>u.count>0).sort((a,b)=>b.count-a.count);
+    const byStatus = ["Planned","Completed","Cancelled"].map(s=>({status:s,count:wActs.filter(a=>a.status===s).length}));
+    const completionRate = pct(wActs.filter(a=>a.status==="Completed").length, wActs.length);
     // Overdue activities
-    const overdue = activities.filter(a=>a.status==="Planned"&&a.date<today);
+    const overdue = wActs.filter(a=>a.status==="Planned"&&a.date<today);
     return {byType,byOwner,byStatus,completionRate,overdue};
-  },[activities,_scopedTeamSrc]);
+  },[wActs,_scopedTeamSrc]);
 
   // ═══════════════════════════════════════════════════════════════
   // ACTIONABLE INSIGHTS ENGINE
@@ -765,8 +779,8 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:16}}>
             <K label="Total Leads" value={metrics.totalLeads} color="#2563EB" icon={Users}/>
             <K label="Converted" value={metrics.convertedLeads} sub={`${metrics.leadConvRate}% conversion`} color="#22C55E" icon={CheckCircle}/>
-            <K label="Hot Leads" value={(leads||[]).filter(l=>l.temperature==="Hot").length} color="#DC2626" icon={Flame}/>
-            <K label="Avg Score" value={(leads||[]).length ? Math.round((leads||[]).reduce((s,l)=>s+(l.score||0),0)/leads.length) : 0} sub="out of 100" color="#7C3AED" icon={Star}/>
+            <K label="Hot Leads" value={wLeads.filter(l=>l.temperature==="Hot").length} color="#DC2626" icon={Flame}/>
+            <K label="Avg Score" value={wLeads.length ? Math.round(wLeads.reduce((s,l)=>s+(l.score||0),0)/wLeads.length) : 0} sub="out of 100" color="#7C3AED" icon={Star}/>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
@@ -831,9 +845,9 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:16}}>
             <K label="Total Calls" value={metrics.totalCalls} color="#1B6B5A" icon={Phone}/>
-            <K label="Visits" value={(callReports||[]).filter(r=>r.callType==="Visit").length} color="#2563EB" icon={MapPin}/>
-            <K label="Web Calls" value={(callReports||[]).filter(r=>r.callType==="Web Call").length} color="#7C3AED" icon={Globe}/>
-            <K label="Avg/Person" value={_scopedTeamSrc.length?(metrics.totalCalls/_scopedTeamSrc.filter(u=>(callReports||[]).some(r=>r.marketingPerson===u.id)).length||0).toFixed(1):"0"} color="#D97706" icon={Users}/>
+            <K label="Visits" value={wCalls.filter(r=>r.callType==="Visit").length} color="#2563EB" icon={MapPin}/>
+            <K label="Web Calls" value={wCalls.filter(r=>r.callType==="Web Call").length} color="#7C3AED" icon={Globe}/>
+            <K label="Avg/Person" value={_scopedTeamSrc.length?(metrics.totalCalls/_scopedTeamSrc.filter(u=>wCalls.some(r=>r.marketingPerson===u.id)).length||0).toFixed(1):"0"} color="#D97706" icon={Users}/>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
@@ -894,7 +908,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
             <K label="Total Activities" value={metrics.totalActivities} color="#1B6B5A" icon={Activity}/>
             <K label="Completed" value={metrics.completedActs} sub={`${actData.completionRate}% rate`} color="#22C55E" icon={CheckCircle}/>
             <K label="Overdue" value={actData.overdue.length} color={actData.overdue.length>0?"#DC2626":"#22C55E"} icon={AlertTriangle}/>
-            <K label="Planned" value={activities.filter(a=>a.status==="Planned").length} color="#2563EB" icon={Calendar}/>
+            <K label="Planned" value={wActs.filter(a=>a.status==="Planned").length} color="#2563EB" icon={Calendar}/>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
@@ -1150,7 +1164,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
             <K label="Open Tickets" value={metrics.openTickets} color="#F59E0B" icon={AlertTriangle}/>
             <K label="Critical" value={metrics.criticalTickets} color="#DC2626" icon={XCircle}/>
             <K label="SLA Breaches" value={supportData.slaBreaches.length} color={supportData.slaBreaches.length>0?"#DC2626":"#22C55E"} icon={Timer}/>
-            <K label="Total Tickets" value={tickets.length} sub={`${pct(tickets.filter(t=>["Resolved","Closed"].includes(t.status)).length,tickets.length)}% resolved`} color="#1B6B5A" icon={Shield}/>
+            <K label="Total Tickets" value={wTickets.length} sub={`${pct(wTickets.filter(t=>["Resolved","Closed"].includes(t.status)).length,wTickets.length)}% resolved`} color="#1B6B5A" icon={Shield}/>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
