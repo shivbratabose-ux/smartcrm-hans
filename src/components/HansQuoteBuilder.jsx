@@ -22,7 +22,7 @@ import {
 import {
   resolveUnitPrice, computeLine, computeQuote, isOneTimeModel,
   evaluateDiscountGuardrail, evaluateMarginGuardrail, validateCcsRule, validateWiseHandlingModules,
-  formatQuoteNumber,
+  formatQuoteNumber, cardBandIndex,
 } from "../lib/quotation/pricingEngine";
 import { TC_TEMPLATES, STANDARD_TERMS } from "../data/constants";
 import { printHansQuote } from "../lib/quotation/printQuote";
@@ -46,6 +46,21 @@ export default function HansQuoteBuilder({
   const bandFrom = masters?.bandFrom || ICAFFE_BAND_FROM;
   const rateCards = masters?.rateCards || [];
   const catByCode = useMemo(() => Object.fromEntries(catalogue.map(p => [p.code, p])), [catalogue]);
+  // Group products for the line picker: rate-card sub-products under their card,
+  // everything else under "Catalogue", so reps can find rate-card items fast.
+  const productGroups = useMemo(() => {
+    const byCard = new Map();
+    const general = [];
+    for (const p of catalogue) {
+      if (p.matrixId) {
+        const card = rateCards.find(c => c.id === p.matrixId);
+        const label = card ? card.label : "Rate card";
+        if (!byCard.has(label)) byCard.set(label, []);
+        byCard.get(label).push(p);
+      } else general.push(p);
+    }
+    return { general, cards: [...byCard.entries()] };
+  }, [catalogue, rateCards]);
 
   const me = orgUsers.find(u => u.id === currentUser);
 
@@ -201,11 +216,17 @@ export default function HansQuoteBuilder({
     if (!p) return { ...l, _empty: true, pricingModel: "", unitPriceResolved: 0, missingRate: false };
     const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, rateCards, config, fx: fxForCurrency, asOf: quoteDate, segment, currency, country: party.country });
     const oneTime = isOneTimeModel(p.pricingModel);
+    // Rate-card lines: surface the card + the tier the qty resolves to, so the
+    // rep sees where the unit price came from.
+    const card = p.matrixId ? rateCards.find(c => c.id === p.matrixId) : null;
+    const cb = card && Array.isArray(card.bands) && card.bands.length ? card.bands : null;
+    const tierLabel = card ? (cb ? cb[cardBandIndex(l.qty, cb.map(b => Number(b.from) || 0))]?.label : null) : null;
     return {
       ...l,
       productCode: p.code, name: p.name, module: p.module, description: p.description,
       pricingModel: p.pricingModel, unit: p.unit, minMonthFloor: p.minMonthFloor,
       unitPriceResolved: unitPrice, missingRate,
+      rateCardLabel: card ? card.label : null, tierLabel,
       // Per-unit cost (same scale as the resolved unit price) for the margin
       // guardrail — only present when the product has a cost in masters.
       costPerUnit: p.costPrice != null ? (Number(p.costPrice) || 0) / fxForCurrency : null,
@@ -539,7 +560,16 @@ export default function HansQuoteBuilder({
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, alignItems: "center" }}>
                         <select value={l.productCode} onChange={e => updateLine(i, { productCode: e.target.value })} style={{ ...fieldStyle, cursor: "pointer" }}>
                           <option value="">— Pick product —</option>
-                          {catalogue.map(p => <option key={p.code} value={p.code}>{p.code} · {p.name}</option>)}
+                          {productGroups.general.length > 0 && (
+                            <optgroup label="Catalogue">
+                              {productGroups.general.map(p => <option key={p.code} value={p.code}>{p.code} · {p.name}</option>)}
+                            </optgroup>
+                          )}
+                          {productGroups.cards.map(([label, items]) => (
+                            <optgroup key={label} label={`Rate card · ${label}`}>
+                              {items.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
+                            </optgroup>
+                          ))}
                         </select>
                         <input type="number" min={0} value={l.qty} onChange={e => updateLine(i, { qty: +e.target.value })} style={{ ...fieldStyle, textAlign: "right" }} />
                         <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })} style={{ ...fieldStyle, textAlign: "right", opacity: oneTime ? 0.5 : 1 }} />
@@ -552,6 +582,7 @@ export default function HansQuoteBuilder({
                           <span>{l.module}</span>·<span>{l.pricingModel}</span>·<span>{bucketBadge(l.pricingModel)}</span>·
                           <span>{l.missingRate ? <span style={{ color: "#DC2626", fontWeight: 700 }}>Enter rate in master</span> : `unit ${inr2(l.unitPriceResolved)}/${l.unit}`}</span>
                           {l.minMonthFloor ? <span>· floor {inr(l.minMonthFloor)}/mo</span> : null}
+                          {l.rateCardLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.rateCardLabel}{l.tierLabel ? ` · tier ${l.tierLabel}` : ""}</span> : null}
                         </div>
                       )}
                     </div>

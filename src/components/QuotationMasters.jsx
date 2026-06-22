@@ -603,27 +603,66 @@ export default function QuotationMasters({ masters, setMasters, catalog = [] }) 
               Build your own rate cards for any product family — each card has its <b>own columns/tiers</b> (not just iCAFFE's user bands) and its own sub-products. Steps: <b>1)</b> add a card, <b>2)</b> define its tier columns, <b>3)</b> add sub-products (type a new name or pick an existing product), <b>4)</b> fill the rates. A quote line for a sub-product prices from its row × tier × country automatically.
             </div>
 
-            {/* Step 1 — pick / create a card */}
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}>
-              <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
-                <label style={{ fontSize: 9 }}>Rate card</label>
-                <select value={cardId} onChange={e => { setCardId(e.target.value); setCardCountry("Default"); }}>
-                  <option value="">— Select a rate card —</option>
-                  {cur.rateCards.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                </select>
+            {/* Landing — clickable list of cards + a prominent creator. Hidden
+                once a card is open (the editor below takes over). */}
+            {!card && (
+              <div>
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 9 }}>New rate card</label>
+                    <input value={newCardLabel} onChange={e => setNewCardLabel(e.target.value)} placeholder="e.g. WiseCargo" style={{ width: 200 }}
+                      onKeyDown={e => { if (e.key === "Enter") { const l = newCardLabel.trim(); if (l) { addRateCard(l); setNewCardLabel(""); } } }} />
+                  </div>
+                  <button className="btn btn-primary btn-xs" style={{ marginBottom: 2 }} disabled={!newCardLabel.trim()}
+                    onClick={() => { const l = newCardLabel.trim(); if (l) { addRateCard(l); setNewCardLabel(""); } }}><Plus size={13} /> Create rate card</button>
+                </div>
+
+                {cur.rateCards.length === 0 ? (
+                  <div style={{ border: "1px dashed var(--border)", borderRadius: 10, padding: "28px 20px", textAlign: "center", color: "var(--text3)" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text2)", marginBottom: 4 }}>No rate cards yet</div>
+                    <div style={{ fontSize: 12 }}>Create one above to price a product family by your own tiers (e.g. WiseCargo, WiseHandling).</div>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 10 }}>
+                    {cur.rateCards.map(c => {
+                      const tiers = cardBands(c).length;
+                      const subs = (c.rows || []).length;
+                      const ctrys = Object.keys(c.rates || {}).filter(k => k.toLowerCase() !== "default").length + 1;
+                      const filledRows = (c.rows || []).filter(r => {
+                        const row = c.rates?.Default?.[r.name];
+                        return Array.isArray(row) && row.some(v => v != null);
+                      }).length;
+                      const ok = subs > 0 && filledRows === subs;
+                      return (
+                        <button key={c.id} type="button" onClick={() => { setCardId(c.id); setCardCountry("Default"); }}
+                          style={{ textAlign: "left", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", background: "var(--surface)", cursor: "pointer", display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text1)" }}>{c.label}</span>
+                            <span style={{ fontSize: 9.5, fontWeight: 700, padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap",
+                              color: subs === 0 ? "#64748B" : ok ? "#15803D" : "#B45309",
+                              background: subs === 0 ? "#F1F5F9" : ok ? "#F0FDF4" : "#FFFBEB" }}>
+                              {subs === 0 ? "Empty" : ok ? "Ready" : "Needs rates"}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text3)" }}>
+                            {subs} sub-product{subs === 1 ? "" : "s"} · {tiers} tier{tiers === 1 ? "" : "s"} · {ctrys} countr{ctrys === 1 ? "y" : "ies"}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--brand)", fontWeight: 700 }}>Open & edit →</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label style={{ fontSize: 9 }}>New card</label>
-                <span style={{ display: "flex", gap: 4 }}>
-                  <input value={newCardLabel} onChange={e => setNewCardLabel(e.target.value)} placeholder="e.g. WiseCargo" style={{ width: 160 }}
-                    onKeyDown={e => { if (e.key === "Enter") { const l = newCardLabel.trim(); if (l) { addRateCard(l); setNewCardLabel(""); } } }} />
-                  <button className="btn btn-sec btn-xs" onClick={() => { const l = newCardLabel.trim(); if (l) { addRateCard(l); setNewCardLabel(""); } }}><Plus size={12} /> Add</button>
-                </span>
-              </div>
-            </div>
+            )}
 
             {card && (
               <div>
+                {/* Back to the card list */}
+                <button type="button" onClick={() => setCardId("")}
+                  style={{ background: "none", border: "none", color: "var(--brand)", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}>
+                  ← All rate cards
+                </button>
                 {/* Card settings — name, what it's priced by, country, delete */}
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 12, padding: "10px 12px", background: "var(--s2)", borderRadius: 8 }}>
                   <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
