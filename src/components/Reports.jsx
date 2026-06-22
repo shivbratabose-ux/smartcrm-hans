@@ -66,7 +66,7 @@ const MiniTable = ({columns,data,maxRows=8}) => (
     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
       <thead><tr>{columns.map((c,i)=><th key={i} style={{textAlign:c.align||"left",padding:"6px 8px",borderBottom:"2px solid #E2E8F0",color:"#64748B",fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{c.label}</th>)}</tr></thead>
       <tbody>{data.slice(0,maxRows).map((row,ri)=><tr key={ri} style={{borderBottom:"1px solid #F1F5F9"}}>
-        {columns.map((c,ci)=><td key={ci} style={{padding:"7px 8px",textAlign:c.align||"left",color:c.color?c.color(row):"#334155",fontWeight:c.bold?"600":"400"}}>{c.render?c.render(row):row[c.key]}</td>)}
+        {columns.map((c,ci)=><td key={ci} style={{padding:"7px 8px",textAlign:c.align||"left",color:c.color?c.color(row):"#334155",fontWeight:c.bold?"600":"400"}}>{c.render?c.render(row,ri):row[c.key]}</td>)}
       </tr>)}</tbody>
     </table>
   </div>
@@ -277,11 +277,13 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     const wonVal = won.reduce((s,o)=>s+o.value,0);
     const wr = pct(won.length, won.length+lost.length);
     // Activity score (calls+meetings+demos weighted)
-    const actScore = userCalls.length*1 + userActs.filter(a=>a.type==="Meeting").length*3 + userActs.filter(a=>a.type==="Demo").length*5;
+    const meetings = userActs.filter(a=>a.type==="Meeting").length;
+    const demos = userActs.filter(a=>a.type==="Demo").length;
+    const actScore = userCalls.length*1 + meetings*3 + demos*5;
     return {
       id:u.id, name:u.name, firstName:u.name.split(" ")[0], role:u.role, initials:u.initials,
       activeDeals:active.length, pipelineVal, wonDeals:won.length, wonVal, lostDeals:lost.length,
-      winRate:wr, calls:userCalls.length, activities:userActs.length, leads:userLeads.length,
+      winRate:wr, calls:userCalls.length, meetings, demos, activities:userActs.length, leads:userLeads.length,
       targetVal, achievedVal, targetPct:pct(achievedVal,targetVal), actScore
     };
   }).filter(u=>u.activeDeals>0||u.wonDeals>0||u.calls>0||u.activities>0),[_reportTeam,opps,activities,callReports,leads,targets]);
@@ -1050,6 +1052,8 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                 {key:"name",label:"Name",bold:true,render:r=><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:22,height:22,borderRadius:"50%",background:"#1B6B5A",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700}}>{r.initials}</div>{r.firstName}</div>},
                 {key:"actScore",label:"Score",align:"right",bold:true,color:r=>r.actScore>=20?"#22C55E":"#D97706"},
                 {key:"calls",label:"Calls",align:"right"},
+                {key:"meetings",label:"Meetings",align:"right"},
+                {key:"demos",label:"Demos",align:"right"},
                 {key:"activities",label:"Activities",align:"right"},
                 {key:"wonVal",label:"Won",align:"right",render:r=>crFmt(r.wonVal)}
               ]} data={[...teamPerf].sort((a,b)=>b.actScore-a.actScore)}/>
