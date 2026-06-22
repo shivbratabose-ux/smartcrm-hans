@@ -189,6 +189,36 @@ console.log("Generic rate-card matrix (Phase 2e)");
   check("matrix no card → missing rate", resolveUnitPrice(pro, { qty: 5, rateCards: [] }).missingRate, true);
 }
 
+console.log("Rate-card custom tiers (Phase 2e+)");
+{
+  // A card with its OWN columns/tiers (not the iCAFFE bands). 3 tiers by
+  // branch count: 1+, 6+, 21+. cardBandIndex must use card.bands, not the
+  // shared iCAFFE thresholds.
+  const card = { id: "rc2", unitLabel: "Branches",
+    bands: [{ label: "1-5", from: 0 }, { label: "6-20", from: 6 }, { label: "21+", from: 21 }],
+    rows: [{ name: "Standard", productCode: "S1" }],
+    rates: { Default: { Standard: [1000, 800, 600] } } };
+  const std = { rateSource: "Flat", name: "Standard", matrixId: "rc2", matrixRow: "Standard" };
+  check("custom tiers: 3 branches → tier0 1000", resolveUnitPrice(std, { qty: 3, rateCards: [card] }).unitPrice, 1000);
+  check("custom tiers: 10 branches → tier1 800", resolveUnitPrice(std, { qty: 10, rateCards: [card] }).unitPrice, 800);
+  check("custom tiers: 50 branches → tier2 600", resolveUnitPrice(std, { qty: 50, rateCards: [card] }).unitPrice, 600);
+  check("custom tiers: 0 branches → lowest tier 1000", resolveUnitPrice(std, { qty: 0, rateCards: [card] }).unitPrice, 1000);
+
+  // Order-independent: thresholds out of order still resolve correctly.
+  const unordered = { ...card, id: "rc3",
+    bands: [{ label: "21+", from: 21 }, { label: "1-5", from: 0 }, { label: "6-20", from: 6 }],
+    rates: { Default: { Standard: [600, 1000, 800] } } };
+  const std3 = { ...std, matrixId: "rc3" };
+  check("custom tiers (unordered): 10 → 800", resolveUnitPrice(std3, { qty: 10, rateCards: [unordered] }).unitPrice, 800);
+  check("custom tiers (unordered): 50 → 600", resolveUnitPrice(std3, { qty: 50, rateCards: [unordered] }).unitPrice, 600);
+
+  // Single flat tier — one price regardless of qty.
+  const flatCard = { id: "rc4", bands: [{ label: "All", from: 0 }],
+    rows: [{ name: "Edition A", productCode: "EA" }], rates: { Default: { "Edition A": [2500] } } };
+  const ea = { rateSource: "Flat", name: "Edition A", matrixId: "rc4", matrixRow: "Edition A" };
+  check("single flat tier: any qty → 2500", resolveUnitPrice(ea, { qty: 999, rateCards: [flatCard] }).unitPrice, 2500);
+}
+
 console.log("Margin floor guardrail (Phase 3a)");
 {
   // lineMargin: post-discount margin vs cost

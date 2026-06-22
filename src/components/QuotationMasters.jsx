@@ -15,7 +15,7 @@ import { useState, useRef } from "react";
 import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X, Tag, Globe, Download, Upload } from "lucide-react";
 import {
   QUOTE_CONFIG, HANS_CATALOGUE, PRICING_BANDS, ICAFFE_EDITIONS,
-  ICAFFE_BAND_LABELS, QUOTE_TERMS, QUOTE_SEGMENTS, PRICING_MODELS, QUOTE_UNITS,
+  ICAFFE_BAND_LABELS, ICAFFE_BAND_FROM, QUOTE_TERMS, QUOTE_SEGMENTS, PRICING_MODELS, QUOTE_UNITS,
 } from "../data/quotationMasters";
 
 const RATE_SOURCES = ["Flat", "Band", "iCAFFE"];
@@ -45,27 +45,48 @@ const CATALOGUE_OVERLAY_FIELDS = [
   "name", "module", "pricingModel", "unit", "rateSource",
 ];
 
-// Merge a saved catalogue onto the seed: seed = structure, saved = rates.
-function mergeCatalogue(saved) {
+// Merge the quotation price book onto the seed, then UNION in the Product
+// Catalogue master so it's the single product list (auto-sync, keep price
+// book). seed = structure, saved = rates; any master product not already
+// priced is added as a default Flat row to price (engine unchanged).
+function mergeCatalogue(saved, appCatalog) {
   const savedByCode = new Map((saved || []).map(p => [p.code, p]));
-  const merged = HANS_CATALOGUE.map(seed => {
-    const sv = savedByCode.get(seed.code);
-    if (!sv) return seed;
-    const out = { ...seed };
+  const overlay = (base) => {
+    const sv = savedByCode.get(base.code);
+    if (!sv) return base;
+    const out = { ...base };
     for (const f of CATALOGUE_OVERLAY_FIELDS) if (f in sv) out[f] = sv[f];
     return out;
+  };
+  const merged = HANS_CATALOGUE.map(overlay);
+  // Saved-only custom products not in the seed.
+  (saved || []).forEach(sv => { if (!HANS_CATALOGUE.some(s => s.code === sv.code)) merged.push(overlay(sv)); });
+  // Union in Product Catalogue master products not already represented
+  // (by code or name) — adding once in Product Catalogue surfaces it here.
+  const norm = (s) => (s || "").trim().toLowerCase();
+  const have = new Set(merged.map(p => norm(p.name)));
+  const haveCodes = new Set(merged.map(p => p.code));
+  (appCatalog || []).forEach(ap => {
+    if (!ap || !ap.id || haveCodes.has(ap.id) || have.has(norm(ap.name))) return;
+    const base = {
+      code: ap.id, name: ap.name || ap.id, module: ap.desc || "From Product Catalogue",
+      pricingModel: "SaaS Subscription", unit: "User", listPrice: null,
+      rateSource: "Flat", minMonthFloor: null, notes: "From Product Catalogue", active: true,
+      _fromCatalog: true,
+    };
+    merged.push(overlay(base));
+    have.add(norm(base.name)); haveCodes.add(base.code);
   });
-  // Keep any saved-only custom products not in the seed (future-proof).
-  (saved || []).forEach(sv => { if (!HANS_CATALOGUE.some(s => s.code === sv.code)) merged.push(sv); });
   return merged;
 }
 
-// Resolve current masters with seeded fallbacks.
-export function resolveQuotationMasters(masters) {
+// Resolve current masters with seeded fallbacks. `catalog` is the Product
+// Catalogue master (the single product list) unioned into the price book.
+export function resolveQuotationMasters(masters, catalog) {
   const qm = (masters && masters.quotation) || {};
   return {
     quoteConfig: { ...QUOTE_CONFIG, ...(qm.quoteConfig || {}) },
-    catalogue: mergeCatalogue(qm.catalogue),
+    catalogue: mergeCatalogue(qm.catalogue, catalog),
     bands: qm.bands && qm.bands.length ? qm.bands : PRICING_BANDS,
     editions: qm.editions && qm.editions.length ? qm.editions : ICAFFE_EDITIONS,
     rateCards: Array.isArray(qm.rateCards) ? qm.rateCards : [],
@@ -78,8 +99,8 @@ export function resolveQuotationMasters(masters) {
 const cell = { padding: "8px 12px", borderBottom: "1px solid var(--border)", fontSize: 12.5, verticalAlign: "middle" };
 const numInput = { width: "100%", border: "1.5px solid var(--border)", borderRadius: 6, background: "white", fontSize: 12, padding: "5px 7px", textAlign: "right", fontFamily: "'Outfit',sans-serif", outline: "none", boxSizing: "border-box" };
 
-export default function QuotationMasters({ masters, setMasters }) {
-  const cur = resolveQuotationMasters(masters);
+export default function QuotationMasters({ masters, setMasters, catalog = [] }) {
+  const cur = resolveQuotationMasters(masters, catalog);
   const [sub, setSub] = useState("config");
   const [schedFor, setSchedFor] = useState(null); // {kind,key} whose rate schedule is open
   const [segFor, setSegFor] = useState(null); // product code whose segment prices are open
@@ -93,6 +114,7 @@ export default function QuotationMasters({ masters, setMasters }) {
   const [newCardLabel, setNewCardLabel] = useState("");
   const [newRowName, setNewRowName] = useState("");
   const [newRowProduct, setNewRowProduct] = useState("");
+  const [newInlineRow, setNewInlineRow] = useState(""); // free-typed new sub-product
   const [newCardCountry, setNewCardCountry] = useState("");
   const [importMsg, setImportMsg] = useState(null); // catalogue CSV import summary
   const fileRef = useRef(null);
@@ -144,17 +166,46 @@ export default function QuotationMasters({ masters, setMasters }) {
     return { ...p, bandRates: map };
   }) });
   const setEditionSchedule = (name, arr) => writeQ({ editions: cur.editions.map(e => e.name === name ? { ...e, rateSchedule: arr } : e) });
-  // ── Generic rate cards (Phase 2e) ──
+  // ── Generic rate cards (Phase 2e+) ──
+  // Each card carries its OWN columns/tiers (card.bands = [{label, from}]) and
+  // a unitLabel ("priced by"). Legacy cards without bands fall back to the
+  // shared iCAFFE bands so nothing already saved breaks.
+  const cardBands = (card) => (Array.isArray(card?.bands) && card.bands.length)
+    ? card.bands
+    : ICAFFE_BAND_LABELS.map((label, i) => ({ label, from: ICAFFE_BAND_FROM[i] }));
   const setRateCards = (arr) => writeQ({ rateCards: arr });
-  const addRateCard = (label) => setRateCards([...(cur.rateCards), { id: `rc_${Date.now().toString(36)}`, label, rows: [], rates: { Default: {} } }]);
+  const addRateCard = (label) => setRateCards([...(cur.rateCards), {
+    id: `rc_${Date.now().toString(36)}`, label, unitLabel: "Users",
+    bands: [{ label: "Tier 1", from: 0 }], rows: [], rates: { Default: {} },
+  }]);
   const updateCard = (id, patch) => setRateCards(cur.rateCards.map(c => c.id === id ? { ...c, ...patch } : c));
   const setMatrixCell = (cardId, country, rowName, idx, val) => setRateCards(cur.rateCards.map(c => {
     if (c.id !== cardId) return c;
     const rates = { ...(c.rates || {}) };
     const ctry = { ...(rates[country] || {}) };
-    const row = Array.isArray(ctry[rowName]) ? [...ctry[rowName]] : ICAFFE_BAND_LABELS.map(() => null);
+    const row = Array.isArray(ctry[rowName]) ? [...ctry[rowName]] : cardBands(c).map(() => null);
     row[idx] = val; ctry[rowName] = row; rates[country] = ctry;
     return { ...c, rates };
+  }));
+  // Column (tier) editing — add appends a null cell to every row, remove
+  // splices that index out of every row across all countries so rates stay
+  // aligned with the columns.
+  const addCardColumn = (cardId) => setRateCards(cur.rateCards.map(c => c.id === cardId
+    ? { ...c, bands: [...cardBands(c), { label: `Tier ${cardBands(c).length + 1}`, from: 0 }] } : c));
+  const editCardColumn = (cardId, idx, patch) => setRateCards(cur.rateCards.map(c => {
+    if (c.id !== cardId) return c;
+    return { ...c, bands: cardBands(c).map((b, i) => i === idx ? { ...b, ...patch } : b) };
+  }));
+  const removeCardColumn = (cardId, idx) => setRateCards(cur.rateCards.map(c => {
+    if (c.id !== cardId) return c;
+    const bands = cardBands(c).filter((_, i) => i !== idx);
+    const rates = {};
+    Object.entries(c.rates || {}).forEach(([ctry, rows]) => {
+      const nr = {};
+      Object.entries(rows || {}).forEach(([rn, arr]) => { nr[rn] = (Array.isArray(arr) ? arr : []).filter((_, i) => i !== idx); });
+      rates[ctry] = nr;
+    });
+    return { ...c, bands, rates };
   }));
   // Attach/detach a catalogue product to a card row — sets the product's
   // matrixId/matrixRow so the engine prices it from the card (one writeQ).
@@ -168,17 +219,54 @@ export default function QuotationMasters({ masters, setMasters }) {
       return { ...m, quotation: { ...q, rateCards, catalogue } };
     });
   };
+  // Add a sub-product row by typing a new name — auto-creates a catalogue
+  // product attached to the card (no need to pre-create it in Product
+  // Catalogue). Code is derived from the card label + a counter, unique
+  // against the existing catalogue.
+  const addInlineRow = (cardId, rawName) => {
+    const name = (rawName || "").trim();
+    if (!name) return;
+    setMasters(m => {
+      const q = { ...cur, ...(m?.quotation || {}) };
+      const cat = q.catalogue || cur.catalogue;
+      const card = (q.rateCards || cur.rateCards).find(c => c.id === cardId);
+      if (!card) return m;
+      // Don't create a duplicate row name within the same card.
+      if ((card.rows || []).some(r => r.name.trim().toLowerCase() === name.toLowerCase())) return m;
+      const unit = card.unitLabel || "User";
+      const prefix = (card.label || "RC").replace(/[^A-Za-z0-9]/g, "").slice(0, 4).toUpperCase() || "RC";
+      const codes = new Set(cat.map(p => p.code));
+      let n = 1, code = `${prefix}${String(n).padStart(2, "0")}`;
+      while (codes.has(code)) { n++; code = `${prefix}${String(n).padStart(2, "0")}`; }
+      const newProd = {
+        code, name, module: card.label || "Rate card", description: "From rate card",
+        pricingModel: "SaaS Subscription", unit, listPrice: null, rateSource: "Flat",
+        minMonthFloor: null, notes: "Priced from rate card", active: true,
+        matrixId: cardId, matrixRow: name, _inline: true,
+      };
+      const catalogue = [...cat, newProd];
+      const rateCards = (q.rateCards || cur.rateCards).map(c => c.id === cardId
+        ? { ...c, rows: [...(c.rows || []), { name, productCode: code }] } : c);
+      return { ...m, quotation: { ...q, catalogue, rateCards } };
+    });
+  };
   const removeRow = (cardId, rowName) => {
     setMasters(m => {
       const q = { ...cur, ...(m?.quotation || {}) };
+      let removedCode = null;
       const rateCards = (q.rateCards || cur.rateCards).map(c => {
         if (c.id !== cardId) return c;
+        const r = (c.rows || []).find(x => x.name === rowName);
+        if (r) removedCode = r.productCode;
         const rates = { ...(c.rates || {}) };
-        Object.keys(rates).forEach(ctry => { const r = { ...rates[ctry] }; delete r[rowName]; rates[ctry] = r; });
-        return { ...c, rows: (c.rows || []).filter(r => r.name !== rowName), rates };
+        Object.keys(rates).forEach(ctry => { const rr = { ...rates[ctry] }; delete rr[rowName]; rates[ctry] = rr; });
+        return { ...c, rows: (c.rows || []).filter(x => x.name !== rowName), rates };
       });
-      const catalogue = (q.catalogue || cur.catalogue).map(p =>
+      let catalogue = (q.catalogue || cur.catalogue).map(p =>
         (p.matrixId === cardId && p.matrixRow === rowName) ? { ...p, matrixId: undefined, matrixRow: undefined } : p);
+      // Inline-created sub-products exist only for the card — drop them entirely
+      // on removal so they don't linger as unpriced Flat products.
+      catalogue = catalogue.filter(p => !(p.code === removedCode && p._inline));
       return { ...m, quotation: { ...q, rateCards, catalogue } };
     });
   };
@@ -192,7 +280,7 @@ export default function QuotationMasters({ masters, setMasters }) {
   //    only discovering them when a rep builds a quote. ──
   // A Flat product with listPrice === 0 is a deliberate "inclusive / at
   // actuals" rate, not a gap. Band/iCAFFE products price from their own tabs.
-  const flatActive = cur.catalogue.filter(p => p.rateSource === "Flat" && p.active !== false);
+  const flatActive = cur.catalogue.filter(p => p.rateSource === "Flat" && p.active !== false && !p.matrixId);
   const flatMissing = flatActive.filter(p => p.listPrice == null);
   const bandsTotal = cur.bands.length;
   const bandsFilled = cur.bands.filter(b => b.ratePerUserMonth != null).length;
@@ -201,6 +289,7 @@ export default function QuotationMasters({ masters, setMasters }) {
   const icaffeFilled = cur.editions.reduce((s, e) => s + e.rates.filter(r => r != null).length, 0);
   // Per-product coverage status (drives the catalogue Status chips).
   const rowStatus = (p) => {
+    if (p.matrixId) return { label: "From rate card", c: "#1E40AF", bg: "#EFF6FF" };
     if (p.rateSource === "Band") return usesBand && bandsFilled < bandsTotal ? { label: "Needs bands", c: "#B45309", bg: "#FFFBEB" } : { label: "From bands", c: "#1E40AF", bg: "#EFF6FF" };
     if (p.rateSource === "iCAFFE") return icaffeFilled < icaffeCells ? { label: "Rate card gaps", c: "#B45309", bg: "#FFFBEB" } : { label: "From rate card", c: "#1E40AF", bg: "#EFF6FF" };
     if (p.listPrice == null) return { label: "Rate missing", c: "#B91C1C", bg: "#FEF2F2" };
@@ -317,7 +406,7 @@ export default function QuotationMasters({ masters, setMasters }) {
             </thead>
             <tbody>
               {cur.catalogue.map(p => {
-                const editablePrice = p.rateSource === "Flat";
+                const editablePrice = p.rateSource === "Flat" && !p.matrixId;
                 const ccRow = (p.code === "CC03" || p.code === "CC04") && !ccs.ok;
                 const st = rowStatus(p);
                 const priceMissing = editablePrice && p.listPrice == null && p.active !== false;
@@ -361,7 +450,7 @@ export default function QuotationMasters({ masters, setMasters }) {
                               </button>
                             ); })()}
                           </span>
-                        : <span style={{ color: "var(--text3)", fontSize: 11 }}>— {p.rateSource} —</span>}
+                        : <span style={{ color: "var(--text3)", fontSize: 11 }}>— {p.matrixId ? "rate card" : p.rateSource} —</span>}
                     </td>
                     <td style={cell}>
                       <input style={numInput} type="number" placeholder="—" title="Per-unit cost — drives the margin guardrail" value={p.costPrice ?? ""} onChange={e => setCatRow(p.code, "costPrice", numOrNull(e.target.value))} />
@@ -500,39 +589,91 @@ export default function QuotationMasters({ masters, setMasters }) {
         </div>
       )}
 
-      {/* ── Rate Cards (generic edition×band×country matrices · Phase 2e) ── */}
+      {/* ── Rate Cards (generic sub-product × custom-tier × country matrices) ── */}
       {sub === "ratecards" && (() => {
         const card = cur.rateCards.find(c => c.id === cardId);
+        const bands = card ? cardBands(card) : [];
         const countries = ["Default", ...Object.keys(card?.rates || {}).filter(k => k !== "Default" && k !== "default")];
         // Catalogue products available to attach (not iCAFFE; not already on a row)
         const attached = new Set(cur.rateCards.flatMap(c => (c.rows || []).map(r => r.productCode)));
-        const available = cur.catalogue.filter(p => p.rateSource !== "iCAFFE" && (!attached.has(p.code) || (card?.rows || []).some(r => r.productCode === p.code)));
+        const available = cur.catalogue.filter(p => p.rateSource !== "iCAFFE" && !p.matrixId && (!attached.has(p.code) || (card?.rows || []).some(r => r.productCode === p.code)));
         return (
           <div style={{ maxWidth: 1100 }}>
             <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 10 }}>
-              Build edition / sub-product × user-band rate cards (like iCAFFE) for any product family, priced per country. Add a card, add rows (each row = a catalogue product), then fill the per-band rates. A quote line for an attached product prices from its row × band × country.
+              Build your own rate cards for any product family — each card has its <b>own columns/tiers</b> (not just iCAFFE's user bands) and its own sub-products. Steps: <b>1)</b> add a card, <b>2)</b> define its tier columns, <b>3)</b> add sub-products (type a new name or pick an existing product), <b>4)</b> fill the rates. A quote line for a sub-product prices from its row × tier × country automatically.
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-              <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
-                <label style={{ fontSize: 9 }}>Rate card</label>
-                <select value={cardId} onChange={e => { setCardId(e.target.value); setCardCountry("Default"); }}>
-                  <option value="">— Select a rate card —</option>
-                  {cur.rateCards.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                </select>
+
+            {/* Landing — clickable list of cards + a prominent creator. Hidden
+                once a card is open (the editor below takes over). */}
+            {!card && (
+              <div>
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 9 }}>New rate card</label>
+                    <input value={newCardLabel} onChange={e => setNewCardLabel(e.target.value)} placeholder="e.g. WiseCargo" style={{ width: 200 }}
+                      onKeyDown={e => { if (e.key === "Enter") { const l = newCardLabel.trim(); if (l) { addRateCard(l); setNewCardLabel(""); } } }} />
+                  </div>
+                  <button className="btn btn-primary btn-xs" style={{ marginBottom: 2 }} disabled={!newCardLabel.trim()}
+                    onClick={() => { const l = newCardLabel.trim(); if (l) { addRateCard(l); setNewCardLabel(""); } }}><Plus size={13} /> Create rate card</button>
+                </div>
+
+                {cur.rateCards.length === 0 ? (
+                  <div style={{ border: "1px dashed var(--border)", borderRadius: 10, padding: "28px 20px", textAlign: "center", color: "var(--text3)" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text2)", marginBottom: 4 }}>No rate cards yet</div>
+                    <div style={{ fontSize: 12 }}>Create one above to price a product family by your own tiers (e.g. WiseCargo, WiseHandling).</div>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 10 }}>
+                    {cur.rateCards.map(c => {
+                      const tiers = cardBands(c).length;
+                      const subs = (c.rows || []).length;
+                      const ctrys = Object.keys(c.rates || {}).filter(k => k.toLowerCase() !== "default").length + 1;
+                      const filledRows = (c.rows || []).filter(r => {
+                        const row = c.rates?.Default?.[r.name];
+                        return Array.isArray(row) && row.some(v => v != null);
+                      }).length;
+                      const ok = subs > 0 && filledRows === subs;
+                      return (
+                        <button key={c.id} type="button" onClick={() => { setCardId(c.id); setCardCountry("Default"); }}
+                          style={{ textAlign: "left", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", background: "var(--surface)", cursor: "pointer", display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text1)" }}>{c.label}</span>
+                            <span style={{ fontSize: 9.5, fontWeight: 700, padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap",
+                              color: subs === 0 ? "#64748B" : ok ? "#15803D" : "#B45309",
+                              background: subs === 0 ? "#F1F5F9" : ok ? "#F0FDF4" : "#FFFBEB" }}>
+                              {subs === 0 ? "Empty" : ok ? "Ready" : "Needs rates"}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text3)" }}>
+                            {subs} sub-product{subs === 1 ? "" : "s"} · {tiers} tier{tiers === 1 ? "" : "s"} · {ctrys} countr{ctrys === 1 ? "y" : "ies"}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--brand)", fontWeight: 700 }}>Open & edit →</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label style={{ fontSize: 9 }}>New card</label>
-                <span style={{ display: "flex", gap: 4 }}>
-                  <input value={newCardLabel} onChange={e => setNewCardLabel(e.target.value)} placeholder="e.g. WiseCargo" style={{ width: 160 }} />
-                  <button className="btn btn-sec btn-xs" onClick={() => { const l = newCardLabel.trim(); if (l) { addRateCard(l); setNewCardLabel(""); } }}><Plus size={12} /> Add</button>
-                </span>
-              </div>
-            </div>
+            )}
 
             {card && (
               <div>
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 10 }}>
-                  <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
+                {/* Back to the card list */}
+                <button type="button" onClick={() => setCardId("")}
+                  style={{ background: "none", border: "none", color: "var(--brand)", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 12 }}>
+                  ← All rate cards
+                </button>
+                {/* Card settings — name, what it's priced by, country, delete */}
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 12, padding: "10px 12px", background: "var(--s2)", borderRadius: 8 }}>
+                  <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
+                    <label style={{ fontSize: 9 }}>Card name</label>
+                    <input value={card.label} onChange={e => updateCard(card.id, { label: e.target.value })} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0, minWidth: 140 }}>
+                    <label style={{ fontSize: 9 }}>Priced by (unit)</label>
+                    <input value={card.unitLabel || ""} placeholder="e.g. Users / Branches" onChange={e => updateCard(card.id, { unitLabel: e.target.value })} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0, minWidth: 140 }}>
                     <label style={{ fontSize: 9 }}>Country</label>
                     <select value={cardCountry} onChange={e => setCardCountry(e.target.value)}>
                       {countries.map(c => <option key={c} value={c}>{c}</option>)}
@@ -541,21 +682,46 @@ export default function QuotationMasters({ masters, setMasters }) {
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: 9 }}>Add country</label>
                     <span style={{ display: "flex", gap: 4 }}>
-                      <input value={newCardCountry} onChange={e => setNewCardCountry(e.target.value)} placeholder="e.g. UAE" style={{ width: 120 }} />
+                      <input value={newCardCountry} onChange={e => setNewCardCountry(e.target.value)} placeholder="e.g. UAE" style={{ width: 110 }} />
                       <button className="btn btn-sec btn-xs" onClick={() => { const c = newCardCountry.trim(); if (c) { updateCard(card.id, { rates: { ...(card.rates || {}), [c]: card.rates?.[c] || {} } }); setCardCountry(c); setNewCardCountry(""); } }}><Plus size={12} /></button>
                     </span>
                   </div>
-                  <button className="btn btn-sec btn-xs" style={{ color: "#DC2626", marginBottom: 2 }} onClick={() => { if (window.confirm(`Delete rate card "${card.label}"? Attached products will detach.`)) { (card.rows || []).forEach(r => removeRow(card.id, r.name)); setRateCards(cur.rateCards.filter(c => c.id !== card.id)); setCardId(""); } }}><Trash2 size={12} /> Delete card</button>
+                  <button className="btn btn-sec btn-xs" style={{ color: "#DC2626", marginBottom: 2, marginLeft: "auto" }} onClick={() => { if (window.confirm(`Delete rate card "${card.label}"? Its sub-product rows will detach.`)) { (card.rows || []).forEach(r => removeRow(card.id, r.name)); setRateCards(cur.rateCards.filter(c => c.id !== card.id)); setCardId(""); } }}><Trash2 size={12} /> Delete card</button>
                 </div>
 
-                {(card.rows || []).length === 0 && <div style={{ fontSize: 12, color: "var(--text3)", padding: "8px 0" }}>No rows yet — add a sub-product below.</div>}
+                {/* Step 2 — define the tier columns */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text1)", marginBottom: 4 }}>Columns / tiers</div>
+                  <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 8 }}>
+                    Each column is a price tier. A quote line's quantity (<b>{card.unitLabel || "qty"}</b>) picks the tier whose <b>“From ≥”</b> is the highest value not exceeding it. For a single flat price per sub-product, just keep one tier at From 0.
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                    {bands.map((b, i) => (
+                      <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", display: "flex", gap: 6, alignItems: "flex-end", background: "white" }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label style={{ fontSize: 9 }}>Column label</label>
+                          <input value={b.label} onChange={e => editCardColumn(card.id, i, { label: e.target.value })} style={{ width: 90 }} />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label style={{ fontSize: 9 }}>From ≥</label>
+                          <input type="number" value={b.from ?? 0} onChange={e => editCardColumn(card.id, i, { from: e.target.value === "" ? 0 : Number(e.target.value) })} style={{ width: 64 }} />
+                        </div>
+                        <button className="icon-btn" title="Remove column" style={{ color: "#DC2626", marginBottom: 2 }} disabled={bands.length <= 1} onClick={() => removeCardColumn(card.id, i)}><X size={14} /></button>
+                      </div>
+                    ))}
+                    <button className="btn btn-sec btn-xs" style={{ marginBottom: 8 }} onClick={() => addCardColumn(card.id)}><Plus size={12} /> Add tier</button>
+                  </div>
+                </div>
+
+                {/* Step 3/4 — sub-product × tier matrix */}
+                {(card.rows || []).length === 0 && <div style={{ fontSize: 12, color: "var(--text3)", padding: "8px 0" }}>No sub-products yet — add one below.</div>}
                 {(card.rows || []).length > 0 && (
                   <div style={{ overflowX: "auto" }}>
-                    <table style={{ borderCollapse: "collapse", minWidth: 900 }}>
+                    <table style={{ borderCollapse: "collapse", minWidth: 700 }}>
                       <thead>
                         <tr style={{ background: "var(--s2)" }}>
                           <th style={{ ...cell, textAlign: "left", fontSize: 10, color: "var(--text3)" }}>Sub-product · {cardCountry}</th>
-                          {ICAFFE_BAND_LABELS.map(l => <th key={l} style={{ ...cell, fontSize: 10, color: "var(--text3)" }}>{l}</th>)}
+                          {bands.map((b, i) => <th key={i} style={{ ...cell, fontSize: 10, color: "var(--text3)", textAlign: "center" }}>{b.label}</th>)}
                           <th style={{ ...cell }}></th>
                         </tr>
                       </thead>
@@ -563,10 +729,10 @@ export default function QuotationMasters({ masters, setMasters }) {
                         {(card.rows || []).map(r => (
                           <tr key={r.name}>
                             <td style={{ ...cell, fontWeight: 600 }}>{r.name}<div style={{ fontSize: 9, color: "var(--text3)", fontFamily: "monospace" }}>{r.productCode}</div></td>
-                            {ICAFFE_BAND_LABELS.map((l, i) => (
+                            {bands.map((b, i) => (
                               <td key={i} style={cell}><input style={numInput} type="number" value={card.rates?.[cardCountry]?.[r.name]?.[i] ?? ""} onChange={e => setMatrixCell(card.id, cardCountry, r.name, i, numOrNull(e.target.value))} /></td>
                             ))}
-                            <td style={{ ...cell, textAlign: "center" }}><button className="icon-btn" title="Remove row" style={{ color: "#DC2626" }} onClick={() => removeRow(card.id, r.name)}><Trash2 size={13} /></button></td>
+                            <td style={{ ...cell, textAlign: "center" }}><button className="icon-btn" title="Remove sub-product" style={{ color: "#DC2626" }} onClick={() => removeRow(card.id, r.name)}><Trash2 size={13} /></button></td>
                           </tr>
                         ))}
                       </tbody>
@@ -574,20 +740,27 @@ export default function QuotationMasters({ masters, setMasters }) {
                   </div>
                 )}
 
-                {/* Add row = attach a catalogue product as a sub-product */}
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginTop: 12, flexWrap: "wrap" }}>
-                  <div className="form-group" style={{ marginBottom: 0, minWidth: 240 }}>
-                    <label style={{ fontSize: 9 }}>Add sub-product (catalogue product)</label>
-                    <select value={newRowProduct} onChange={e => { setNewRowProduct(e.target.value); const p = cur.catalogue.find(x => x.code === e.target.value); setNewRowName(p ? p.name : ""); }}>
-                      <option value="">— Select product —</option>
-                      {available.map(p => <option key={p.code} value={p.code}>{p.code} · {p.name}</option>)}
-                    </select>
-                  </div>
+                {/* Add a sub-product — type a new one, or attach an existing product */}
+                <div style={{ display: "flex", gap: 16, alignItems: "flex-end", marginTop: 14, flexWrap: "wrap", padding: "10px 12px", border: "1px dashed var(--border)", borderRadius: 8 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label style={{ fontSize: 9 }}>Row label</label>
-                    <input value={newRowName} onChange={e => setNewRowName(e.target.value)} placeholder="row name" style={{ width: 160 }} />
+                    <label style={{ fontSize: 9 }}>New sub-product</label>
+                    <span style={{ display: "flex", gap: 4 }}>
+                      <input value={newInlineRow} onChange={e => setNewInlineRow(e.target.value)} placeholder="e.g. Standard Edition" style={{ width: 180 }}
+                        onKeyDown={e => { if (e.key === "Enter" && newInlineRow.trim()) { addInlineRow(card.id, newInlineRow); setNewInlineRow(""); } }} />
+                      <button className="btn btn-sec btn-xs" disabled={!newInlineRow.trim()} onClick={() => { addInlineRow(card.id, newInlineRow); setNewInlineRow(""); }}><Plus size={12} /> Add</button>
+                    </span>
                   </div>
-                  <button className="btn btn-sec btn-xs" style={{ marginBottom: 2 }} disabled={!newRowProduct || !newRowName.trim()} onClick={() => { attachProductToRow(card.id, newRowName.trim(), newRowProduct); setNewRowProduct(""); setNewRowName(""); }}><Plus size={12} /> Add row</button>
+                  <div style={{ fontSize: 10, color: "var(--text3)", paddingBottom: 6 }}>or</div>
+                  <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
+                    <label style={{ fontSize: 9 }}>Attach existing product</label>
+                    <span style={{ display: "flex", gap: 4 }}>
+                      <select value={newRowProduct} onChange={e => { setNewRowProduct(e.target.value); const p = cur.catalogue.find(x => x.code === e.target.value); setNewRowName(p ? p.name : ""); }}>
+                        <option value="">— Select product —</option>
+                        {available.map(p => <option key={p.code} value={p.code}>{p.code} · {p.name}</option>)}
+                      </select>
+                      <button className="btn btn-sec btn-xs" disabled={!newRowProduct || !newRowName.trim()} onClick={() => { attachProductToRow(card.id, newRowName.trim(), newRowProduct); setNewRowProduct(""); setNewRowName(""); }}><Plus size={12} /> Add</button>
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
