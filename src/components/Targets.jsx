@@ -22,21 +22,75 @@ const CSV_COLS = [
   { label: "Achieved Calls", accessor: t => t.achievedCalls },
 ];
 
-function Targets({ targets, setTargets, currentUser, canDelete }) {
+// Fiscal-quarter (India FY, Apr–Mar) key for a date → "YYYY-Q#", where YYYY
+// is the FY start year and Q1 = Apr–Jun. Matches the app's "2026-Q1" usage.
+function periodOf(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d)) return "";
+  const m = d.getMonth(), y = d.getFullYear();
+  const fyStart = m >= 3 ? y : y - 1;
+  const q = Math.floor(((m - 3 + 12) % 12) / 3) + 1;
+  return `${fyStart}-Q${q}`;
+}
+const isWonStage = (o) => o.stage === "Won" || o.stage === "closed_won";
+// A target's product focus matches an item with a products[] array (opps) or
+// a single product + productSelection[] (call reports). "All" matches everything.
+const prodMatches = (tProd, arr, single) => {
+  if (!tProd || tProd === "All") return true;
+  if (Array.isArray(arr) && arr.includes(tProd)) return true;
+  return single === tProd;
+};
+
+function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = [], currentUser, canDelete }) {
   const [periodF, setPeriodF] = useState("All");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_TARGET);
   const [confirm, setConfirm] = useState(null);
   const [formErrors, setFormErrors] = useState({});
 
-  const periods = useMemo(() => [...new Set(targets.map(t => t.period))].sort().reverse(), [targets]);
-  // Defined after `filtered`; placeholder so JSX hooks-order stays stable.
+  // Live-user helpers (fall back to the static seed when orgUsers is empty).
+  const userOpts = (orgUsers && orgUsers.length ? orgUsers.filter(u => u.active !== false) : TEAM);
+  const userName = (id) => (orgUsers || []).find(u => u.id === id)?.name || TEAM_MAP[id]?.name || id || "";
+
+  // Auto-compute achievement for a target from won opps (revenue + deal count)
+  // and call reports (calls), matched on owner × fiscal-quarter × product.
+  const computeAchievement = (t) => {
+    let rev = 0, deals = 0, calls = 0;
+    (opps || []).forEach(o => {
+      if (o.owner !== t.userId || !isWonStage(o)) return;
+      if (periodOf(o.closeDate) !== t.period) return;
+      if (!prodMatches(t.product, o.products)) return;
+      rev += Number(o.value) || 0; deals += 1;
+    });
+    (callReports || []).forEach(r => {
+      if (r.marketingPerson !== t.userId) return;
+      if (periodOf(r.callDate) !== t.period) return;
+      if (!prodMatches(t.product, r.productSelection, r.product)) return;
+      calls += 1;
+    });
+    return { achievedValue: +rev.toFixed(2), achievedDeals: deals, achievedCalls: calls };
+  };
+  // Targets with achievement overlaid from live CRM data (ignores any stored
+  // manual achieved* values so the screen always reflects reality).
+  const enriched = useMemo(() => targets.map(t => ({ ...t, ...computeAchievement(t) })), [targets, opps, callReports]);
+
+  const periods = useMemo(() => [...new Set(enriched.map(t => t.period))].sort().reverse(), [enriched]);
+
+  // Selectable periods for the form: current FY ±1, all four quarters, newest first.
+  const periodOptions = useMemo(() => {
+    const now = new Date();
+    const curFy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    const opts = [];
+    for (let fy = curFy + 1; fy >= curFy - 1; fy--) for (let q = 4; q >= 1; q--) opts.push(`${fy}-Q${q}`);
+    return opts;
+  }, []);
 
   const filtered = useMemo(() => {
-    let list = [...targets];
+    let list = [...enriched];
     if (periodF !== "All") list = list.filter(t => t.period === periodF);
     return list;
-  }, [targets, periodF]);
+  }, [enriched, periodF]);
 
   // Summary KPIs
   const totalTarget = filtered.reduce((s, t) => s + t.targetValue, 0);
@@ -51,7 +105,7 @@ function Targets({ targets, setTargets, currentUser, canDelete }) {
   const chartData = useMemo(() => {
     const byUser = {};
     filtered.forEach(t => {
-      if (!byUser[t.userId]) byUser[t.userId] = { name: TEAM_MAP[t.userId]?.name?.split(" ")[0] || "?", target: 0, achieved: 0 };
+      if (!byUser[t.userId]) byUser[t.userId] = { name: (userName(t.userId) || "?").split(" ")[0], target: 0, achieved: 0 };
       byUser[t.userId].target += t.targetValue;
       byUser[t.userId].achieved += t.achievedValue;
     });
@@ -211,13 +265,15 @@ function Targets({ targets, setTargets, currentUser, canDelete }) {
           <div className="form-row">
             <div className="form-group"><label>Salesperson *</label>
               <select value={form.userId} onChange={e => {setForm(f => ({...f, userId: e.target.value})); setFormErrors(e => ({...e, userId: undefined}));}}>
-                {TEAM.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                {userOpts.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
               <FormError error={formErrors.userId}/>
             </div>
             <div className="form-group"><label>Period *</label>
-              <input value={form.period} onChange={e => {setForm(f => ({...f, period: e.target.value})); setFormErrors(e => ({...e, period: undefined}));}}
-                placeholder="e.g. 2026-Q1" style={formErrors.period ? {borderColor:"#DC2626"} : {}}/>
+              <select value={form.period} onChange={e => {setForm(f => ({...f, period: e.target.value})); setFormErrors(e => ({...e, period: undefined}));}}
+                style={formErrors.period ? {borderColor:"#DC2626"} : {}}>
+                {[...new Set([form.period, ...periodOptions].filter(Boolean))].map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
               <FormError error={formErrors.period}/>
             </div>
           </div>
@@ -227,33 +283,45 @@ function Targets({ targets, setTargets, currentUser, canDelete }) {
               {PRODUCTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
-          <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginTop:14,marginBottom:8}}>REVENUE TARGETS</div>
-          <div className="form-row">
-            <div className="form-group"><label>Target Value (₹L) *</label>
-              <input type="number" min={0} step={1} value={form.targetValue} onChange={e => setForm(f => ({...f, targetValue: +e.target.value}))}/>
-              <FormError error={formErrors.targetValue}/>
-            </div>
-            <div className="form-group"><label>Achieved Value (₹L)</label>
-              <input type="number" min={0} step={0.5} value={form.achievedValue} onChange={e => setForm(f => ({...f, achievedValue: +e.target.value}))}/>
-            </div>
-          </div>
-          <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginTop:14,marginBottom:8}}>ACTIVITY TARGETS</div>
-          <div className="form-row">
-            <div className="form-group"><label>Target Deals</label>
-              <input type="number" min={0} value={form.targetDeals} onChange={e => setForm(f => ({...f, targetDeals: +e.target.value}))}/>
-            </div>
-            <div className="form-group"><label>Achieved Deals</label>
-              <input type="number" min={0} value={form.achievedDeals} onChange={e => setForm(f => ({...f, achievedDeals: +e.target.value}))}/>
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group"><label>Target Calls</label>
-              <input type="number" min={0} value={form.targetCalls} onChange={e => setForm(f => ({...f, targetCalls: +e.target.value}))}/>
-            </div>
-            <div className="form-group"><label>Achieved Calls</label>
-              <input type="number" min={0} value={form.achievedCalls} onChange={e => setForm(f => ({...f, achievedCalls: +e.target.value}))}/>
-            </div>
-          </div>
+          {(() => {
+            const a = computeAchievement(form);
+            const ro = { padding: "8px 10px", background: "var(--s2)", borderRadius: 6, fontWeight: 700, fontFamily: "'Outfit',sans-serif" };
+            const note = { fontSize: 10, color: "var(--text3)", marginTop: 2 };
+            return (
+              <>
+                <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginTop:14,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                  REVENUE TARGET <span style={{fontWeight:400,textTransform:"none"}}>· achieved is auto-calculated from won deals & call reports for {form.period || "the period"}</span>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>Target Value (₹L) *</label>
+                    <input type="number" min={0} step={1} value={form.targetValue} onChange={e => setForm(f => ({...f, targetValue: +e.target.value}))}/>
+                    <FormError error={formErrors.targetValue}/>
+                  </div>
+                  <div className="form-group"><label>Achieved (auto)</label>
+                    <div style={ro}>₹{a.achievedValue}L</div>
+                    <div style={note}>{a.achievedDeals} won deal{a.achievedDeals===1?"":"s"} in {form.period||"period"}</div>
+                  </div>
+                </div>
+                <div style={{fontSize:12,fontWeight:700,color:"var(--text3)",marginTop:14,marginBottom:8}}>ACTIVITY TARGETS</div>
+                <div className="form-row">
+                  <div className="form-group"><label>Target Deals</label>
+                    <input type="number" min={0} value={form.targetDeals} onChange={e => setForm(f => ({...f, targetDeals: +e.target.value}))}/>
+                  </div>
+                  <div className="form-group"><label>Achieved Deals (auto)</label>
+                    <div style={ro}>{a.achievedDeals}</div>
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>Target Calls</label>
+                    <input type="number" min={0} value={form.targetCalls} onChange={e => setForm(f => ({...f, targetCalls: +e.target.value}))}/>
+                  </div>
+                  <div className="form-group"><label>Achieved Calls (auto)</label>
+                    <div style={ro}>{a.achievedCalls}</div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </Modal>
       )}
 
