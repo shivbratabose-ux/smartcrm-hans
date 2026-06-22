@@ -931,11 +931,22 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
             <Card title="Activities by Type" subtitle="Engagement channel mix">
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart><Pie data={actData.byType} dataKey="count" nameKey="type" cx="50%" cy="50%" outerRadius={80} label={({type,count})=>`${type}: ${count}`}>
-                  {actData.byType.map((_,i)=><Cell key={i} fill={CL[i%CL.length]}/>)}
-                </Pie><Tooltip contentStyle={{borderRadius:8,fontSize:12}}/></PieChart>
-              </ResponsiveContainer>
+              {(() => {
+                const actTotal = actData.byType.reduce((s,d)=>s+d.count,0)||1;
+                return (
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie data={actData.byType} dataKey="count" nameKey="type" cx="40%" cy="50%" innerRadius={48} outerRadius={80} paddingAngle={2} stroke="#fff" strokeWidth={2}>
+                      {actData.byType.map((_,i)=><Cell key={i} fill={CL[i%CL.length]}/>)}
+                    </Pie>
+                    <Tooltip contentStyle={{borderRadius:8,fontSize:12}} formatter={(v,n)=>[`${v} (${Math.round(v/actTotal*100)}%)`,n]}/>
+                    <Legend layout="vertical" align="right" verticalAlign="middle" iconType="circle" iconSize={9}
+                      wrapperStyle={{fontSize:11,lineHeight:"18px",maxWidth:"45%"}}
+                      formatter={(value,entry)=><span style={{color:"#475569"}}>{value} · <b style={{color:"#1E293B"}}>{entry.payload.count}</b></span>}/>
+                  </PieChart>
+                </ResponsiveContainer>
+                );
+              })()}
             </Card>
 
             <Card title="Activities by Owner" subtitle="Individual engagement volume">
