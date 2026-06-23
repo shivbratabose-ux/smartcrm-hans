@@ -433,7 +433,13 @@ const toSnake = (obj, module) => {
     // contact_ids / etc, which made every retry-insert loop forever with
     // the same 400 — these leads never reached the cloud, so a second
     // browser logging in saw a smaller list ("Edge has 60, Chrome 14").
-    else if (TEXT_ARRAY_COLUMNS.has(key)) {
+    // `branches` is a column-name COLLISION: TEXT[] on contacts but INTEGER
+    // on leads (and contracts uses no_of_branches). Keyed only on column
+    // name, the array coercion would wrongly turn a lead's integer branches
+    // into e.g. ['5']/['O'] and Postgres rejects it ("invalid input syntax
+    // for type integer") — failing the ENTIRE leads batch for every user.
+    // So only array-ify branches for contacts; everywhere else it's numeric.
+    else if (TEXT_ARRAY_COLUMNS.has(key) && !(key === "branches" && module !== "contacts")) {
       // Run for every value type (string, object, number, null, even an
       // existing array) so a TEXT[] column always receives a clean string[]
       // — fixes "expected JSON array" / "malformed array literal" wholesale.
