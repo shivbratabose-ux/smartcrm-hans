@@ -36,9 +36,42 @@ export const notify = {
 // One failure is informative; 50 toasts in a row is hostile. This collapses
 // any errors arriving within 60s into a single toast carrying a count.
 const _syncErrors = { count: 0, lastFlushAt: 0, timer: null, sample: null };
+// A row-level-security / permission rejection from Supabase. Unlike a
+// transient network error, retrying will NOT help — the user's role simply
+// isn't allowed to write this record, so it will live only on their device
+// until an admin fixes their role. We surface these loudly and separately so
+// data never goes silently un-synced.
+export const isPermissionError = (err) => {
+  if (!err) return false;
+  const code = String(err.code ?? err.status ?? "");
+  const msg = (err.message || String(err) || "").toLowerCase();
+  return code === "42501" || code === "403" || code === "PGRST301"
+    || /row-level security|violates row-level security|permission denied|not authoriz/i.test(msg);
+};
+
+const _permErrors = { count: 0, timer: null };
+
 export const reportSyncError = (label, err) => {
   if (!err) return;
   const msg = err?.message || String(err);
+
+  // Permission rejections get their own loud, longer-lived message and are
+  // NOT described as "will retry" (they won't succeed without a role change).
+  if (isPermissionError(err)) {
+    _permErrors.count++;
+    if (_permErrors.timer) return;
+    _permErrors.timer = setTimeout(() => {
+      const n = _permErrors.count;
+      _permErrors.count = 0;
+      _permErrors.timer = null;
+      notify.error(
+        `${n} change${n === 1 ? "" : "s"} could NOT be saved to the cloud — your role doesn't have permission to create/edit ${n === 1 ? "this record" : "these records"}. ${n === 1 ? "It is" : "They are"} only on this device. Contact your admin to update your access.`,
+        { duration: 14000 }
+      );
+    }, 1500);
+    return;
+  }
+
   _syncErrors.count++;
   if (!_syncErrors.sample) _syncErrors.sample = `${label}: ${msg}`;
   if (_syncErrors.timer) return;

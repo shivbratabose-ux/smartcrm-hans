@@ -437,6 +437,51 @@ export const isGlobalRole = (userId, orgUsers) => {
   return !user || GLOBAL_ROLES.includes(normalizeRole(user.role));
 };
 
+// ── Role write-capability (mirrors the Supabase RLS write policies) ──
+// Source of truth is the DB (supabase/production_safety_v1.sql + rls_tighten_v1.sql);
+// this client-side mirror lets the UI disable create/edit actions a role
+// can't persist, so users aren't left with records stranded only on their
+// device. Keep in sync with the SQL. Each entry lists the roles DENIED write
+// for that module (everything else may write).
+const WRITE_DENIED_BY_MODULE = {
+  accounts:    ["viewer", "support", "tech_lead"],
+  leads:       ["viewer", "support", "tech_lead"],
+  collections: ["viewer", "support", "tech_lead"],
+  opps:        ["viewer", "support"],
+  quotes:      ["viewer", "support"],
+  // Management-only modules (allow-list inverted to a deny-list here):
+  contracts:   ["viewer", "support", "tech_lead", "sales_exec"],
+  targets:     ["viewer", "support", "tech_lead", "sales_exec"],
+  // Everyone-but-viewer modules:
+  contacts:    ["viewer"],
+  activities:  ["viewer"],
+  callReports: ["viewer"],
+  tickets:     ["viewer"],
+  commLogs:    ["viewer"],
+  events:      ["viewer"],
+  notes:       ["viewer"],
+  files:       ["viewer"],
+  projects:    ["viewer"],
+};
+const DEFAULT_WRITE_DENIED = ["viewer"];
+
+// Can the given role create/edit records in `module`? Pass no module for the
+// general "can this user write anything" question (false only for pure viewers).
+export const canRoleWrite = (role, module) => {
+  const r = normalizeRole(role);
+  if (GLOBAL_ROLES.includes(r)) return true;
+  const denied = module ? (WRITE_DENIED_BY_MODULE[module] || DEFAULT_WRITE_DENIED) : DEFAULT_WRITE_DENIED;
+  return !denied.includes(r);
+};
+
+// True for a fully view-only user (cannot write anything) — drives the
+// app-wide read-only banner.
+export const isReadOnlyRole = (role) => normalizeRole(role) === "viewer";
+
+// Convenience: resolve a user id → can-write for a module.
+export const canUserWrite = (userId, orgUsers, module) =>
+  canRoleWrite((orgUsers || []).find(u => u.id === userId)?.role, module);
+
 // ── Edit-access requests / grants ───────────────────────────────────
 // Reads are company-wide for every role. WRITES are owner-scoped: you may
 // edit your own records, your downline's records (managers), or a record you
