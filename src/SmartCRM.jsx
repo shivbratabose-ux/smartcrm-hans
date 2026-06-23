@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -2460,6 +2460,23 @@ export default function SmartCRM() {
         <div className="main">
           <Header page={page} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={visibleUpdates} myUnreadCount={myUnreadCount} onSyncAll={_canSyncAll ? syncAllToCloud : undefined} syncing={syncingAll}/>
           <div className="content" id="main-content" role="main">
+            {(() => {
+              // Read-only / insufficient-role banner. Mirrors the Supabase RLS
+              // write rules (canRoleWrite) so a user knows up-front when their
+              // role can't persist changes on this page — instead of finding
+              // out only when a save silently strands data on their device.
+              const _role = (orgUsers || []).find(u => u.id === currentUser)?.role;
+              const _pageModule = { leads:"leads", accounts:"accounts", contacts:"contacts", pipeline:"opps", activities:"activities", callreports:"callReports", quotations:"quotes", contracts:"contracts", collections:"collections", tickets:"tickets", targets:"targets", projects:"projects", calendar:"events" }[page];
+              const _viewOnly = isReadOnlyRole(_role);
+              const _pageBlocked = _pageModule && !canRoleWrite(_role, _pageModule);
+              if (!_viewOnly && !_pageBlocked) return null;
+              return (
+                <div style={{ display:"flex", alignItems:"center", gap:8, background:"#FEF2F2", border:"1px solid #FCA5A5", color:"#991B1B", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:12.5 }}>
+                  <span style={{ fontWeight:700 }}>{_viewOnly ? "View-only access" : "Limited access"}</span>
+                  <span>— {_viewOnly ? "your role can't create or edit records, so changes won't be saved." : "your role can't create or edit records on this page; changes here won't sync to the cloud."} Contact your admin to update your access.</span>
+                </div>
+              );
+            })()}
             {page==="dashboard"  && <Dashboard accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} setPage={setPage} orgUsers={orgUsers} currentUser={currentUser}/>}
             {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="accounts"   && <Accounts accounts={visibleAccounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={visibleContacts} setContacts={setContacts} tickets={visibleTickets} contracts={visibleContracts} collections={visibleCollections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
