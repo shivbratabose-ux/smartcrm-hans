@@ -1050,11 +1050,53 @@ export default function SmartCRM() {
         // alone. We only act on local-only rows when the cloud has at
         // least one row for that module to anchor against.
         const stampNow = new Date().toISOString();
+        // Push a set of never-synced local records to the cloud (recovery).
+        // Safe in all cases: a successful insert stamps the row; a duplicate
+        // key means the cloud already has it (RLS-hidden) so we drop the
+        // local ghost; any other error (e.g. a permission/RLS rejection) is
+        // surfaced LOUDLY via reportSyncError instead of dying in the console,
+        // so genuinely-blocked data never strands silently.
+        const pushRecords = (module, records, setter) => {
+          if (!records.length) return;
+          retryTotals[module] = (retryTotals[module] || 0) + records.length;
+          records.forEach(rec => {
+            insertRecord(module === "users" ? "users" : module, rec)
+              .then(res => {
+                if (!res?.error) {
+                  // eslint-disable-next-line no-console
+                  console.log(`[recovery] ${module}/${rec.id} re-inserted to cloud`);
+                  setter(p => p.map(r =>
+                    r.id === rec.id ? { ...r, [SYNC_STAMP_FIELD]: new Date().toISOString() } : r
+                  ));
+                  return;
+                }
+                if (isDuplicateKeyError(res.error)) {
+                  // eslint-disable-next-line no-console
+                  console.log(`[mergeOnLoad] ${module}/${rec.id} already in cloud — dropping local copy.`);
+                  dropFromSyncRef.current.add(rec.id);
+                  setter(p => p.filter(r => r.id !== rec.id));
+                  return;
+                }
+                reportSyncError(`${module} sync`, res.error);
+              });
+          });
+        };
         const mergeOnLoad = (module, cloud, localArr, setter, retryInsert = true) => {
           const cloudArr = Array.isArray(cloud) ? cloud : [];
           const local = Array.isArray(localArr) ? localArr : [];
           if (cloudArr.length === 0 && local.length === 0) return;
-          if (cloudArr.length === 0) { setter(local); return; }
+
+          // Cloud returned no rows for this module — either it's genuinely
+          // empty, or a read policy hides them from this user. Keep local
+          // intact and STILL push never-synced local records: inserting is
+          // safe (duplicate-key handled; permission errors surface) and is the
+          // only path by which first-time / stranded data reaches the cloud.
+          // mergeOnLoad never deletes, so an empty cloud cannot lose data.
+          if (cloudArr.length === 0) {
+            setter(local);
+            if (retryInsert) pushRecords(module, local.filter(r => r && !r.isDeleted && !r[SYNC_STAMP_FIELD]), setter);
+            return;
+          }
 
           // Stamp every cloud row as synced (cloud is the source of truth
           // for ids we already have over there).
@@ -1074,38 +1116,8 @@ export default function SmartCRM() {
           const merged = [...cloudStamped, ...keepSoftDeleted, ...retryCandidates];
           setter(merged);
 
-          if (retryCandidates.length === 0 || !retryInsert) return;
-
-          retryTotals[module] = (retryTotals[module] || 0) + retryCandidates.length;
-          retryCandidates.forEach(rec => {
-            insertRecord(module === "users" ? "users" : module, rec)
-              .then(res => {
-                if (!res?.error) {
-                  // Insert landed — record is now in cloud. Stamp local so
-                  // the next reload doesn't classify it as never-synced.
-                  // eslint-disable-next-line no-console
-                  console.log(`[recovery] ${module}/${rec.id} re-inserted to cloud`);
-                  setter(p => p.map(r =>
-                    r.id === rec.id ? { ...r, [SYNC_STAMP_FIELD]: new Date().toISOString() } : r
-                  ));
-                  return;
-                }
-                if (isDuplicateKeyError(res.error)) {
-                  // The id already exists in cloud — typically RLS-hidden
-                  // (different owner / soft-deleted / out of our scope).
-                  // Drop from local cache to converge with the cloud's
-                  // view, and tell the sync diff to keep its hands off.
-                  // eslint-disable-next-line no-console
-                  console.log(`[mergeOnLoad] ${module}/${rec.id} already in cloud — dropping local copy.`);
-                  dropFromSyncRef.current.add(rec.id);
-                  setter(p => p.filter(r => r.id !== rec.id));
-                  return;
-                }
-                // Any other error: keep the row locally, surface to user.
-                // eslint-disable-next-line no-console
-                console.error(`[recovery] ${module}/${rec.id} retry failed:`, res.error);
-              });
-          });
+          if (!retryInsert) return;
+          pushRecords(module, retryCandidates, setter);
         };
         mergeOnLoad("accounts",     data.accounts,    accounts,    setAccounts);
         mergeOnLoad("contacts",     data.contacts,    contacts,    setContacts);
