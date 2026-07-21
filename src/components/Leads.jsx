@@ -193,7 +193,11 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   const validate = () => {
     const errs = {};
     if (!form.title?.trim()) errs.title = "Opportunity name is required";
-    if (!form.accountId && !form.createNewAccount) errs.accountId = "Select an account or create new";
+    // Account is intentionally optional at convert time — Finance links it
+    // in when the deal is Won. The three valid states are:
+    //   • form.accountId="" && !createNewAccount → skip, link later
+    //   • form.accountId="" && createNewAccount → create Prospect account now
+    //   • form.accountId=<existing id>          → link existing account
     if (!lead.email && !lead.phone && !(lead.contactIds?.length)) errs.contact = "Lead must have a valid email or phone";
     if (!form.notes?.trim() || form.notes.trim().length < 10) errs.notes = "Qualification notes required (min 10 chars)";
     if (!form.closeDate) errs.closeDate = "Expected close date is required";
@@ -285,13 +289,22 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
           </div></div>
 
           <div className="form-row">
-            <div className="form-group"><label>Customer / Account *</label>
-              <select value={form.accountId} onChange={e => setForm(f => ({...f, accountId: e.target.value, createNewAccount: !e.target.value}))}
-                style={errors.accountId ? {borderColor:"#DC2626"} : {}}>
-                <option value="">— Create new account from lead —</option>
+            <div className="form-group"><label>Customer / Account (optional)</label>
+              <select
+                value={form.createNewAccount ? "__CREATE__" : (form.accountId || "")}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === "__CREATE__") {
+                    setForm(f => ({ ...f, accountId: "", createNewAccount: true }));
+                  } else {
+                    setForm(f => ({ ...f, accountId: v, createNewAccount: false }));
+                  }
+                }}
+              >
+                <option value="">— Skip — Finance links account at Won —</option>
+                <option value="__CREATE__">— Create new Prospect account for "{lead.company}" —</option>
                 {(accounts || []).map(a => <option key={a.id} value={a.id}>{a.accountNo ? `[${a.accountNo}] ` : ""}{a.name}</option>)}
               </select>
-              {errors.accountId && <FormError error={errors.accountId}/>}
             </div>
             <div className="form-group"><label>Contact Person</label>
               <select value={form.primaryContactId} onChange={e => setForm(f => ({...f, primaryContactId: e.target.value}))}>

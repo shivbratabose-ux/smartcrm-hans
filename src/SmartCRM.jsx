@@ -1686,7 +1686,14 @@ export default function SmartCRM() {
       id: uid(),
       oppId,
       title: data.title || `${PROD_MAP[lead.product]?.name || lead.product} – ${lead.company}`,
-      accountId: data.accountId || lead.accountId || "",
+      // accountId is intentionally NULL when unset — Postgres treats "" as
+      // an invalid FK value against public.accounts(id), so persisting an
+      // empty string here caused the cloud insert to fail silently while
+      // the lead-stage update still succeeded (the ghost-converted state
+      // reported on ATLANTIC AIR AND OCEANFREIGHT #FL-2026-421). Account
+      // is optional at convert time; Finance links it in when the deal
+      // is Won.
+      accountId: data.accountId || lead.accountId || null,
       products: data.selectedProducts?.length ? data.selectedProducts : [lead.product],
       // Carry the lead's full product+module selection through to the opportunity
       // so downstream conversions (opp → quote/contract) inherit the same picks.

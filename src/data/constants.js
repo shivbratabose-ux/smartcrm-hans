@@ -500,7 +500,12 @@ export const STAGE_GATES = {
   Converted: {
     label: "Convert to Opportunity",
     checks: [
-      { key: "accountId", label: "Linked to account", test: l => !!l.accountId },
+      // Account link is intentionally NOT required at conversion time.
+      // Per the business process, an Account only becomes real (with an
+      // approved accountNo) after Finance approves it on Deal Won. Until
+      // then the opportunity carries accountId=null and lives in Pipeline
+      // like any other deal. The Won-stage guard (see Pipeline.jsx)
+      // enforces the account handoff to Finance at close-out.
       { key: "contacts", label: "At least one contact linked", test: l => !!(l.contactIds?.length || l.contact) },
       { key: "score", label: "Lead score ≥ 60", test: l => (l.score||0) >= 60 },
     ]

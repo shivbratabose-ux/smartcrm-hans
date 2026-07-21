@@ -1322,7 +1322,23 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
     setForm(f => ({ ...f, products: pp }));
   };
 
-  /* ── STAGE MOVEMENT (gated) ── */
+  /* ── STAGE MOVEMENT (gated) ──
+     Won-stage guard: an opportunity cannot close as Won without an
+     accountId, because Finance approves/invoices against the account.
+     If the deal was converted with no account (the new business rule
+     allows this), the rep must link one before closing. We block the
+     transition here so no partial state ever hits the DB. */
+  const guardWonMove = (opp, toStage) => {
+    if (toStage !== wonName) return true;
+    if (opp.accountId) return true;
+    window.alert(
+      `Cannot close "${opp.title}" as Won yet — this deal has no linked account.\n\n` +
+      `Open the deal → Edit → Customer/Account, and either pick an existing account ` +
+      `or create a new Prospect account. Finance will approve the account before invoicing.`
+    );
+    return false;
+  };
+
   const initiateStageMove = (opp, dir) => {
     if (!canEditOpp(opp)) { requestAccessOpp(opp); return; }
     const idx = STAGES.indexOf(opp.stage);
@@ -1330,6 +1346,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
     if (newIdx < 0 || newIdx >= STAGES.length) return;
     const toStage = STAGES[newIdx];
     if (dir > 0) {
+      if (!guardWonMove(opp, toStage)) return;
       setStageModal({ opp, fromStage: opp.stage, toStage });
     } else {
       setBackModal({ opp, fromStage: opp.stage, toStage });
@@ -1394,6 +1411,9 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
     const toIdx = STAGES.indexOf(targetStage);
     setDragId(null);
     if (toIdx > fromIdx) {
+      // Same Won guard as initiateStageMove — drag-drop is just another entry
+      // point for the stage transition.
+      if (!guardWonMove(opp, targetStage)) return;
       setStageModal({ opp, fromStage: opp.stage, toStage: targetStage });
     } else {
       setBackModal({ opp, fromStage: opp.stage, toStage: targetStage });

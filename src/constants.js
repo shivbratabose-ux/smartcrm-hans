@@ -270,7 +270,8 @@ export const STAGE_GATES = {
   Converted: {
     label: "Convert to Opportunity",
     checks: [
-      { key: "accountId", label: "Linked to account", test: l => !!l.accountId },
+      // Kept in sync with src/data/constants.js — account link is NOT
+      // required at conversion (Finance links it at Won).
       { key: "contacts", label: "At least one contact linked", test: l => !!(l.contactIds?.length || l.contact) },
       { key: "score", label: "Lead score ≥ 60", test: l => (l.score||0) >= 60 },
     ]
