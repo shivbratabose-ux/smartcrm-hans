@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from './ProductModulePicker';
@@ -2065,6 +2066,11 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const bulk = useBulkSelect(filtered);
   const pg = usePagination(filtered);
 
+  // OFFLINE FALLBACK ONLY. This computes "max + 1" over the RLS-scoped
+  // list the current user can see — which is exactly how the duplicate
+  // #FL-2026-001s happened (a rep with no visible leads computes max=0).
+  // The real allocator is the allocate_lead_id() RPC below; if a fallback
+  // number collides, the DB healing trigger reassigns it on sync.
   const nextLeadId = () => {
     const year = new Date(today).getFullYear();
     const nums = leads.map(l => {
@@ -2075,8 +2081,18 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     return `#FL-${year}-${String(next).padStart(3, '0')}`;
   };
 
-  const openAdd = () => {
-    const leadId = nextLeadId();
+  const openAdd = async () => {
+    // Reserve the number atomically from the DB sequence — SECURITY DEFINER,
+    // so it sees the global max regardless of who's asking. Falls back to
+    // the local computation when offline / RPC unavailable.
+    let leadId = null;
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.rpc('allocate_lead_id');
+        if (!error && data) leadId = data;
+      } catch { /* offline — fall through */ }
+    }
+    if (!leadId) leadId = nextLeadId();
     // Default assignedTo to the current user so RLS lets them see their
     // own new lead. BLANK_LEAD hardcodes "u1" (admin), which meant leads
     // created by other users were invisible to them — only admins saw
