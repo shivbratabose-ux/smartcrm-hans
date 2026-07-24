@@ -154,16 +154,28 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     return (!periodWindow.start || t>=periodWindow.start) && (!periodWindow.end || t<=periodWindow.end);
   };
 
-  // ── Date-windowed datasets — every tab reads these so the period filter
-  //    applies app-wide. Each record type is windowed by its natural date. ──
-  const filteredOpps = useMemo(()=> (opps||[]).filter(o=>inWindow(o.closeDate)), [opps,periodWindow]);
-  const wLeads   = useMemo(()=> (leads||[]).filter(l=>inWindow(l.createdDate)), [leads,periodWindow]);
-  const wActs    = useMemo(()=> (activities||[]).filter(a=>inWindow(a.date)), [activities,periodWindow]);
-  const wCalls   = useMemo(()=> (callReports||[]).filter(r=>inWindow(r.callDate)), [callReports,periodWindow]);
-  const wColls   = useMemo(()=> (collections||[]).filter(c=>inWindow(c.invoiceDate)), [collections,periodWindow]);
-  const wTickets = useMemo(()=> (tickets||[]).filter(t=>inWindow(t.reportedDate||t.created)), [tickets,periodWindow]);
+  // ── Filtered datasets — every tab reads these, so BOTH the period filter
+  //    and the owner filter apply app-wide. Previously the owner filter was
+  //    only applied to `ownerOpps` (three pipeline charts), so selecting an
+  //    owner did nothing to the Executive Summary KPIs or the Leads / Calls /
+  //    Activities / Collections / Support tabs. We now fold owner-filtering
+  //    into the source datasets so every downstream metric inherits it.
+  //
+  //    Owner field differs per entity: opportunities/activities/collections
+  //    use `owner`, calls use `marketingPerson`, leads use `assignedTo`,
+  //    tickets use `assigned`. `byOwner` picks the right field.
+  const byOwner = (arr, field) => ownerFilter === "all" ? arr : arr.filter(r => r[field] === ownerFilter);
+  const filteredOpps = useMemo(()=> byOwner((opps||[]).filter(o=>inWindow(o.closeDate)), "owner"),                 [opps,periodWindow,ownerFilter]);
+  const wLeads   = useMemo(()=> byOwner((leads||[]).filter(l=>inWindow(l.createdDate)), "assignedTo"),             [leads,periodWindow,ownerFilter]);
+  const wActs    = useMemo(()=> byOwner((activities||[]).filter(a=>inWindow(a.date)), "owner"),                    [activities,periodWindow,ownerFilter]);
+  const wCalls   = useMemo(()=> byOwner((callReports||[]).filter(r=>inWindow(r.callDate)), "marketingPerson"),     [callReports,periodWindow,ownerFilter]);
+  const wColls   = useMemo(()=> byOwner((collections||[]).filter(c=>inWindow(c.invoiceDate)), "owner"),            [collections,periodWindow,ownerFilter]);
+  const wTickets = useMemo(()=> byOwner((tickets||[]).filter(t=>inWindow(t.reportedDate||t.created)), "assigned"), [tickets,periodWindow,ownerFilter]);
 
-  const ownerOpps = useMemo(()=> ownerFilter==="all" ? filteredOpps : filteredOpps.filter(o=>o.owner===ownerFilter), [filteredOpps,ownerFilter]);
+  // Back-compat alias: `ownerOpps` is now identical to `filteredOpps` (owner
+  // filtering already applied above). Kept so the pipeline charts that
+  // reference it don't need touching.
+  const ownerOpps = filteredOpps;
 
   // ═══════════════════════════════════════════════════════════════
   // COMPUTED METRICS
