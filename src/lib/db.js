@@ -662,6 +662,40 @@ function pruneKnownUnknowns(table, snaked) {
   return out;
 }
 
+// ── Transient-failure retry ─────────────────────────────────────────
+// Some write failures are environment blips, not data problems:
+//   - "Lock broken by another request with the 'steal' option" — thrown by
+//     supabase-js's auth layer when the SAME app is open in a second tab
+//     and both fight over the token-refresh navigator lock. The in-flight
+//     request is aborted mid-write.
+//   - AbortError / Failed to fetch / NetworkError — dropped connections.
+// These writes are perfectly valid; they deserve an automatic in-place
+// retry instead of a scary "Cloud sync failed" toast that waits for the
+// user's next edit to re-trigger the diff-sync.
+const TRANSIENT_ERROR_RE = /Lock broken|AbortError|Failed to fetch|NetworkError|network error|fetch failed|ERR_NETWORK|timeout/i;
+const isTransientError = (err) =>
+  !!err && TRANSIENT_ERROR_RE.test(String(err.message || err.name || err));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Run a Supabase op; on a transient failure retry up to 3 times with
+// backoff. Thrown exceptions (fetch aborts THROW rather than returning
+// {error}) are normalised into {error} shape so callers keep their
+// existing error handling.
+async function runWithTransientRetry(runOp) {
+  const DELAYS = [400, 1200, 2500];
+  let last = { data: null, error: { message: "runWithTransientRetry: no attempt made" } };
+  for (let i = 0; i <= DELAYS.length; i++) {
+    try {
+      last = await runOp();
+    } catch (e) {
+      last = { data: null, error: { message: String(e?.message || e), name: e?.name || "Error" } };
+    }
+    if (!last?.error || !isTransientError(last.error)) return last;
+    if (i < DELAYS.length) await sleep(DELAYS[i]);
+  }
+  return last;
+}
+
 // Try a write; if PostgREST rejects with "column X not found", remember it,
 // strip it, and retry. Caps at MAX_RETRIES so a truly broken schema can't
 // loop forever.
@@ -674,7 +708,10 @@ async function writeWithSchemaHeal(table, snaked, runOp) {
   const MAX_RETRIES = 30;
   let payload = pruneKnownUnknowns(table, snaked);
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const { data, error } = await runOp(payload);
+    // Transient blips (auth-lock steal from a second tab, network drops)
+    // are retried in place here — they'd otherwise surface as a
+    // "Cloud sync failed" toast even though the payload is fine.
+    const { data, error } = await runWithTransientRetry(() => runOp(payload));
     if (!error) return { data, error: null };
     const m = COLUMN_NOT_FOUND_RE.exec(error.message || "");
     if (!m || attempt === MAX_RETRIES) return { data: null, error };
@@ -751,13 +788,13 @@ export async function deleteRecord(module, id, userId, meta = {}) {
   if (!isSupabaseConfigured) return { error: null };
   const table = TABLE_MAP[module];
   if (!table) return { error: "Unknown module" };
-  const { error } = await supabase.from(table).update({
+  const { error } = await runWithTransientRetry(() => supabase.from(table).update({
     is_deleted: true,
     deleted_at: new Date().toISOString(),
     deleted_by: userId || null,
     delete_reason: meta.reason || null,
     delete_reason_category: meta.category || null,
-  }).eq("id", id);
+  }).eq("id", id));
   if (error) { dbLog('error', `[DB] softDelete ${module}:`, error); return { error }; }
   await logAudit(userId, "DELETE", table, id, null, {
     is_deleted: true,
@@ -842,7 +879,7 @@ export async function batchUpsert(module, records) {
   const MAX_RETRIES = 30;
   let lastError = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const { error } = await supabase.from(table).upsert(snaked, { onConflict: "id" });
+    const { error } = await runWithTransientRetry(() => supabase.from(table).upsert(snaked, { onConflict: "id" }));
     if (!error) return { error: null };
     lastError = error;
     const m = COLUMN_NOT_FOUND_RE.exec(error.message || "");

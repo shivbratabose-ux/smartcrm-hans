@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip, Lock } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip, Lock, HelpCircle } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE, INDIAN_STATES } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { getQuoteTemplate, STANDARD_TERMS_SECTIONS, STANDARD_PAYMENT_MILESTONES, STANDARD_EXTRA_NOTES } from '../data/quoteTemplates';
@@ -13,6 +13,37 @@ import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
 import HansQuoteBuilder from './HansQuoteBuilder';
 import { resolveQuotationMasters } from './QuotationMasters';
+import GuidedTour from './GuidedTour';
+
+// Coach-mark steps for "How to create a quote". Targets map to
+// data-tour="…" attributes on the page's action buttons.
+const QUOTE_TOUR_STEPS = [
+  {
+    target: "new-quote-btn",
+    title: "1. Start a new quote",
+    body: "Click New Quote (Pricing Engine) — the recommended path. It pulls the account, contact and products straight from the deal and applies the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment discounts and guardrails) automatically.",
+    placement: "bottom",
+  },
+  {
+    target: "custom-quote-btn",
+    title: "Or build a custom quote",
+    body: "Use Custom Quote only for ad-hoc proposals where you type your own line items and prices with no catalogue engine. Most quotes should use the Pricing Engine instead.",
+    placement: "bottom",
+  },
+  {
+    target: "quotes-search",
+    title: "2. Find an existing quote",
+    body: "Search by customer, quote number, sector or title. Every quote you create lands in the list below as a Draft.",
+    placement: "bottom",
+  },
+  {
+    target: "quotes-status-filter",
+    title: "3. Track quote status",
+    body: "Filter by stage — Draft → Sent → Under Review → Accepted. Open any quote to email it, download the Customer PDF / Proforma, or convert an accepted quote into a contract.",
+    placement: "bottom",
+  },
+];
+const QUOTE_TOUR_KEY = "smartcrm_tour_quotes_v1";
 
 const QuotesSortIcon = ({ col, sortKey, sortDir }) => {
   if (sortKey !== col) return <ChevronsUpDown size={11} style={{opacity:0.4,marginLeft:2}}/>;
@@ -151,7 +182,7 @@ const CSV_COLS = [
   {label:"SGST",accessor:q=>q.sgstTotal!=null?q.sgstTotal:sumLines(q,"sgstAmount")},
   {label:"Tax Total",accessor:q=>q.taxAmount||0},
   {label:"Order Value (INR)",accessor:q=>formatINR(q.total)},{label:"Prob %",accessor:q=>q._prob||0},
-  {label:"Status",accessor:q=>q.status},{label:"Version",accessor:q=>`v${q.version}`},
+  {label:"Status",accessor:q=>q.status},{label:"Version",accessor:q=>`v${q.version||1}`},
 ];
 
 /* ── KPI Card ── */
@@ -606,6 +637,13 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const [modal,setModal]=useState(null);
   const [hansBuilder,setHansBuilder]=useState(false); // engine-backed builder (Hans pricing)
   const [hansEdit,setHansEdit]=useState(null); // quote being edited in the Hans builder (null = new)
+  // Guided "How to create a quote" coach-mark tour. Auto-runs once per
+  // browser (localStorage flag) so first-time users get oriented, and can
+  // be re-triggered any time from the help button in the header.
+  const [showTour,setShowTour]=useState(false);
+  useEffect(()=>{
+    try { if(!localStorage.getItem(QUOTE_TOUR_KEY)) setShowTour(true); } catch { /* ignore */ }
+  },[]);
   const [form,setForm]=useState(BLANK_QUOTE);
   const [detail,setDetail]=useState(null);
   const [confirm,setConfirm]=useState(null);
@@ -828,7 +866,13 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       ...q,
       _accName,
       _sector:SECTOR_MAP_FROM_TYPE[resolvedAcc?.type]||resolvedAcc?.type||acc?.type||"Services",
-      _quoteId:`#FL-${yr}-${seqStr.padStart(3,"0")}`,
+      // #QT- prefix, NOT #FL- — quotes were minting display ids that
+      // looked exactly like lead numbers (a quote and a lead could both
+      // read "#FL-2026-001"), which got genuinely confusing once lead
+      // numbers became DB-enforced-unique. Display-only field, so no
+      // data migration: every quote renders with the new prefix
+      // immediately.
+      _quoteId:`#QT-${yr}-${seqStr.padStart(3,"0")}`,
       _prob:opp?.probability||({"Draft":20,"Sent":50,"Under Review":65,"Accepted":100,"Rejected":0,"Expired":0,"Revised":30}[q.status]||0),
       _ownerName:TEAM_MAP[q.owner]?.name||"—",
     };
@@ -1873,9 +1917,10 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           <div className="pg-sub">Manage and track high-value enterprise proposals across sectors.</div>
         </div>
         <div className="pg-actions">
+          <button className="btn btn-sec" onClick={()=>setShowTour(true)} title="How to create a quote — guided walkthrough"><HelpCircle size={14}/>How to</button>
           <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"quotations")}><Download size={14}/>Export</button>
-          <button className="btn btn-sec" onClick={openAdd} title="Manual / ad-hoc quote — type your own line items and pricing (no catalogue engine)"><Plus size={14}/>Custom Quote</button>
-          <button className="btn btn-primary" onClick={()=>{setHansEdit(null);setHansBuilder(true);}} title="Recommended — CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment, guardrails)"><FileText size={14}/>New Quote (Pricing Engine)</button>
+          <button data-tour="custom-quote-btn" className="btn btn-sec" onClick={openAdd} title="Manual / ad-hoc quote — type your own line items and pricing (no catalogue engine)"><Plus size={14}/>Custom Quote</button>
+          <button data-tour="new-quote-btn" className="btn btn-primary" onClick={()=>{setHansEdit(null);setHansBuilder(true);}} title="Recommended — CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment, guardrails)"><FileText size={14}/>New Quote (Pricing Engine)</button>
         </div>
       </div>
 
@@ -1888,6 +1933,16 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           onClose={()=>{setHansBuilder(false);setHansEdit(null);}}
         />
       )}
+
+      {/* Guided "How to create a quote" tour. Only runs when the builder
+          modal is closed, so the coach-marks anchor to the header buttons
+          rather than being hidden behind the modal. */}
+      <GuidedTour
+        steps={QUOTE_TOUR_STEPS}
+        open={showTour && !hansBuilder && !detail}
+        onClose={()=>setShowTour(false)}
+        storageKey={QUOTE_TOUR_KEY}
+      />
 
       {/* ── Analytics panel (manager-only) ── */}
       {isManager && (
@@ -1937,7 +1992,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
       {/* ── Filters Row ── */}
       <div className="filter-bar" style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-        <div style={{display:"flex",flexDirection:"column",gap:2}}>
+        <div data-tour="quotes-status-filter" style={{display:"flex",flexDirection:"column",gap:2}}>
           <span style={{fontSize:10,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>STATUS</span>
           <select value={statusF} onChange={e=>setStatusF(e.target.value)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid var(--border)",fontSize:12,minWidth:140,background:"var(--bg)"}}>
             <option value="All">All Statuses</option>
@@ -1960,7 +2015,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           </div>
         </div>
         <div style={{marginLeft:"auto"}}>
-          <div className="filter-search" style={{maxWidth:220}}><Search size={14} style={{color:"var(--text3)",flexShrink:0}}/><input placeholder="Search quotes..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
+          <div data-tour="quotes-search" className="filter-search" style={{maxWidth:220}}><Search size={14} style={{color:"var(--text3)",flexShrink:0}}/><input placeholder="Search quotes..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
         </div>
       </div>
 
