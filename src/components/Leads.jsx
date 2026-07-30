@@ -1726,7 +1726,7 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
         </thead>
         <tbody>
           {rows.map(l => {
-            const isOverdue = l.nextCall && l.nextCall < today && l.stage !== "NA";
+            const isOverdue = l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage);
             return (
               <tr key={l.id} style={l.duplicateOf ? { background: "#FFF7ED" } : isOverdue ? { background: "#FEF2F2" } : undefined}>
                 <td><input type="checkbox" checked={bulk.isSelected(l.id)} onChange={() => bulk.toggle(l.id)}/></td>
@@ -1873,7 +1873,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
     )},
     { key: "assignedTo", label: "Assigned To", defaultWidth: 140, render: l => <UserPill uid={l.assignedTo}/> },
     { key: "nextCall", label: "Next Call", defaultWidth: 130, render: l => {
-      const overdue = l.nextCall && l.nextCall < today && l.stage !== "NA";
+      const overdue = l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage);
       return overdue ? (
         <span style={{fontSize:11,fontWeight:700,color:"#DC2626",display:"flex",alignItems:"center",gap:3}}>
           <AlertTriangle size={11}/>{fmt.short(l.nextCall)}
@@ -1921,7 +1921,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
       onSort={toggleSort}
       SortIcon={SortIcon}
       selection={bulk}
-      rowStyle={l => l.duplicateOf ? { background: "#FFF7ED" } : (l.nextCall && l.nextCall < today && l.stage !== "NA") ? { background: "#FEF2F2" } : undefined}
+      rowStyle={l => l.duplicateOf ? { background: "#FFF7ED" } : (l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage)) ? { background: "#FEF2F2" } : undefined}
       rowActions={l => {
         const editable = canEditLead ? canEditLead(l) : true;
         return (
@@ -2046,7 +2046,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   };
 
   const filtered = useMemo(() => [...leads].filter(l => {
-    if (overdueOnly && !(l.nextCall && l.nextCall < today && l.stage !== "NA")) return false;
+    if (overdueOnly && !(l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage))) return false;
     if (rangeKey !== "all" && !inRange(l.createdDate, range)) return false;
     if (productF !== "All" && l.product !== productF) return false;
     if (stageF !== "All" && l.stage !== stageF) return false;
@@ -2317,7 +2317,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       return s + (ev > 0 ? ev : clampScore(l.score) * 0.5);
     }, 0);
   const totalValue = pipelineValue + convertedValue;
-  const overdueLeads = filtered.filter(l => l.nextCall && l.nextCall < today && l.stage !== "NA").length;
+  const overdueLeads = filtered.filter(l => l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage)).length;
   const hotLeads = filtered.filter(l => l.score >= 70 && l.stage !== "NA").length;
   const avgAge = filtered.length > 0 ? Math.round(filtered.reduce((s, l) => s + (daysSince(l.createdDate) || 0), 0) / filtered.length) : 0;
 
@@ -2581,7 +2581,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 </thead>
                 <tbody>
                   {pg.paged.map(l => {
-                    const isOverdue = l.nextCall && l.nextCall < today && l.stage !== "NA";
+                    const isOverdue = l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage);
                     const age = daysSince(l.createdDate);
                     return (
                     <tr key={l.id} style={l.duplicateOf ? {background:"#FFF7ED"} : isOverdue ? {background:"#FEF2F2"} : undefined}>

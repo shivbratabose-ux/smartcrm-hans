@@ -101,6 +101,19 @@ const DATA_VERSION = "v13"; // tracking-only; no longer triggers a reset
 // keeping the DB schema clean.
 const SYNC_STAMP_FIELD = "_syncedAt";
 
+// The column that carries record ownership per module. Used to gate outbound
+// writes: the app only pushes a record the current user is allowed to write
+// (owner self / hierarchy downline / admin), so it never fires a write the DB
+// RLS will reject — which otherwise showed up as "N changes could NOT be
+// saved" toasts once company-wide READ let every rep load all records.
+const OWNER_FIELD_BY_MODULE = {
+  accounts: "owner", contacts: "owner", opps: "owner", leads: "assignedTo",
+  activities: "owner", callReports: "marketingPerson", tickets: "assigned",
+  contracts: "owner", collections: "owner", projects: "owner",
+  targets: "userId", quotes: "owner", commLogs: "owner", events: "owner",
+  notes: "owner", files: "owner", users: "id",
+};
+
 // True if a Supabase write error indicates a primary-key collision — i.e.
 // the cloud already has a row with this id. We use this in mergeOnLoad's
 // retry-insert path to distinguish "ghost record the cloud has under RLS /
@@ -435,6 +448,12 @@ export default function SmartCRM() {
   // line_mgr  → department peers; country_mgr → branch peers; others → self only.
   const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const _globalRole = useMemo(() => isGlobalRole(currentUser, orgUsers), [currentUser, orgUsers]);
+  // Latest write scope, held in a ref so the sync effect (deps: [syncModules])
+  // always reads current values without re-subscribing. Write rule (matches
+  // the DB RLS): a user may write records they OWN + their HIERARCHY downline,
+  // and admins/global roles may write anything.
+  const _scopeRef = useRef({ global: true, ids: new Set() });
+  _scopeRef.current = { global: _globalRole, ids: _scopedIds };
   // Finance is a cross-cutting role: it needs company-wide read on the
   // financial tables (accounts / contracts / collections) so it can run the
   // account-number approval queue and manage billing for records it doesn't
@@ -528,6 +547,13 @@ export default function SmartCRM() {
   useEffect(() => {
     if (!currentUser) return;
     if (_startupAlertedRef.current) return;
+    // Throttle across page refreshes: a browser reload resets the ref, so the
+    // heads-up toast used to fire on EVERY refresh. Persist a per-user "last
+    // shown" date and show it at most once per calendar day.
+    const _alertKey = `scrm_startupAlert_${currentUser}`;
+    try {
+      if (localStorage.getItem(_alertKey) === today) { _startupAlertedRef.current = true; return; }
+    } catch { /* localStorage unavailable — fall through and show once */ }
 
     /* ── Dormancy scan ── */
     const DORMANCY_DAYS = 45;
@@ -599,6 +625,7 @@ export default function SmartCRM() {
 
     if (dormant.length === 0 && due.length === 0 && tenderDue.length === 0 && instrumentDue.length === 0) return;
     _startupAlertedRef.current = true;
+    try { localStorage.setItem(_alertKey, today); } catch { /* ignore */ }
 
     const parts = [];
     if (tenderDue.length > 0) {
@@ -965,6 +992,17 @@ export default function SmartCRM() {
         else if (module && id) stampSynced(module, id);
       })
       .catch(err => reportSyncError(label, err));
+    // Can the current user write this record? admin/global → anything;
+    // otherwise owner must be self or in their hierarchy downline. Records
+    // with no owner concept (module not mapped, or owner unset) are allowed
+    // through so ownerless data still syncs.
+    const canWriteRec = (module, rec) => {
+      const scope = _scopeRef.current;
+      if (scope.global) return true;
+      const f = OWNER_FIELD_BY_MODULE[module];
+      const owner = f ? rec?.[f] : null;
+      return !owner || scope.ids.has(owner);
+    };
     for (const [module, next] of Object.entries(syncModules)) {
       const old = prev[module];
       if (!old || old === next || !Array.isArray(next) || !Array.isArray(old)) continue;
@@ -972,7 +1010,7 @@ export default function SmartCRM() {
       const nextIds = new Set(next.map(r => r.id));
       const dbModule = module === "users" ? "users" : module;
       // Inserts
-      next.forEach(r => { if (r.id && !prevIds.has(r.id)) track(insertRecord(dbModule, r), `${module} insert`, module, r.id); });
+      next.forEach(r => { if (r.id && !prevIds.has(r.id) && canWriteRec(module, r)) track(insertRecord(dbModule, r), `${module} insert`, module, r.id); });
       // Deletes (soft — deleteRecord now issues UPDATE is_deleted=true).
       // Suppress for ids we just dropped from local cache via mergeOnLoad's
       // duplicate-key path — the cloud still has those rows, our local
@@ -983,6 +1021,7 @@ export default function SmartCRM() {
           dropFromSyncRef.current.delete(r.id); // one-shot: consume so a real later delete still propagates
           return;
         }
+        if (!canWriteRec(module, r)) return;
         track(deleteRecord(dbModule, r.id, currentUser), `${module} delete`);
       });
       // Updates — only compare records that exist in both. Strip internal
@@ -990,7 +1029,7 @@ export default function SmartCRM() {
       // doesn't itself look like a state change and trigger a second
       // updateRecord round-trip on every sync (= infinite re-sync loop).
       next.forEach(r => {
-        if (r.id && prevIds.has(r.id)) {
+        if (r.id && prevIds.has(r.id) && canWriteRec(module, r)) {
           const o = old.find(p => p.id === r.id);
           if (o && JSON.stringify(stripInternalFields(o)) !== JSON.stringify(stripInternalFields(r))) {
             track(updateRecord(dbModule, r.id, r), `${module} update`, module, r.id);
@@ -1057,9 +1096,18 @@ export default function SmartCRM() {
         // surfaced LOUDLY via reportSyncError instead of dying in the console,
         // so genuinely-blocked data never strands silently.
         const pushRecords = (module, records, setter) => {
-          if (!records.length) return;
-          retryTotals[module] = (retryTotals[module] || 0) + records.length;
-          records.forEach(rec => {
+          // Only recover records the current user is allowed to write (own +
+          // hierarchy + admin). Others belong to teammates and would just be
+          // RLS-rejected — skip them silently.
+          const scope = _scopeRef.current;
+          const ownerField = OWNER_FIELD_BY_MODULE[module];
+          const writable = scope.global ? records : records.filter(rec => {
+            const owner = ownerField ? rec?.[ownerField] : null;
+            return !owner || scope.ids.has(owner);
+          });
+          if (!writable.length) return;
+          retryTotals[module] = (retryTotals[module] || 0) + writable.length;
+          writable.forEach(rec => {
             insertRecord(module === "users" ? "users" : module, rec)
               .then(res => {
                 if (!res?.error) {
@@ -1629,6 +1677,13 @@ export default function SmartCRM() {
       if (cIds.length) setContacts(p => p.map(c => cIds.includes(c.id) && !c.accountId ? {...c, accountId: newAccId} : c));
       // Link activities to new account
       setActivities(p => p.map(a => a.oppId === opp.id && !a.accountId ? {...a, accountId: newAccId} : a));
+    }
+    // Closed/won deal that isn't already a live customer → the ONE alert the
+    // rep should see is the Finance hand-off: get approval with the account-
+    // creation documents. (No other nudges for a just-closed deal.)
+    if (!isLiveCustomer) {
+      const _who = linked?.name || opp.title?.split(" – ").pop() || "this customer";
+      notify.info(`Deal won — get Finance approval with all account-creation documents to activate ${_who}.`, { duration: 12000 });
     }
     // Create "Deal Won" milestone activity
     setActivities(p => [...p, {
