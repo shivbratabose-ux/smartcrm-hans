@@ -4,6 +4,29 @@ import { ROLE_MAP, INIT_USERS } from '../data/constants';
 import { fmt } from '../utils/helpers';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
+// Password field — defined at MODULE scope (not inside Profile) on purpose.
+// When it lived inside the component it was recreated on every keystroke, so
+// React remounted the <input> and it lost focus after one character (the
+// "fields won't take characters" bug). As a stable module-level component it
+// re-renders in place and keeps focus.
+function PwInput({label,field,showPw,setShowPw,pwForm,setPwForm,onEnter}){
+  return (
+    <div style={{marginBottom:12}}>
+      <label style={{fontSize:12,fontWeight:600,color:"var(--text2)",display:"block",marginBottom:4}}>{label}</label>
+      <div style={{position:"relative"}}>
+        <input type={showPw[field]?"text":"password"} value={pwForm[field]||""} onChange={e=>setPwForm(p=>({...p,[field]:e.target.value}))}
+          autoComplete="new-password"
+          style={{width:"100%",padding:"8px 36px 8px 12px",border:"1px solid var(--border)",borderRadius:8,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}
+          onKeyDown={e=>{ if(e.key==="Enter"&&onEnter) onEnter(); }}/>
+        <button onClick={()=>setShowPw(p=>({...p,[field]:!p[field]}))} type="button"
+          style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"var(--text3)",padding:0}}>
+          {showPw[field]?<EyeOff size={14}/>:<Eye size={14}/>}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Profile({currentUser,orgUsers,setOrgUsers}) {
   const user=(orgUsers||[]).find(u=>u.id===currentUser)||INIT_USERS.find(u=>u.id===currentUser);
   const roleInfo=ROLE_MAP[user?.role];
@@ -45,21 +68,6 @@ function Profile({currentUser,orgUsers,setOrgUsers}) {
     <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"12px 0",borderBottom:"1px solid var(--border)"}}>
       <div style={{width:32,height:32,borderRadius:8,background:"var(--brand-bg)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{icon}</div>
       <div><div style={{fontSize:11,fontWeight:600,color:"var(--text3)",textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</div><div style={{fontSize:14,fontWeight:500,color:"var(--text1)",marginTop:2}}>{value||"—"}</div></div>
-    </div>
-  );
-
-  const PwInput=({label,field})=>(
-    <div style={{marginBottom:12}}>
-      <label style={{fontSize:12,fontWeight:600,color:"var(--text2)",display:"block",marginBottom:4}}>{label}</label>
-      <div style={{position:"relative"}}>
-        <input type={showPw[field]?"text":"password"} value={pwForm[field]} onChange={e=>setPwForm(p=>({...p,[field]:e.target.value}))}
-          style={{width:"100%",padding:"8px 36px 8px 12px",border:"1px solid var(--border)",borderRadius:8,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}
-          onKeyDown={e=>e.key==="Enter"&&changePw()}/>
-        <button onClick={()=>setShowPw(p=>({...p,[field]:!p[field]}))}
-          style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"var(--text3)",padding:0}}>
-          {showPw[field]?<EyeOff size={14}/>:<Eye size={14}/>}
-        </button>
-      </div>
     </div>
   );
 
@@ -138,8 +146,8 @@ function Profile({currentUser,orgUsers,setOrgUsers}) {
           <div style={{padding:"20px 28px"}}>
             {pwErr&&<div style={{padding:"8px 14px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,fontSize:12,color:"#DC2626",marginBottom:12}}>{pwErr}</div>}
             {pwOk&&<div style={{padding:"8px 14px",background:"#ECFDF5",border:"1px solid #A7F3D0",borderRadius:8,fontSize:12,color:"#065F46",marginBottom:12,display:"flex",alignItems:"center",gap:6}}><Check size={14}/>{pwOk}</div>}
-            <PwInput label="New Password (min 8 characters)" field="password"/>
-            <PwInput label="Confirm New Password" field="confirm"/>
+            <PwInput label="New Password (min 8 characters)" field="password" showPw={showPw} setShowPw={setShowPw} pwForm={pwForm} setPwForm={setPwForm} onEnter={changePw}/>
+            <PwInput label="Confirm New Password" field="confirm" showPw={showPw} setShowPw={setShowPw} pwForm={pwForm} setPwForm={setPwForm} onEnter={changePw}/>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}}>
               <button className="btn btn-sec" onClick={()=>{setPwMode(false);setPwForm({password:"",confirm:""});setPwErr("");}}><X size={13}/>Cancel</button>
               <button className="btn btn-primary" onClick={changePw}><Check size={14}/>Update Password</button>
