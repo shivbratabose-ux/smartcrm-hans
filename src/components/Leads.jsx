@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, UserPlus, ChevronDown, ChevronUp, ShieldCheck, X, Save, Home, Warehouse, Upload, ChevronRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
+import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES, STAGES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -1895,7 +1895,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
     )},
     // Current stage of the opportunity this lead converted into (blank for
     // leads that haven't been converted, or whose opp was deleted).
-    { key: "oppStage", label: "Opp Stage", defaultWidth: 140, sortable: false, render: l => {
+    { key: "oppStage", label: "Opp Stage", defaultWidth: 140, sortable: true, render: l => {
       const id = (l.convertedOppIds || [])[0];
       const opp = id ? oppById[id] : null;
       const stage = opp && !opp.isDeleted ? (opp.stage || "") : "";
@@ -2017,6 +2017,15 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [stageF, setStageF] = useState("All");
   const [sourceF, setSourceF] = useState("All");
   const [ownerF, setOwnerF] = useState("All");
+  const [oppStageF, setOppStageF] = useState("All");
+  // Resolve a converted lead → its linked opportunity's current stage (for the
+  // Opp Stage column, filter, and sort). "" when not converted / opp deleted.
+  const oppById = useMemo(() => Object.fromEntries((opps || []).map(o => [o.id, o])), [opps]);
+  const oppStageOf = (l) => { const id = (l.convertedOppIds || [])[0]; const o = id ? oppById[id] : null; return o && !o.isDeleted ? (o.stage || "") : ""; };
+  const oppStageOpts = useMemo(() => {
+    const present = (opps || []).filter(o => o && !o.isDeleted && o.stage).map(o => o.stage);
+    return [...new Set([...STAGES, ...present])];
+  }, [opps]);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_LEAD);
   const [confirm, setConfirm] = useState(null);
@@ -2067,6 +2076,11 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     if (stageF !== "All" && l.stage !== stageF) return false;
     if (sourceF !== "All" && l.source !== sourceF) return false;
     if (ownerF !== "All" && l.assignedTo !== ownerF) return false;
+    if (oppStageF !== "All") {
+      const os = oppStageOf(l);
+      if (oppStageF === "__none") { if (os) return false; }        // Not converted
+      else if (os !== oppStageF) return false;
+    }
     if (search && !(l.company + l.contact + l.email + (l.leadId||"")).toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   }).sort((a, b) => {
@@ -2074,9 +2088,10 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     if (sortCol === "score") v = (a.score || 0) - (b.score || 0);
     else if (sortCol === "age") v = (daysSince(a.createdDate) || 0) - (daysSince(b.createdDate) || 0);
     else if (sortCol === "nextCall" || sortCol === "createdDate") v = (a[sortCol] || "").localeCompare(b[sortCol] || "");
+    else if (sortCol === "oppStage") v = (oppStageOf(a) || "").localeCompare(oppStageOf(b) || "");
     else v = cmp(a, b, sortCol);
     return sortDir === "desc" ? -v : v;
-  }), [leads, productF, stageF, sourceF, ownerF, search, range, rangeKey, sortCol, sortDir, overdueOnly]);
+  }), [leads, productF, stageF, sourceF, ownerF, oppStageF, oppById, search, range, rangeKey, sortCol, sortDir, overdueOnly]);
 
   const bulk = useBulkSelect(filtered);
   const pg = usePagination(filtered);
@@ -2500,6 +2515,11 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
               value={ownerF} onChange={setOwnerF}
               options={team.map(u => ({ value: u.id, label: u.name, sub: u.role }))}
             />
+            <select className="filter-select" value={oppStageF} onChange={e => setOppStageF(e.target.value)} title="Filter by the linked opportunity's stage">
+              <option value="All">All Opp Stages</option>
+              {oppStageOpts.map(s => <option key={s} value={s}>{s}</option>)}
+              <option value="__none">— Not converted —</option>
+            </select>
 
             {/* View toggle: Table (read-only) vs. Grid (Excel-like editable) */}
             <div style={{display:"flex",gap:0,marginLeft:"auto",border:"1.5px solid #CBD5E1",borderRadius:6,overflow:"hidden"}}>
