@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -448,6 +448,13 @@ export default function SmartCRM() {
   // line_mgr  → department peers; country_mgr → branch peers; others → self only.
   const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const _globalRole = useMemo(() => isGlobalRole(currentUser, orgUsers), [currentUser, orgUsers]);
+  // Team & Users (org hierarchy + user credential management) is restricted to
+  // top management only — Admin / MD / VP. Everyone else manages just their own
+  // profile via the Profile page.
+  const _canManageUsers = useMemo(() => canManageUsers((orgUsers || []).find(u => u.id === currentUser)?.role), [currentUser, orgUsers]);
+  // Bounce a non-privileged user off the Team & Users page if they reach it
+  // via a direct #/team URL (the nav item is already hidden for them).
+  useEffect(() => { if (page === "team" && orgUsers.length && !_canManageUsers) setPage("dashboard"); }, [page, _canManageUsers, orgUsers.length]);
   // Latest write scope, held in a ref so the sync effect (deps: [syncModules])
   // always reads current values without re-subscribing. Write rule (matches
   // the DB RLS): a user may write records they OWN + their HIERARCHY downline,
@@ -2575,7 +2582,7 @@ export default function SmartCRM() {
             {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog} opps={opps} orgUsers={orgUsers} currentUser={currentUser}/>}
             {page==="aisettings" && <AiSettings aiConfig={aiConfig} onSave={handleSaveAiConfig} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
-            {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
+            {page==="team"       && _canManageUsers && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
             {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers}/>}
             {page==="trash"      && <Trash canRestore={canRestore} canPurge={canPurge} currentUser={currentUser} orgUsers={orgUsers} sources={[
               { key:"leads",       label:"Leads",        items:leads,        setter:setLeads,        getName:r=>r.company||r.contact||r.name, getMeta:r=>[r.contact, r.email].filter(Boolean).join(" · ") },

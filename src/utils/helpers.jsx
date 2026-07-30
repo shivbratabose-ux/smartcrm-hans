@@ -431,6 +431,12 @@ export const getScopedUserIds = (currentUserId, orgUsers) => {
   return scoped;
 };
 
+// Roles allowed to see Team & Users (org hierarchy + user credential mgmt).
+// Deliberately NARROWER than GLOBAL_ROLES — only top management, not every
+// global-read role. Everyone else manages only their own profile/credentials.
+export const USER_ADMIN_ROLES = ["admin", "md", "vp_sales_mkt"];
+export const canManageUsers = (role) => USER_ADMIN_ROLES.includes(normalizeRole(role));
+
 // Returns true if the role has unrestricted global data access
 export const isGlobalRole = (userId, orgUsers) => {
   const user = (orgUsers || []).find(u => u.id === userId);

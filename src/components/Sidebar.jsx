@@ -5,6 +5,7 @@ import {
   UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge, Sparkles
 } from "lucide-react";
 import { TEAM_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
+import { canManageUsers } from '../utils/helpers';
 
 const canAccess = (userId, module, orgUsers, customPermissions) => {
   const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
@@ -55,7 +56,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
     ]},
     {section:"Admin",items:[
       ...(canAccess(currentUser,"org",orgUsers,customPermissions)?[{id:"org",label:"Organisation",icon:<Layers size={17}/>}]:[]),
-      ...(canAccess(currentUser,"team",orgUsers,customPermissions)?[{id:"team",label:"Team & Users",icon:<Users size={17}/>}]:[]),
+      ...(canManageUsers(userRole)?[{id:"team",label:"Team & Users",icon:<Users size={17}/>}]:[]),
       {id:"bulkupload",label:"Bulk Upload",icon:<Upload size={17}/>},
       {id:"masters",label:"Masters",icon:<SlidersHorizontal size={17}/>},
       ...(["admin","md","director"].includes(userRole)?[{id:"aisettings",label:"AI Settings",icon:<Sparkles size={17}/>}]:[]),
