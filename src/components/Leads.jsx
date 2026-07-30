@@ -1785,8 +1785,10 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
    Read-only Excel-like view backed by DataGrid. Column visibility,
    order, and width are persisted per-user via user_table_views; the
    "Grid" toggle still routes to EditableLeadsGrid for inline edits. */
-function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, openCallLog, setConfirm, handleConvert, canDelete, currentUser, canEditLead, onRequestAccess, commLogs = [] }) {
+function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, setDetail, openEdit, openCallLog, setConfirm, handleConvert, canDelete, currentUser, canEditLead, onRequestAccess, commLogs = [], opps = [] }) {
   const txt = (val) => <span style={{ fontSize: 12 }}>{val || "-"}</span>;
+  // Resolve a converted lead → its linked opportunity (for the Opp Stage column).
+  const oppById = useMemo(() => Object.fromEntries((opps || []).map(o => [o.id, o])), [opps]);
   // Full registry: every meaningful lead field is opt-in. Different user
   // groups (sales reps, BD, marketing, line mgr, ops) can build their
   // own views from this set; only DEFAULT_CONFIG visible:true ones show
@@ -1891,16 +1893,29 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
     { key: "convertedOppIds", label: "Converted Deals", defaultWidth: 110, sortable: false, render: l => (
       <span style={{fontSize:11,color:"var(--text3)"}}>{(l.convertedOppIds||[]).length || "-"}</span>
     )},
+    // Current stage of the opportunity this lead converted into (blank for
+    // leads that haven't been converted, or whose opp was deleted).
+    { key: "oppStage", label: "Opp Stage", defaultWidth: 140, sortable: false, render: l => {
+      const id = (l.convertedOppIds || [])[0];
+      const opp = id ? oppById[id] : null;
+      const stage = opp && !opp.isDeleted ? (opp.stage || "") : "";
+      if (!stage) return <span style={{fontSize:11,color:"var(--text3)"}}>-</span>;
+      const won = stage === "Won" || stage === "closed_won";
+      const lost = stage === "Lost" || stage === "closed_lost";
+      const c = won ? "#15803D" : lost ? "#B91C1C" : "#1E40AF";
+      const bg = won ? "#F0FDF4" : lost ? "#FEF2F2" : "#EFF6FF";
+      return <span style={{fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:4,color:c,background:bg,whiteSpace:"nowrap"}} title={opp.oppId || opp.title || ""}>{stage}</span>;
+    }},
     { key: "notes", label: "Notes", defaultWidth: 240, sortable: false, render: l => (
       <span style={{fontSize:11,color:"var(--text3)"}} title={l.notes || ""}>{(l.notes || "").slice(0, 80) || "-"}</span>
     )},
-  ]), [setDetail]);
+  ]), [setDetail, oppById]);
 
   const LEADS_DEFAULT_CONFIG = useMemo(() => {
     // Visible-by-default = the same shortlist users had before. All other
     // registry columns are opt-in (visible:false) — listed here so the
     // ordering preset matches the registry on first load.
-    const visibleSet = new Set(["leadId","company","contact","product","stage","score","assignedTo","nextCall","age"]);
+    const visibleSet = new Set(["leadId","company","contact","product","stage","oppStage","score","assignedTo","nextCall","age"]);
     return LEADS_COLUMNS.map(c => ({
       key: c.key,
       visible: visibleSet.has(c.key),
@@ -1947,7 +1962,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
   );
 }
 
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess }) {
+function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess, opps=[] }) {
   const canEditLead = (l) => canEditRecord({ownerId:l?.assignedTo,currentUser,orgUsers,recordType:"lead",recordId:l?.id,commLogs,catalog,recordProductIds:l?.product?[l.product]:[]});
   const requestAccessLead = (l) => onRequestEditAccess && onRequestEditAccess("lead", l.id, l.company||l.leadId||"Lead", l.assignedTo);
   // Scope the team list to only users this logged-in user has visibility over.
@@ -2559,6 +2574,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 canEditLead={canEditLead}
                 onRequestAccess={requestAccessLead}
                 commLogs={commLogs}
+                opps={opps}
               />
             )}
             {false && (
