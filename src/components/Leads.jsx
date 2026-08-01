@@ -459,7 +459,11 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
   const [fieldVal, setFieldVal] = useState("");
   const startFieldEdit = (field) => { setEditingField(field); setFieldVal(lead[field] ?? ""); };
   const saveFieldEdit = (field, val) => {
-    updateLead({ [field]: val !== undefined ? val : fieldVal });
+    const v = val !== undefined ? val : fieldVal;
+    const patch = { [field]: v };
+    // Changing the Owner (assignedTo) is a (re)assignment — stamp who/when.
+    if (field === "assignedTo" && v !== lead.assignedTo) { patch.assignedBy = currentUser; patch.assignedAt = today; }
+    updateLead(patch);
     setEditingField(null); setFieldVal("");
   };
   const cancelFieldEdit = () => { setEditingField(null); setFieldVal(""); };
@@ -2134,6 +2138,8 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       leadId,
       createdDate: today,
       assignedTo: currentUser || BLANK_LEAD.assignedTo,
+      assignedBy: currentUser || "",
+      assignedAt: today,
     });
     setFormErrors({});
     setModal({ mode: "add" });
