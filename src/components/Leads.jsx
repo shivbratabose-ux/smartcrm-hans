@@ -1878,6 +1878,8 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
       <span style={{fontSize:11,color:"var(--text3)"}}>{(l.salesTeam||[]).join(", ") || "-"}</span>
     )},
     { key: "assignedTo", label: "Owner", defaultWidth: 140, render: l => <UserPill uid={l.assignedTo}/> },
+    { key: "assignedBy", label: "Assigned By", defaultWidth: 140, render: l => l.assignedBy ? <UserPill uid={l.assignedBy}/> : <span style={{color:"var(--text3)",fontSize:12}}>-</span> },
+    { key: "assignedAt", label: "Assigned Date", defaultWidth: 120, render: l => txt(fmt.short(l.assignedAt || l.createdDate)) },
     { key: "nextCall", label: "Next Call", defaultWidth: 130, render: l => {
       const overdue = l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage);
       return overdue ? (
@@ -1919,7 +1921,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
     // Visible-by-default = the same shortlist users had before. All other
     // registry columns are opt-in (visible:false) — listed here so the
     // ordering preset matches the registry on first load.
-    const visibleSet = new Set(["leadId","company","contact","product","stage","oppStage","score","assignedTo","nextCall","age"]);
+    const visibleSet = new Set(["leadId","company","contact","product","stage","oppStage","score","assignedTo","assignedBy","assignedAt","nextCall","age"]);
     return LEADS_COLUMNS.map(c => ({
       key: c.key,
       visible: visibleSet.has(c.key),
