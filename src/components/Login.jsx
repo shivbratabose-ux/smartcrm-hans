@@ -32,12 +32,32 @@ function Login({onLogin, orgUsers}) {
   const [success,setSuccess] = useState("");
   const [attempts,setAttempts] = useState(0);
   const [loading,setLoading] = useState(false);
+  // "Remember me" — persists the work email so it's pre-filled next visit.
+  // The PASSWORD is never stored by the app (that would be insecure); the
+  // browser's own password manager handles saving/filling it via the
+  // autoComplete attributes on the inputs below.
+  const [remember,setRemember] = useState(true);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("invite")) return; // invite flow sets its own email
+    try {
+      const saved = localStorage.getItem("scrm_rememberEmail");
+      if (saved) { setEmail(saved); setRemember(true); }
+    } catch { /* localStorage unavailable */ }
+  }, []);
+  const persistRemember = () => {
+    try {
+      if (remember) localStorage.setItem("scrm_rememberEmail", email.toLowerCase().trim());
+      else localStorage.removeItem("scrm_rememberEmail");
+    } catch { /* ignore */ }
+  };
 
   // ── Supabase Sign In ──
   const handleSupabaseLogin = async () => {
     setLoading(true); setErr(""); setSuccess("");
     const { data, error } = await supabase.auth.signInWithPassword({ email: email.toLowerCase().trim(), password: pass });
     if (error) { setErr(error.message); setLoading(false); setAttempts(a=>a+1); return; }
+    persistRemember();
     // Get CRM user profile
     const { data: profile } = await supabase.from("users").select("*").eq("auth_user_id", data.user.id).single();
     if (profile) {
@@ -270,6 +290,7 @@ function Login({onLogin, orgUsers}) {
         <div style={s.inputWrap}>
           <span style={s.inputIcon}><Mail size={15}/></span>
           <input style={s.input} type="email" placeholder="you@hansinfomatic.com" value={email}
+            name="email" autoComplete="username"
             onChange={e=>{setEmail(e.target.value);setErr("");setSuccess("");}}
             onKeyDown={e=>e.key==="Enter"&&handle()} onFocus={focusStyle} onBlur={blurStyle}/>
         </div>
@@ -282,6 +303,7 @@ function Login({onLogin, orgUsers}) {
               <span style={s.inputIcon}><Lock size={15}/></span>
               <input style={{...s.input, paddingRight:44}} type={showPw?"text":"password"}
                 placeholder={mode==="signup"?"Create a strong password":"Enter password"} value={pass}
+                name="password" autoComplete={mode==="signup"?"new-password":"current-password"}
                 onChange={e=>{setPass(e.target.value);setErr("");}}
                 onKeyDown={e=>e.key==="Enter"&&(mode==="signup"?null:handle())} onFocus={focusStyle} onBlur={blurStyle}/>
               <button style={s.eyeBtn} onClick={()=>setShowPw(v=>!v)} type="button">
@@ -299,6 +321,7 @@ function Login({onLogin, orgUsers}) {
               <span style={s.inputIcon}><Lock size={15}/></span>
               <input style={{...s.input, paddingRight:44}} type={showPw?"text":"password"}
                 placeholder="Confirm your password" value={confirmPass}
+                name="confirmPassword" autoComplete="new-password"
                 onChange={e=>{setConfirmPass(e.target.value);setErr("");}}
                 onKeyDown={e=>e.key==="Enter"&&handle()} onFocus={focusStyle} onBlur={blurStyle}/>
             </div>
@@ -319,6 +342,16 @@ function Login({onLogin, orgUsers}) {
               </div>
             )}
           </>
+        )}
+
+        {/* Remember me — login only. Pre-fills the email next visit; the
+            browser saves the password via the autoComplete attributes. */}
+        {mode==="login" && (
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#4A6070",marginBottom:16,cursor:"pointer",userSelect:"none"}}>
+            <input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}
+              style={{width:16,height:16,accentColor:"#1B6B5A",cursor:"pointer"}}/>
+            Remember me on this device
+          </label>
         )}
 
         {invitedFromAdmin && mode==="signup" && (
