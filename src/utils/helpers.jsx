@@ -442,6 +442,43 @@ export const canManageUsers = (role) => USER_ADMIN_ROLES.includes(normalizeRole(
 export const LEAD_ASSIGN_ROLES = ["admin", "md", "director", "vp_sales_mkt", "line_mgr", "country_mgr", "bd_lead"];
 export const canSeeLeadAssignment = (role) => LEAD_ASSIGN_ROLES.includes(normalizeRole(role));
 
+// ── Lead assignment tracking ─────────────────────────────────────────
+// Single source of truth for what a (re)assignment writes on a lead:
+// the new owner, who assigned it, when, and an append-only history entry
+// {from,to,by,date,note} — the audit trail behind "Assigned By" columns,
+// the detail timeline, and incentive traceability. Every path that changes
+// assignedTo (detail edit, sales-team owner, bulk, Lead Assignment page,
+// edit modal) should go through this.
+export const withLeadAssignment = (lead, newOwnerId, byUserId, note = "") => ({
+  ...lead,
+  assignedTo: newOwnerId,
+  assignedBy: byUserId || "",
+  assignedAt: today,
+  assignmentHistory: [
+    ...(Array.isArray(lead.assignmentHistory) ? lead.assignmentHistory : []),
+    { from: lead.assignedTo || "", to: newOwnerId || "", by: byUserId || "", date: today, note: (note || "").trim() },
+  ],
+});
+
+// True when `userId` originated / routed this lead (assigned it at some
+// point). Grants read visibility after handoff so the assigner can keep
+// tracking progress — write access stays owner-scoped.
+export const isLeadAssigner = (lead, userId) =>
+  !!userId && (lead?.assignedBy === userId ||
+    (Array.isArray(lead?.assignmentHistory) && lead.assignmentHistory.some(h => h?.by === userId || h?.from === userId)));
+
+// The assignee's synced notification: assignment creates a Planned
+// follow-up activity OWNED BY the new owner, so it lands in their
+// Activities/worklist on every device (the Updates bell is local-only).
+export const buildAssignmentActivity = (lead, newOwnerId, byUserId, byName, note = "") => ({
+  id: `act_${uid()}`,
+  type: "Follow-up", status: "Planned", date: today,
+  title: `New lead assigned: ${lead.company || lead.leadId || "Lead"}`,
+  notes: `Assigned to you by ${byName || byUserId || "a colleague"}${note ? ` — "${note.trim()}"` : ""}. Review and plan the first touch.`,
+  accountId: lead.accountId || "", contactId: "", oppId: "",
+  leadId: lead.id, owner: newOwnerId, createdDate: today,
+});
+
 // Returns true if the role has unrestricted global data access
 export const isGlobalRole = (userId, orgUsers) => {
   const user = (orgUsers || []).find(u => u.id === userId);

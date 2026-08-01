@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -782,14 +782,24 @@ export default function SmartCRM() {
   const visibleLeads = useMemo(() => {
     const live = leads.filter(l => !l.isDeleted);
     if (_globalRole || _supportRole) return live;
-    return live.filter(l => l.assignedTo && _scopedIds.has(l.assignedTo));
-  }, [leads, _scopedIds, _globalRole, _supportRole]);
+    // Owner + hierarchy, PLUS assigner retention: whoever assigned/routed a
+    // lead keeps READ visibility after handoff (incentives track it). Writes
+    // stay owner-scoped via canEditRecord + RLS.
+    return live.filter(l => (l.assignedTo && _scopedIds.has(l.assignedTo)) || isLeadAssigner(l, currentUser));
+  }, [leads, _scopedIds, _globalRole, _supportRole, currentUser]);
 
   const visibleOpps = useMemo(() => {
     const live = opps.filter(o => !o.isDeleted);
     if (_globalRole || _supportRole) return live;
-    return live.filter(o => o.owner && _scopedIds.has(o.owner));
-  }, [opps, _scopedIds, _globalRole, _supportRole]);
+    // Assigner retention follows the lead into the pipeline: if I routed the
+    // lead, I can watch the opportunity it converted into (read-only).
+    const myRoutedLeads = leads.filter(l => !l.isDeleted && isLeadAssigner(l, currentUser));
+    const routedLeadIds = new Set(myRoutedLeads.map(l => l.id));
+    const routedOppIds = new Set(myRoutedLeads.flatMap(l => l.convertedOppIds || []));
+    return live.filter(o => (o.owner && _scopedIds.has(o.owner))
+      || routedOppIds.has(o.id)
+      || (o.sourceLeadIds || []).some(id => routedLeadIds.has(id)));
+  }, [opps, leads, _scopedIds, _globalRole, _supportRole, currentUser]);
 
   const visibleActivities = useMemo(() => {
     const live = activities.filter(a => !a.isDeleted);
@@ -2579,7 +2589,7 @@ export default function SmartCRM() {
             {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} opps={visibleOpps} callReports={visibleCallReports} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete}/>}
             {page==="reports"    && <Reports accounts={visibleAccounts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} contacts={visibleContacts} contracts={visibleContracts} quotes={visibleQuotes} currentUser={currentUser} orgUsers={orgUsers} masters={masters}/>}
             {page==="dashboards" && <Dashboards accounts={visibleAccounts} opps={visibleOpps} projects={visibleProjects} contracts={visibleContracts} tickets={visibleTickets} quotes={visibleQuotes} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
-            {page==="leadassign" && _canSeeLeadAssign && <LeadAssignment leads={visibleLeads} setLeads={setLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage} commLogs={commLogs} catalog={catalog}/>}
+            {page==="leadassign" && _canSeeLeadAssign && <LeadAssignment leads={visibleLeads} setLeads={setLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage} commLogs={commLogs} catalog={catalog} setActivities={setActivities}/>}
             {page==="updates"    && <Updates updates={visibleUpdates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} catalog={catalog} orgUsers={orgUsers} existingData={{ leads: visibleLeads, accounts: visibleAccounts, contacts: visibleContacts, collections: visibleCollections, tickets: visibleTickets, contracts: visibleContracts, invoices: visibleInvoices, opps: visibleOpps }}/>}

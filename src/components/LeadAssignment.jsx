@@ -8,7 +8,8 @@ import { useMemo, useState, Fragment } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { UserCheck, UserX, CheckCircle, AlertTriangle, ChevronDown, ChevronRight, Users } from "lucide-react";
 import { LEAD_STAGES, TEAM_MAP, PRODUCTS, PROD_MAP, REGIONS, TEAM } from "../data/constants";
-import { today, canEditRecord } from "../utils/helpers";
+import { today, canEditRecord, withLeadAssignment, buildAssignmentActivity } from "../utils/helpers";
+import { notify } from "../utils/toast";
 
 // createdDate cutoff for the date filter (null = all time).
 const rangeCutoff = (key) => {
@@ -38,7 +39,7 @@ const Kpi = ({ label, value, sub, color, Icon }) => (
   </div>
 );
 
-export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUsers = [], currentUser, setPage, commLogs = [], catalog = [] }) {
+export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUsers = [], currentUser, setPage, commLogs = [], catalog = [], setActivities }) {
   const [expanded, setExpanded] = useState(null); // owner id whose leads are shown
   const [q, setQ] = useState("");
   const [productF, setProductF] = useState("All");
@@ -50,8 +51,17 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
   const reassign = (lead, newOwner) => {
     if (!setLeads || !newOwner || newOwner === lead.assignedTo) return;
     if (!canEditLead(lead)) return;
-    // Stamp who reassigned it and when — powers the "Assigned By / date" grid.
-    setLeads(p => p.map(x => x.id === lead.id ? { ...x, assignedTo: newOwner, assignedBy: currentUser, assignedAt: today } : x));
+    // Optional handoff context — travels in the assignment history and the
+    // assignee's notification task. Cancel/empty = proceed without a note.
+    const note = window.prompt(`Handoff note for ${nameOf(newOwner)} (optional):`, "") || "";
+    // Stamp owner + assigner + date and append the audit-trail entry.
+    setLeads(p => p.map(x => x.id === lead.id ? withLeadAssignment(x, newOwner, currentUser, note) : x));
+    // Synced notification: a Planned follow-up owned by the assignee.
+    if (setActivities && newOwner !== currentUser) {
+      const byName = (orgUsers || []).find(u => u.id === currentUser)?.name || TEAM_MAP[currentUser]?.name || "";
+      setActivities(p => [...p, buildAssignmentActivity(lead, newOwner, currentUser, byName, note)]);
+    }
+    notify.success(`${lead.company || lead.leadId || "Lead"} assigned to ${nameOf(newOwner)}${newOwner !== currentUser ? " — they've been notified with a follow-up task" : ""}.`);
   };
 
   const nameOf = (id) => id === "__unassigned" ? "— Unassigned —" : ((orgUsers || []).find(u => u.id === id)?.name || TEAM_MAP[id]?.name || id);
