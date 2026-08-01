@@ -7,8 +7,21 @@
 import { useMemo, useState, Fragment } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { UserCheck, UserX, CheckCircle, AlertTriangle, ChevronDown, ChevronRight, Users } from "lucide-react";
-import { LEAD_STAGES, TEAM_MAP } from "../data/constants";
-import { today } from "../utils/helpers";
+import { LEAD_STAGES, TEAM_MAP, PRODUCTS, PROD_MAP, REGIONS, TEAM } from "../data/constants";
+import { today, canEditRecord } from "../utils/helpers";
+
+// createdDate cutoff for the date filter (null = all time).
+const rangeCutoff = (key) => {
+  if (key === "all") return null;
+  const d = new Date();
+  if (key === "7d") d.setDate(d.getDate() - 7);
+  else if (key === "30d") d.setDate(d.getDate() - 30);
+  else if (key === "90d") d.setDate(d.getDate() - 90);
+  else if (key === "mtd") { d.setDate(1); }
+  else if (key === "ytd") { d.setMonth(0, 1); }
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+};
 
 const STAGE_IDS = ["MQL", "SQL", "SAL", "Converted"];
 const STAGE_COLOR = { MQL: "#3B82F6", SQL: "#8B5CF6", SAL: "#22C55E", Converted: "#16A34A" };
@@ -25,16 +38,35 @@ const Kpi = ({ label, value, sub, color, Icon }) => (
   </div>
 );
 
-export default function LeadAssignment({ leads = [], opps = [], orgUsers = [], currentUser, setPage }) {
+export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUsers = [], currentUser, setPage, commLogs = [], catalog = [] }) {
   const [expanded, setExpanded] = useState(null); // owner id whose leads are shown
   const [q, setQ] = useState("");
+  const [productF, setProductF] = useState("All");
+  const [regionF, setRegionF] = useState("All");
+  const [rangeF, setRangeF] = useState("all");
+  const team = useMemo(() => (orgUsers && orgUsers.length ? orgUsers.filter(u => u.active !== false && u.status !== "Inactive") : TEAM), [orgUsers]);
+  const canEditLead = (l) => canEditRecord({ ownerId: l?.assignedTo, currentUser, orgUsers, recordType: "lead", recordId: l?.id, commLogs, catalog, recordProductIds: l?.product ? [l.product] : [] });
+  const reassign = (lead, newOwner) => {
+    if (!setLeads || !newOwner || newOwner === lead.assignedTo) return;
+    if (!canEditLead(lead)) return;
+    setLeads(p => p.map(x => x.id === lead.id ? { ...x, assignedTo: newOwner } : x));
+  };
 
   const nameOf = (id) => id === "__unassigned" ? "— Unassigned —" : ((orgUsers || []).find(u => u.id === id)?.name || TEAM_MAP[id]?.name || id);
   const roleOf = (id) => (orgUsers || []).find(u => u.id === id)?.role || TEAM_MAP[id]?.role || "";
   const oppById = useMemo(() => Object.fromEntries((opps || []).map(o => [o.id, o])), [opps]);
   const oppStageOf = (l) => { const id = (l.convertedOppIds || [])[0]; const o = id ? oppById[id] : null; return o && !o.isDeleted ? (o.stage || "") : ""; };
 
-  const live = useMemo(() => (leads || []).filter(l => !l.isDeleted), [leads]);
+  const live = useMemo(() => {
+    const cut = rangeCutoff(rangeF);
+    return (leads || []).filter(l => {
+      if (l.isDeleted) return false;
+      if (productF !== "All" && l.product !== productF) return false;
+      if (regionF !== "All" && l.region !== regionF) return false;
+      if (cut && (l.createdDate || "") < cut) return false;
+      return true;
+    });
+  }, [leads, productF, regionF, rangeF]);
   const isOverdue = (l) => l.nextCall && l.nextCall < today && !["NA", "Converted"].includes(l.stage);
 
   const byOwner = useMemo(() => {
@@ -87,6 +119,29 @@ export default function LeadAssignment({ leads = [], opps = [], orgUsers = [], c
         <Kpi label="Unassigned" value={totals.unassigned} sub={totals.unassigned ? "need an owner" : "all assigned"} color={totals.unassigned ? "#DC2626" : "#22C55E"} Icon={UserX} />
         <Kpi label="Converted" value={totals.converted} sub="to opportunity" color="#16A34A" Icon={CheckCircle} />
         <Kpi label="Overdue Follow-ups" value={totals.overdue} sub="past next-call date" color={totals.overdue ? "#DC2626" : "#22C55E"} Icon={AlertTriangle} />
+      </div>
+
+      {/* Filters */}
+      <div className="filter-bar" style={{ flexWrap: "wrap", marginBottom: 16 }}>
+        <select className="filter-select" value={productF} onChange={e => setProductF(e.target.value)}>
+          <option value="All">All Products</option>
+          {PRODUCTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select className="filter-select" value={regionF} onChange={e => setRegionF(e.target.value)}>
+          <option value="All">All Regions</option>
+          {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <select className="filter-select" value={rangeF} onChange={e => setRangeF(e.target.value)} title="Filter by lead created date">
+          <option value="all">All Time</option>
+          <option value="7d">Last 7 Days</option>
+          <option value="30d">Last 30 Days</option>
+          <option value="90d">Last 90 Days</option>
+          <option value="mtd">Month to Date</option>
+          <option value="ytd">Year to Date</option>
+        </select>
+        {(productF !== "All" || regionF !== "All" || rangeF !== "all") && (
+          <button className="btn btn-sec btn-xs" onClick={() => { setProductF("All"); setRegionF("All"); setRangeF("all"); }}>Clear</button>
+        )}
       </div>
 
       {/* Chart: leads per owner, stacked by stage */}
@@ -155,16 +210,29 @@ export default function LeadAssignment({ leads = [], opps = [], orgUsers = [], c
                               <th style={{ fontSize: 10.5 }}>Lead Stage</th>
                               <th style={{ fontSize: 10.5 }}>Opp Stage</th>
                               <th style={{ fontSize: 10.5 }}>Next Call</th>
+                              <th style={{ fontSize: 10.5 }}>Reassign owner</th>
                             </tr>
                           </thead>
                           <tbody>
                             {r.leads.map(l => (
-                              <tr key={l.id} style={{ cursor: setPage ? "pointer" : "default" }} onClick={() => setPage && setPage("leads")} title={setPage ? "Open Leads" : ""}>
-                                <td style={{ fontFamily: "monospace", fontSize: 11 }}>{l.leadId || l.id}</td>
+                              <tr key={l.id}>
+                                <td style={{ fontFamily: "monospace", fontSize: 11, cursor: setPage ? "pointer" : "default" }} onClick={() => setPage && setPage("leads")} title={setPage ? "Open Leads" : ""}>{l.leadId || l.id}</td>
                                 <td style={{ fontSize: 12 }}>{l.company || "-"}</td>
                                 <td>{stageBadge(l.stage)}</td>
                                 <td>{oppStageOf(l) ? stageBadge(oppStageOf(l)) : <span style={{ color: "var(--text3)", fontSize: 11 }}>-</span>}</td>
                                 <td style={{ fontSize: 11, color: isOverdue(l) ? "#DC2626" : "var(--text3)", fontWeight: isOverdue(l) ? 700 : 400 }}>{l.nextCall || "-"}</td>
+                                <td onClick={e => e.stopPropagation()}>
+                                  {canEditLead(l) ? (
+                                    <select value={l.assignedTo || ""} onChange={e => reassign(l, e.target.value)}
+                                      style={{ fontSize: 11, padding: "3px 6px", border: "1px solid var(--border)", borderRadius: 6, maxWidth: 150 }}
+                                      title="Reassign this lead to another owner">
+                                      {!l.assignedTo && <option value="">— Unassigned —</option>}
+                                      {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                    </select>
+                                  ) : (
+                                    <span style={{ fontSize: 11, color: "var(--text3)" }} title="You can only reassign your own / your team's leads">{nameOf(l.assignedTo) || "—"}</span>
+                                  )}
+                                </td>
                               </tr>
                             ))}
                           </tbody>

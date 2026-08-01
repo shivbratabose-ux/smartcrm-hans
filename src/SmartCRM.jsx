@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -453,9 +453,11 @@ export default function SmartCRM() {
   // top management only — Admin / MD / VP. Everyone else manages just their own
   // profile via the Profile page.
   const _canManageUsers = useMemo(() => canManageUsers((orgUsers || []).find(u => u.id === currentUser)?.role), [currentUser, orgUsers]);
-  // Bounce a non-privileged user off the Team & Users page if they reach it
-  // via a direct #/team URL (the nav item is already hidden for them).
+  const _canSeeLeadAssign = useMemo(() => canSeeLeadAssignment((orgUsers || []).find(u => u.id === currentUser)?.role), [currentUser, orgUsers]);
+  // Bounce a non-privileged user off restricted pages if reached via a direct
+  // URL (the nav items are already hidden for them).
   useEffect(() => { if (page === "team" && orgUsers.length && !_canManageUsers) setPage("dashboard"); }, [page, _canManageUsers, orgUsers.length]);
+  useEffect(() => { if (page === "leadassign" && orgUsers.length && !_canSeeLeadAssign) setPage("dashboard"); }, [page, _canSeeLeadAssign, orgUsers.length]);
   // Latest write scope, held in a ref so the sync effect (deps: [syncModules])
   // always reads current values without re-subscribing. Write rule (matches
   // the DB RLS): a user may write records they OWN + their HIERARCHY downline,
@@ -2577,7 +2579,7 @@ export default function SmartCRM() {
             {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} opps={visibleOpps} callReports={visibleCallReports} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete}/>}
             {page==="reports"    && <Reports accounts={visibleAccounts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} contacts={visibleContacts} contracts={visibleContracts} quotes={visibleQuotes} currentUser={currentUser} orgUsers={orgUsers} masters={masters}/>}
             {page==="dashboards" && <Dashboards accounts={visibleAccounts} opps={visibleOpps} projects={visibleProjects} contracts={visibleContracts} tickets={visibleTickets} quotes={visibleQuotes} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
-            {page==="leadassign" && <LeadAssignment leads={visibleLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
+            {page==="leadassign" && _canSeeLeadAssign && <LeadAssignment leads={visibleLeads} setLeads={setLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage} commLogs={commLogs} catalog={catalog}/>}
             {page==="updates"    && <Updates updates={visibleUpdates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} catalog={catalog} orgUsers={orgUsers} existingData={{ leads: visibleLeads, accounts: visibleAccounts, contacts: visibleContacts, collections: visibleCollections, tickets: visibleTickets, contracts: visibleContracts, invoices: visibleInvoices, opps: visibleOpps }}/>}

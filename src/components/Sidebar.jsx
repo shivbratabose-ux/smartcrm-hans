@@ -5,7 +5,7 @@ import {
   UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge, Sparkles, UserCheck
 } from "lucide-react";
 import { TEAM_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
-import { canManageUsers } from '../utils/helpers';
+import { canManageUsers, canSeeLeadAssignment } from '../utils/helpers';
 
 const canAccess = (userId, module, orgUsers, customPermissions) => {
   const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
@@ -51,7 +51,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
     ]},
     {section:"Analytics",items:[
       {id:"dashboards",label:"Dashboards",icon:<Gauge size={17}/>},
-      {id:"leadassign",label:"Lead Assignment",icon:<UserCheck size={17}/>},
+      ...(canSeeLeadAssignment(userRole)?[{id:"leadassign",label:"Lead Assignment",icon:<UserCheck size={17}/>}]:[]),
       {id:"targets",label:"Targets",icon:<Target size={17}/>},
       {id:"reports",label:"Reports",icon:<BarChart3 size={17}/>},
     ]},
