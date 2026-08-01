@@ -44,6 +44,7 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
   const [productF, setProductF] = useState("All");
   const [regionF, setRegionF] = useState("All");
   const [rangeF, setRangeF] = useState("all");
+  const [ownerF, setOwnerF] = useState("All"); // filter to a single owner/assignee
   const team = useMemo(() => (orgUsers && orgUsers.length ? orgUsers.filter(u => u.active !== false && u.status !== "Inactive") : TEAM), [orgUsers]);
   const canEditLead = (l) => canEditRecord({ ownerId: l?.assignedTo, currentUser, orgUsers, recordType: "lead", recordId: l?.id, commLogs, catalog, recordProductIds: l?.product ? [l.product] : [] });
   const reassign = (lead, newOwner) => {
@@ -63,10 +64,17 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
       if (l.isDeleted) return false;
       if (productF !== "All" && l.product !== productF) return false;
       if (regionF !== "All" && l.region !== regionF) return false;
+      if (ownerF !== "All" && (l.assignedTo || "__unassigned") !== ownerF) return false;
       if (cut && (l.createdDate || "") < cut) return false;
       return true;
     });
-  }, [leads, productF, regionF, rangeF]);
+  }, [leads, productF, regionF, rangeF, ownerF]);
+  // Owners present in the data (for the filter dropdown), sorted by name.
+  const ownerOptions = useMemo(() => {
+    const ids = [...new Set((leads || []).filter(l => !l.isDeleted).map(l => l.assignedTo || "__unassigned"))];
+    return ids.map(id => ({ id, name: id === "__unassigned" ? "— Unassigned —" : ((orgUsers || []).find(u => u.id === id)?.name || TEAM_MAP[id]?.name || id) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [leads, orgUsers]);
   const isOverdue = (l) => l.nextCall && l.nextCall < today && !["NA", "Converted"].includes(l.stage);
 
   const byOwner = useMemo(() => {
@@ -131,6 +139,10 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
           <option value="All">All Regions</option>
           {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
+        <select className="filter-select" value={ownerF} onChange={e => setOwnerF(e.target.value)} title="Filter to a single owner / assignee">
+          <option value="All">All Owners (Assignees)</option>
+          {ownerOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
         <select className="filter-select" value={rangeF} onChange={e => setRangeF(e.target.value)} title="Filter by lead created date">
           <option value="all">All Time</option>
           <option value="7d">Last 7 Days</option>
@@ -139,8 +151,8 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
           <option value="mtd">Month to Date</option>
           <option value="ytd">Year to Date</option>
         </select>
-        {(productF !== "All" || regionF !== "All" || rangeF !== "all") && (
-          <button className="btn btn-sec btn-xs" onClick={() => { setProductF("All"); setRegionF("All"); setRangeF("all"); }}>Clear</button>
+        {(productF !== "All" || regionF !== "All" || rangeF !== "all" || ownerF !== "All") && (
+          <button className="btn btn-sec btn-xs" onClick={() => { setProductF("All"); setRegionF("All"); setRangeF("all"); setOwnerF("All"); }}>Clear</button>
         )}
       </div>
 
