@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -1716,6 +1716,19 @@ export default function SmartCRM() {
       outcome: "Positive",
     }]);
 
+    // Progress alert (incentive moment): the deal came from a routed lead →
+    // ping everyone who assigned that lead along the way (except the owner,
+    // who just won it). Synced via activities so it reaches their device.
+    const _srcLeads = leads.filter(l => !l.isDeleted && ((opp.sourceLeadIds || []).includes(l.id) || (l.convertedOppIds || []).includes(opp.id)));
+    const _alertIds = new Set();
+    _srcLeads.forEach(l => leadAssigners(l, opp.owner).forEach(a => _alertIds.add(a)));
+    if (_alertIds.size) {
+      setActivities(p => [...p, ...[..._alertIds].map(aid => buildAssignerAlert(aid,
+        `Deal WON on a lead you assigned: ${opp.title || opp.oppId || "deal"}`,
+        `Value ₹${opp.value || 0}L — closed Won by the current owner. Incentive checkpoint: the lead's assignment history holds the credit trail.`,
+        { accountId: opp.accountId || "", oppId: opp.id, leadId: _srcLeads[0]?.id || "" }))]);
+    }
+
     // ── CRM → Project handover (Phase 4) ──
     // Auto-create a delivery Project from the won deal, carrying scope, value,
     // account, owner and products. Idempotent: skip if a project already
@@ -1745,7 +1758,7 @@ export default function SmartCRM() {
         createdDate: today,
       }];
     });
-  }, [accounts]);
+  }, [accounts, leads]);
 
   // Convert lead to opportunity — accepts conversion data from modal
   const convertLeadToOpp = useCallback((lead, conversionData) => {
@@ -1886,6 +1899,16 @@ export default function SmartCRM() {
       }
       return cr;
     }));
+    // Progress alert (assigner retention): whoever routed this lead gets a
+    // synced ping that it converted — the first incentive checkpoint. The
+    // current owner is excluded (they did the converting / already know).
+    const _assignerIds = leadAssigners(lead, lead.assignedTo);
+    if (_assignerIds.length) {
+      setActivities(p => [...p, ..._assignerIds.map(aid => buildAssignerAlert(aid,
+        `Lead you assigned converted: ${lead.company || lead.leadId || "Lead"}`,
+        `${lead.leadId || "The lead"} became opportunity ${newOpp.oppId || ""} (est. ₹${newOpp.value || 0}L). Track it in Pipeline — the lead's assignment history holds the credit trail.`,
+        { accountId: newOpp.accountId || "", oppId: newOpp.id, leadId: lead.id }))]);
+    }
     if (!data.keepLeadOpen) setPage("pipeline");
   }, []);
 

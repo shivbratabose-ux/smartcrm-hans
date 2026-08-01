@@ -479,6 +479,27 @@ export const buildAssignmentActivity = (lead, newOwnerId, byUserId, byName, note
   leadId: lead.id, owner: newOwnerId, createdDate: today,
 });
 
+// Everyone who ever assigned/routed this lead (latest assigner + every
+// history `by`), minus excludeId (usually the actor, who needs no alert).
+// These are the people owed a progress ping when the lead converts / wins.
+export const leadAssigners = (lead, excludeId) => {
+  const ids = new Set();
+  if (lead?.assignedBy) ids.add(lead.assignedBy);
+  (Array.isArray(lead?.assignmentHistory) ? lead.assignmentHistory : []).forEach(h => h?.by && ids.add(h.by));
+  if (excludeId) ids.delete(excludeId);
+  return [...ids];
+};
+
+// Progress alert to an assigner (lead converted / deal won) — same synced
+// activity channel as buildAssignmentActivity, owned by the assigner.
+export const buildAssignerAlert = (assignerId, titleText, notes, refs = {}) => ({
+  id: `act_${uid()}`,
+  type: "Follow-up", status: "Planned", date: today,
+  title: titleText, notes,
+  accountId: refs.accountId || "", contactId: "", oppId: refs.oppId || "",
+  leadId: refs.leadId || "", owner: assignerId, createdDate: today,
+});
+
 // Returns true if the role has unrestricted global data access
 export const isGlobalRole = (userId, orgUsers) => {
   const user = (orgUsers || []).find(u => u.id === userId);

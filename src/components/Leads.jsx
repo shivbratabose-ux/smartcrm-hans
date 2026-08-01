@@ -473,12 +473,15 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
     // change — both call updateLead with assignedTo.
     if (patch.assignedTo && patch.assignedTo !== lead.assignedTo) {
       const { assignedTo: newOwner, ...rest } = patch;
-      const stamped = { ...withLeadAssignment(lead, newOwner, currentUser), ...rest };
+      const newName = _teamMap[newOwner]?.name || newOwner;
+      const note = window.prompt(`Handoff note for ${newName} (optional):`, "") || "";
+      const stamped = { ...withLeadAssignment(lead, newOwner, currentUser, note), ...rest };
       setLeads(prev => prev.map(l => l.id === lead.id ? stamped : l));
       if (setActivities && newOwner !== currentUser) {
         const byName = _teamMap[currentUser]?.name || "";
-        setActivities(p => [...p, buildAssignmentActivity(lead, newOwner, currentUser, byName)]);
+        setActivities(p => [...p, buildAssignmentActivity(lead, newOwner, currentUser, byName, note)]);
       }
+      notify.success(`${lead.company || lead.leadId || "Lead"} assigned to ${newName}${newOwner !== currentUser ? " — they've been notified with a follow-up task" : ""}.`);
       return;
     }
     setLeads(prev => prev.map(l => l.id === lead.id ? {...l, ...patch} : l));
@@ -2084,6 +2087,21 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     if (field === "company") v = upper(value);
     else if (field === "contact" || field === "name") v = title(value);
     else if (field === "email") v = lower(value);
+    // Owner change from the editable Grid is a (re)assignment — route it
+    // through the same shared tracking + assignee notification as every
+    // other path (detail edit, modal, bulk, Lead Assignment page).
+    if (field === "assignedTo") {
+      const before = leads.find(l => l.id === id);
+      if (before && v && v !== before.assignedTo) {
+        setLeads(prev => prev.map(l => l.id === id ? withLeadAssignment(l, v, currentUser) : l));
+        if (setActivities && v !== currentUser) {
+          const byName = team.find(u => u.id === currentUser)?.name || "";
+          setActivities(p => [...p, buildAssignmentActivity(before, v, currentUser, byName)]);
+        }
+        notify.success(`${before.company || before.leadId || "Lead"} assigned to ${team.find(u => u.id === v)?.name || v}${v !== currentUser ? " — they've been notified with a follow-up task" : ""}.`);
+        return;
+      }
+    }
     setLeads(prev => prev.map(l => l.id === id ? { ...l, [field]: v } : l));
   };
 
@@ -2247,6 +2265,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           const byName = team.find(u => u.id === currentUser)?.name || "";
           setActivities(p => [...p, buildAssignmentActivity(before, clean.assignedTo, currentUser, byName)]);
         }
+        notify.success(`${clean.company || clean.leadId || "Lead"} assigned to ${team.find(u => u.id === clean.assignedTo)?.name || clean.assignedTo}${clean.assignedTo !== currentUser ? " — they've been notified with a follow-up task" : ""}.`);
       }
       setLeads(p => p.map(l => l.id === next.id ? { ...next } : l));
     }
@@ -2612,20 +2631,24 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
               const selectedIds = [...bulk.selected];
               if (!selectedIds.length) return;
               const moved = leads.filter(l => selectedIds.includes(l.id) && l.assignedTo !== newOwnerId);
+              if (!moved.length) { bulk.clear(); return; }
+              const newName = team.find(u => u.id === newOwnerId)?.name || "the new owner";
+              const note = window.prompt(`Handoff note for ${newName} (optional, applies to all ${moved.length}):`, "") || "";
               setLeads(p => p.map(l => selectedIds.includes(l.id) && l.assignedTo !== newOwnerId
-                ? withLeadAssignment(l, newOwnerId, currentUser)
+                ? withLeadAssignment(l, newOwnerId, currentUser, note)
                 : l));
               // One synced notification task for the recipient summarising the batch.
-              if (setActivities && moved.length && newOwnerId !== currentUser) {
+              if (setActivities && newOwnerId !== currentUser) {
                 const byName = team.find(u => u.id === currentUser)?.name || "";
                 const names = moved.slice(0, 10).map(l => l.company || l.leadId).join(", ");
                 setActivities(p => [...p, {
                   id: `act_${uid()}`, type: "Follow-up", status: "Planned", date: today,
                   title: `${moved.length} lead${moved.length > 1 ? "s" : ""} assigned to you`,
-                  notes: `Assigned by ${byName || "a colleague"}: ${names}${moved.length > 10 ? ` +${moved.length - 10} more` : ""}. Review and plan first touches.`,
+                  notes: `Assigned by ${byName || "a colleague"}${note ? ` — "${note.trim()}"` : ""}: ${names}${moved.length > 10 ? ` +${moved.length - 10} more` : ""}. Review and plan first touches.`,
                   accountId: "", contactId: "", oppId: "", owner: newOwnerId, createdDate: today,
                 }]);
               }
+              notify.success(`${moved.length} lead${moved.length > 1 ? "s" : ""} assigned to ${newName}${newOwnerId !== currentUser ? " — they've been notified" : ""}.`);
               bulk.clear();
             } : undefined}
             orgUsers={orgUsers}
