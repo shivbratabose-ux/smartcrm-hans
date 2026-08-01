@@ -28,6 +28,7 @@ export const DEFAULT_AI_CONFIG = {
     bidRecommendation: true,
     callSummary: true,
     complianceMatrix: true,
+    emailAnalysis: true,
   },
 };
 
@@ -42,6 +43,7 @@ export const AI_FEATURES = [
   { key: "bidRecommendation", label: "Bid / No-Bid Recommendation", desc: "A Bid / Conditional / No-Bid call with rationale, conditions and next steps." },
   { key: "callSummary", label: "Meeting / Call Summaries", desc: "Turn a raw call note into a structured brief: decisions, action items, sentiment." },
   { key: "complianceMatrix", label: "Compliance Matrix from RFP", desc: "Extract a requirement→compliance matrix from an uploaded RFP / tender PDF." },
+  { key: "emailAnalysis", label: "Email Analysis", desc: "Summarise a customer email/thread and extract intent, action items, commitments, shipment refs, priority & sentiment." },
 ];
 
 /** Is a given feature usable right now? (config enabled + feature flag on) */
@@ -117,6 +119,15 @@ export function aiCallSummary(note, meta, model) {
 
 export function aiComplianceMatrix({ pdfBase64, text }, model) {
   return runAiFeature("complianceMatrix", { payload: text || "", pdfBase64, model });
+}
+
+/**
+ * Analyse a customer email / thread. `email` = { text, subject, from, to,
+ * context } — the raw email plus optional linked-record hints. Returns the
+ * structured extraction (summary, intent, actionItems, shipmentRefs, …).
+ */
+export function aiEmailAnalysis(email, model) {
+  return runAiFeature("emailAnalysis", { payload: email, model });
 }
 
 /**

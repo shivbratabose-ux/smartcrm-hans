@@ -5,10 +5,13 @@ import { BLANK_COMM_LOG } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, parseAccessReq, ACCESS_REQ_TYPE, isGlobalRole } from '../utils/helpers';
 import { Check as CheckIcon, X as XIcon } from 'lucide-react';
 import { Library } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect, SendEmailModal } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
 import ResourceLibrary from './ResourceLibrary';
+import EmailAiPanel from './EmailAiPanel';
+import { isAiFeatureOn } from '../utils/ai';
 
 const TYPE_ICON={"Email Sent":<ArrowUpRight size={13}/>,"Email Received":<ArrowDownLeft size={13}/>,"WhatsApp Sent":<Send size={13}/>,"WhatsApp Received":<ArrowDownLeft size={13}/>,"SMS Sent":<Send size={13}/>,"SMS Received":<ArrowDownLeft size={13}/>,"Letter Sent":<Mail size={13}/>};
 const TYPE_COL={"Email Sent":"var(--blue)","Email Received":"var(--green)","WhatsApp Sent":"#25D366","WhatsApp Received":"#128C7E","SMS Sent":"var(--amber)","SMS Received":"var(--orange)","Letter Sent":"var(--purple)"};
@@ -19,7 +22,8 @@ const CSV_COLS = [
   {label:"Account",accessor:c=>c._accName||""},{label:"Owner",accessor:c=>TEAM_MAP[c.owner]?.name||""},
 ];
 
-function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDelete,orgUsers,catalog=[],onRespondEditAccess}) {
+function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDelete,orgUsers,catalog=[],onRespondEditAccess,aiConfig,setActivities}) {
+  const [showAi,setShowAi]=useState(false);
   // Tab state — Activity Log (the original CommLog table) vs the new
   // Resource Library (sales collateral organised per product).
   const [tab,setTab]=useState("log");
@@ -78,6 +82,7 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
             {/* Send Email opens the new transactional sender (Resend-backed).
                 Log Email / Log WhatsApp remain for after-the-fact records. */}
             <button className="btn btn-primary" onClick={()=>setSendModal({})}><Send size={14}/>Send Email</button>
+            {isAiFeatureOn(aiConfig,"emailAnalysis") && <button className="btn btn-sec" onClick={()=>setShowAi(true)} title="Summarise a customer email & extract intent, actions, shipment refs"><Sparkles size={14}/>Analyze Email (AI)</button>}
             <button className="btn btn-blue" onClick={()=>openAdd("Email Sent")}><Mail size={14}/>Log Email</button>
             <button className="btn btn-green" onClick={()=>openAdd("WhatsApp Sent")}><MessageSquare size={14}/>Log WhatsApp</button>
           </>}
@@ -181,6 +186,21 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
               ...(detail.quoteRef||detail.quoteId?[["Quote",detail.quoteRef||detail.quoteId]]:[] ),
             ].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>
+          {detail.ai&&(
+            <div style={{border:"1px solid var(--border)",borderRadius:10,padding:"12px 14px",background:"var(--s2)",marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+                <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:"var(--brand)"}}><Sparkles size={14}/>AI Summary</span>
+                {detail.ai.intent&&<span style={{fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:20,color:"#1E40AF",background:"#1E40AF18"}}>{detail.ai.intent}</span>}
+                {detail.ai.priority&&<span style={{fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:20,color:detail.ai.priority==="High"?"#DC2626":detail.ai.priority==="Medium"?"#B45309":"#16A34A",background:(detail.ai.priority==="High"?"#DC2626":detail.ai.priority==="Medium"?"#B45309":"#16A34A")+"18"}}>Priority: {detail.ai.priority}</span>}
+                {detail.ai.sentiment&&<span style={{fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:20,color:"#64748B",background:"#64748B18"}}>{detail.ai.sentiment}</span>}
+                {detail.ai.followUpRequired&&<span style={{fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:20,color:"#DC2626",background:"#DC262618"}}>Follow-up required</span>}
+              </div>
+              <div style={{fontSize:13,color:"var(--text1)",lineHeight:1.5}}>{detail.ai.summary}</div>
+              {detail.ai.suggestedNextAction&&<div style={{fontSize:12.5,marginTop:8}}><b>Next action:</b> {detail.ai.suggestedNextAction}</div>}
+              {(detail.ai.actionItems||[]).length>0&&<div style={{marginTop:8}}><div style={{fontSize:11,fontWeight:700,color:"var(--text3)",textTransform:"uppercase"}}>Action items</div><ul style={{margin:"4px 0 0",paddingLeft:18,fontSize:12.5}}>{detail.ai.actionItems.map((a,i)=><li key={i}>{a.task}{a.owner?` — ${a.owner}`:""}{a.due?` (due ${a.due})`:""}</li>)}</ul></div>}
+              {(detail.ai.shipmentRefs||[]).length>0&&<div style={{marginTop:8,display:"flex",flexWrap:"wrap",gap:6}}>{detail.ai.shipmentRefs.map((r,i)=><span key={i} style={{fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:4,color:"#0D9488",background:"#0D948818"}}>{r.type}: {r.value}</span>)}</div>}
+            </div>
+          )}
           {detail.body&&detail.type!==ACCESS_REQ_TYPE&&(
             detail.body.trim().startsWith("<")
               ? <iframe
@@ -238,6 +258,19 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
           currentUser={currentUser}
           orgUsers={orgUsers}
           prefill={sendModal}
+        />
+      )}
+      {showAi && (
+        <EmailAiPanel
+          onClose={() => setShowAi(false)}
+          onSaveComm={(entry) => setCommLogs(p => [...p, entry])}
+          onCreateActivity={setActivities ? (act) => setActivities(p => [...p, act]) : undefined}
+          accounts={accounts}
+          contacts={contacts}
+          opps={opps}
+          currentUser={currentUser}
+          aiConfig={aiConfig}
+          model={aiConfig?.model}
         />
       )}
       </>}

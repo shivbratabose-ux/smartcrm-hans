@@ -78,6 +78,7 @@ const FEATURE_FLAG: Record<string, string> = {
   bidRecommendation: "bidRecommendation",
   callSummary: "callSummary",
   complianceMatrix: "complianceMatrix",
+  emailAnalysis: "emailAnalysis",
 };
 
 // ── Static, cacheable company context ──────────────────────────────
@@ -125,6 +126,22 @@ TASK: Summarise the following sales meeting / call note into a clean, structured
   complianceMatrix: `${COMPANY_CONTEXT}
 
 TASK: From the supplied RFP / tender document, extract a compliance matrix: the list of requirements the bidder must respond to. For each requirement capture its clause/section reference (if present), the requirement text (concise), a category (e.g. Technical, Functional, Eligibility, Commercial, Legal, SLA, Documentation), whether it is mandatory, and an initial complianceStatus assessment for Hans Infomatic given the company context — one of "Compliant", "Partial", "Non-Compliant", "Needs Review" (use "Needs Review" when you cannot tell from the document alone). Add a short ourResponse suggestion and note any gap. Be thorough but do not fabricate clauses that are not in the document.`,
+
+  emailAnalysis: `${COMPANY_CONTEXT}
+
+TASK: Analyse the supplied business email (a single message or a full thread) exchanged with a customer/partner, for a logistics & software CRM. Extract ONLY what the email actually says — never invent commitments, dates, or references.
+Return:
+- summary: 2-3 sentence plain-English summary of the conversation.
+- intent: the primary purpose — one of RFQ, Complaint, Shipment Update, Documentation, Payment, Meeting, Support, Introduction, Negotiation, General, Other.
+- priority: High / Medium / Low (High = urgent complaint, payment issue, at-risk shipment, hard deadline).
+- sentiment: Positive / Neutral / Negative / Mixed (the customer's tone).
+- followUpRequired: true if the CRM owner needs to act or reply.
+- actionItems: concrete tasks, each with the owner if named (else "") and a due date if stated (else "").
+- commitments: promises made by either party (e.g. "We will send the quote by Friday"), verbatim-ish and short.
+- importantDates: any deadlines/dates mentioned, each with a short label.
+- shipmentRefs: logistics references found — type is one of HAWB, MAWB, BL, Container, JobNo, BookingNo, InvoiceNo, PONo, Other; value is the reference.
+- people: names (and role/company if given) of people involved.
+- suggestedNextAction: the single best next step for the CRM owner. Keep bullets under ~25 words.`,
 };
 
 // JSON schemas constrain the model output so the client can render reliably.
@@ -235,6 +252,51 @@ const SCHEMAS: Record<string, any> = {
     },
     required: ["summary", "totals", "items"],
   },
+  emailAnalysis: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      summary: { type: "string" },
+      intent: { type: "string", enum: ["RFQ", "Complaint", "Shipment Update", "Documentation", "Payment", "Meeting", "Support", "Introduction", "Negotiation", "General", "Other"] },
+      priority: { type: "string", enum: ["High", "Medium", "Low"] },
+      sentiment: { type: "string", enum: ["Positive", "Neutral", "Negative", "Mixed"] },
+      followUpRequired: { type: "boolean" },
+      actionItems: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: { task: { type: "string" }, owner: { type: "string" }, due: { type: "string" } },
+          required: ["task"],
+        },
+      },
+      commitments: { type: "array", items: { type: "string" } },
+      importantDates: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: { label: { type: "string" }, date: { type: "string" } },
+          required: ["label", "date"],
+        },
+      },
+      shipmentRefs: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            type: { type: "string", enum: ["HAWB", "MAWB", "BL", "Container", "JobNo", "BookingNo", "InvoiceNo", "PONo", "Other"] },
+            value: { type: "string" },
+          },
+          required: ["type", "value"],
+        },
+      },
+      people: { type: "array", items: { type: "string" } },
+      suggestedNextAction: { type: "string" },
+    },
+    required: ["summary", "intent", "priority", "sentiment", "followUpRequired", "actionItems", "commitments", "importantDates", "shipmentRefs", "people", "suggestedNextAction"],
+  },
 };
 
 // Per-feature tuning. Reasoning tasks get adaptive thinking; extraction/
@@ -244,6 +306,7 @@ const FEATURE_TUNING: Record<string, { maxTokens: number; thinking: boolean; eff
   bidRecommendation: { maxTokens: 4000, thinking: true, effort: "high" },
   callSummary: { maxTokens: 3000, thinking: false, effort: "low" },
   complianceMatrix: { maxTokens: 32000, thinking: true, effort: "high" },
+  emailAnalysis: { maxTokens: 4000, thinking: false, effort: "low" },
 };
 
 serve(async (req) => {
