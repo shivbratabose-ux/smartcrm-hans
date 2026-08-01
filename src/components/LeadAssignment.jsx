@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { useMemo, useState, Fragment } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { UserCheck, UserX, CheckCircle, AlertTriangle, ChevronDown, ChevronRight, Users } from "lucide-react";
+import { UserCheck, UserX, CheckCircle, AlertTriangle, ChevronDown, ChevronRight, Users, ArrowRight, X } from "lucide-react";
 import { LEAD_STAGES, TEAM_MAP, PRODUCTS, PROD_MAP, REGIONS, TEAM } from "../data/constants";
 import { today, canEditRecord, withLeadAssignment, buildAssignmentActivity } from "../utils/helpers";
 import { notify } from "../utils/toast";
@@ -42,6 +42,8 @@ const Kpi = ({ label, value, sub, color, Icon }) => (
 export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUsers = [], currentUser, setPage, commLogs = [], catalog = [], setActivities }) {
   const [expanded, setExpanded] = useState(null); // owner id whose leads are shown
   const [q, setQ] = useState("");
+  const [view, setView] = useState("byOwner"); // "byOwner" table | "matrix" (From → To grid)
+  const [matrixSel, setMatrixSel] = useState(null); // { from, to } cell being drilled into
   const [productF, setProductF] = useState("All");
   const [regionF, setRegionF] = useState("All");
   const [rangeF, setRangeF] = useState("all");
@@ -102,6 +104,26 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
   }, [live]);
 
   const rows = useMemo(() => q.trim() ? byOwner.filter(r => nameOf(r.owner).toLowerCase().includes(q.toLowerCase())) : byOwner, [byOwner, q]);
+
+  // From → To assignment matrix: rows = recipient (To), columns = assigner
+  // (From), cell = the leads assigned by From currently sitting with To.
+  // Counts the CURRENT assignment (assignedBy → assignedTo) per lead, so the
+  // grand total always equals the number of leads in view. "__none" column
+  // catches legacy leads with no recorded assigner.
+  const matrix = useMemo(() => {
+    const cells = {}; // "from|to" → leads[]
+    const fromSet = new Set(), toSet = new Set();
+    live.forEach(l => {
+      const to = l.assignedTo || "__unassigned";
+      const from = l.assignedBy || "__none";
+      fromSet.add(from); toSet.add(to);
+      (cells[`${from}|${to}`] = cells[`${from}|${to}`] || []).push(l);
+    });
+    const byName = (a, b) => nameOf(a).localeCompare(nameOf(b));
+    return { cells, fromList: [...fromSet].sort(byName), toList: [...toSet].sort(byName) };
+  }, [live]);
+  const matrixLabel = (id) => id === "__none" ? "(not recorded)" : id === "__unassigned" ? "— Unassigned —" : nameOf(id);
+  const matrixSelLeads = matrixSel ? (matrix.cells[`${matrixSel.from}|${matrixSel.to}`] || []) : [];
 
   const totals = useMemo(() => {
     const assigned = live.filter(l => l.assignedTo).length;
@@ -184,12 +206,103 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
         </div>
       )}
 
-      {/* Per-owner table (expandable to each owner's leads) */}
+      {/* Per-owner table (expandable) / From → To matrix */}
       <div className="card" style={{ padding: 0 }}>
         <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text1)" }}>Assignment breakdown</div>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search owner…" style={{ marginLeft: "auto", fontSize: 12, padding: "5px 10px", border: "1px solid var(--border)", borderRadius: 8, width: 200 }} />
+          <div style={{ display: "flex", gap: 0, border: "1.5px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
+            <button onClick={() => setView("byOwner")} style={{ fontSize: 11, padding: "4px 12px", fontWeight: 600, cursor: "pointer", border: "none", background: view === "byOwner" ? "var(--brand)" : "#fff", color: view === "byOwner" ? "#fff" : "var(--text2)" }}>By owner</button>
+            <button onClick={() => { setView("matrix"); setMatrixSel(null); }} style={{ fontSize: 11, padding: "4px 12px", fontWeight: 600, cursor: "pointer", border: "none", background: view === "matrix" ? "var(--brand)" : "#fff", color: view === "matrix" ? "#fff" : "var(--text2)" }}>From → To matrix</button>
+          </div>
+          {view === "byOwner" && <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search owner…" style={{ marginLeft: "auto", fontSize: 12, padding: "5px 10px", border: "1px solid var(--border)", borderRadius: 8, width: 200 }} />}
         </div>
+
+        {/* ── From → To matrix: rows = recipient, columns = assigner. Click a
+            count to open the exact leads behind it. ── */}
+        {view === "matrix" && (
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl" style={{ minWidth: 560 }}>
+              <thead>
+                <tr>
+                  <th style={{ whiteSpace: "nowrap" }}>To \ From</th>
+                  {matrix.fromList.map(f => <th key={f} style={{ textAlign: "right", whiteSpace: "nowrap" }}>{matrixLabel(f)}</th>)}
+                  <th style={{ textAlign: "right" }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.toList.length === 0 && <tr><td colSpan={matrix.fromList.length + 2} style={{ textAlign: "center", color: "var(--text3)", padding: 20 }}>No leads in your view.</td></tr>}
+                {matrix.toList.map(t => {
+                  const rowTotal = matrix.fromList.reduce((s, f) => s + (matrix.cells[`${f}|${t}`]?.length || 0), 0);
+                  return (
+                    <tr key={t}>
+                      <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{matrixLabel(t)}</td>
+                      {matrix.fromList.map(f => {
+                        const n = matrix.cells[`${f}|${t}`]?.length || 0;
+                        const sel = matrixSel && matrixSel.from === f && matrixSel.to === t;
+                        return (
+                          <td key={f} style={{ textAlign: "right" }}>
+                            {n > 0 ? (
+                              <button onClick={() => setMatrixSel(sel ? null : { from: f, to: t })}
+                                title={`${n} lead${n > 1 ? "s" : ""} assigned by ${matrixLabel(f)} to ${matrixLabel(t)} — click to view`}
+                                style={{ fontSize: 12.5, fontWeight: 700, padding: "2px 10px", borderRadius: 6, border: "none", cursor: "pointer", background: sel ? "var(--brand)" : "var(--brand-bg, #E8F5F1)", color: sel ? "#fff" : "var(--brand)" }}>
+                                {n}
+                              </button>
+                            ) : <span style={{ color: "var(--text3)" }}>–</span>}
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: "right", fontWeight: 700 }}>{rowTotal}</td>
+                    </tr>
+                  );
+                })}
+                {matrix.toList.length > 0 && (
+                  <tr style={{ background: "var(--s2)" }}>
+                    <td style={{ fontWeight: 700 }}>Total</td>
+                    {matrix.fromList.map(f => <td key={f} style={{ textAlign: "right", fontWeight: 700 }}>{matrix.toList.reduce((s, t) => s + (matrix.cells[`${f}|${t}`]?.length || 0), 0)}</td>)}
+                    <td style={{ textAlign: "right", fontWeight: 800 }}>{live.length}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+
+            {/* Drill-down: the leads behind the clicked cell */}
+            {matrixSel && (
+              <div style={{ borderTop: "1px solid var(--border)", background: "var(--s2)" }}>
+                <div style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, color: "var(--text1)" }}>
+                  {matrixLabel(matrixSel.from)} <ArrowRight size={13} /> {matrixLabel(matrixSel.to)}
+                  <span style={{ fontWeight: 400, color: "var(--text3)" }}>({matrixSelLeads.length} lead{matrixSelLeads.length === 1 ? "" : "s"})</span>
+                  <button onClick={() => setMatrixSel(null)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text3)" }}><X size={15} /></button>
+                </div>
+                <table className="tbl" style={{ width: "100%", margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ fontSize: 10.5 }}>Lead</th>
+                      <th style={{ fontSize: 10.5 }}>Company</th>
+                      <th style={{ fontSize: 10.5 }}>Lead Stage</th>
+                      <th style={{ fontSize: 10.5 }}>Opp Stage</th>
+                      <th style={{ fontSize: 10.5 }}>Assigned date</th>
+                      <th style={{ fontSize: 10.5 }}>Next Call</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrixSelLeads.map(l => (
+                      <tr key={l.id} style={{ cursor: setPage ? "pointer" : "default" }} onClick={() => setPage && setPage("leads")} title={setPage ? "Open Leads" : ""}>
+                        <td style={{ fontFamily: "monospace", fontSize: 11 }}>{l.leadId || l.id}</td>
+                        <td style={{ fontSize: 12 }}>{l.company || "-"}</td>
+                        <td>{stageBadge(l.stage)}</td>
+                        <td>{oppStageOf(l) ? stageBadge(oppStageOf(l)) : <span style={{ color: "var(--text3)", fontSize: 11 }}>-</span>}</td>
+                        <td style={{ fontSize: 11, color: "var(--text3)" }}>{l.assignedAt || l.createdDate || "-"}</td>
+                        <td style={{ fontSize: 11, color: isOverdue(l) ? "#DC2626" : "var(--text3)", fontWeight: isOverdue(l) ? 700 : 400 }}>{l.nextCall || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {view === "byOwner" && (
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
             <thead>
@@ -270,6 +383,7 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );
