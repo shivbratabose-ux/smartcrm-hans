@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES, STAGES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq, withLeadAssignment, buildAssignmentActivity, isLeadAssigner } from '../utils/helpers';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
@@ -460,15 +460,28 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
   const startFieldEdit = (field) => { setEditingField(field); setFieldVal(lead[field] ?? ""); };
   const saveFieldEdit = (field, val) => {
     const v = val !== undefined ? val : fieldVal;
-    const patch = { [field]: v };
-    // Changing the Owner (assignedTo) is a (re)assignment — stamp who/when.
-    if (field === "assignedTo" && v !== lead.assignedTo) { patch.assignedBy = currentUser; patch.assignedAt = today; }
-    updateLead(patch);
+    updateLead({ [field]: v });
     setEditingField(null); setFieldVal("");
   };
   const cancelFieldEdit = () => { setEditingField(null); setFieldVal(""); };
   const updateLead = (patch) => {
-    if (setLeads) setLeads(prev => prev.map(l => l.id === lead.id ? {...l, ...patch} : l));
+    if (!setLeads) return;
+    // Any patch that changes the owner is a (re)assignment: route it through
+    // the shared tracker (stamps assignedBy/assignedAt + appends the
+    // assignment-history audit entry) and notify the new owner with a synced
+    // follow-up task. Covers the inline Owner edit AND the Sales Team owner
+    // change — both call updateLead with assignedTo.
+    if (patch.assignedTo && patch.assignedTo !== lead.assignedTo) {
+      const { assignedTo: newOwner, ...rest } = patch;
+      const stamped = { ...withLeadAssignment(lead, newOwner, currentUser), ...rest };
+      setLeads(prev => prev.map(l => l.id === lead.id ? stamped : l));
+      if (setActivities && newOwner !== currentUser) {
+        const byName = _teamMap[currentUser]?.name || "";
+        setActivities(p => [...p, buildAssignmentActivity(lead, newOwner, currentUser, byName)]);
+      }
+      return;
+    }
+    setLeads(prev => prev.map(l => l.id === lead.id ? {...l, ...patch} : l));
   };
 
   // ── Contacts data ──
@@ -541,6 +554,16 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
       desc: `Sales owner: ${_teamMap[lead.assignedTo]?.name || lead.assignedTo}${_teamMap[lead.assignedTo]?.role ? ` (${_teamMap[lead.assignedTo].role})` : ""}`,
       by: lead.createdBy || "",
     }] : []),
+    // 2b. Every transfer from the assignment audit trail (who → whom, by
+    //     whom, with the handoff note) — the traceability behind incentives.
+    ...(lead.assignmentHistory || []).map(h => ({
+      kind: "assigned",
+      date: h.date || "",
+      title: `Assigned to ${_teamMap[h.to]?.name || h.to || "—"}`,
+      subtitle: h.from ? `Transferred from ${_teamMap[h.from]?.name || h.from}` : "Assignment",
+      desc: [h.by ? `By ${_teamMap[h.by]?.name || h.by}` : null, h.note ? `“${h.note}”` : null].filter(Boolean).join(" — "),
+      by: h.by || "",
+    })),
     // 3. Stage changes from stageHistory
     ...(lead.stageHistory || []).map((sh, i) => ({
       kind: "stage",
@@ -2045,6 +2068,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [sortCol, setSortCol] = useState("createdDate");
   const [sortDir, setSortDir] = useState("desc");
   const [overdueOnly, setOverdueOnly] = useState(false); // true → show only overdue follow-up leads
+  const [assignedByMeOnly, setAssignedByMeOnly] = useState(false); // true → only leads I assigned/routed (handoff tracking)
   const [callLogModal, setCallLogModal] = useState(null); // prefill object when open
   const [showFormInlineContact, setShowFormInlineContact] = useState(null); // null=hidden, false=show existing dropdown, true=show new form
   const [viewMode, setViewMode] = useState("table"); // "table" | "grid" (Excel-like editable)
@@ -2077,6 +2101,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
 
   const filtered = useMemo(() => [...leads].filter(l => {
     if (overdueOnly && !(l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage))) return false;
+    if (assignedByMeOnly && !isLeadAssigner(l, currentUser)) return false;
     if (rangeKey !== "all" && !inRange(l.createdDate, range)) return false;
     if (productF !== "All" && l.product !== productF) return false;
     if (stageF !== "All" && l.stage !== stageF) return false;
@@ -2097,7 +2122,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     else if (sortCol === "oppStage") v = (oppStageOf(a) || "").localeCompare(oppStageOf(b) || "");
     else v = cmp(a, b, sortCol);
     return sortDir === "desc" ? -v : v;
-  }), [leads, productF, stageF, sourceF, ownerF, oppStageF, oppById, search, range, rangeKey, sortCol, sortDir, overdueOnly]);
+  }), [leads, productF, stageF, sourceF, ownerF, oppStageF, oppById, search, range, rangeKey, sortCol, sortDir, overdueOnly, assignedByMeOnly, currentUser]);
 
   const bulk = useBulkSelect(filtered);
   const pg = usePagination(filtered);
@@ -2199,10 +2224,31 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     // on every save, so editing away the overlap clears the flag.
     const clean = sanitizeObj({ ...normalisedForm, duplicateOf: dup ? dup.id : "" });
     if (modal.mode === "add") {
-      setLeads(p => [...p, { ...clean }]);
+      // Creation is the first assignment — seed the audit trail, and notify
+      // the owner if the lead was created straight onto someone else's plate.
+      const created = {
+        ...clean,
+        assignmentHistory: clean.assignedTo ? [{ from: "", to: clean.assignedTo, by: currentUser || "", date: today, note: "Created" }] : [],
+      };
+      setLeads(p => [...p, created]);
+      if (setActivities && clean.assignedTo && clean.assignedTo !== currentUser) {
+        const byName = team.find(u => u.id === currentUser)?.name || "";
+        setActivities(p => [...p, buildAssignmentActivity(created, clean.assignedTo, currentUser, byName)]);
+      }
       if (dup) notify.info(`Lead created and flagged as a possible duplicate of ${dup.leadId || dup.company}. It's highlighted in the list for review.`);
     } else {
-      setLeads(p => p.map(l => l.id === clean.id ? { ...clean } : l));
+      // Owner changed via the edit form → same shared assignment tracking.
+      const before = leads.find(l => l.id === clean.id);
+      let next = clean;
+      if (before && clean.assignedTo && clean.assignedTo !== before.assignedTo) {
+        const stamped = withLeadAssignment(before, clean.assignedTo, currentUser);
+        next = { ...clean, assignedBy: stamped.assignedBy, assignedAt: stamped.assignedAt, assignmentHistory: stamped.assignmentHistory };
+        if (setActivities && clean.assignedTo !== currentUser) {
+          const byName = team.find(u => u.id === currentUser)?.name || "";
+          setActivities(p => [...p, buildAssignmentActivity(before, clean.assignedTo, currentUser, byName)]);
+        }
+      }
+      setLeads(p => p.map(l => l.id === next.id ? { ...next } : l));
     }
     setModal(null);
     setFormErrors({});
@@ -2358,6 +2404,8 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const totalValue = pipelineValue + convertedValue;
   const overdueLeads = filtered.filter(l => l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage)).length;
   const hotLeads = filtered.filter(l => l.score >= 70 && l.stage !== "NA").length;
+  // Leads I routed to someone else — the assigner's handoff-tracking count.
+  const assignedByMeCount = leads.filter(l => !l.isDeleted && isLeadAssigner(l, currentUser) && l.assignedTo !== currentUser).length;
   const avgAge = filtered.length > 0 ? Math.round(filtered.reduce((s, l) => s + (daysSince(l.createdDate) || 0), 0) / filtered.length) : 0;
 
   // Lead source distribution for insights
@@ -2392,6 +2440,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           </div>
         </div>
         <div className="pg-actions">
+          {assignedByMeCount > 0 && <button onClick={() => setAssignedByMeOnly(v => !v)} style={{background:assignedByMeOnly?"#7C3AED":"#F5F3FF",color:assignedByMeOnly?"#fff":"#7C3AED",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,display:"flex",alignItems:"center",gap:4,border:"none",cursor:"pointer",transition:"all 0.15s"}} title={assignedByMeOnly ? "Click to show all leads" : "Track the leads you handed off — status, stage & current owner"}><ArrowRightCircle size={12}/>{assignedByMeOnly ? `Showing ${assignedByMeCount} assigned by me` : `${assignedByMeCount} assigned by me`}</button>}
           {overdueLeads > 0 && <button onClick={() => setOverdueOnly(v => !v)} style={{background:overdueOnly?"#DC2626":"var(--red-bg)",color:overdueOnly?"#fff":"var(--red-t)",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,display:"flex",alignItems:"center",gap:4,border:"none",cursor:"pointer",transition:"all 0.15s"}} title={overdueOnly ? "Click to show all leads" : "Click to filter overdue only"}><AlertTriangle size={12}/>{overdueOnly ? `Showing ${overdueLeads} overdue` : `${overdueLeads} overdue`}</button>}
           {/* Resync to Cloud — admin-only safety button. The CRM uses dual
               state (React + localStorage cache + Supabase). When rows live
@@ -2562,9 +2611,21 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             onReassignOwner={canDelete ? (newOwnerId) => {
               const selectedIds = [...bulk.selected];
               if (!selectedIds.length) return;
-              setLeads(p => p.map(l => selectedIds.includes(l.id)
-                ? { ...l, assignedTo: newOwnerId }
+              const moved = leads.filter(l => selectedIds.includes(l.id) && l.assignedTo !== newOwnerId);
+              setLeads(p => p.map(l => selectedIds.includes(l.id) && l.assignedTo !== newOwnerId
+                ? withLeadAssignment(l, newOwnerId, currentUser)
                 : l));
+              // One synced notification task for the recipient summarising the batch.
+              if (setActivities && moved.length && newOwnerId !== currentUser) {
+                const byName = team.find(u => u.id === currentUser)?.name || "";
+                const names = moved.slice(0, 10).map(l => l.company || l.leadId).join(", ");
+                setActivities(p => [...p, {
+                  id: `act_${uid()}`, type: "Follow-up", status: "Planned", date: today,
+                  title: `${moved.length} lead${moved.length > 1 ? "s" : ""} assigned to you`,
+                  notes: `Assigned by ${byName || "a colleague"}: ${names}${moved.length > 10 ? ` +${moved.length - 10} more` : ""}. Review and plan first touches.`,
+                  accountId: "", contactId: "", oppId: "", owner: newOwnerId, createdDate: today,
+                }]);
+              }
               bulk.clear();
             } : undefined}
             orgUsers={orgUsers}
