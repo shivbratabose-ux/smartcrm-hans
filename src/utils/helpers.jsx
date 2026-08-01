@@ -437,6 +437,11 @@ export const getScopedUserIds = (currentUserId, orgUsers) => {
 export const USER_ADMIN_ROLES = ["admin", "md", "vp_sales_mkt"];
 export const canManageUsers = (role) => USER_ADMIN_ROLES.includes(normalizeRole(role));
 
+// Roles that can see the Lead Assignment page (managers who route leads +
+// top management). Reps/support/finance don't route leads, so it's hidden.
+export const LEAD_ASSIGN_ROLES = ["admin", "md", "director", "vp_sales_mkt", "line_mgr", "country_mgr", "bd_lead"];
+export const canSeeLeadAssignment = (role) => LEAD_ASSIGN_ROLES.includes(normalizeRole(role));
+
 // Returns true if the role has unrestricted global data access
 export const isGlobalRole = (userId, orgUsers) => {
   const user = (orgUsers || []).find(u => u.id === userId);
