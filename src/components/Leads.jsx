@@ -912,7 +912,7 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
                   {editField("Est. Value (₹L)", "estimatedValue", "number")}
                   {editField("Lead Temperature", "temperature", "select", LEAD_TEMPERATURES.map(t => ({id:t, name:t})))}
                   {editField("Next Call Date", "nextCall", "date")}
-                  {editField("Assigned To", "assignedTo", "select", _team)}
+                  {editField("Owner (Sales Person)", "assignedTo", "select", _team)}
                   {editField("Created Date", "createdDate", "date")}
                 </div>
               </div>
@@ -1590,7 +1590,7 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
                 {infoRow("Product", productInfo?.name || lead.product)}
                 {infoRow("Lead Score", `${lead.score}/100`)}
                 {infoRow("Stage", stageInfo?.name || lead.stage)}
-                {infoRow("Assigned To", assignee?.name || lead.assignedTo)}
+                {infoRow("Owner (Sales Person)", assignee?.name || lead.assignedTo)}
                 {infoRow("Primary Contact", lead.contact)}
                 {infoRow("Email", lead.email || "\u2014")}
                 {infoRow("Phone", lead.phone || "\u2014")}
@@ -1719,7 +1719,7 @@ function EditableLeadsGrid({ rows, team, updateLeadField, bulk, toggleSort, Sort
             <th style={{cursor:"pointer",userSelect:"none",width:80}} onClick={() => toggleSort("score")}>Score<SortIcon col="score"/></th>
             <th style={{minWidth:130}}>Source</th>
             <th style={{minWidth:120}}>Region</th>
-            <th style={{cursor:"pointer",userSelect:"none",minWidth:130}} onClick={() => toggleSort("assignedTo")}>Assigned<SortIcon col="assignedTo"/></th>
+            <th style={{cursor:"pointer",userSelect:"none",minWidth:130}} onClick={() => toggleSort("assignedTo")}>Owner<SortIcon col="assignedTo"/></th>
             <th style={{cursor:"pointer",userSelect:"none",width:130}} onClick={() => toggleSort("nextCall")}>Next Call<SortIcon col="nextCall"/></th>
             <th style={{width:60}}></th>
           </tr>
@@ -1873,7 +1873,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
     { key: "salesTeam", label: "Sales Team", defaultWidth: 140, sortable: false, render: l => (
       <span style={{fontSize:11,color:"var(--text3)"}}>{(l.salesTeam||[]).join(", ") || "-"}</span>
     )},
-    { key: "assignedTo", label: "Assigned To", defaultWidth: 140, render: l => <UserPill uid={l.assignedTo}/> },
+    { key: "assignedTo", label: "Owner", defaultWidth: 140, render: l => <UserPill uid={l.assignedTo}/> },
     { key: "nextCall", label: "Next Call", defaultWidth: 130, render: l => {
       const overdue = l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage);
       return overdue ? (
@@ -2018,6 +2018,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [sourceF, setSourceF] = useState("All");
   const [ownerF, setOwnerF] = useState("All");
   const [oppStageF, setOppStageF] = useState("All");
+  const [showAssign, setShowAssign] = useState(false); // assignment-by-owner summary panel
   // Resolve a converted lead → its linked opportunity's current stage (for the
   // Opp Stage column, filter, and sort). "" when not converted / opp deleted.
   const oppById = useMemo(() => Object.fromEntries((opps || []).map(o => [o.id, o])), [opps]);
@@ -2095,6 +2096,20 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
 
   const bulk = useBulkSelect(filtered);
   const pg = usePagination(filtered);
+
+  // Assignment-by-owner summary: which leads sit with whom, broken down by
+  // status. Runs on the current filtered set so it reflects any filters.
+  const assignSummary = useMemo(() => {
+    const by = {};
+    filtered.forEach(l => {
+      const o = l.assignedTo || "__unassigned";
+      if (!by[o]) by[o] = { owner: o, MQL: 0, SQL: 0, SAL: 0, Converted: 0, total: 0 };
+      if (["MQL", "SQL", "SAL", "Converted"].includes(l.stage)) by[o][l.stage]++;
+      by[o].total++;
+    });
+    return Object.values(by).sort((a, b) => b.total - a.total);
+  }, [filtered]);
+  const ownerName = (id) => id === "__unassigned" ? "— Unassigned —" : ((orgUsers || []).find(u => u.id === id)?.name || TEAM_MAP[id]?.name || id);
 
   // OFFLINE FALLBACK ONLY. This computes "max + 1" over the RLS-scoped
   // list the current user can see — which is exactly how the duplicate
@@ -2383,6 +2398,9 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           </div>
         </div>
         <div className="pg-actions">
+          <button className="btn btn-sec" onClick={() => setShowAssign(v => !v)} title="See which leads are assigned to whom, by status">
+            <Users size={14}/>{showAssign ? "Hide assignments" : "Assignments"}
+          </button>
           {overdueLeads > 0 && <button onClick={() => setOverdueOnly(v => !v)} style={{background:overdueOnly?"#DC2626":"var(--red-bg)",color:overdueOnly?"#fff":"var(--red-t)",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,display:"flex",alignItems:"center",gap:4,border:"none",cursor:"pointer",transition:"all 0.15s"}} title={overdueOnly ? "Click to show all leads" : "Click to filter overdue only"}><AlertTriangle size={12}/>{overdueOnly ? `Showing ${overdueLeads} overdue` : `${overdueLeads} overdue`}</button>}
           {/* Resync to Cloud — admin-only safety button. The CRM uses dual
               state (React + localStorage cache + Supabase). When rows live
@@ -2488,6 +2506,39 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       <div className="list-with-aside">
         {/* Left: Main content */}
         <div className="lwa-main">
+          {/* Assignment-by-owner summary — who holds which leads, by status.
+              Reflects the current filters. Toggled from the header. */}
+          {showAssign && (
+            <div className="card" style={{padding:0, marginBottom:12, overflowX:"auto"}}>
+              <div style={{padding:"10px 14px", borderBottom:"1px solid var(--border)", fontSize:13, fontWeight:700, color:"var(--text1)", display:"flex", alignItems:"center", gap:8}}>
+                <Users size={15} style={{color:"var(--brand)"}}/> Lead assignments by owner
+                <span style={{fontSize:11, fontWeight:400, color:"var(--text3)"}}>({filtered.length} leads · reflects current filters)</span>
+              </div>
+              <table className="tbl" style={{minWidth:560}}>
+                <thead><tr>
+                  <th>Owner (Sales Person)</th>
+                  <th style={{textAlign:"right"}}>MQL</th>
+                  <th style={{textAlign:"right"}}>SQL</th>
+                  <th style={{textAlign:"right"}}>SAL</th>
+                  <th style={{textAlign:"right"}}>Converted</th>
+                  <th style={{textAlign:"right"}}>Total</th>
+                </tr></thead>
+                <tbody>
+                  {assignSummary.length === 0 && <tr><td colSpan={6} style={{textAlign:"center", color:"var(--text3)", padding:16}}>No leads.</td></tr>}
+                  {assignSummary.map(r => (
+                    <tr key={r.owner} style={{cursor:"pointer"}} onClick={() => setOwnerF(r.owner === "__unassigned" ? "All" : r.owner)} title="Click to filter the list to this owner">
+                      <td style={{fontWeight:600}}>{ownerName(r.owner)}</td>
+                      <td style={{textAlign:"right"}}>{r.MQL || "-"}</td>
+                      <td style={{textAlign:"right"}}>{r.SQL || "-"}</td>
+                      <td style={{textAlign:"right"}}>{r.SAL || "-"}</td>
+                      <td style={{textAlign:"right", color:"#15803D", fontWeight:600}}>{r.Converted || "-"}</td>
+                      <td style={{textAlign:"right", fontWeight:700}}>{r.total}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {/* Filters */}
           <div className="filter-bar" style={{flexWrap:"wrap"}}>
             <div className="filter-search">
