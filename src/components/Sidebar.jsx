@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, Building2, Users, TrendingUp, Activity,
   BarChart3, Ticket, Layers, SlidersHorizontal, ChevronLeft, LogOut,
-  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge, Sparkles
+  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge, Sparkles, UserCheck
 } from "lucide-react";
 import { TEAM_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 import { canManageUsers } from '../utils/helpers';
@@ -51,6 +51,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
     ]},
     {section:"Analytics",items:[
       {id:"dashboards",label:"Dashboards",icon:<Gauge size={17}/>},
+      {id:"leadassign",label:"Lead Assignment",icon:<UserCheck size={17}/>},
       {id:"targets",label:"Targets",icon:<Target size={17}/>},
       {id:"reports",label:"Reports",icon:<BarChart3 size={17}/>},
     ]},

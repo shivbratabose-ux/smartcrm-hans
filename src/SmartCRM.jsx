@@ -36,6 +36,7 @@ import Masters from "./components/Masters";
 import AiSettings from "./components/AiSettings";
 import OrgHierarchy from "./components/OrgHierarchy";
 import TeamUsers from "./components/TeamUsers";
+import LeadAssignment from "./components/LeadAssignment";
 import Leads from "./components/Leads";
 import CallReports from "./components/CallReports";
 import Contracts from "./components/Contracts";
@@ -2576,6 +2577,7 @@ export default function SmartCRM() {
             {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} opps={visibleOpps} callReports={visibleCallReports} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete}/>}
             {page==="reports"    && <Reports accounts={visibleAccounts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} contacts={visibleContacts} contracts={visibleContracts} quotes={visibleQuotes} currentUser={currentUser} orgUsers={orgUsers} masters={masters}/>}
             {page==="dashboards" && <Dashboards accounts={visibleAccounts} opps={visibleOpps} projects={visibleProjects} contracts={visibleContracts} tickets={visibleTickets} quotes={visibleQuotes} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
+            {page==="leadassign" && <LeadAssignment leads={visibleLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
             {page==="updates"    && <Updates updates={visibleUpdates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} catalog={catalog} orgUsers={orgUsers} existingData={{ leads: visibleLeads, accounts: visibleAccounts, contacts: visibleContacts, collections: visibleCollections, tickets: visibleTickets, contracts: visibleContracts, invoices: visibleInvoices, opps: visibleOpps }}/>}
