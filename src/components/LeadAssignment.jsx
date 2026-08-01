@@ -222,6 +222,7 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
                               <th style={{ fontSize: 10.5 }}>Lead Stage</th>
                               <th style={{ fontSize: 10.5 }}>Opp Stage</th>
                               <th style={{ fontSize: 10.5 }}>Next Call</th>
+                              <th style={{ fontSize: 10.5 }}>Assigned To</th>
                               <th style={{ fontSize: 10.5 }}>Reassign owner</th>
                             </tr>
                           </thead>
@@ -233,6 +234,7 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
                                 <td>{stageBadge(l.stage)}</td>
                                 <td>{oppStageOf(l) ? stageBadge(oppStageOf(l)) : <span style={{ color: "var(--text3)", fontSize: 11 }}>-</span>}</td>
                                 <td style={{ fontSize: 11, color: isOverdue(l) ? "#DC2626" : "var(--text3)", fontWeight: isOverdue(l) ? 700 : 400 }}>{l.nextCall || "-"}</td>
+                                <td style={{ fontSize: 12, fontWeight: 600 }}>{nameOf(l.assignedTo)}</td>
                                 <td onClick={e => e.stopPropagation()}>
                                   {canEditLead(l) ? (
                                     <select value={l.assignedTo || ""} onChange={e => reassign(l, e.target.value)}
