@@ -1461,6 +1461,35 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
     return arr;
   }, [filtered, sortKey, sortDir, accounts, healthById]);
 
+  /* ── WON-MODE KPIs ──
+     The default KPI row measures OPEN pipeline, so filtering Stage=Won
+     shows all zeros. When the Won filter is active we swap to closure
+     metrics computed on the filtered set (so Owner/Product/Region filters
+     apply): new-customer vs cross-sell counts, revenue closed, and average
+     days from created → close. A deal counts as cross-sell when it's
+     flagged upsell OR its account already had an earlier Won deal. */
+  const wonStats = useMemo(() => {
+    if (stageF !== wonName) return null;
+    const allWon = opps.filter(o => !o.isDeleted && o.stage === wonName);
+    const firstWonByAccount = {};
+    allWon.forEach(o => {
+      if (!o.accountId) return;
+      const d = o.closeDate || o.createdDate || "9999-12-31";
+      if (!firstWonByAccount[o.accountId] || d < firstWonByAccount[o.accountId].d) firstWonByAccount[o.accountId] = { id: o.id, d };
+    });
+    let newBiz = 0, cross = 0, revenue = 0, daysSum = 0, daysN = 0;
+    filtered.forEach(o => {
+      revenue += Number(o.value) || 0;
+      const isCross = o.upsellFlag === true || (o.accountId && firstWonByAccount[o.accountId] && firstWonByAccount[o.accountId].id !== o.id);
+      if (isCross) cross++; else newBiz++;
+      if (o.closeDate && o.createdDate) {
+        const days = (new Date(o.closeDate) - new Date(o.createdDate)) / 86400000;
+        if (Number.isFinite(days) && days >= 0) { daysSum += days; daysN++; }
+      }
+    });
+    return { count: filtered.length, newBiz, cross, revenue, avgDays: daysN ? Math.round(daysSum / daysN) : null };
+  }, [stageF, wonName, filtered, opps]);
+
   /* ── ANALYTICS DATA ── */
   // STAGES / closingNames / wonName / lostName resolved from masters (with
   // legacy fallback) — see buildStagesContext at module top.
@@ -1545,7 +1574,17 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
         </div>
       </div>
 
-      {/* KPI CARDS */}
+      {/* KPI CARDS \u2014 swap to sales-closure metrics when filtering Won,
+          because the open-pipeline cards are all zeros in that view. */}
+      {wonStats ? (
+        <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+          <KpiCard label="Sales Won" value={wonStats.count} icon={Check} sub="deals closed Won" />
+          <KpiCard label="New Customers" value={wonStats.newBiz} icon={Target} sub="first sale to the account" />
+          <KpiCard label="Cross-sell Sales" value={wonStats.cross} icon={TrendingUp} sub="repeat / upsell wins" />
+          <KpiCard label="Revenue Closed" value={`\u20B9${wonStats.revenue.toFixed(1)}L`} icon={Check} sub="sum of won deal values" />
+          <KpiCard label="Avg Days to Close" value={wonStats.avgDays ?? "\u2014"} icon={Clock} sub="created \u2192 close date" />
+        </div>
+      ) : (
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <KpiCard label="Total Pipeline" value={`\u20B9${totalPipe.toFixed(1)}L`} icon={Target} sub={`${openDeals.length} open deals`} />
         <KpiCard label="Weighted Pipeline" value={`\u20B9${weighted.toFixed(1)}L`} icon={TrendingUp} />
@@ -1553,6 +1592,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
         <KpiCard label="At Risk" value={atRiskCount} icon={AlertTriangle} sub="7-14 days idle" />
         <KpiCard label="Stalled" value={stalledCount} icon={Clock} sub=">14 days idle" />
       </div>
+      )}
 
       {/* FILTERS */}
       <div className="filter-bar" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
