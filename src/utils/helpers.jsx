@@ -480,6 +480,23 @@ export const buildAssignmentActivity = (lead, newOwnerId, byUserId, byName, note
   createdBy: byUserId || "", // authored-by marker: lets the assigner's device sync a task owned by the assignee
 });
 
+// Backfill correction for HISTORICAL assignments (who routed this lead was
+// never recorded before the tracking fields existed). Sets assignedBy and
+// seeds/appends a clearly-labelled history entry — does NOT change the
+// owner and must NOT trigger assignee notifications (nothing new happened).
+export const withAssignerBackfill = (lead, assignerId) => {
+  const when = lead.assignedAt || lead.createdDate || today;
+  const hist = Array.isArray(lead.assignmentHistory) ? lead.assignmentHistory : [];
+  const last = hist[hist.length - 1];
+  const dup = last && last.by === assignerId && last.to === (lead.assignedTo || "");
+  return {
+    ...lead,
+    assignedBy: assignerId || "",
+    assignedAt: when,
+    assignmentHistory: dup ? hist : [...hist, { from: "", to: lead.assignedTo || "", by: assignerId || "", date: when, note: "Backfilled — historical assignment" }],
+  };
+};
+
 // Everyone who ever assigned/routed this lead (latest assigner + every
 // history `by`), minus excludeId (usually the actor, who needs no alert).
 // These are the people owed a progress ping when the lead converts / wins.
