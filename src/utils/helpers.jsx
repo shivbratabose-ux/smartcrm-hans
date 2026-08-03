@@ -13,7 +13,25 @@ export const fmt = {
   time: t => { if(!t) return ""; const [h,m]=t.split(":"); const hr=parseInt(h); return `${hr>12?hr-12:hr||12}:${m} ${hr>=12?"PM":"AM"}`; },
 };
 export const uid  = () => Math.random().toString(36).slice(2,9);
-export const cmp  = (a,b,key) => (a[key]||"").toString().localeCompare((b[key]||"").toString());
+// Shared column comparator for sortable tables (Leads / Accounts / Contacts…).
+// NUMERIC-AWARE: numbers — and numeric strings, e.g. CSV-imported "50" — are
+// compared as numbers. The old stringify-everything version sorted Est. Value
+// lexically ("₹50L" before "₹8L" because "5" < "8"). Blanks/non-numerics sort
+// before numbers; everything else falls back to locale string compare (ISO
+// dates keep working — they aren't numeric).
+export const cmp = (a, b, key) => {
+  const av = a?.[key], bv = b?.[key];
+  const num = (v) => {
+    if (typeof v === "number") return Number.isFinite(v) ? v : null;
+    if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return Number(v);
+    return null;
+  };
+  const an = num(av), bn = num(bv);
+  if (an !== null && bn !== null) return an - bn;
+  if (an !== null) return 1;   // numeric values rank after blanks/non-numerics
+  if (bn !== null) return -1;
+  return (av || "").toString().localeCompare((bv || "").toString());
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Text-format coercion helpers — applied at every input layer so the value
