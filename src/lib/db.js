@@ -29,6 +29,7 @@ const TABLE_MAP = {
   files:       "files",
   users:       "users",
   projects:    "projects",
+  updates:     "updates",
 };
 
 // ── Per-module field aliases ──
@@ -254,6 +255,10 @@ const toSnake = (obj, module) => {
     reportsTo:"reports_to", dottedTo:"dotted_to",
     mustChangePassword:"must_change_password", tempPasswordExpiresAt:"temp_password_expires_at",
     assignedBy:"assigned_by", assignedAt:"assigned_at", assignmentHistory:"assignment_history",
+    // Updates (bell notifications) module
+    updateId:"update_id", recipientMode:"recipient_mode", recipientTeamIds:"recipient_team_ids",
+    recipientUserIds:"recipient_user_ids", taggedUserIds:"tagged_user_ids",
+    readStatus:"read_status", editHistory:"edit_history",
     // Lead fields
     assignedTo:"assigned_to", contactIds:"contact_ids", contactRoles:"contact_roles",
     additionalProducts:"additional_products", estimatedValue:"estimated_value", productFields:"product_fields",
@@ -490,6 +495,10 @@ const toCamel = (obj, module) => {
     dept_id:"deptId", join_date:"joinDate", avatar_url:"avatarUrl",
     reports_to:"reportsTo", dotted_to:"dottedTo",
     assigned_by:"assignedBy", assigned_at:"assignedAt", assignment_history:"assignmentHistory",
+    // Updates (bell notifications) module
+    update_id:"updateId", recipient_mode:"recipientMode", recipient_team_ids:"recipientTeamIds",
+    recipient_user_ids:"recipientUserIds", tagged_user_ids:"taggedUserIds",
+    read_status:"readStatus", edit_history:"editHistory",
     must_change_password:"mustChangePassword", temp_password_expires_at:"tempPasswordExpiresAt",
     // Lead fields
     assigned_to:"assignedTo", contact_ids:"contactIds", contact_roles:"contactRoles",

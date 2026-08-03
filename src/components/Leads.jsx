@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES, STAGES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq, withLeadAssignment, buildAssignmentActivity, isLeadAssigner, withAssignerBackfill } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq, withLeadAssignment, buildAssignmentActivity, isLeadAssigner, withAssignerBackfill, buildNotificationUpdate } from '../utils/helpers';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
@@ -440,7 +440,7 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   );
 }
 
-function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts, setLeads }) {
+function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts, setLeads, setUpdates }) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -477,9 +477,12 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
       const note = window.prompt(`Handoff note for ${newName} (optional):`, "") || "";
       const stamped = { ...withLeadAssignment(lead, newOwner, currentUser, note), ...rest };
       setLeads(prev => prev.map(l => l.id === lead.id ? stamped : l));
-      if (setActivities && newOwner !== currentUser) {
+      if (newOwner !== currentUser) {
         const byName = _teamMap[currentUser]?.name || "";
-        setActivities(p => [...p, buildAssignmentActivity(lead, newOwner, currentUser, byName, note)]);
+        if (setActivities) setActivities(p => [...p, buildAssignmentActivity(lead, newOwner, currentUser, byName, note)]);
+        if (setUpdates) setUpdates(p => [...p, buildNotificationUpdate(newOwner, currentUser,
+          `${byName || "A colleague"} assigned you a lead: ${lead.company || lead.leadId || "Lead"}`,
+          `${lead.leadId || ""} · stage ${lead.stage || "—"}${note ? ` — "${note.trim()}"` : ""}`)]);
       }
       notify.success(`${lead.company || lead.leadId || "Lead"} assigned to ${newName}${newOwner !== currentUser ? " — they've been notified with a follow-up task" : ""}.`);
       return;
@@ -1994,7 +1997,7 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
   );
 }
 
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess, opps=[] }) {
+function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess, opps=[], setUpdates }) {
   const canEditLead = (l) => canEditRecord({ownerId:l?.assignedTo,currentUser,orgUsers,recordType:"lead",recordId:l?.id,commLogs,catalog,recordProductIds:l?.product?[l.product]:[]});
   const requestAccessLead = (l) => onRequestEditAccess && onRequestEditAccess("lead", l.id, l.company||l.leadId||"Lead", l.assignedTo);
   // Scope the team list to only users this logged-in user has visibility over.
@@ -2094,9 +2097,12 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       const before = leads.find(l => l.id === id);
       if (before && v && v !== before.assignedTo) {
         setLeads(prev => prev.map(l => l.id === id ? withLeadAssignment(l, v, currentUser) : l));
-        if (setActivities && v !== currentUser) {
+        if (v !== currentUser) {
           const byName = team.find(u => u.id === currentUser)?.name || "";
-          setActivities(p => [...p, buildAssignmentActivity(before, v, currentUser, byName)]);
+          if (setActivities) setActivities(p => [...p, buildAssignmentActivity(before, v, currentUser, byName)]);
+          if (setUpdates) setUpdates(p => [...p, buildNotificationUpdate(v, currentUser,
+            `${byName || "A colleague"} assigned you a lead: ${before.company || before.leadId || "Lead"}`,
+            `${before.leadId || ""} · stage ${before.stage || "—"}`)]);
         }
         notify.success(`${before.company || before.leadId || "Lead"} assigned to ${team.find(u => u.id === v)?.name || v}${v !== currentUser ? " — they've been notified with a follow-up task" : ""}.`);
         return;
@@ -2249,9 +2255,12 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
         assignmentHistory: clean.assignedTo ? [{ from: "", to: clean.assignedTo, by: currentUser || "", date: today, note: "Created" }] : [],
       };
       setLeads(p => [...p, created]);
-      if (setActivities && clean.assignedTo && clean.assignedTo !== currentUser) {
+      if (clean.assignedTo && clean.assignedTo !== currentUser) {
         const byName = team.find(u => u.id === currentUser)?.name || "";
-        setActivities(p => [...p, buildAssignmentActivity(created, clean.assignedTo, currentUser, byName)]);
+        if (setActivities) setActivities(p => [...p, buildAssignmentActivity(created, clean.assignedTo, currentUser, byName)]);
+        if (setUpdates) setUpdates(p => [...p, buildNotificationUpdate(clean.assignedTo, currentUser,
+          `${byName || "A colleague"} assigned you a new lead: ${created.company || created.leadId || "Lead"}`,
+          `${created.leadId || ""} · stage ${created.stage || "—"}`)]);
       }
       if (dup) notify.info(`Lead created and flagged as a possible duplicate of ${dup.leadId || dup.company}. It's highlighted in the list for review.`);
     } else {
@@ -2261,9 +2270,12 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       if (before && clean.assignedTo && clean.assignedTo !== before.assignedTo) {
         const stamped = withLeadAssignment(before, clean.assignedTo, currentUser);
         next = { ...clean, assignedBy: stamped.assignedBy, assignedAt: stamped.assignedAt, assignmentHistory: stamped.assignmentHistory };
-        if (setActivities && clean.assignedTo !== currentUser) {
+        if (clean.assignedTo !== currentUser) {
           const byName = team.find(u => u.id === currentUser)?.name || "";
-          setActivities(p => [...p, buildAssignmentActivity(before, clean.assignedTo, currentUser, byName)]);
+          if (setActivities) setActivities(p => [...p, buildAssignmentActivity(before, clean.assignedTo, currentUser, byName)]);
+          if (setUpdates) setUpdates(p => [...p, buildNotificationUpdate(clean.assignedTo, currentUser,
+            `${byName || "A colleague"} assigned you a lead: ${clean.company || clean.leadId || "Lead"}`,
+            `${clean.leadId || ""} · stage ${clean.stage || "—"}`)]);
         }
         notify.success(`${clean.company || clean.leadId || "Lead"} assigned to ${team.find(u => u.id === clean.assignedTo)?.name || clean.assignedTo}${clean.assignedTo !== currentUser ? " — they've been notified with a follow-up task" : ""}.`);
       }
@@ -2647,6 +2659,12 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                   notes: `Assigned by ${byName || "a colleague"}${note ? ` — "${note.trim()}"` : ""}: ${names}${moved.length > 10 ? ` +${moved.length - 10} more` : ""}. Review and plan first touches.`,
                   accountId: "", contactId: "", oppId: "", owner: newOwnerId, createdDate: today, createdBy: currentUser,
                 }]);
+              }
+              if (setUpdates && newOwnerId !== currentUser) {
+                const byName = team.find(u => u.id === currentUser)?.name || "";
+                setUpdates(p => [...p, buildNotificationUpdate(newOwnerId, currentUser,
+                  `${byName || "A colleague"} assigned you ${moved.length} lead${moved.length > 1 ? "s" : ""}`,
+                  `${moved.slice(0, 10).map(l => l.company || l.leadId).join(", ")}${moved.length > 10 ? ` +${moved.length - 10} more` : ""}${note ? ` — "${note.trim()}"` : ""}`)]);
               }
               notify.success(`${moved.length} lead${moved.length > 1 ? "s" : ""} assigned to ${newName}${newOwnerId !== currentUser ? " — they've been notified" : ""}.`);
               bulk.clear();
@@ -3233,6 +3251,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           setCallReports={setCallReports}
           setContacts={setContacts}
           setLeads={setLeads}
+          setUpdates={setUpdates}
         />
       )}
 

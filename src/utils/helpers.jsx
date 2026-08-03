@@ -497,6 +497,23 @@ export const withAssignerBackfill = (lead, assignerId) => {
   };
 };
 
+// Bell 🔔 notification: a targeted Update for one recipient. Requires the
+// updates table (create_updates_sync_v1.sql) — updates now sync like any
+// module, so this reaches the recipient's bell on every device. Pairs with
+// the synced activity task (the bell pings, the task holds the to-do).
+export const buildNotificationUpdate = (recipientId, byUserId, titleText, description) => {
+  const nowIso = new Date().toISOString();
+  return {
+    id: `upd_${uid()}`,
+    updateId: `NTF-${Date.now().toString(36).toUpperCase()}`,
+    title: titleText, description: description || "",
+    category: "Announcement", priority: "High", tags: ["notification"],
+    createdBy: byUserId || "", createdAt: nowIso, updatedAt: nowIso,
+    recipientMode: "users", recipientTeamIds: [], recipientUserIds: [recipientId],
+    taggedUserIds: [], attachments: [], readStatus: {}, editHistory: [], archived: false,
+  };
+};
+
 // Everyone who ever assigned/routed this lead (latest assigner + every
 // history `by`), minus excludeId (usually the actor, who needs no alert).
 // These are the people owed a progress ping when the lead converts / wins.
