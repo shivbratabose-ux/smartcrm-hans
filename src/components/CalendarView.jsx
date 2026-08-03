@@ -13,6 +13,10 @@ const STATUS_COL={"Scheduled":"#3B82F6","Completed":"#22C55E","Cancelled":"#94A3
 
 const SOURCE_COL = { activity: "var(--purple)", call: "var(--brand)", event: undefined };
 
+// Scheduled (not-yet-done) CALLS get their own colour so a planned call is
+// instantly tellable from a logged one / other activities on the calendar.
+const SCHEDULED_CALL_COL = "#DB2777";
+
 function CalendarView({events,setEvents,activities=[],setActivities,callReports=[],setCallReports,leads=[],accounts,contacts,opps,currentUser,orgUsers,canDelete,commLogs=[],onRequestEditAccess}) {
   const canEditEvt = (e) => canEditRecord({ownerId:e?.owner,currentUser,orgUsers,recordType:"event",recordId:e?.id,commLogs});
   const requestAccessEvt = (e) => onRequestEditAccess && onRequestEditAccess("event", e.id, e.title||"Event", e.owner);
@@ -58,12 +62,15 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
     // Own calendar events
     const evItems = events.map(e => ({ ...e, _source: "event" }));
 
-    // Activities → appear on their date
+    // Activities → appear on their date. A planned Call activity (what the
+    // "Schedule Call" button creates) is tagged as a scheduled call so it
+    // renders in its own colour and answers the "Scheduled Calls" filter.
     const actItems = activities
       .filter(a => a.date)
       .map(a => ({
         id:        a.id,
         _source:   "activity",
+        _scheduledCall: a.type === "Call" && a.status !== "Completed" && a.status !== "Cancelled",
         _orig:     a,
         date:      a.date,
         time:      a.time || "09:00",
@@ -80,12 +87,14 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         location:  "",
       }));
 
-    // Call Reports → appear on their callDate
+    // Call Reports → appear on their callDate. A pending (not-completed)
+    // report dated today/future is also a scheduled call.
     const callItems = callReports
       .filter(c => c.callDate)
       .map(c => ({
         id:        c.id,
         _source:   "call",
+        _scheduledCall: c.outcome !== "Completed" && c.callDate >= today,
         _orig:     c,
         date:      c.callDate,
         time:      "09:00",
@@ -105,9 +114,13 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
     return [...evItems, ...actItems, ...callItems];
   }, [events, activities, callReports, accounts]);
 
-  // Apply the Calls / Activities / Events source filter. "all" = everything.
+  // Apply the Calls / Activities / Events source filter. "all" = everything;
+  // "scheduledCall" = pending call items only (planned call activities +
+  // pending future call reports), regardless of source.
   const visibleItems = useMemo(
-    () => sourceFilter === "all" ? allItems : allItems.filter(e => e._source === sourceFilter),
+    () => sourceFilter === "all" ? allItems
+      : sourceFilter === "scheduledCall" ? allItems.filter(e => e._scheduledCall)
+      : allItems.filter(e => e._source === sourceFilter),
     [allItems, sourceFilter]
   );
 
@@ -224,6 +237,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             title="Choose which items appear on the calendar"
             style={{fontSize:12,fontWeight:600,padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"var(--surface)",color:"var(--text2)",cursor:"pointer"}}>
             <option value="all">Both — Calls + Activities</option>
+            <option value="scheduledCall">Scheduled Calls only</option>
             <option value="call">Calls only</option>
             <option value="activity">Activities only</option>
             <option value="event">Events only</option>
@@ -238,12 +252,19 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         </div>
       </div>
 
-      {/* Nav bar */}
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+      {/* Nav bar + colour legend */}
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
         <button className="icon-btn" onClick={()=>nav(-1)}><ChevronLeft size={18}/></button>
         <div style={{fontSize:16,fontWeight:700,minWidth:220,textAlign:"center"}}>{view==="month"?monthName:weekLabel}</div>
         <button className="icon-btn" onClick={()=>nav(1)}><ChevronRight size={18}/></button>
         <button className="btn btn-sec btn-sm" onClick={()=>setViewDate(new Date(today))}>Today</button>
+        <div style={{marginLeft:"auto",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+          {[["Scheduled Call",SCHEDULED_CALL_COL],["Logged Call","var(--brand)"],["Activity","var(--purple)"],["Event","var(--blue)"]].map(([label,c])=>(
+            <span key={label} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,color:"var(--text3)",fontWeight:600}}>
+              <span style={{width:9,height:9,borderRadius:"50%",background:c,display:"inline-block"}}/>{label}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* WEEK VIEW */}
@@ -265,7 +286,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
                   const dayEvents=itemsOn(d).filter(e=>{const hr=parseInt(e.time?.split(":")[0]||"0");return hr===h;});
                   return <div key={dateStr(d)+h} style={{borderRight:"1px solid var(--border)",borderBottom:"1px solid var(--border)",padding:2,minHeight:40,cursor:"pointer",position:"relative"}} onClick={()=>openAdd(dateStr(d))}>
                     {dayEvents.map(ev=>{
-                      const col=SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)";
+                      const col=ev._scheduledCall?SCHEDULED_CALL_COL:(SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)");
                       return <div key={ev.id} onClick={e=>{e.stopPropagation();setSelectedEvent(ev);}} style={{background:col+"18",borderLeft:`3px solid ${col}`,borderRadius:4,padding:"2px 4px",marginBottom:2,cursor:"pointer",fontSize:10}}>
                         <div style={{fontWeight:600,color:col}}>{ev.time} {ev.title.substring(0,20)}</div>
                       </div>;
@@ -289,7 +310,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
               return <div key={i} style={{borderRight:i%7<6?"1px solid var(--border)":"none",borderBottom:"1px solid var(--border)",padding:4,minHeight:80,background:isToday?"var(--brand-bg)":!d?"var(--s2)":"transparent",cursor:d?"pointer":"default"}} onClick={()=>d&&openAdd(dateStr(d))}>
                 {d&&<div style={{fontSize:12,fontWeight:isToday?800:400,color:isToday?"var(--brand)":"var(--text2)",marginBottom:2}}>{d.getDate()}</div>}
                 {dayEvents.slice(0,3).map(ev=>{
-                  const col=SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)";
+                  const col=ev._scheduledCall?SCHEDULED_CALL_COL:(SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)");
                   return <div key={ev.id} onClick={e=>{e.stopPropagation();setSelectedEvent(ev);}} style={{background:col+"18",borderRadius:3,padding:"1px 4px",marginBottom:1,fontSize:9,fontWeight:600,color:col,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {TYPE_ICON[ev.type]} {ev.time?.slice(0,5)} {ev.title.substring(0,15)}
                   </div>;
@@ -307,7 +328,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
           <table className="tbl">
             <thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Type</th><th>Status</th><th>Source</th><th>Account</th><th>Owner</th><th>Location</th><th></th></tr></thead>
             <tbody>{[...visibleItems].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(ev=>{
-              const col=SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)";
+              const col=ev._scheduledCall?SCHEDULED_CALL_COL:(SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)");
               const acc=accounts.find(a=>a.id===ev.accountId);
               const isOverdue=ev.date<today&&ev.status==="Scheduled";
               return <tr key={ev._source+ev.id}>
