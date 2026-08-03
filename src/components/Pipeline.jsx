@@ -1451,7 +1451,11 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
       if (sortKey === "account") { va = accounts.find(x => x.id === a.accountId)?.name || ""; vb = accounts.find(x => x.id === b.accountId)?.name || ""; }
       else if (sortKey === "health") { va = healthById.get(a.id); vb = healthById.get(b.id); }
       else { va = a[sortKey] ?? ""; vb = b[sortKey] ?? ""; }
-      if (typeof va === "number") return sortDir === "asc" ? va - vb : vb - va;
+      // Numeric-aware: also coerce numeric STRINGS (bulk-imported values land
+      // as "50") so Value/Prob% never sort lexically ("50" before "8").
+      const nva = typeof va === "number" ? va : (typeof va === "string" && va.trim() !== "" && !Number.isNaN(Number(va)) ? Number(va) : null);
+      const nvb = typeof vb === "number" ? vb : (typeof vb === "string" && vb.trim() !== "" && !Number.isNaN(Number(vb)) ? Number(vb) : null);
+      if (nva !== null && nvb !== null) return sortDir === "asc" ? nva - nvb : nvb - nva;
       return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
     });
     return arr;
