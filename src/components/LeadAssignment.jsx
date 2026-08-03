@@ -8,7 +8,7 @@ import { useMemo, useState, Fragment } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { UserCheck, UserX, CheckCircle, AlertTriangle, ChevronDown, ChevronRight, Users, ArrowRight, X } from "lucide-react";
 import { LEAD_STAGES, TEAM_MAP, PRODUCTS, PROD_MAP, REGIONS, TEAM } from "../data/constants";
-import { today, canEditRecord, withLeadAssignment, buildAssignmentActivity, withAssignerBackfill } from "../utils/helpers";
+import { today, canEditRecord, withLeadAssignment, buildAssignmentActivity, withAssignerBackfill, buildNotificationUpdate } from "../utils/helpers";
 import { notify } from "../utils/toast";
 
 // createdDate cutoff for the date filter (null = all time).
@@ -39,7 +39,7 @@ const Kpi = ({ label, value, sub, color, Icon }) => (
   </div>
 );
 
-export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUsers = [], currentUser, setPage, commLogs = [], catalog = [], setActivities }) {
+export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUsers = [], currentUser, setPage, commLogs = [], catalog = [], setActivities, setUpdates }) {
   const [expanded, setExpanded] = useState(null); // owner id whose leads are shown
   const [q, setQ] = useState("");
   const [view, setView] = useState("byOwner"); // "byOwner" table | "matrix" (From → To grid)
@@ -59,9 +59,13 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
     // Stamp owner + assigner + date and append the audit-trail entry.
     setLeads(p => p.map(x => x.id === lead.id ? withLeadAssignment(x, newOwner, currentUser, note) : x));
     // Synced notification: a Planned follow-up owned by the assignee.
-    if (setActivities && newOwner !== currentUser) {
+    if (newOwner !== currentUser) {
       const byName = (orgUsers || []).find(u => u.id === currentUser)?.name || TEAM_MAP[currentUser]?.name || "";
-      setActivities(p => [...p, buildAssignmentActivity(lead, newOwner, currentUser, byName, note)]);
+      if (setActivities) setActivities(p => [...p, buildAssignmentActivity(lead, newOwner, currentUser, byName, note)]);
+      // Bell 🔔 — updates sync now, so the ping reaches the assignee's device.
+      if (setUpdates) setUpdates(p => [...p, buildNotificationUpdate(newOwner, currentUser,
+        `${byName || "A colleague"} assigned you a lead: ${lead.company || lead.leadId || "Lead"}`,
+        `${lead.leadId || ""} · stage ${lead.stage || "—"}${note ? ` — "${note.trim()}"` : ""}`)]);
     }
     notify.success(`${lead.company || lead.leadId || "Lead"} assigned to ${nameOf(newOwner)}${newOwner !== currentUser ? " — they've been notified with a follow-up task" : ""}.`);
   };

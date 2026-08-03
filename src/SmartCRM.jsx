@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert, buildNotificationUpdate } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -958,8 +958,9 @@ export default function SmartCRM() {
   const syncModules = useMemo(() => ({
     accounts, contacts, opps, activities, tickets, leads, callReports,
     contracts, collections, projects, targets, quotes, commLogs, events, notes, files,
+    updates,
     users: orgUsers,
-  }), [accounts,contacts,opps,activities,tickets,leads,callReports,contracts,collections,projects,targets,quotes,commLogs,events,notes,files,orgUsers]);
+  }), [accounts,contacts,opps,activities,tickets,leads,callReports,contracts,collections,projects,targets,quotes,commLogs,events,notes,files,updates,orgUsers]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -992,7 +993,7 @@ export default function SmartCRM() {
       callReports: setCallReports, contracts: setContracts,
       collections: setCollections, targets: setTargets, quotes: setQuotes,
       commLogs: setCommLogs, events: setEvents, notes: setNotes,
-      files: setFiles, users: setOrgUsers,
+      files: setFiles, users: setOrgUsers, updates: setUpdates,
     };
     const stampSynced = (module, id) => {
       const setter = setterMap[module];
@@ -1221,6 +1222,7 @@ export default function SmartCRM() {
         mergeOnLoad("events",       data.events,      events,      setEvents);
         mergeOnLoad("notes",        data.notes,       notes,       setNotes);
         mergeOnLoad("files",        data.files,       files,       setFiles);
+        mergeOnLoad("updates",      data.updates,     updates,     setUpdates);
       }
       // ── Recovery summary ────────────────────────────────────────
       // Aggregated user-facing feedback. Tells the user that their local
@@ -1353,6 +1355,7 @@ export default function SmartCRM() {
       events:      makeHandler(setEvents),
       notes:       makeHandler(setNotes),
       files:       makeHandler(setFiles),
+      updates:     makeHandler(setUpdates),
       users:       makeHandler(setOrgUsers),
     });
     return unsub;
@@ -1745,6 +1748,10 @@ export default function SmartCRM() {
         `Deal WON on a lead you assigned: ${opp.title || opp.oppId || "deal"}`,
         `Value ₹${opp.value || 0}L — closed Won by the current owner. Incentive checkpoint: the lead's assignment history holds the credit trail.`,
         { accountId: opp.accountId || "", oppId: opp.id, leadId: _srcLeads[0]?.id || "", by: opp.owner || "" }))]);
+      // Bell 🔔 too.
+      setUpdates(p => [...p, ...[..._alertIds].map(aid => buildNotificationUpdate(aid, opp.owner || "",
+        `Deal WON on a lead you assigned: ${opp.title || opp.oppId || "deal"}`,
+        `Value ₹${opp.value || 0}L — incentive checkpoint.`))]);
     }
 
     // ── CRM → Project handover (Phase 4) ──
@@ -1926,6 +1933,10 @@ export default function SmartCRM() {
         `Lead you assigned converted: ${lead.company || lead.leadId || "Lead"}`,
         `${lead.leadId || "The lead"} became opportunity ${newOpp.oppId || ""} (est. ₹${newOpp.value || 0}L). Track it in Pipeline — the lead's assignment history holds the credit trail.`,
         { accountId: newOpp.accountId || "", oppId: newOpp.id, leadId: lead.id, by: lead.assignedTo || "" }))]);
+      // Bell 🔔 too — updates sync now, so the ping reaches their device.
+      setUpdates(p => [...p, ..._assignerIds.map(aid => buildNotificationUpdate(aid, lead.assignedTo || "",
+        `Lead you assigned converted: ${lead.company || lead.leadId || "Lead"}`,
+        `It became opportunity ${newOpp.oppId || ""} (est. ₹${newOpp.value || 0}L).`))]);
     }
     if (!data.keepLeadOpen) setPage("pipeline");
   }, []);
@@ -2613,7 +2624,7 @@ export default function SmartCRM() {
               );
             })()}
             {page==="dashboard"  && <Dashboard accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} setPage={setPage} orgUsers={orgUsers} currentUser={currentUser}/>}
-            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} opps={visibleOpps}/>}
+            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} opps={visibleOpps} setUpdates={setUpdates}/>}
             {page==="accounts"   && <Accounts accounts={visibleAccounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={visibleContacts} setContacts={setContacts} tickets={visibleTickets} contracts={visibleContracts} collections={visibleCollections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="contacts"   && <Contacts contacts={visibleContacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={visibleAccounts} opps={visibleOpps} leads={visibleLeads} contracts={visibleContracts} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} canDelete={canDelete} currentUser={currentUser} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} setLeads={setLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} catalog={catalog} onDealWon={handleDealWon} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} aiConfig={aiConfig}/>}
@@ -2630,7 +2641,7 @@ export default function SmartCRM() {
             {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} opps={visibleOpps} callReports={visibleCallReports} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete}/>}
             {page==="reports"    && <Reports accounts={visibleAccounts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} contacts={visibleContacts} contracts={visibleContracts} quotes={visibleQuotes} currentUser={currentUser} orgUsers={orgUsers} masters={masters}/>}
             {page==="dashboards" && <Dashboards accounts={visibleAccounts} opps={visibleOpps} projects={visibleProjects} contracts={visibleContracts} tickets={visibleTickets} quotes={visibleQuotes} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
-            {page==="leadassign" && _canSeeLeadAssign && <LeadAssignment leads={visibleLeads} setLeads={setLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage} commLogs={commLogs} catalog={catalog} setActivities={setActivities}/>}
+            {page==="leadassign" && _canSeeLeadAssign && <LeadAssignment leads={visibleLeads} setLeads={setLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage} commLogs={commLogs} catalog={catalog} setActivities={setActivities} setUpdates={setUpdates}/>}
             {page==="updates"    && <Updates updates={visibleUpdates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} catalog={catalog} orgUsers={orgUsers} existingData={{ leads: visibleLeads, accounts: visibleAccounts, contacts: visibleContacts, collections: visibleCollections, tickets: visibleTickets, contracts: visibleContracts, invoices: visibleInvoices, opps: visibleOpps }}/>}
