@@ -462,8 +462,8 @@ export default function SmartCRM() {
   // always reads current values without re-subscribing. Write rule (matches
   // the DB RLS): a user may write records they OWN + their HIERARCHY downline,
   // and admins/global roles may write anything.
-  const _scopeRef = useRef({ global: true, ids: new Set() });
-  _scopeRef.current = { global: _globalRole, ids: _scopedIds };
+  const _scopeRef = useRef({ global: true, ids: new Set(), me: null });
+  _scopeRef.current = { global: _globalRole, ids: _scopedIds, me: currentUser };
   // Finance is a cross-cutting role: it needs company-wide read on the
   // financial tables (accounts / contracts / collections) so it can run the
   // account-number approval queue and manage billing for records it doesn't
@@ -1013,15 +1013,24 @@ export default function SmartCRM() {
       })
       .catch(err => reportSyncError(label, err));
     // Can the current user write this record? admin/global → anything;
-    // otherwise owner must be self or in their hierarchy downline. Records
-    // with no owner concept (module not mapped, or owner unset) are allowed
-    // through so ownerless data still syncs.
-    const canWriteRec = (module, rec) => {
+    // otherwise owner must be self or in their hierarchy downline. Two
+    // deliberate widenings (the DB's RLS stays the final arbiter):
+    //   • HANDOFF: if the PREVIOUS version's owner was in my scope, pushing
+    //     the change must go through even though the NEW owner is outside my
+    //     hierarchy — otherwise reassigning a lead/deal to a peer strands the
+    //     transfer on this device (old owner stays visible to everyone else).
+    //   • AUTHORED: records I created/routed (createdBy / assignedBy = me),
+    //     e.g. the notification task owned by the assignee.
+    // Records with no owner concept are allowed through.
+    const canWriteRec = (module, rec, prevRec) => {
       const scope = _scopeRef.current;
       if (scope.global) return true;
       const f = OWNER_FIELD_BY_MODULE[module];
       const owner = f ? rec?.[f] : null;
-      return !owner || scope.ids.has(owner);
+      if (!owner || scope.ids.has(owner)) return true;
+      const prevOwner = f && prevRec ? prevRec[f] : null;
+      if (prevOwner && scope.ids.has(prevOwner)) return true;
+      return !!scope.me && (rec?.assignedBy === scope.me || rec?.createdBy === scope.me);
     };
     for (const [module, next] of Object.entries(syncModules)) {
       const old = prev[module];
@@ -1029,8 +1038,12 @@ export default function SmartCRM() {
       const prevIds = new Set(old.map(r => r.id));
       const nextIds = new Set(next.map(r => r.id));
       const dbModule = module === "users" ? "users" : module;
-      // Inserts
-      next.forEach(r => { if (r.id && !prevIds.has(r.id) && canWriteRec(module, r)) track(insertRecord(dbModule, r), `${module} insert`, module, r.id); });
+      // Inserts — a record with no _syncedAt stamp was authored on THIS
+      // device (user-created), so push it regardless of owner (e.g. a lead
+      // created for a colleague, or the assignee's notification task); the
+      // DB insert policies are the arbiter. A stamped record newly appearing
+      // in the diff is a cloud/realtime echo — never re-insert it.
+      next.forEach(r => { if (r.id && !prevIds.has(r.id) && (!r[SYNC_STAMP_FIELD] || canWriteRec(module, r))) track(insertRecord(dbModule, r), `${module} insert`, module, r.id); });
       // Deletes (soft — deleteRecord now issues UPDATE is_deleted=true).
       // Suppress for ids we just dropped from local cache via mergeOnLoad's
       // duplicate-key path — the cloud still has those rows, our local
@@ -1049,9 +1062,11 @@ export default function SmartCRM() {
       // doesn't itself look like a state change and trigger a second
       // updateRecord round-trip on every sync (= infinite re-sync loop).
       next.forEach(r => {
-        if (r.id && prevIds.has(r.id) && canWriteRec(module, r)) {
+        if (r.id && prevIds.has(r.id)) {
           const o = old.find(p => p.id === r.id);
-          if (o && JSON.stringify(stripInternalFields(o)) !== JSON.stringify(stripInternalFields(r))) {
+          // Pass the previous version so a handoff (old owner in my scope →
+          // new owner outside it) is still pushed — see canWriteRec.
+          if (o && canWriteRec(module, r, o) && JSON.stringify(stripInternalFields(o)) !== JSON.stringify(stripInternalFields(r))) {
             track(updateRecord(dbModule, r.id, r), `${module} update`, module, r.id);
           }
         }
@@ -1117,13 +1132,16 @@ export default function SmartCRM() {
         // so genuinely-blocked data never strands silently.
         const pushRecords = (module, records, setter) => {
           // Only recover records the current user is allowed to write (own +
-          // hierarchy + admin). Others belong to teammates and would just be
-          // RLS-rejected — skip them silently.
+          // hierarchy + admin), PLUS records this user authored/routed
+          // (createdBy / assignedBy = me — e.g. a lead created for a peer or
+          // an assignee's notification task). Others belong to teammates and
+          // would just be RLS-rejected — skip them silently.
           const scope = _scopeRef.current;
           const ownerField = OWNER_FIELD_BY_MODULE[module];
           const writable = scope.global ? records : records.filter(rec => {
             const owner = ownerField ? rec?.[ownerField] : null;
-            return !owner || scope.ids.has(owner);
+            if (!owner || scope.ids.has(owner)) return true;
+            return !!scope.me && (rec?.assignedBy === scope.me || rec?.createdBy === scope.me);
           });
           if (!writable.length) return;
           retryTotals[module] = (retryTotals[module] || 0) + writable.length;
@@ -1726,7 +1744,7 @@ export default function SmartCRM() {
       setActivities(p => [...p, ...[..._alertIds].map(aid => buildAssignerAlert(aid,
         `Deal WON on a lead you assigned: ${opp.title || opp.oppId || "deal"}`,
         `Value ₹${opp.value || 0}L — closed Won by the current owner. Incentive checkpoint: the lead's assignment history holds the credit trail.`,
-        { accountId: opp.accountId || "", oppId: opp.id, leadId: _srcLeads[0]?.id || "" }))]);
+        { accountId: opp.accountId || "", oppId: opp.id, leadId: _srcLeads[0]?.id || "", by: opp.owner || "" }))]);
     }
 
     // ── CRM → Project handover (Phase 4) ──
@@ -1907,7 +1925,7 @@ export default function SmartCRM() {
       setActivities(p => [...p, ..._assignerIds.map(aid => buildAssignerAlert(aid,
         `Lead you assigned converted: ${lead.company || lead.leadId || "Lead"}`,
         `${lead.leadId || "The lead"} became opportunity ${newOpp.oppId || ""} (est. ₹${newOpp.value || 0}L). Track it in Pipeline — the lead's assignment history holds the credit trail.`,
-        { accountId: newOpp.accountId || "", oppId: newOpp.id, leadId: lead.id }))]);
+        { accountId: newOpp.accountId || "", oppId: newOpp.id, leadId: lead.id, by: lead.assignedTo || "" }))]);
     }
     if (!data.keepLeadOpen) setPage("pipeline");
   }, []);

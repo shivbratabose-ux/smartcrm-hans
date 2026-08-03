@@ -2645,7 +2645,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                   id: `act_${uid()}`, type: "Follow-up", status: "Planned", date: today,
                   title: `${moved.length} lead${moved.length > 1 ? "s" : ""} assigned to you`,
                   notes: `Assigned by ${byName || "a colleague"}${note ? ` — "${note.trim()}"` : ""}: ${names}${moved.length > 10 ? ` +${moved.length - 10} more` : ""}. Review and plan first touches.`,
-                  accountId: "", contactId: "", oppId: "", owner: newOwnerId, createdDate: today,
+                  accountId: "", contactId: "", oppId: "", owner: newOwnerId, createdDate: today, createdBy: currentUser,
                 }]);
               }
               notify.success(`${moved.length} lead${moved.length > 1 ? "s" : ""} assigned to ${newName}${newOwnerId !== currentUser ? " — they've been notified" : ""}.`);

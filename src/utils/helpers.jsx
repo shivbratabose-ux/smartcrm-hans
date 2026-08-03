@@ -477,6 +477,7 @@ export const buildAssignmentActivity = (lead, newOwnerId, byUserId, byName, note
   notes: `Assigned to you by ${byName || byUserId || "a colleague"}${note ? ` — "${note.trim()}"` : ""}. Review and plan the first touch.`,
   accountId: lead.accountId || "", contactId: "", oppId: "",
   leadId: lead.id, owner: newOwnerId, createdDate: today,
+  createdBy: byUserId || "", // authored-by marker: lets the assigner's device sync a task owned by the assignee
 });
 
 // Everyone who ever assigned/routed this lead (latest assigner + every
@@ -498,6 +499,7 @@ export const buildAssignerAlert = (assignerId, titleText, notes, refs = {}) => (
   title: titleText, notes,
   accountId: refs.accountId || "", contactId: "", oppId: refs.oppId || "",
   leadId: refs.leadId || "", owner: assignerId, createdDate: today,
+  createdBy: refs.by || "", // authored-by marker (converter / deal owner's device pushes it)
 });
 
 // Returns true if the role has unrestricted global data access
