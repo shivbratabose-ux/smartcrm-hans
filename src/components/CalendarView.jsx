@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap } from "lucide-react";
-import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES } from '../data/constants';
+import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_EVENT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { Lock } from 'lucide-react';
@@ -173,14 +173,42 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
     setConfirm(null);setSelectedEvent(null);
   };
 
+  // ── Complete-with-outcome flow ──
+  // Marking a scheduled call/activity complete must capture WHAT HAPPENED:
+  // clicking "Mark Complete" opens a small dialog requiring an outcome
+  // (call outcomes from masters), optional remarks (appended to the record's
+  // notes with a date stamp), and an optional next-call date that schedules
+  // the follow-up call in one step.
+  const [completeItem,setCompleteItem]=useState(null);
+  const [completeForm,setCompleteForm]=useState({outcome:"Completed",notes:"",nextCallDate:""});
   const markComplete=(item)=>{
+    setCompleteForm({outcome:"Completed",notes:"",nextCallDate:""});
+    setCompleteItem(item);
+  };
+  const saveComplete=()=>{
+    const item=completeItem; if(!item) return;
+    const oc=completeForm.outcome||"Completed";
+    const note=(completeForm.notes||"").trim();
+    const stampNote=(old)=>[old,`[${fmt.short(today)} · outcome: ${oc}${note?` — ${note}`:""}]`].filter(Boolean).join("\n");
     if(item._source==="activity"&&setActivities){
-      setActivities(p=>p.map(a=>a.id===item.id?{...a,status:"Completed"}:a));
+      setActivities(p=>p.map(a=>a.id===item.id?{...a,status:"Completed",outcome:oc,notes:stampNote(a.notes)}:a));
     } else if(item._source==="call"&&setCallReports){
-      setCallReports(p=>p.map(c=>c.id===item.id?{...c,outcome:"Completed"}:c));
+      // Call reports keep their own semantics: a non-"Completed" outcome
+      // (No Answer / Voicemail…) logs the attempt but leaves it pending.
+      setCallReports(p=>p.map(c=>c.id===item.id?{...c,outcome:oc,notes:stampNote(c.notes),nextCallDate:completeForm.nextCallDate||c.nextCallDate}:c));
     } else {
-      setEvents(p=>p.map(e=>e.id===item.id?{...e,status:"Completed"}:e));
+      setEvents(p=>p.map(e=>e.id===item.id?{...e,status:"Completed",notes:stampNote(e.notes)}:e));
     }
+    // Optional: schedule the next call as a fresh Planned activity.
+    if(completeForm.nextCallDate&&setActivities){
+      setActivities(p=>[...p,{
+        id:`act_${uid()}`,type:"Call",status:"Planned",date:completeForm.nextCallDate,time:item.time||"10:00",duration:30,
+        accountId:item.accountId||"",contactId:item.contactId||"",oppId:item.oppId||"",owner:item.owner||currentUser,
+        title:(item.title||"").startsWith("Call")?item.title:`Call: ${item.title||""}`,
+        notes:`Follow-up of ${fmt.short(item.date)} call${note?` — ${note}`:""}`,outcome:"",files:[],createdDate:today,
+      }]);
+    }
+    setCompleteItem(null);
   };
 
   const openScheduleCall=(date)=>{
@@ -383,6 +411,31 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
               To edit this item, visit the {selectedEvent._source==="activity"?"Activities":"Call Reports"} page.
             </div>
           )}
+        </Modal>
+      )}
+
+      {/* Complete-with-outcome dialog — outcome is required before closing */}
+      {completeItem&&(
+        <Modal title={`Complete: ${completeItem.title||"item"}`} onClose={()=>setCompleteItem(null)}
+          footer={<>
+            <button className="btn btn-sec" onClick={()=>setCompleteItem(null)}>Cancel</button>
+            <button className="btn btn-green" onClick={saveComplete} disabled={!completeForm.outcome}><Check size={14}/>Save &amp; Complete</button>
+          </>}>
+          <div style={{fontSize:12,color:"var(--text3)",marginBottom:12}}>
+            Record what happened before closing this {(completeItem.type==="Call"||completeItem._source==="call")?"call":"item"}. The outcome and remarks are saved onto the record{completeItem._source==="call"?" — a non-completed outcome (No Answer / Voicemail…) logs the attempt but keeps the call pending":""}.
+          </div>
+          <div className="form-group"><label>Outcome *</label>
+            <select value={completeForm.outcome} onChange={e=>setCompleteForm(f=>({...f,outcome:e.target.value}))}>
+              {((completeItem.type==="Call"||completeItem._source==="call")?CALL_OUTCOMES:["Completed","Positive","Neutral","Negative","No Show"]).map(o=><option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="form-group"><label>Outcome notes / remarks</label>
+            <textarea rows={3} value={completeForm.notes} onChange={e=>setCompleteForm(f=>({...f,notes:e.target.value}))} placeholder="What was discussed / agreed / next steps…"/>
+          </div>
+          <div className="form-group"><label>Schedule next call (optional)</label>
+            <input type="date" min={today} value={completeForm.nextCallDate} onChange={e=>setCompleteForm(f=>({...f,nextCallDate:e.target.value}))}/>
+            <div style={{fontSize:10.5,color:"var(--text3)",marginTop:4}}>Picks a date → a new scheduled call is created automatically.</div>
+          </div>
         </Modal>
       )}
 
