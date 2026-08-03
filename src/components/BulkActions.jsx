@@ -39,10 +39,16 @@ export function useBulkSelect(items) {
  * re-upload the CSV — tedious and error-prone for the kind of one-off
  * cleanup that prompted this feature (FL-2026-106..113 misassignment).
  */
-export default function BulkActions({ count, onDelete, onExport, onClear, onReassignOwner, orgUsers = [] }) {
+export default function BulkActions({ count, onDelete, onExport, onClear, onReassignOwner, onSetAssigner, orgUsers = [] }) {
   const [reassignOpen, setReassignOpen] = useState(false);
   const [pickedUserId, setPickedUserId] = useState("");
   const wrapRef = useRef(null);
+  // "Set assigner" — backfill who ROUTED the records (assignedBy), without
+  // changing the owner. For historical leads created before assignment
+  // tracking existed, where the assigner was never recorded.
+  const [assignerOpen, setAssignerOpen] = useState(false);
+  const [pickedAssignerId, setPickedAssignerId] = useState("");
+  const assignerRef = useRef(null);
 
   // Close the reassign popover on outside click — saves a state-management
   // round-trip versus rendering it as a full Modal for what's effectively
@@ -56,6 +62,15 @@ export default function BulkActions({ count, onDelete, onExport, onClear, onReas
     return () => document.removeEventListener("mousedown", onDoc);
   }, [reassignOpen]);
 
+  useEffect(() => {
+    if (!assignerOpen) return;
+    const onDoc = (e) => {
+      if (assignerRef.current && !assignerRef.current.contains(e.target)) setAssignerOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [assignerOpen]);
+
   if (count === 0) return null;
 
   const activeUsers = (orgUsers || []).filter(u => u.status !== "Inactive" && u.active !== false);
@@ -68,6 +83,13 @@ export default function BulkActions({ count, onDelete, onExport, onClear, onReas
     onReassignOwner?.(pickedUserId);
     setReassignOpen(false);
     setPickedUserId("");
+  };
+
+  const applyAssigner = () => {
+    if (!pickedAssignerId) return;
+    onSetAssigner?.(pickedAssignerId);
+    setAssignerOpen(false);
+    setPickedAssignerId("");
   };
 
   return (
@@ -114,6 +136,46 @@ export default function BulkActions({ count, onDelete, onExport, onClear, onReas
               </div>
               <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 8, lineHeight: 1.5 }}>
                 Updates the owner / assignedTo field on every selected row. The change is logged and visible in the record's history.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {onSetAssigner && (
+        <div ref={assignerRef} style={{ position: "relative" }}>
+          <button
+            className="btn btn-sec btn-sm"
+            onClick={() => setAssignerOpen(o => !o)}
+            title="Backfill who assigned/routed the selected records (does NOT change the owner)"
+          >
+            <UserCheck size={13}/>Set assigner
+            <ChevronDown size={12} style={{ marginLeft: 2 }}/>
+          </button>
+          {assignerOpen && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 6px)", right: 0,
+              width: 320, background: "var(--surface)", border: "1px solid var(--border)",
+              borderRadius: 8, padding: 12, boxShadow: "0 12px 28px rgba(0,0,0,0.15)",
+              zIndex: 200,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                Record who assigned these {count} lead{count === 1 ? "" : "s"}
+              </div>
+              <TypeaheadSelect
+                value={pickedAssignerId}
+                onChange={setPickedAssignerId}
+                options={userOptions}
+                placeholder="Search by name, email, or role…"
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 10 }}>
+                <button className="btn btn-sec btn-sm" onClick={() => { setAssignerOpen(false); setPickedAssignerId(""); }}>Cancel</button>
+                <button className="btn btn-primary btn-sm" onClick={applyAssigner} disabled={!pickedAssignerId}>
+                  <UserCheck size={12}/>Apply
+                </button>
+              </div>
+              <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 8, lineHeight: 1.5 }}>
+                Backfills the "Assigned By" field for historical leads created before assignment tracking. Owners are NOT changed and no notifications are sent — the history entry is labelled as a backfill.
               </div>
             </div>
           )}

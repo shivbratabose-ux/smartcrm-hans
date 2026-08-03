@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES, STAGES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq, withLeadAssignment, buildAssignmentActivity, isLeadAssigner } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq, withLeadAssignment, buildAssignmentActivity, isLeadAssigner, withAssignerBackfill } from '../utils/helpers';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
@@ -2649,6 +2649,16 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 }]);
               }
               notify.success(`${moved.length} lead${moved.length > 1 ? "s" : ""} assigned to ${newName}${newOwnerId !== currentUser ? " — they've been notified" : ""}.`);
+              bulk.clear();
+            } : undefined}
+            // Backfill the ASSIGNER on historical leads (assignedBy was never
+            // recorded before tracking existed). Owner unchanged, no
+            // notifications — purely a correction of the audit trail.
+            onSetAssigner={canDelete ? (assignerId) => {
+              const selectedIds = [...bulk.selected];
+              if (!selectedIds.length) return;
+              setLeads(p => p.map(l => selectedIds.includes(l.id) ? withAssignerBackfill(l, assignerId) : l));
+              notify.success(`Assigner set to ${team.find(u => u.id === assignerId)?.name || assignerId} on ${selectedIds.length} lead${selectedIds.length > 1 ? "s" : ""} (backfill — owners unchanged).`);
               bulk.clear();
             } : undefined}
             orgUsers={orgUsers}

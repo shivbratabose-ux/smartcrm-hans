@@ -8,7 +8,7 @@ import { useMemo, useState, Fragment } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { UserCheck, UserX, CheckCircle, AlertTriangle, ChevronDown, ChevronRight, Users, ArrowRight, X } from "lucide-react";
 import { LEAD_STAGES, TEAM_MAP, PRODUCTS, PROD_MAP, REGIONS, TEAM } from "../data/constants";
-import { today, canEditRecord, withLeadAssignment, buildAssignmentActivity } from "../utils/helpers";
+import { today, canEditRecord, withLeadAssignment, buildAssignmentActivity, withAssignerBackfill } from "../utils/helpers";
 import { notify } from "../utils/toast";
 
 // createdDate cutoff for the date filter (null = all time).
@@ -282,17 +282,30 @@ export default function LeadAssignment({ leads = [], setLeads, opps = [], orgUse
                       <th style={{ fontSize: 10.5 }}>Opp Stage</th>
                       <th style={{ fontSize: 10.5 }}>Assigned date</th>
                       <th style={{ fontSize: 10.5 }}>Next Call</th>
+                      <th style={{ fontSize: 10.5 }} title="Backfill who routed this lead — owner unchanged, no notifications">Set assigner</th>
                     </tr>
                   </thead>
                   <tbody>
                     {matrixSelLeads.map(l => (
-                      <tr key={l.id} style={{ cursor: setPage ? "pointer" : "default" }} onClick={() => setPage && setPage("leads")} title={setPage ? "Open Leads" : ""}>
-                        <td style={{ fontFamily: "monospace", fontSize: 11 }}>{l.leadId || l.id}</td>
+                      <tr key={l.id}>
+                        <td style={{ fontFamily: "monospace", fontSize: 11, cursor: setPage ? "pointer" : "default" }} onClick={() => setPage && setPage("leads")} title={setPage ? "Open Leads" : ""}>{l.leadId || l.id}</td>
                         <td style={{ fontSize: 12 }}>{l.company || "-"}</td>
                         <td>{stageBadge(l.stage)}</td>
                         <td>{oppStageOf(l) ? stageBadge(oppStageOf(l)) : <span style={{ color: "var(--text3)", fontSize: 11 }}>-</span>}</td>
                         <td style={{ fontSize: 11, color: "var(--text3)" }}>{l.assignedAt || l.createdDate || "-"}</td>
                         <td style={{ fontSize: 11, color: isOverdue(l) ? "#DC2626" : "var(--text3)", fontWeight: isOverdue(l) ? 700 : 400 }}>{l.nextCall || "-"}</td>
+                        <td onClick={e => e.stopPropagation()}>
+                          {setLeads && canEditLead(l) ? (
+                            <select value={l.assignedBy || ""} onChange={e => { const a = e.target.value; if (!a) return; setLeads(p => p.map(x => x.id === l.id ? withAssignerBackfill(x, a) : x)); notify.success(`Assigner recorded for ${l.company || l.leadId} (backfill).`); }}
+                              style={{ fontSize: 11, padding: "3px 6px", border: "1px solid var(--border)", borderRadius: 6, maxWidth: 150 }}
+                              title="Backfill who assigned this lead (owner unchanged, no notification)">
+                              <option value="">— pick assigner —</option>
+                              {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                            </select>
+                          ) : (
+                            <span style={{ fontSize: 11, color: "var(--text3)" }}>{l.assignedBy ? matrixLabel(l.assignedBy) : "-"}</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
