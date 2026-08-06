@@ -670,7 +670,7 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
     setModal({mode:"editmod",prodId,modId:mod.id});
   };
   const saveMod=()=>{
-    if(!form.name.trim()) return;
+    if(!form.name.trim()) { notify.error("Enter a name before saving."); return; }
     const payload={
       name:form.name.trim(),
       type:form.type,

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight, AlertTriangle, RotateCcw, Edit2, Trash2, Lock, Star, Users, TrendingUp, Phone, MessageSquare, Calendar, ArrowRightCircle, Clock, Plus } from "lucide-react";
 import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
 import { fmt, uid, today, hasErrors } from "../utils/helpers";
+import { notify } from "../utils/toast";
 
 // ── Live user registry — updated by SmartCRM whenever orgUsers changes ──
 // Allows UserPill to resolve real Supabase users without prop-drilling.
@@ -868,7 +869,7 @@ export function FilesList({files,onAdd,currentUser}) {
   const [form,setForm] = useState({name:"",type:"PDF",size:""});
   const [adding,setAdding] = useState(false);
   const add = () => {
-    if(!form.name.trim()) return;
+    if(!form.name.trim()) { notify.error("Enter a file name before adding."); return; }
     onAdd({...form,id:`fi${uid()}`,uploadedBy:currentUser,date:today,linkedTo:[]});
     setForm({name:"",type:"PDF",size:""}); setAdding(false);
   };

@@ -10,6 +10,7 @@ import {
 } from '../data/constants';
 import { uid } from '../utils/helpers';
 import { Modal, Confirm, HelpTooltip, PageTip } from './shared';
+import { notify } from '../utils/toast';
 
 // ══════════════════════════════════════════════════════════════
 // HELPERS
@@ -269,7 +270,7 @@ function CreateUpdateModal({ form, setForm, onSave, onClose, orgUsers, editMode 
   const set = (k, v) => setForm(f => ({ ...f, [k]:v }));
 
   const addAtt = () => {
-    if (!newAtt.name.trim()) return;
+    if (!newAtt.name.trim()) { notify.error("Enter an attachment name."); return; }
     set("attachments", [...(form.attachments || []), { ...newAtt }]);
     setNewAtt({ name:"", type:"PDF", url:"" });
   };
@@ -479,7 +480,7 @@ function Updates({ updates, setUpdates, currentUser, orgUsers }) {
 
   // Save create
   const saveCreate = () => {
-    if (!form.title.trim() || !form.description.trim()) return;
+    if (!form.title.trim() || !form.description.trim()) { notify.error("Title and description are both required."); return; }
     const now = new Date().toISOString();
     const seq = (updates || []).length + 1;
     const newUpd = {
@@ -509,7 +510,7 @@ function Updates({ updates, setUpdates, currentUser, orgUsers }) {
 
   // Save edit
   const saveEdit = () => {
-    if (!form.title.trim()) return;
+    if (!form.title.trim()) { notify.error("Enter a title before saving."); return; }
     const now = new Date().toISOString();
     setUpdates(prev => prev.map(u => u.id !== selected ? u : {
       ...u,

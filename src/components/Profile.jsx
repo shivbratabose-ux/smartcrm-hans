@@ -3,6 +3,7 @@ import { Check, X, Edit2, Key, Eye, EyeOff, User, Mail, Briefcase, MapPin, Calen
 import { ROLE_MAP, INIT_USERS } from '../data/constants';
 import { fmt } from '../utils/helpers';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { notify } from '../utils/toast';
 
 // Password field — defined at MODULE scope (not inside Profile) on purpose.
 // When it lived inside the component it was recreated on every keystroke, so
@@ -44,7 +45,7 @@ function Profile({currentUser,orgUsers,setOrgUsers}) {
   const startEdit=()=>{setForm({name:user.name||"",email:user.email||"",initials:user.initials||"",lob:user.lob||""});setEditing(true);setSaveOk("");};
   const cancelEdit=()=>{setEditing(false);setForm({});};
   const saveProfile=()=>{
-    if(!form.name?.trim()) return;
+    if(!form.name?.trim()) { notify.error("Name can't be empty."); return; }
     const initials=form.initials||form.name.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
     setOrgUsers(p=>p.map(u=>u.id===currentUser?{...u,name:form.name.trim(),email:form.email.trim(),initials,lob:form.lob}:u));
     setEditing(false);

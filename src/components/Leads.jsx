@@ -662,7 +662,9 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
   // viewer's scope, so an ownerless row vanishes for everyone but admins.
   const _logOwner = currentUser || lead.assignedTo || "";
   const saveCallLog = () => {
-    if (!callForm.notes?.trim()) return;
+    // Tell the user WHY nothing happened — a bare `return` looked like the
+    // save silently failed (the "calls aren't getting captured" reports).
+    if (!callForm.notes?.trim()) { notify.error("Add call notes before saving."); return; }
     const newCall = {
       id: `cr-${Date.now()}`, company: lead.company || "", leadName: lead.contact || "",
       // leadId MUST be the record id — the journey filters on cr.leadId === lead.id.
@@ -679,9 +681,10 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
     setCallReports(p => [...p, newCall]);
     setCallForm({ callType: "Discovery", date: today, notes: "", outcome: "Interested", nextCallDate: "" });
     setShowCallForm(false);
+    notify.success("Call logged — it's in this lead's journey and Call Reports.");
   };
   const saveActivity = () => {
-    if (!actForm.title?.trim()) return;
+    if (!actForm.title?.trim()) { notify.error("Give the activity a title before saving."); return; }
     const newAct = {
       id: `act-${Date.now()}`, accountId: lead.accountId || "",
       contactId: (lead.contactIds || [])[0] || "",   // real contact id, not the name
@@ -694,6 +697,7 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
     setActivities(p => [...p, newAct]);
     setActForm({ title: "", type: "Call", date: today, notes: "" });
     setShowActivityForm(false);
+    notify.success("Activity logged — it's in this lead's journey and Activities.");
   };
 
   // ── Contacts tab state ──
@@ -717,7 +721,7 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
   const [showDocForm, setShowDocForm] = useState(false);
   const [docForm, setDocForm] = useState({ name: "", url: "", type: "PDF" });
   const saveDoc = () => {
-    if (!docForm.name?.trim()) return;
+    if (!docForm.name?.trim()) { notify.error("Enter a document name before saving."); return; }
     const newDoc = { id: `doc-${Date.now()}`, name: docForm.name.trim(), url: docForm.url.trim(), type: docForm.type, size: "—", date: today };
     updateLead({ documents: [...documents, newDoc] });
     setDocForm({ name: "", url: "", type: "PDF" });
