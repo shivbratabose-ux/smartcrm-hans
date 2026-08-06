@@ -111,6 +111,19 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     return _reportIsGlobal ? src : src.filter(u => _reportScopedIds.has(u.id));
   }, [orgUsers, _reportIsGlobal, _reportScopedIds]);
 
+  // Resolve a user id → first name for the report tables. MUST check live
+  // orgUsers first: TEAM_MAP is only the static seed, so every real Supabase
+  // user rendered as "—" in the Owner / Assigned columns (reported on the
+  // Stalled Deals table). Falls back to the seed, then the raw id.
+  const ownerName = useMemo(() => {
+    const byId = Object.fromEntries((orgUsers || []).map(u => [u.id, u]));
+    return (id) => {
+      if (!id) return "—";
+      const n = byId[id]?.name || TEAM_MAP[id]?.name;
+      return n ? n.split(" ")[0] : "—";
+    };
+  }, [orgUsers]);
+
   // ── Date range → [start, end] window ──
   // Resolve the selected period into a single window every tab can reuse.
   // Relative ranges are anchored to today; "custom" uses the From/To pickers
@@ -626,7 +639,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                   {key:"title",label:"Deal",bold:true},
                   {key:"account",label:"Account"},
                   {key:"value",label:"Value",align:"right",render:r=>crFmt(r.value)},
-                  {key:"owner",label:"Owner",render:r=>TEAM_MAP[r.owner]?.name?.split(" ")[0]||"—"},
+                  {key:"owner",label:"Owner",render:r=>ownerName(r.owner)},
                   {key:"stage",label:"Stage"},
                   {key:"days",label:"Days Idle",align:"right",color:()=>"#DC2626",bold:true}
                 ]} data={metrics.stalledDeals.map(o=>{
@@ -983,7 +996,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                 {key:"title",label:"Activity",bold:true},
                 {key:"type",label:"Type"},
                 {key:"date",label:"Date",render:r=>fmt.date(r.date)},
-                {key:"owner",label:"Owner",render:r=>TEAM_MAP[r.owner]?.name?.split(" ")[0]||"—"},
+                {key:"owner",label:"Owner",render:r=>ownerName(r.owner)},
                 {key:"days",label:"Days Overdue",align:"right",color:()=>"#DC2626",bold:true,render:r=>daysBetween(r.date,today)}
               ]} data={actData.overdue.sort((a,b)=>a.date?.localeCompare(b.date))} maxRows={10}/>
             </Card>
@@ -1259,7 +1272,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                 {key:"title",label:"Ticket",bold:true},
                 {key:"priority",label:"Priority",render:r=><Badge text={r.priority} color={r.priority==="Critical"?"#DC2626":r.priority==="High"?"#F97316":"#3B82F6"}/>},
                 {key:"product",label:"Product"},
-                {key:"assigned",label:"Assigned",render:r=>TEAM_MAP[r.assigned]?.name?.split(" ")[0]||"—"},
+                {key:"assigned",label:"Assigned",render:r=>ownerName(r.assigned)},
                 {key:"created",label:"Created",render:r=>fmt.date(r.created)},
                 {key:"breach",label:"Breach (hrs)",align:"right",color:()=>"#DC2626",bold:true,render:r=>{
                   const hrs = daysBetween(r.created,today)*24;
