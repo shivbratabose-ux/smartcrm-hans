@@ -440,7 +440,7 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   );
 }
 
-function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts, setLeads, setUpdates }) {
+function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts, setLeads, setUpdates, currentUser }) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -656,16 +656,41 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
   const [expandedTimeline, setExpandedTimeline] = useState(null);
   const [journeyFilter, setJourneyFilter] = useState("all");
 
+  // Owner for records logged from this panel: the acting user, falling back
+  // to the lead's owner. WITHOUT an owner these records are invisible —
+  // visibleActivities/visibleCallReports drop rows whose owner isn't in the
+  // viewer's scope, so an ownerless row vanishes for everyone but admins.
+  const _logOwner = currentUser || lead.assignedTo || "";
   const saveCallLog = () => {
     if (!callForm.notes?.trim()) return;
-    const newCall = { id: `cr-${Date.now()}`, company: lead.company || "", leadName: lead.contact || "", leadId: lead.leadId || lead.id, accountId: lead.accountId || "", contactId: lead.contact || "", callType: callForm.callType, date: callForm.date, callDate: callForm.date, notes: callForm.notes, outcome: callForm.outcome, nextCallDate: callForm.nextCallDate, createdBy: "" };
+    const newCall = {
+      id: `cr-${Date.now()}`, company: lead.company || "", leadName: lead.contact || "",
+      // leadId MUST be the record id — the journey filters on cr.leadId === lead.id.
+      // It used to store lead.leadId (the display code like #FL-2026-906), so logged
+      // calls never matched and never appeared in the timeline.
+      leadId: lead.id,
+      accountId: lead.accountId || "",
+      contactId: (lead.contactIds || [])[0] || "",   // real contact id, not the name
+      marketingPerson: _logOwner,                     // drives Call Reports visibility
+      callType: callForm.callType, date: callForm.date, callDate: callForm.date,
+      notes: callForm.notes, outcome: callForm.outcome, nextCallDate: callForm.nextCallDate,
+      createdBy: _logOwner,
+    };
     setCallReports(p => [...p, newCall]);
     setCallForm({ callType: "Discovery", date: today, notes: "", outcome: "Interested", nextCallDate: "" });
     setShowCallForm(false);
   };
   const saveActivity = () => {
     if (!actForm.title?.trim()) return;
-    const newAct = { id: `act-${Date.now()}`, accountId: lead.accountId || "", contactId: lead.contact || "", leadId: lead.id, title: actForm.title, type: actForm.type, date: actForm.date, notes: actForm.notes, createdDate: today };
+    const newAct = {
+      id: `act-${Date.now()}`, accountId: lead.accountId || "",
+      contactId: (lead.contactIds || [])[0] || "",   // real contact id, not the name
+      leadId: lead.id, title: actForm.title, type: actForm.type,
+      status: "Completed",                            // logged after the fact
+      date: actForm.date, notes: actForm.notes,
+      owner: _logOwner,                               // drives Activities visibility
+      createdBy: _logOwner, createdDate: today,
+    };
     setActivities(p => [...p, newAct]);
     setActForm({ title: "", type: "Call", date: today, notes: "" });
     setShowActivityForm(false);
@@ -1374,8 +1399,12 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
                     <Plus size={12}/>Log Activity
                   </button>
                   <button className="btn btn-sm btn-sec" style={{fontSize:11}} onClick={() => {
-                    const followup = { id:`act-${Date.now()}`, accountId:lead.accountId||"", contactId:lead.contact||"", leadId:lead.id, title:`Follow-up: ${lead.company}`, type:"Follow-up", status:"Planned", date:today, notes:"", createdDate:today, createdBy:"" };
+                    // owner is required — without it the follow-up shows in this
+                    // timeline but is filtered out of Activities / Calendar for
+                    // everyone except admins (visibleActivities is owner-scoped).
+                    const followup = { id:`act-${Date.now()}`, accountId:lead.accountId||"", contactId:(lead.contactIds||[])[0]||"", leadId:lead.id, title:`Follow-up: ${lead.company}`, type:"Follow-up", status:"Planned", date:today, notes:"", owner:_logOwner, createdDate:today, createdBy:_logOwner };
                     setActivities(p => [...p, followup]);
+                    notify.success("Follow-up scheduled — it's in your Activities and Calendar.");
                   }}><Calendar size={12}/>Set Follow-up</button>
                 </div>
               </div>
@@ -3252,6 +3281,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           setContacts={setContacts}
           setLeads={setLeads}
           setUpdates={setUpdates}
+          currentUser={currentUser}
         />
       )}
 
