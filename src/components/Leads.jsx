@@ -1166,50 +1166,48 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
 
             {/* Add/Edit address form */}
             {(showAddAddress || editingAddress !== null) && (
-              <div style={{background:"white",borderRadius:10,padding:16,border:"1px solid var(--border)",marginBottom:14}}>
-                <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:10}}>{editingAddress !== null ? "Edit Address" : "New Address"}</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Type</label>
-                    <select value={addressForm.type} onChange={e => setAddressForm(f => ({...f, type: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
+              <div className="card" style={{padding:16,marginBottom:14}}>
+                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12}}>{editingAddress !== null ? "Edit Address" : "New Address"}</div>
+                <div className="form-row" style={{gridTemplateColumns:"1fr 1fr 1fr",marginBottom:14}}>
+                  <div className="form-group"><label>Type</label>
+                    <select value={addressForm.type} onChange={e => setAddressForm(f => ({...f, type: e.target.value}))}>
                       {["HQ","Branch","Warehouse","Office"].map(t => <option key={t}>{t}</option>)}
                     </select></div>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Country</label>
-                    <select value={addressForm.country} onChange={e => setAddressForm(f => ({...f, country: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
+                  <div className="form-group"><label>Country</label>
+                    <select value={addressForm.country} onChange={e => setAddressForm(f => ({...f, country: e.target.value}))}>
                       {COUNTRIES.map(c => <option key={c}>{c}</option>)}
                     </select></div>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Status</label>
-                    <select value={addressForm.status} onChange={e => setAddressForm(f => ({...f, status: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)"}}>
+                  <div className="form-group"><label>Status</label>
+                    <select value={addressForm.status} onChange={e => setAddressForm(f => ({...f, status: e.target.value}))}>
                       {["Active","Inactive"].map(s => <option key={s}>{s}</option>)}
                     </select></div>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Address Line 1</label>
-                    <input value={addressForm.line1} onChange={e => setAddressForm(f => ({...f, line1: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}} placeholder="Street address"/></div>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Address Line 2</label>
-                    <input value={addressForm.line2} onChange={e => setAddressForm(f => ({...f, line2: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}} placeholder="Suite, floor"/></div>
+                <div className="form-row" style={{marginBottom:14}}>
+                  <div className="form-group"><label>Address Line 1</label>
+                    <input value={addressForm.line1} onChange={e => setAddressForm(f => ({...f, line1: e.target.value}))} placeholder="Street address"/></div>
+                  <div className="form-group"><label>Address Line 2</label>
+                    <input value={addressForm.line2} onChange={e => setAddressForm(f => ({...f, line2: e.target.value}))} placeholder="Suite, floor"/></div>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:8}}>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>City</label>
-                    <input value={addressForm.city} onChange={e => setAddressForm(f => ({...f, city: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}}/></div>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>State</label>
-                    <input value={addressForm.state} onChange={e => setAddressForm(f => ({...f, state: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}}/></div>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>PIN/ZIP</label>
-                    <input value={addressForm.pin} onChange={e => setAddressForm(f => ({...f, pin: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}}/></div>
-                  <div style={{display:"flex",alignItems:"end",gap:6}}>
-                    <label style={{fontSize:10,display:"flex",alignItems:"center",gap:4,cursor:"pointer"}}>
-                      <input type="checkbox" checked={addressForm.isPrimary} onChange={e => setAddressForm(f => ({...f, isPrimary: e.target.checked}))}/>Primary
-                    </label>
-                  </div>
+                <div className="form-row" style={{gridTemplateColumns:"1fr 1fr 1fr auto",marginBottom:14,alignItems:"flex-end"}}>
+                  <div className="form-group"><label>City</label>
+                    <input value={addressForm.city} onChange={e => setAddressForm(f => ({...f, city: e.target.value}))}/></div>
+                  <div className="form-group"><label>State</label>
+                    <input value={addressForm.state} onChange={e => setAddressForm(f => ({...f, state: e.target.value}))}/></div>
+                  <div className="form-group"><label>PIN/ZIP</label>
+                    <input value={addressForm.pin} onChange={e => setAddressForm(f => ({...f, pin: e.target.value}))}/></div>
+                  <label style={{fontSize:12,display:"flex",alignItems:"center",gap:6,cursor:"pointer",paddingBottom:10,whiteSpace:"nowrap"}}>
+                    <input type="checkbox" checked={addressForm.isPrimary} onChange={e => setAddressForm(f => ({...f, isPrimary: e.target.checked}))}/>Primary
+                  </label>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Phone</label>
-                    <input value={addressForm.phone} onChange={e => setAddressForm(f => ({...f, phone: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}}/></div>
-                  <div><label style={{fontSize:10,color:"var(--text3)"}}>Email</label>
-                    <input value={addressForm.email} onChange={e => setAddressForm(f => ({...f, email: e.target.value}))} style={{fontSize:11,width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid var(--border)",boxSizing:"border-box"}}/></div>
+                <div className="form-row" style={{marginBottom:14}}>
+                  <div className="form-group"><label>Phone</label>
+                    <input value={addressForm.phone} onChange={e => setAddressForm(f => ({...f, phone: e.target.value}))}/></div>
+                  <div className="form-group"><label>Email</label>
+                    <input value={addressForm.email} onChange={e => setAddressForm(f => ({...f, email: e.target.value}))}/></div>
                 </div>
-                <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-                  <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => { setShowAddAddress(false); setEditingAddress(null); }}>Cancel</button>
-                  <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={() => {
+                <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                  <button className="btn btn-sec btn-sm" onClick={() => { setShowAddAddress(false); setEditingAddress(null); }}>Cancel</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => {
                     const addr = { ...addressForm, id: editingAddress !== null ? editingAddress : `addr-${Date.now()}` };
                     let newAddrs;
                     if (editingAddress !== null) {
@@ -1427,52 +1425,60 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
                 ))}
               </div>
 
-              {/* Inline Call Form */}
+              {/* Inline Call Form — uses the app's standard .form-group styling
+                  (uppercase labels, bordered inputs, brand focus ring) so it
+                  matches every other form instead of raw browser controls. */}
               {showCallForm && (
-                <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
-                  <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log a Call</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Call Type</label>
-                      <select value={callForm.callType} onChange={e => setCallForm(f => ({...f, callType: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                <div className="card" style={{padding:16,marginBottom:14}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+                    <Phone size={14} style={{color:"var(--brand)"}}/>Log a Call
+                  </div>
+                  <div className="form-row" style={{gridTemplateColumns:"1fr 1fr 1fr",marginBottom:0}}>
+                    <div className="form-group"><label>Call Type</label>
+                      <select value={callForm.callType} onChange={e => setCallForm(f => ({...f, callType: e.target.value}))}>
                         {["Discovery","Follow-up","Demo","Negotiation","Support","Cold Call"].map(t => <option key={t}>{t}</option>)}
                       </select></div>
-                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
-                      <input type="date" value={callForm.date} onChange={e => setCallForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
-                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Outcome</label>
-                      <select value={callForm.outcome} onChange={e => setCallForm(f => ({...f, outcome: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                    <div className="form-group"><label>Date</label>
+                      <input type="date" value={callForm.date} onChange={e => setCallForm(f => ({...f, date: e.target.value}))}/></div>
+                    <div className="form-group"><label>Outcome</label>
+                      <select value={callForm.outcome} onChange={e => setCallForm(f => ({...f, outcome: e.target.value}))}>
                         {["Interested","Not Interested","Call Back","Voicemail","No Answer","Meeting Booked"].map(t => <option key={t}>{t}</option>)}
                       </select></div>
                   </div>
-                  <div style={{marginBottom:8}}><label style={{fontSize:10,color:"var(--text3)"}}>Notes *</label>
-                    <textarea value={callForm.notes} onChange={e => setCallForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Call notes..."/></div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"end"}}>
-                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Next Call Date</label>
-                      <input type="date" value={callForm.nextCallDate} onChange={e => setCallForm(f => ({...f, nextCallDate: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
-                    <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowCallForm(false)}>Cancel</button>
-                    <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveCallLog}><Check size={11}/>Save</button>
+                  <div className="form-group" style={{marginTop:14}}><label>Notes <span style={{color:"var(--red)"}}>*</span></label>
+                    <textarea value={callForm.notes} onChange={e => setCallForm(f => ({...f, notes: e.target.value}))} rows={3} placeholder="What was discussed, agreed, next steps…"/></div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:14,alignItems:"flex-end",marginTop:14}}>
+                    <div className="form-group" style={{maxWidth:220}}><label>Next Call Date</label>
+                      <input type="date" value={callForm.nextCallDate} onChange={e => setCallForm(f => ({...f, nextCallDate: e.target.value}))}/></div>
+                    <div style={{display:"flex",gap:8,flexShrink:0}}>
+                      <button className="btn btn-sec btn-sm" onClick={() => setShowCallForm(false)}>Cancel</button>
+                      <button className="btn btn-primary btn-sm" onClick={saveCallLog}><Check size={13}/>Save</button>
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Inline Activity Form */}
               {showActivityForm && (
-                <div style={{background:"white",borderRadius:10,padding:14,border:"1px solid var(--border)",marginBottom:14}}>
-                  <div style={{fontSize:12,fontWeight:600,color:"var(--text1)",marginBottom:8}}>Log an Activity</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Title *</label>
-                      <input value={actForm.title} onChange={e => setActForm(f => ({...f, title: e.target.value}))} style={{fontSize:11,width:"100%"}} placeholder="Activity title"/></div>
-                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Type</label>
-                      <select value={actForm.type} onChange={e => setActForm(f => ({...f, type: e.target.value}))} style={{fontSize:11,width:"100%"}}>
+                <div className="card" style={{padding:16,marginBottom:14}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+                    <Plus size={14} style={{color:"var(--brand)"}}/>Log an Activity
+                  </div>
+                  <div className="form-row" style={{gridTemplateColumns:"1fr 1fr 1fr",marginBottom:0}}>
+                    <div className="form-group"><label>Title <span style={{color:"var(--red)"}}>*</span></label>
+                      <input value={actForm.title} onChange={e => setActForm(f => ({...f, title: e.target.value}))} placeholder="e.g. Sent proposal"/></div>
+                    <div className="form-group"><label>Type</label>
+                      <select value={actForm.type} onChange={e => setActForm(f => ({...f, type: e.target.value}))}>
                         {["Call","Email","Meeting","Task","Note","Follow-up"].map(t => <option key={t}>{t}</option>)}
                       </select></div>
-                    <div><label style={{fontSize:10,color:"var(--text3)"}}>Date</label>
-                      <input type="date" value={actForm.date} onChange={e => setActForm(f => ({...f, date: e.target.value}))} style={{fontSize:11,width:"100%"}}/></div>
+                    <div className="form-group"><label>Date</label>
+                      <input type="date" value={actForm.date} onChange={e => setActForm(f => ({...f, date: e.target.value}))}/></div>
                   </div>
-                  <div style={{marginBottom:8}}><label style={{fontSize:10,color:"var(--text3)"}}>Notes</label>
-                    <textarea value={actForm.notes} onChange={e => setActForm(f => ({...f, notes: e.target.value}))} rows={2} style={{fontSize:11,width:"100%"}} placeholder="Activity notes..."/></div>
-                  <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-                    <button className="btn btn-sm btn-sec" style={{fontSize:10}} onClick={() => setShowActivityForm(false)}>Cancel</button>
-                    <button className="btn btn-sm btn-primary" style={{fontSize:10}} onClick={saveActivity}><Check size={11}/>Save</button>
+                  <div className="form-group" style={{marginTop:14}}><label>Notes</label>
+                    <textarea value={actForm.notes} onChange={e => setActForm(f => ({...f, notes: e.target.value}))} rows={3} placeholder="Details, outcome, next steps…"/></div>
+                  <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+                    <button className="btn btn-sec btn-sm" onClick={() => setShowActivityForm(false)}>Cancel</button>
+                    <button className="btn btn-primary btn-sm" onClick={saveActivity}><Check size={13}/>Save</button>
                   </div>
                 </div>
               )}
