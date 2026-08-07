@@ -99,6 +99,9 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   const [customFrom,setCustomFrom]=useState("");
   const [customTo,setCustomTo]=useState("");
   const [ownerFilter,setOwnerFilter]=useState("all");
+  // Business-by-line-manager: pick a manager to roll up their whole reporting
+  // branch (manager + all direct/indirect reports, solid and dotted lines).
+  const [teamFilter,setTeamFilter]=useState("all");
   const [expandedSection,setExpandedSection]=useState(null);
 
   // Hierarchy scope: global roles see the whole org; everyone else sees
@@ -110,6 +113,20 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     const src = orgUsers?.length ? orgUsers.filter(u => u.active !== false) : TEAM;
     return _reportIsGlobal ? src : src.filter(u => _reportScopedIds.has(u.id));
   }, [orgUsers, _reportIsGlobal, _reportScopedIds]);
+
+  // Line managers = anyone with at least one direct report (solid reportsTo or
+  // dotted line). Restricted to the viewer's own scope so a manager only sees
+  // managers within their branch.
+  const managers = useMemo(() => {
+    const all = (orgUsers || []).filter(u => u.active !== false);
+    const isMgr = (m) => all.some(u => u.id !== m.id && (u.reportsTo === m.id || (Array.isArray(u.dottedTo) && u.dottedTo.includes(m.id))));
+    return all.filter(m => isMgr(m) && (_reportIsGlobal || _reportScopedIds.has(m.id)))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [orgUsers, _reportIsGlobal, _reportScopedIds]);
+  // The selected manager's branch: themselves + every direct/indirect report.
+  const teamIds = useMemo(() => teamFilter === "all" ? null : getScopedUserIds(teamFilter, orgUsers), [teamFilter, orgUsers]);
+  // Owner dropdown narrows to the chosen team so the two filters compose.
+  const ownerOptions = useMemo(() => teamIds ? _scopedTeamSrc.filter(u => teamIds.has(u.id)) : _scopedTeamSrc, [_scopedTeamSrc, teamIds]);
 
   // Resolve a user id → first name for the report tables. MUST check live
   // orgUsers first: TEAM_MAP is only the static seed, so every real Supabase
@@ -177,13 +194,24 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   //    Owner field differs per entity: opportunities/activities/collections
   //    use `owner`, calls use `marketingPerson`, leads use `assignedTo`,
   //    tickets use `assigned`. `byOwner` picks the right field.
-  const byOwner = (arr, field) => ownerFilter === "all" ? arr : arr.filter(r => r[field] === ownerFilter);
-  const filteredOpps = useMemo(()=> byOwner((opps||[]).filter(o=>inWindow(o.closeDate)), "owner"),                 [opps,periodWindow,ownerFilter]);
-  const wLeads   = useMemo(()=> byOwner((leads||[]).filter(l=>inWindow(l.createdDate)), "assignedTo"),             [leads,periodWindow,ownerFilter]);
-  const wActs    = useMemo(()=> byOwner((activities||[]).filter(a=>inWindow(a.date)), "owner"),                    [activities,periodWindow,ownerFilter]);
-  const wCalls   = useMemo(()=> byOwner((callReports||[]).filter(r=>inWindow(r.callDate)), "marketingPerson"),     [callReports,periodWindow,ownerFilter]);
-  const wColls   = useMemo(()=> byOwner((collections||[]).filter(c=>inWindow(c.invoiceDate)), "owner"),            [collections,periodWindow,ownerFilter]);
-  const wTickets = useMemo(()=> byOwner((tickets||[]).filter(t=>inWindow(t.reportedDate||t.created)), "assigned"), [tickets,periodWindow,ownerFilter]);
+  //
+  //    TEAM dimension: selecting a line manager rolls the whole reporting
+  //    branch up — the manager plus every direct/indirect report (solid AND
+  //    dotted lines, via getScopedUserIds). That answers "how is <manager>'s
+  //    business doing?" rather than one individual's numbers. Team and Owner
+  //    stack: pick a team, then optionally one person inside it.
+  const byOwner = (arr, field) => {
+    let out = arr;
+    if (teamFilter !== "all" && teamIds) out = out.filter(r => teamIds.has(r[field]));
+    if (ownerFilter !== "all") out = out.filter(r => r[field] === ownerFilter);
+    return out;
+  };
+  const filteredOpps = useMemo(()=> byOwner((opps||[]).filter(o=>inWindow(o.closeDate)), "owner"),                 [opps,periodWindow,ownerFilter,teamFilter,teamIds]);
+  const wLeads   = useMemo(()=> byOwner((leads||[]).filter(l=>inWindow(l.createdDate)), "assignedTo"),             [leads,periodWindow,ownerFilter,teamFilter,teamIds]);
+  const wActs    = useMemo(()=> byOwner((activities||[]).filter(a=>inWindow(a.date)), "owner"),                    [activities,periodWindow,ownerFilter,teamFilter,teamIds]);
+  const wCalls   = useMemo(()=> byOwner((callReports||[]).filter(r=>inWindow(r.callDate)), "marketingPerson"),     [callReports,periodWindow,ownerFilter,teamFilter,teamIds]);
+  const wColls   = useMemo(()=> byOwner((collections||[]).filter(c=>inWindow(c.invoiceDate)), "owner"),            [collections,periodWindow,ownerFilter,teamFilter,teamIds]);
+  const wTickets = useMemo(()=> byOwner((tickets||[]).filter(t=>inWindow(t.reportedDate||t.created)), "assigned"), [tickets,periodWindow,ownerFilter,teamFilter,teamIds]);
 
   // Back-compat alias: `ownerOpps` is now identical to `filteredOpps` (owner
   // filtering already applied above). Kept so the pipeline charts that
@@ -299,7 +327,9 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
 
   // ── Team Performance ──
   // Use orgUsers (live) instead of the static TEAM constant so dynamically added users appear.
-  const _reportTeam = _scopedTeamSrc;
+  // Team Performance rows follow the team filter too, so picking a manager
+  // shows only that branch's people (not the whole company).
+  const _reportTeam = ownerOptions;
   const teamPerf = useMemo(()=>_reportTeam.map(u=>{
     const userOpps = filteredOpps.filter(o=>o.owner===u.id);
     const active = userOpps.filter(o=>!["Won","Lost"].includes(o.stage));
@@ -516,9 +546,17 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                 style={{padding:"5px 8px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:12,background:"#fff"}} />
             </>
           )}
+          {managers.length > 0 && (
+            <select value={teamFilter} onChange={e=>{setTeamFilter(e.target.value); setOwnerFilter("all");}}
+              title="Roll the whole report up to one line manager's team (manager + all their reports)"
+              style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:12,background:"#fff"}}>
+              <option value="all">All Teams</option>
+              {managers.map(m=><option key={m.id} value={m.id}>{m.name}'s team</option>)}
+            </select>
+          )}
           <select value={ownerFilter} onChange={e=>setOwnerFilter(e.target.value)} style={{padding:"6px 10px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:12,background:"#fff"}}>
-            <option value="all">All Owners</option>
-            {_scopedTeamSrc.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+            <option value="all">{teamFilter==="all" ? "All Owners" : "All in team"}</option>
+            {ownerOptions.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         </div>
       </div>
