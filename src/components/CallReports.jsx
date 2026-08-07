@@ -76,6 +76,10 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
   }, [orgUsers, _crScopedIds]);
   const [search, setSearch] = useState("");
   const [typeF, setTypeF] = useState("All");
+  // Salesperson filter — lets leadership slice the list to one team member's
+  // calls. Options come from `team`, already scoped to the viewer's hierarchy
+  // (self + downline), so a rep sees only themselves, a manager their team.
+  const [personF, setPersonF] = useState("All");
   const [tabS, setTabS] = useState("All");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_CALL_REPORT);
@@ -102,9 +106,10 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
     else if (tabS === "Overdue") list = list.filter(r => r.nextCallDate && r.nextCallDate < today);
     else if (tabS === "Upcoming") list = list.filter(r => r.nextCallDate && r.nextCallDate > today);
     if (typeF !== "All") list = list.filter(r => r.callType === typeF);
+    if (personF !== "All") list = list.filter(r => (r.marketingPerson || "") === personF);
     if (search) list = list.filter(r => (r.leadName + r.company + r.notes).toLowerCase().includes(search.toLowerCase()));
     return list.sort((a, b) => b.callDate.localeCompare(a.callDate));
-  }, [callReports, tabS, typeF, search]);
+  }, [callReports, tabS, typeF, personF, search]);
 
   const bulk = useBulkSelect(filtered);
   const pg = usePagination(filtered);
@@ -179,6 +184,19 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
           <option value="All">All Types</option>
           {CALL_TYPES.map(t => <option key={t}>{t}</option>)}
         </select>
+        {/* Salesperson — scoped to the viewer's hierarchy, so leadership can
+            drill into any team member's calls. Hidden for a rep with no
+            downline (the list is already just their own). */}
+        {team.length > 1 && (
+          <select className="filter-select" value={personF} onChange={e => setPersonF(e.target.value)}
+            title="Filter by the salesperson who owns the call">
+            <option value="All">All Salespeople</option>
+            {team.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        )}
+        {(typeF !== "All" || personF !== "All" || search) && (
+          <button className="btn btn-sec btn-xs" onClick={() => { setTypeF("All"); setPersonF("All"); setSearch(""); }}>Clear</button>
+        )}
       </div>
 
       <BulkActions count={bulk.count} onClear={bulk.clear}
