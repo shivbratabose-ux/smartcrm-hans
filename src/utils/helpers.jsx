@@ -141,7 +141,62 @@ export const loadState = () => {
     return null;
   }
 };
+// ── localStorage cache pruning ───────────────────────────────────────
+// Since company-wide read landed, EVERY user downloads the whole company
+// dataset (3k+ accounts, 700+ leads, …) — roughly 7 MB, past the ~5 MB
+// localStorage quota, so every user saw "Browser storage is full".
+//
+// Supabase is the source of truth, so a cached copy of an ALREADY-SYNCED
+// row is disposable (it reloads on next open). A row that has NOT synced
+// yet exists only in this browser, so it is NEVER dropped. We degrade in
+// stages and only warn if even the minimal payload won't fit.
+const SYNC_STAMP = "_syncedAt";
+// Biggest arrays first — dropping these frees the most space.
+const BULK_TABLES = ["accounts", "contacts", "leads", "activities", "callReports", "opps", "commLogs", "quotes", "collections", "events", "notes", "files"];
+const dropSynced = (data, tables, onlyDeleted) => {
+  const out = { ...data };
+  for (const t of tables) {
+    if (!Array.isArray(out[t])) continue;
+    out[t] = out[t].filter(r => {
+      if (!r || !r[SYNC_STAMP]) return true;          // never-synced → keep, it's the only copy
+      return onlyDeleted ? !r.isDeleted : false;       // synced → droppable
+    });
+  }
+  return out;
+};
+
 export const saveState = (data) => {
+  const attempts = [
+    () => data,                                        // 1. everything
+    () => dropSynced(data, BULK_TABLES, true),         // 2. minus synced soft-deletes (Trash reloads from cloud)
+    () => dropSynced(data, BULK_TABLES, false),        // 3. minus all synced bulk rows (unsynced work preserved)
+  ];
+  for (const build of attempts) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(build()));
+      return;                                          // fit — done
+    } catch (err) {
+      const isQuota = err?.name === "QuotaExceededError" || /quota/i.test(err?.message || "");
+      if (isQuota) continue;                           // too big → try a slimmer payload
+      // Non-quota failure (private mode, storage disabled): report and stop.
+      const now = Date.now();
+      if (now - lastStorageErrorAt > 30000) {
+        lastStorageErrorAt = now;
+        notify.error(`Couldn't save changes locally: ${err?.message || "storage unavailable"}.`);
+      }
+      return;
+    }
+  }
+  // Even the minimal payload didn't fit.
+  const now = Date.now();
+  if (now - lastStorageErrorAt > 30000) {
+    lastStorageErrorAt = now;
+    notify.error("Browser storage is full. Your data is safe in the cloud, but this device can't keep an offline copy — close other tabs of this app or clear site data.");
+  }
+};
+
+// Legacy single-shot writer kept for reference/unused paths.
+const _saveStateStrict = (data) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (err) {
