@@ -320,8 +320,12 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     name:p.name, color:p.color,
     arr:accounts.filter(a=>a.products?.includes(p.id)).reduce((s,a)=>s+a.arrRevenue,0),
     pipeline:ownerOpps.filter(o=>o.products?.includes(p.id)&&!["Won","Lost"].includes(o.stage)).reduce((s,o)=>s+o.value,0),
-    won:ownerOpps.filter(o=>o.products?.includes(p.id)&&o.stage==="Won").reduce((s,o)=>s+o.value,0),
-    deals:ownerOpps.filter(o=>o.products?.includes(p.id)&&!["Won","Lost"].includes(o.stage)).length,
+    won:ownerOpps.filter(o=>o.products?.includes(p.id)&&(o.stage==="Won"||o.stage==="closed_won")).reduce((s,o)=>s+o.value,0),
+    // Sales counts per line of business: deals actually closed Won, plus the
+    // Lost count so win-rate per product is visible.
+    wonDeals:ownerOpps.filter(o=>o.products?.includes(p.id)&&(o.stage==="Won"||o.stage==="closed_won")).length,
+    lostDeals:ownerOpps.filter(o=>o.products?.includes(p.id)&&(o.stage==="Lost"||o.stage==="closed_lost")).length,
+    deals:ownerOpps.filter(o=>o.products?.includes(p.id)&&!["Won","Lost","closed_won","closed_lost"].includes(o.stage)).length,
     accounts:new Set(accounts.filter(a=>a.products?.includes(p.id)).map(a=>a.id)).size
   })).filter(p=>p.arr+p.pipeline+p.won>0),[accounts,ownerOpps]);
 
@@ -1072,6 +1076,15 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                 {key:"name",label:"Product",bold:true},
                 {key:"accounts",label:"Accounts",align:"right"},
                 {key:"deals",label:"Open Deals",align:"right"},
+                // ── Sales (closed Won) per line of business ──
+                {key:"wonDeals",label:"Sales Won",align:"right",color:()=>"#16A34A",bold:true},
+                {key:"won",label:"Sales Value",align:"right",color:()=>"#16A34A",render:r=>crFmt(r.won)},
+                {key:"winRate",label:"Win %",align:"right",render:r=>{
+                  const closed = r.wonDeals + r.lostDeals;
+                  if(!closed) return <span style={{color:"var(--text3)"}}>—</span>;
+                  const pctVal = Math.round((r.wonDeals/closed)*100);
+                  return <span style={{color:pctVal>=50?"#16A34A":pctVal>=25?"#B45309":"#DC2626",fontWeight:600}}>{pctVal}%</span>;
+                }},
                 {key:"arr",label:"ARR",align:"right",render:r=>crFmt(r.arr)},
                 {key:"pipeline",label:"Pipeline",align:"right",render:r=>crFmt(r.pipeline)},
                 {key:"share",label:"Revenue Share",render:r=>{
@@ -1079,6 +1092,20 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                   return <div style={{width:60}}><Progress value={r.arr} max={total} color={r.color}/></div>;
                 }}
               ]} data={prodPipeline}/>
+              {/* Totals row — LOB sales at a glance */}
+              {prodPipeline.length>0 && (()=> {
+                const tW = prodPipeline.reduce((s,p)=>s+p.wonDeals,0);
+                const tV = prodPipeline.reduce((s,p)=>s+p.won,0);
+                const tP = prodPipeline.reduce((s,p)=>s+p.pipeline,0);
+                return (
+                  <div style={{display:"flex",gap:18,flexWrap:"wrap",padding:"10px 8px 2px",borderTop:"1px solid #E2E8F0",marginTop:8,fontSize:12}}>
+                    <span style={{color:"var(--text3)"}}>Total across LOBs:</span>
+                    <span><b style={{color:"#16A34A"}}>{tW}</b> sales won</span>
+                    <span><b style={{color:"#16A34A"}}>{crFmt(tV)}</b> sales value</span>
+                    <span><b>{crFmt(tP)}</b> open pipeline</span>
+                  </div>
+                );
+              })()}
             </Card>
           </div>
 
