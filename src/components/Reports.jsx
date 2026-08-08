@@ -315,9 +315,36 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     country:c, value:ownerOpps.filter(o=>o.country===c&&!["Won","Lost"].includes(o.stage)).reduce((a,o)=>a+o.value,0)
   })).filter(c=>c.value>0).sort((a,b)=>b.value-a.value).slice(0,8),[ownerOpps]);
 
+  // ── Per-LOB targets ──
+  // Targets carry {userId, period:"YYYY-Qn" (India FY, Apr–Mar), product,
+  // targetValue}. Sum the ones for THIS product, honouring the page's owner /
+  // team filter (target.userId) and the period window (the target's quarter
+  // must overlap it). Targets with product "All" are company-wide rather than
+  // LOB-specific, so they're excluded from per-product rows.
+  const quarterRange = (period) => {
+    const m = /^(\d{4})-Q([1-4])$/.exec(period || "");
+    if (!m) return null;
+    const fy = +m[1], q = +m[2];
+    const startMonth = 3 + (q - 1) * 3;                 // Q1 = April (Indian FY)
+    return { start: new Date(fy, startMonth, 1), end: new Date(fy, startMonth + 3, 0, 23, 59, 59, 999) };
+  };
+  const targetsInScope = useMemo(() => (targets || []).filter(t => {
+    if (t.isDeleted) return false;
+    if (teamFilter !== "all" && teamIds && !teamIds.has(t.userId)) return false;
+    if (ownerFilter !== "all" && t.userId !== ownerFilter) return false;
+    if (!periodWindow) return true;                     // All Time
+    const r = quarterRange(t.period);
+    if (!r) return true;                                // unparseable period → don't hide it
+    return (!periodWindow.start || r.end >= periodWindow.start) && (!periodWindow.end || r.start <= periodWindow.end);
+  }), [targets, teamFilter, teamIds, ownerFilter, periodWindow]);
+  const lobTargetFor = (pid) => targetsInScope.filter(t => t.product === pid).reduce((s, t) => s + (Number(t.targetValue) || 0), 0);
+  // True when nobody has set a product-specific target yet (all are "All"),
+  // so the UI can explain the empty column instead of just showing dashes.
+  const hasAnyLobTarget = useMemo(() => targetsInScope.some(t => t.product && t.product !== "All"), [targetsInScope]);
+
   // ── Pipeline by Product ──
   const prodPipeline = useMemo(()=>PRODUCTS.map(p=>({
-    name:p.name, color:p.color,
+    name:p.name, color:p.color, target:lobTargetFor(p.id),
     arr:accounts.filter(a=>a.products?.includes(p.id)).reduce((s,a)=>s+a.arrRevenue,0),
     pipeline:ownerOpps.filter(o=>o.products?.includes(p.id)&&!["Won","Lost"].includes(o.stage)).reduce((s,o)=>s+o.value,0),
     won:ownerOpps.filter(o=>o.products?.includes(p.id)&&(o.stage==="Won"||o.stage==="closed_won")).reduce((s,o)=>s+o.value,0),
@@ -327,7 +354,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     lostDeals:ownerOpps.filter(o=>o.products?.includes(p.id)&&(o.stage==="Lost"||o.stage==="closed_lost")).length,
     deals:ownerOpps.filter(o=>o.products?.includes(p.id)&&!["Won","Lost","closed_won","closed_lost"].includes(o.stage)).length,
     accounts:new Set(accounts.filter(a=>a.products?.includes(p.id)).map(a=>a.id)).size
-  })).filter(p=>p.arr+p.pipeline+p.won>0),[accounts,ownerOpps]);
+  })).filter(p=>p.arr+p.pipeline+p.won+p.target>0),[accounts,ownerOpps,targetsInScope]);
 
   // ── Team Performance ──
   // Use orgUsers (live) instead of the static TEAM constant so dynamically added users appear.
@@ -1085,6 +1112,19 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                   const pctVal = Math.round((r.wonDeals/closed)*100);
                   return <span style={{color:pctVal>=50?"#16A34A":pctVal>=25?"#B45309":"#DC2626",fontWeight:600}}>{pctVal}%</span>;
                 }},
+                // ── Target vs actual per LOB ──
+                {key:"target",label:"Target",align:"right",render:r=>r.target>0?crFmt(r.target):<span style={{color:"var(--text3)"}}>—</span>},
+                {key:"attain",label:"vs Target",render:r=>{
+                  if(!(r.target>0)) return <span style={{color:"var(--text3)",fontSize:11}}>no target</span>;
+                  const pctVal = Math.round((r.won/r.target)*100);
+                  const c = pctVal>=100?"#16A34A":pctVal>=70?"#B45309":"#DC2626";
+                  return (
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <div style={{width:52}}><Progress value={Math.min(r.won,r.target)} max={r.target} color={c}/></div>
+                      <span style={{fontSize:11,fontWeight:700,color:c}}>{pctVal}%</span>
+                    </div>
+                  );
+                }},
                 {key:"arr",label:"ARR",align:"right",render:r=>crFmt(r.arr)},
                 {key:"pipeline",label:"Pipeline",align:"right",render:r=>crFmt(r.pipeline)},
                 {key:"share",label:"Revenue Share",render:r=>{
@@ -1097,13 +1137,23 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                 const tW = prodPipeline.reduce((s,p)=>s+p.wonDeals,0);
                 const tV = prodPipeline.reduce((s,p)=>s+p.won,0);
                 const tP = prodPipeline.reduce((s,p)=>s+p.pipeline,0);
+                const tT = prodPipeline.reduce((s,p)=>s+p.target,0);
+                const attain = tT>0 ? Math.round((tV/tT)*100) : null;
                 return (
-                  <div style={{display:"flex",gap:18,flexWrap:"wrap",padding:"10px 8px 2px",borderTop:"1px solid #E2E8F0",marginTop:8,fontSize:12}}>
-                    <span style={{color:"var(--text3)"}}>Total across LOBs:</span>
-                    <span><b style={{color:"#16A34A"}}>{tW}</b> sales won</span>
-                    <span><b style={{color:"#16A34A"}}>{crFmt(tV)}</b> sales value</span>
-                    <span><b>{crFmt(tP)}</b> open pipeline</span>
-                  </div>
+                  <>
+                    <div style={{display:"flex",gap:18,flexWrap:"wrap",padding:"10px 8px 2px",borderTop:"1px solid #E2E8F0",marginTop:8,fontSize:12}}>
+                      <span style={{color:"var(--text3)"}}>Total across LOBs:</span>
+                      <span><b style={{color:"#16A34A"}}>{tW}</b> sales won</span>
+                      <span><b style={{color:"#16A34A"}}>{crFmt(tV)}</b> sales value</span>
+                      <span><b>{crFmt(tP)}</b> open pipeline</span>
+                      {tT>0 && <span><b>{crFmt(tT)}</b> target · <b style={{color:attain>=100?"#16A34A":attain>=70?"#B45309":"#DC2626"}}>{attain}%</b> attained</span>}
+                    </div>
+                    {!hasAnyLobTarget && (
+                      <div style={{padding:"6px 8px 2px",fontSize:11,color:"var(--text3)"}}>
+                        No product-specific targets set yet — all targets are recorded against “All Products”. Set a target with a Product in <b>Targets</b> to see per-LOB attainment here.
+                      </div>
+                    )}
+                  </>
                 );
               })()}
             </Card>
