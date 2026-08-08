@@ -30,7 +30,7 @@ import {
   type PlanFilter, type PlanItem,
 } from '@/hooks/usePlan';
 import { callPhone, openWhatsApp } from '@/utils/dial';
-import { fmtRelativeDate } from '@/utils/format';
+import { fmtRelativeDate, toLocalISODate, parseLocalDate } from '@/utils/format';
 import { useAuth } from '@/auth/AuthContext';
 import { colors, fontSize, fontWeight, spacing, radii, severity } from '@/theme';
 
@@ -297,7 +297,7 @@ function ActionSheet({ item, onClose }: { item: PlanItem; onClose: () => void })
   const onReschedule = () => {
     if (Platform.OS === 'web') {
       const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-      const iso = tomorrow.toISOString().slice(0, 10);
+      const iso = toLocalISODate(tomorrow);
       reschedule.mutate(
         { item, newDate: iso },
         {
@@ -347,7 +347,7 @@ function ActionSheet({ item, onClose }: { item: PlanItem; onClose: () => void })
       {/* Native date picker only used on Android/iOS */}
       {showDatePicker && Platform.OS !== 'web' && (
         <NativeDatePicker
-          initialDate={item.date || new Date().toISOString().slice(0, 10)}
+          initialDate={item.date || toLocalISODate(new Date())}
           onPick={(iso) => {
             setShowDatePicker(false);
             reschedule.mutate(
@@ -396,13 +396,13 @@ function NativeDatePicker({ initialDate, onPick, onCancel }: {
   const DateTimePicker = require('@react-native-community/datetimepicker').default;
   return (
     <DateTimePicker
-      value={new Date(initialDate)}
+      value={parseLocalDate(initialDate)}
       mode="date"
       display={Platform.OS === 'ios' ? 'spinner' : 'default'}
       minimumDate={new Date()}
       onChange={(event: any, selected?: Date) => {
         if (event?.type === 'dismissed') { onCancel(); return; }
-        if (selected) onPick(selected.toISOString().slice(0, 10));
+        if (selected) onPick(toLocalISODate(selected));
       }}
     />
   );
