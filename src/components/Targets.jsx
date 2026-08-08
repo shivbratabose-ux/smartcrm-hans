@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Edit2, Trash2, Check, Download, Target, TrendingUp, TrendingDown } from "lucide-react";
+import { Plus, Edit2, Trash2, Check, Download, Target, TrendingUp, TrendingDown, Users } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP } from '../data/constants';
 import { BLANK_TARGET } from '../data/seed';
@@ -137,6 +137,30 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
     return Object.values(byUser).sort((a, b) => b.target - a.target);
   }, [filtered]);
 
+  // ── Rollup by line manager ──
+  // Each target is credited to the OWNER'S line manager (users.reportsTo), so
+  // a manager's row is their whole team's commitment vs achievement. Targets
+  // whose owner has no manager (top of the org, or reportsTo unset) group
+  // under "— No line manager —" so nothing is silently dropped and the rows
+  // always add up to the page totals.
+  const byManager = useMemo(() => {
+    const rows = {};
+    filtered.forEach(t => {
+      const u = (orgUsers || []).find(x => x.id === t.userId);
+      const mgrId = u?.reportsTo || "__none";
+      if (!rows[mgrId]) rows[mgrId] = { mgrId, people: new Set(), target: 0, achieved: 0, deals: 0, wonDeals: 0 };
+      const r = rows[mgrId];
+      r.people.add(t.userId);
+      r.target += Number(t.targetValue) || 0;
+      r.achieved += Number(t.achievedValue) || 0;
+      r.deals += Number(t.targetDeals) || 0;
+      r.wonDeals += Number(t.achievedDeals) || 0;
+    });
+    return Object.values(rows)
+      .map(r => ({ ...r, headcount: r.people.size, pct: r.target > 0 ? Math.round((r.achieved / r.target) * 100) : null }))
+      .sort((a, b) => b.target - a.target);
+  }, [filtered, orgUsers]);
+
   const openAdd = () => {
     setForm({ ...BLANK_TARGET, id: `tgt${uid()}`, period: periods[0] || "2026-Q1", userId: currentUser || BLANK_TARGET.userId });
     setFormErrors({});
@@ -220,6 +244,59 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
               <Bar dataKey="achieved" name="Achieved" fill="var(--brand)" radius={[4,4,0,0]}/>
             </BarChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* ── Rollup by line manager ── team commitment vs achievement ── */}
+      {byManager.length > 0 && (
+        <div className="card" style={{padding:0, marginBottom:16}}>
+          <div style={{padding:"10px 14px", borderBottom:"1px solid var(--border)", fontSize:13, fontWeight:700, color:"var(--text1)", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
+            <Users size={15} style={{color:"var(--brand)"}}/> Rollup by line manager
+            <span style={{fontSize:11, fontWeight:400, color:"var(--text3)"}}>team target vs achieved · reflects the filters below</span>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table className="tbl" style={{minWidth:620}}>
+              <thead>
+                <tr>
+                  <th>Line Manager</th>
+                  <th style={{textAlign:"right"}}>People</th>
+                  <th style={{textAlign:"right"}}>Target (₹L)</th>
+                  <th style={{textAlign:"right"}}>Achieved (₹L)</th>
+                  <th style={{textAlign:"right"}}>Gap (₹L)</th>
+                  <th>Attainment</th>
+                  <th style={{textAlign:"right"}}>Deals (T/A)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byManager.map(r => {
+                  const gap = r.target - r.achieved;
+                  return (
+                    <tr key={r.mgrId} style={{cursor: r.mgrId !== "__none" ? "pointer" : "default"}}
+                      onClick={() => r.mgrId !== "__none" && setTeamF(teamF === r.mgrId ? "All" : r.mgrId)}
+                      title={r.mgrId !== "__none" ? "Click to filter the page to this team" : ""}>
+                      <td style={{fontWeight:600}}>{r.mgrId === "__none" ? <span style={{color:"var(--text3)"}}>— No line manager —</span> : userName(r.mgrId)}</td>
+                      <td style={{textAlign:"right"}}>{r.headcount}</td>
+                      <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700}}>₹{r.target}L</td>
+                      <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", color:pctColor(r.pct ?? 0)}}>₹{r.achieved}L</td>
+                      <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", color: gap > 0 ? "var(--red)" : "var(--green)"}}>₹{gap.toFixed(1)}L</td>
+                      <td>
+                        {r.pct === null ? <span style={{color:"var(--text3)", fontSize:11}}>no target</span> : (
+                          <div style={{display:"flex", alignItems:"center", gap:8}}>
+                            <div style={{width:60, height:6, background:"#E2E8F0", borderRadius:3, overflow:"hidden"}}>
+                              <div style={{width:`${Math.min(r.pct,100)}%`, height:"100%", background:pctColor(r.pct), borderRadius:3}}/>
+                            </div>
+                            <span style={{fontSize:12, fontWeight:700, color:pctColor(r.pct)}}>{r.pct}%</span>
+                            {r.pct >= 100 ? <TrendingUp size={13} style={{color:"#22C55E"}}/> : <TrendingDown size={13} style={{color:pctColor(r.pct)}}/>}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{r.deals}/{r.wonDeals}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
