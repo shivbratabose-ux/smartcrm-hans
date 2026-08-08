@@ -26,8 +26,9 @@ import {
 } from "../lib/quotation/pricingEngine";
 import { TC_TEMPLATES, STANDARD_TERMS } from "../data/constants";
 import { printHansQuote } from "../lib/quotation/printQuote";
+import { toLocalISODate } from "../utils/helpers";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => toLocalISODate();
 const inr = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
 const inr2 = (n) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 

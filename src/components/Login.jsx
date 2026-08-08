@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Mail, Lock, Eye, EyeOff, Shield, UserPlus, LogIn, User, ArrowLeft } from "lucide-react";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
+import { toLocalISODate } from "../utils/helpers";
 
 function Login({onLogin, orgUsers}) {
   const [mode,setMode] = useState("login"); // login | signup | forgot
@@ -115,7 +116,7 @@ function Login({onLogin, orgUsers}) {
         lob: "All",
         country: "India",
         active: true,
-        join_date: new Date().toISOString().slice(0,10),
+        join_date: toLocalISODate(),
         auth_user_id: authData.user.id,
       });
     }

@@ -8,7 +8,7 @@ import { useMemo, useState, Fragment } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { UserCheck, UserX, CheckCircle, AlertTriangle, ChevronDown, ChevronRight, Users, ArrowRight, X } from "lucide-react";
 import { LEAD_STAGES, TEAM_MAP, PRODUCTS, PROD_MAP, REGIONS, TEAM } from "../data/constants";
-import { today, canEditRecord, withLeadAssignment, buildAssignmentActivity, withAssignerBackfill, buildNotificationUpdate } from "../utils/helpers";
+import { today, toLocalISODate, canEditRecord, withLeadAssignment, buildAssignmentActivity, withAssignerBackfill, buildNotificationUpdate } from "../utils/helpers";
 import { notify } from "../utils/toast";
 
 // createdDate cutoff for the date filter (null = all time).
@@ -21,7 +21,7 @@ const rangeCutoff = (key) => {
   else if (key === "mtd") { d.setDate(1); }
   else if (key === "ytd") { d.setMonth(0, 1); }
   d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
+  return toLocalISODate(d);
 };
 
 const STAGE_IDS = ["MQL", "SQL", "SAL", "Converted"];

@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap } from "lucide-react";
 import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_EVENT } from '../data/seed';
-import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { fmt, uid, today, toLocalISODate, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { Lock } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 
@@ -55,7 +55,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
     return days;
   },[year,month]);
 
-  const dateStr=(d)=>d?d.toISOString().slice(0,10):"";
+  const dateStr=(d)=>d?toLocalISODate(d):"";
 
   // Unified list of all calendar items from all three sources
   const allItems = useMemo(() => {

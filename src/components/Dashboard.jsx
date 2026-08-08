@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from 'recharts';
 import { Activity, TrendingUp, TrendingDown, AlertCircle, Plus, Calendar, ChevronDown, Users, Target, Phone, FileText, IndianRupee, Filter } from 'lucide-react';
 import { PRODUCTS, PROD_MAP, STAGES, STAGE_PROB, TEAM, TEAM_MAP } from '../data/constants';
-import { fmt, isFuture, isOverdue, today, getScopedUserIds, isGlobalRole } from '../utils/helpers';
+import { fmt, isFuture, isOverdue, today, toLocalISODate, parseLocalDate, getScopedUserIds, isGlobalRole } from '../utils/helpers';
 import { StatusBadge, ProdTag, PriorityBadge, UserPill, PageTip } from './shared';
 
 /* ── Date range helpers ── */
@@ -20,21 +20,21 @@ const RANGE_PRESETS = [
 ];
 
 function getDateRange(key) {
-  const now = new Date(today);
+  const now = parseLocalDate(today);
   const preset = RANGE_PRESETS.find(p => p.key === key);
   if (!preset) return { from: "2000-01-01", to: today };
 
   if (key === "all") return { from: "2000-01-01", to: today };
   if (key === "mtd") {
-    const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    const from = toLocalISODate(new Date(now.getFullYear(), now.getMonth(), 1));
     return { from, to: today };
   }
   if (key === "qtd") {
     const qm = Math.floor(now.getMonth() / 3) * 3;
-    const from = new Date(now.getFullYear(), qm, 1).toISOString().slice(0, 10);
+    const from = toLocalISODate(new Date(now.getFullYear(), qm, 1));
     return { from, to: today };
   }
-  const from = new Date(now.getTime() - preset.days * 864e5).toISOString().slice(0, 10);
+  const from = toLocalISODate(new Date(now.getTime() - preset.days * 864e5));
   return { from, to: today };
 }
 
@@ -173,8 +173,8 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
     const days = rangeKey === "7d" ? 7 : rangeKey === "10d" ? 10 : 7;
     const data = [];
     for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(new Date(today).getTime() - i * 864e5);
-      const ds = d.toISOString().slice(0, 10);
+      const d = new Date(parseLocalDate(today).getTime() - i * 864e5);
+      const ds = toLocalISODate(d);
       const label = d.toLocaleDateString("en-US", { weekday: "short" });
       const count = activities.filter(a => a.date === ds).length;
       data.push({ name: label, count });

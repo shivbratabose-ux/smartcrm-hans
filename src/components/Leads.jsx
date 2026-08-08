@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES, STAGES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
-import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq, withLeadAssignment, buildAssignmentActivity, isLeadAssigner, withAssignerBackfill, buildNotificationUpdate } from '../utils/helpers';
+import { fmt, uid, cmp, sanitizeObj, hasErrors, today, toLocalISODate, parseLocalDate, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq, withLeadAssignment, buildAssignmentActivity, isLeadAssigner, withAssignerBackfill, buildNotificationUpdate } from '../utils/helpers';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, Empty, InlineContactForm, LogCallModal, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
@@ -30,16 +30,16 @@ const RANGE_PRESETS = [
 ];
 
 function getDateRange(key) {
-  const now = new Date(today);
+  const now = parseLocalDate(today);
   if (key === "all" || key === "custom") return { from: "2000-01-01", to: today };
-  if (key === "mtd") return { from: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10), to: today };
-  if (key === "qtd") return { from: new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1).toISOString().slice(0, 10), to: today };
+  if (key === "mtd") return { from: toLocalISODate(new Date(now.getFullYear(), now.getMonth(), 1)), to: today };
+  if (key === "qtd") return { from: toLocalISODate(new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)), to: today };
   const preset = RANGE_PRESETS.find(p => p.key === key);
   if (!preset?.days) return { from: "2000-01-01", to: today };
-  return { from: new Date(now.getTime() - preset.days * 864e5).toISOString().slice(0, 10), to: today };
+  return { from: toLocalISODate(new Date(now.getTime() - preset.days * 864e5)), to: today };
 }
 const inRange = (dateStr, range) => dateStr && dateStr >= range.from && dateStr <= range.to;
-const daysSince = (dateStr) => dateStr ? Math.max(0, Math.round((new Date(today) - new Date(dateStr)) / 864e5)) : null;
+const daysSince = (dateStr) => dateStr ? Math.max(0, Math.round((parseLocalDate(today) - parseLocalDate(dateStr)) / 864e5)) : null;
 
 // ═══════════════════════════════════════════════════════════════════
 // VALIDATION
