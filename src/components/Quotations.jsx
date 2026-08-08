@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE, INDIAN_STATES } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { getQuoteTemplate, STANDARD_TERMS_SECTIONS, STANDARD_PAYMENT_MILESTONES, STANDARD_EXTRA_NOTES } from '../data/quoteTemplates';
-import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { fmt, uid, today, toLocalISODate, parseLocalDate, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip, TypeaheadSelect, SendEmailModal } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
@@ -1110,8 +1110,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     }
     const sentDate=today;
     const days=parseInt(String(q.validity||"30"),10)||30;
-    const exp=new Date(sentDate);exp.setDate(exp.getDate()+days);
-    const expiryDate=exp.toISOString().slice(0,10);
+    const exp=parseLocalDate(sentDate);exp.setDate(exp.getDate()+days);
+    const expiryDate=toLocalISODate(exp);
     const con=contacts.find(c=>c.id===q.contactId);
     const acc=accounts.find(a=>a.id===q.accountId);
     const ccEmails=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean).join(", ");
@@ -2977,8 +2977,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                 if (r.status === "Draft") {
                   const sentDate = today;
                   const days = parseInt(String(r.validity||"30"),10)||30;
-                  const exp = new Date(sentDate); exp.setDate(exp.getDate()+days);
-                  const expiryDate = exp.toISOString().slice(0,10);
+                  const exp = parseLocalDate(sentDate); exp.setDate(exp.getDate()+days);
+                  const expiryDate = toLocalISODate(exp);
                   const ce = {id:uid(),at:new Date().toISOString(),by:currentUser,field:"status",from:"Draft",to:"Sent",note:"emailed to customer"};
                   return {...r,status:"Sent",sentDate,expiryDate:r.expiryDate||expiryDate,emailLog:[...(r.emailLog||[]),logEntry],changeLog:[...(r.changeLog||[]),ce]};
                 }

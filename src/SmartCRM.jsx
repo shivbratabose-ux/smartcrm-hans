@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert, buildNotificationUpdate } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, refreshToday, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert, buildNotificationUpdate } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -458,6 +458,28 @@ export default function SmartCRM() {
   // URL (the nav items are already hidden for them).
   useEffect(() => { if (page === "team" && orgUsers.length && !_canManageUsers) setPage("dashboard"); }, [page, _canManageUsers, orgUsers.length]);
   useEffect(() => { if (page === "leadassign" && orgUsers.length && !_canSeeLeadAssign) setPage("dashboard"); }, [page, _canSeeLeadAssign, orgUsers.length]);
+  // ── Midnight rollover ──
+  // `today` in utils/helpers is computed once at module load. CRM tabs stay
+  // open for days, so without this the app kept yesterday's date until a hard
+  // reload: isToday/isOverdue/isFuture all went stale and follow-ups quietly
+  // stopped showing as due. refreshToday() updates the exported binding (a
+  // live ES-module binding, so every importer sees it); bumping state is what
+  // makes React re-render the now-stale date-derived views.
+  const [, setDayStamp] = useState(today);
+  useEffect(() => {
+    const check = () => { if (refreshToday()) setDayStamp(today); };
+    // A minute is well inside the smallest thing we render (a day) and costs
+    // nothing; the focus/visibility hooks catch the laptop-reopened-at-9am
+    // case immediately rather than up to a minute later.
+    const timer = setInterval(check, 60_000);
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, []);
   // Latest write scope, held in a ref so the sync effect (deps: [syncModules])
   // always reads current values without re-subscribing. Write rule (matches
   // the DB RLS): a user may write records they OWN + their HIERARCHY downline,

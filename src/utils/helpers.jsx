@@ -119,7 +119,61 @@ export const isValidLeadId = (v) => {
   if (PLACEHOLDER_IDS.has(s.toLowerCase())) return false;
   return LEAD_ID_PATTERN.test(s);
 };
-export const today = new Date().toISOString().slice(0,10);
+// ── Calendar dates ───────────────────────────────────────────────────
+// Every date the CRM stores is a calendar day (a DATE column, "2026-08-08"),
+// not an instant. `toISOString()` formats in UTC, so it answers the wrong
+// question for a date-only value: our users are IST (+05:30), and between
+// 00:00 and 05:30 IST `new Date().toISOString().slice(0,10)` returns
+// YESTERDAY. That shifted "today's activities", overdue flags, and — via
+// `new Date(y, m, 1).toISOString()` — every month/quarter boundary, so MTD
+// and QTD ranges silently began one day early and included a day of the
+// prior period.
+//
+// Format from the LOCAL calendar fields instead, which is what a DATE column
+// means to the person reading it.
+export const toLocalISODate = (d = new Date()) => {
+  // A default arg only fires for `undefined`, and `new Date(null)` is the
+  // epoch — so without this guard an empty/null date column rendered as
+  // 1970-01-01 (or 1969-12-31 west of UTC) instead of blank.
+  if (d == null || d === "") return "";
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return "";
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+};
+
+// The mirror-image bug: `new Date("2026-08-08")` parses a bare date string as
+// UTC midnight, so date arithmetic built on it drifts by the UTC offset. Parse
+// into LOCAL midnight instead, so `parseLocalDate(x)` and `toLocalISODate(x)`
+// round-trip and day arithmetic lands on the day the user means.
+export const parseLocalDate = (s) => {
+  if (s == null || s === "") return new Date(NaN); // not the epoch — see toLocalISODate
+  if (s instanceof Date) return new Date(s.getFullYear(), s.getMonth(), s.getDate());
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ""));
+  if (!m) { const d = new Date(s); return Number.isNaN(d.getTime()) ? new Date(NaN) : new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+};
+
+// `today` was also a module constant, evaluated once at import. CRM tabs stay
+// open for days, so after midnight isToday/isOverdue/isFuture were all wrong
+// until someone hard-reloaded and follow-ups quietly stopped showing as due.
+//
+// It stays an exported binding rather than becoming a function so that its
+// ~250 read sites across 24 files keep working untouched: ES module exports
+// are live bindings, so reassigning it here updates every importer. The
+// predicates below read it at call time and pick up the new value too.
+// SmartCRM.jsx drives refreshToday() on a timer and on tab focus, and
+// re-renders when it reports a rollover.
+export let today = toLocalISODate();
+
+// Recompute the current local date. Returns true if the calendar day rolled
+// over, so the caller knows a re-render is needed.
+export const refreshToday = () => {
+  const next = toLocalISODate();
+  if (next === today) return false;
+  today = next;
+  return true;
+};
+
 export const isOverdue = d => d && d < today;
 export const isFuture  = d => d && d > today;
 export const isToday   = d => d === today;

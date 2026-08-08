@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { ACT_TYPES, ACT_STATUS, TEAM, TEAM_MAP } from '../data/constants';
-import { uid, fmt, today, sanitizeObj, validateActivity, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { uid, fmt, today, toLocalISODate, parseLocalDate, sanitizeObj, validateActivity, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
 
@@ -151,7 +151,7 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
             {activities.filter(a=>a.date===today).length}
           </div>
           {(() => {
-            const yesterday = new Date(new Date(today).getTime()-864e5).toISOString().slice(0,10);
+            const yesterday = toLocalISODate(new Date(parseLocalDate(today).getTime()-864e5));
             const yCount = activities.filter(a=>a.date===yesterday).length;
             const tCount = activities.filter(a=>a.date===today).length;
             const diff = tCount - yCount;
