@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:pricing": "node scripts/test-pricing-engine.mjs"
+    "test:pricing": "node scripts/test-pricing-engine.mjs",
+    "check:rls": "node scripts/check-rls-role-parity.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
