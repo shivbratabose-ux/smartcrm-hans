@@ -65,9 +65,16 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
   // managers = anyone with at least one direct report (solid reportsTo or
   // dotted line). Selecting one scopes the page to that whole branch, so a
   // manager's product targets and their team's roll up together.
+  // Sales-leadership roles only. The rollup is a SALES target view, so it tops
+  // out at VP Sales & Marketing — the MD, Finance and Product Head aren't
+  // sales line managers and their rows only muddied the picture. Adjust this
+  // list if the org adds a sales-leadership role.
+  const SALES_LEAD_ROLES = ["vp_sales_mkt", "director", "line_mgr", "country_mgr", "bd_lead"];
   const managers = useMemo(() => {
     const all = userOpts;
-    return all.filter(m => all.some(u => u.id !== m.id && (u.reportsTo === m.id || (Array.isArray(u.dottedTo) && u.dottedTo.includes(m.id)))))
+    return all.filter(m =>
+        SALES_LEAD_ROLES.includes(String(m.role || "").trim().toLowerCase()) &&
+        all.some(u => u.id !== m.id && (u.reportsTo === m.id || (Array.isArray(u.dottedTo) && u.dottedTo.includes(m.id)))))
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   }, [orgUsers]);
   const teamIds = useMemo(() => teamF === "All" ? null : getScopedUserIds(teamF, orgUsers), [teamF, orgUsers]);
@@ -159,17 +166,48 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
       return acc;
     }, { target: 0, achieved: 0, deals: 0, wonDeals: 0, people: new Set() });
 
-    // EVERY line manager gets a row — including ones with no targets yet, so
+    const byId = Object.fromEntries(users.map(u => [u.id, u]));
+    const gridIds = new Set(managers.map(m => m.id));
+    // Credit a target to the NEAREST sales manager at or above its owner.
+    // Walking up matters because the person directly above may be outside the
+    // sales grid (e.g. a rep's VP reports to the MD): the target then lands on
+    // the highest sales manager instead of falling into "no line manager".
+    // A manager with no sales manager above them keeps their own quota.
+    const creditOf = (uid) => {
+      let cur = byId[uid];
+      const seen = new Set();
+      while (cur && cur.reportsTo && !seen.has(cur.id)) {
+        seen.add(cur.id);                       // cycle guard
+        if (gridIds.has(cur.reportsTo)) return cur.reportsTo;
+        cur = byId[cur.reportsTo];
+      }
+      return gridIds.has(uid) ? uid : "__none";
+    };
+    // Direct mode: each target counted exactly once, so rows reconcile.
+    const credited = {};
+    filtered.forEach(t => {
+      const key = creditOf(t.userId);
+      if (!credited[key]) credited[key] = { target: 0, achieved: 0, deals: 0, wonDeals: 0, people: new Set() };
+      const c = credited[key];
+      c.target += Number(t.targetValue) || 0;
+      c.achieved += Number(t.achievedValue) || 0;
+      c.deals += Number(t.targetDeals) || 0;
+      c.wonDeals += Number(t.achievedDeals) || 0;
+      c.people.add(t.userId);
+    });
+    const blank = { target: 0, achieved: 0, deals: 0, wonDeals: 0, people: new Set() };
+
+    // EVERY sales manager gets a row — including ones with no targets yet, so
     // missing commitments are visible instead of the manager silently absent.
     const rows = managers.map(m => {
-      const directIds = new Set(users.filter(u => u.reportsTo === m.id).map(u => u.id));
       // Full branch = the manager + every direct/indirect report. This is what
-      // a sales head needs: their direct-reports-only number would exclude the
-      // whole org beneath their line managers.
+      // a sales head needs: a direct-only number would exclude the whole org
+      // beneath their line managers.
       const branchIds = getScopedUserIds(m.id, users);
-      const d = sum(directIds), b = sum(branchIds);
+      const b = sum(branchIds);
+      const d = credited[m.id] || blank;
       const pick = branchMode ? b : d;
-      const headIds = branchMode ? new Set([...branchIds].filter(id => id !== m.id)) : directIds;
+      const headIds = branchMode ? new Set([...branchIds].filter(id => id !== m.id)) : d.people;
       return {
         mgrId: m.id, role: m.role || "",
         headcount: headIds.size,
@@ -178,14 +216,9 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
       };
     });
 
-    // Targets whose owner reports to nobody (and who isn't a manager) would
-    // otherwise vanish from the summary — keep them in an explicit bucket.
-    const covered = new Set();
-    users.forEach(u => { if (u.reportsTo) covered.add(u.id); });
-    managers.forEach(m => covered.add(m.id));
-    const orphanIds = new Set(filtered.map(t => t.userId).filter(id => !covered.has(id)));
-    if (orphanIds.size) {
-      const o = sum(orphanIds);
+    // Anything that couldn't be credited to a sales manager stays visible.
+    const o = credited["__none"];
+    if (o && o.target + o.achieved > 0) {
       rows.push({ mgrId: "__none", role: "", headcount: o.people.size, target: o.target, achieved: o.achieved,
         deals: o.deals, wonDeals: o.wonDeals, pct: o.target > 0 ? Math.round((o.achieved / o.target) * 100) : null });
     }
@@ -312,7 +345,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
                     <tr key={r.mgrId} style={{cursor: r.mgrId !== "__none" ? "pointer" : "default"}}
                       onClick={() => r.mgrId !== "__none" && setTeamF(teamF === r.mgrId ? "All" : r.mgrId)}
                       title={r.mgrId !== "__none" ? "Click to filter the page to this team" : ""}>
-                      <td style={{fontWeight:600}}>{r.mgrId === "__none" ? <span style={{color:"var(--text3)"}}>— No line manager —</span> : userName(r.mgrId)}</td>
+                      <td style={{fontWeight:600}}>{r.mgrId === "__none" ? <span style={{color:"var(--text3)"}}>— Outside sales line —</span> : userName(r.mgrId)}</td>
                       <td style={{fontSize:11, color:"var(--text3)"}}>{(r.role || "").replace(/_/g," ") || "—"}</td>
                       <td style={{textAlign:"right"}}>{r.headcount}</td>
                       <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700}}>₹{r.target}L</td>
