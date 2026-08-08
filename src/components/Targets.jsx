@@ -48,6 +48,10 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
   // Lalchand's team" rather than one flat list.
   const [productF, setProductF] = useState("All");
   const [teamF, setTeamF] = useState("All");
+  // Rollup mode: direct reports only (rows sum to the page total) vs the full
+  // branch (everyone beneath a manager at any depth — what a sales head needs,
+  // but nested teams are counted in the parent so rows deliberately overlap).
+  const [branchMode, setBranchMode] = useState(false);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_TARGET);
   const [confirm, setConfirm] = useState(null);
@@ -144,22 +148,49 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
   // under "— No line manager —" so nothing is silently dropped and the rows
   // always add up to the page totals.
   const byManager = useMemo(() => {
-    const rows = {};
-    filtered.forEach(t => {
-      const u = (orgUsers || []).find(x => x.id === t.userId);
-      const mgrId = u?.reportsTo || "__none";
-      if (!rows[mgrId]) rows[mgrId] = { mgrId, people: new Set(), target: 0, achieved: 0, deals: 0, wonDeals: 0 };
-      const r = rows[mgrId];
-      r.people.add(t.userId);
-      r.target += Number(t.targetValue) || 0;
-      r.achieved += Number(t.achievedValue) || 0;
-      r.deals += Number(t.targetDeals) || 0;
-      r.wonDeals += Number(t.achievedDeals) || 0;
+    const users = orgUsers || [];
+    const sum = (ids) => filtered.reduce((acc, t) => {
+      if (!ids.has(t.userId)) return acc;
+      acc.target += Number(t.targetValue) || 0;
+      acc.achieved += Number(t.achievedValue) || 0;
+      acc.deals += Number(t.targetDeals) || 0;
+      acc.wonDeals += Number(t.achievedDeals) || 0;
+      acc.people.add(t.userId);
+      return acc;
+    }, { target: 0, achieved: 0, deals: 0, wonDeals: 0, people: new Set() });
+
+    // EVERY line manager gets a row — including ones with no targets yet, so
+    // missing commitments are visible instead of the manager silently absent.
+    const rows = managers.map(m => {
+      const directIds = new Set(users.filter(u => u.reportsTo === m.id).map(u => u.id));
+      // Full branch = the manager + every direct/indirect report. This is what
+      // a sales head needs: their direct-reports-only number would exclude the
+      // whole org beneath their line managers.
+      const branchIds = getScopedUserIds(m.id, users);
+      const d = sum(directIds), b = sum(branchIds);
+      const pick = branchMode ? b : d;
+      const headIds = branchMode ? new Set([...branchIds].filter(id => id !== m.id)) : directIds;
+      return {
+        mgrId: m.id, role: m.role || "",
+        headcount: headIds.size,
+        target: pick.target, achieved: pick.achieved, deals: pick.deals, wonDeals: pick.wonDeals,
+        pct: pick.target > 0 ? Math.round((pick.achieved / pick.target) * 100) : null,
+      };
     });
-    return Object.values(rows)
-      .map(r => ({ ...r, headcount: r.people.size, pct: r.target > 0 ? Math.round((r.achieved / r.target) * 100) : null }))
-      .sort((a, b) => b.target - a.target);
-  }, [filtered, orgUsers]);
+
+    // Targets whose owner reports to nobody (and who isn't a manager) would
+    // otherwise vanish from the summary — keep them in an explicit bucket.
+    const covered = new Set();
+    users.forEach(u => { if (u.reportsTo) covered.add(u.id); });
+    managers.forEach(m => covered.add(m.id));
+    const orphanIds = new Set(filtered.map(t => t.userId).filter(id => !covered.has(id)));
+    if (orphanIds.size) {
+      const o = sum(orphanIds);
+      rows.push({ mgrId: "__none", role: "", headcount: o.people.size, target: o.target, achieved: o.achieved,
+        deals: o.deals, wonDeals: o.wonDeals, pct: o.target > 0 ? Math.round((o.achieved / o.target) * 100) : null });
+    }
+    return rows.sort((a, b) => b.target - a.target || a.headcount - b.headcount);
+  }, [filtered, orgUsers, managers, branchMode]);
 
   const openAdd = () => {
     setForm({ ...BLANK_TARGET, id: `tgt${uid()}`, period: periods[0] || "2026-Q1", userId: currentUser || BLANK_TARGET.userId });
@@ -252,14 +283,21 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
         <div className="card" style={{padding:0, marginBottom:16}}>
           <div style={{padding:"10px 14px", borderBottom:"1px solid var(--border)", fontSize:13, fontWeight:700, color:"var(--text1)", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
             <Users size={15} style={{color:"var(--brand)"}}/> Rollup by line manager
-            <span style={{fontSize:11, fontWeight:400, color:"var(--text3)"}}>team target vs achieved · reflects the filters below</span>
+            <span style={{fontSize:11, fontWeight:400, color:"var(--text3)"}}>
+              {branchMode ? "full branch — includes every level beneath the manager" : "direct reports only — rows add up to the totals above"} · reflects the filters below
+            </span>
+            <div style={{marginLeft:"auto", display:"flex", gap:0, border:"1.5px solid var(--border)", borderRadius:6, overflow:"hidden"}}>
+              <button onClick={() => setBranchMode(false)} style={{fontSize:11, padding:"4px 10px", fontWeight:600, cursor:"pointer", border:"none", background: branchMode ? "#fff" : "var(--brand)", color: branchMode ? "var(--text2)" : "#fff"}}>Direct</button>
+              <button onClick={() => setBranchMode(true)} style={{fontSize:11, padding:"4px 10px", fontWeight:600, cursor:"pointer", border:"none", background: branchMode ? "var(--brand)" : "#fff", color: branchMode ? "#fff" : "var(--text2)"}}>Full branch</button>
+            </div>
           </div>
           <div style={{overflowX:"auto"}}>
             <table className="tbl" style={{minWidth:620}}>
               <thead>
                 <tr>
                   <th>Line Manager</th>
-                  <th style={{textAlign:"right"}}>People</th>
+                  <th>Role</th>
+                  <th style={{textAlign:"right"}}>{branchMode ? "Branch" : "Reports"}</th>
                   <th style={{textAlign:"right"}}>Target (₹L)</th>
                   <th style={{textAlign:"right"}}>Achieved (₹L)</th>
                   <th style={{textAlign:"right"}}>Gap (₹L)</th>
@@ -275,6 +313,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
                       onClick={() => r.mgrId !== "__none" && setTeamF(teamF === r.mgrId ? "All" : r.mgrId)}
                       title={r.mgrId !== "__none" ? "Click to filter the page to this team" : ""}>
                       <td style={{fontWeight:600}}>{r.mgrId === "__none" ? <span style={{color:"var(--text3)"}}>— No line manager —</span> : userName(r.mgrId)}</td>
+                      <td style={{fontSize:11, color:"var(--text3)"}}>{(r.role || "").replace(/_/g," ") || "—"}</td>
                       <td style={{textAlign:"right"}}>{r.headcount}</td>
                       <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700}}>₹{r.target}L</td>
                       <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", color:pctColor(r.pct ?? 0)}}>₹{r.achieved}L</td>
@@ -297,6 +336,11 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
               </tbody>
             </table>
           </div>
+          {branchMode && (
+            <div style={{padding:"8px 14px", fontSize:11, color:"var(--text3)", borderTop:"1px solid var(--border)"}}>
+              Nested teams are counted inside their parent manager, so these rows overlap — don't add them up. Switch to <b>Direct</b> for figures that reconcile with the totals above.
+            </div>
+          )}
         </div>
       )}
 
