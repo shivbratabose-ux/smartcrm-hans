@@ -3,7 +3,7 @@ import { Plus, Edit2, Trash2, Check, Download, Target, TrendingUp, TrendingDown 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP } from '../data/constants';
 import { BLANK_TARGET } from '../data/seed';
-import { uid, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
+import { uid, sanitizeObj, hasErrors, softDeleteById, getScopedUserIds } from '../utils/helpers';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
@@ -44,6 +44,10 @@ const prodMatches = (tProd, arr, single) => {
 
 function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = [], currentUser, canDelete }) {
   const [periodF, setPeriodF] = useState("All");
+  // Product + line-manager filters: lets leadership see "iCAFFE targets for
+  // Lalchand's team" rather than one flat list.
+  const [productF, setProductF] = useState("All");
+  const [teamF, setTeamF] = useState("All");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_TARGET);
   const [confirm, setConfirm] = useState(null);
@@ -52,6 +56,23 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
   // Live-user helpers (fall back to the static seed when orgUsers is empty).
   const userOpts = (orgUsers && orgUsers.length ? orgUsers.filter(u => u.active !== false) : TEAM);
   const userName = (id) => (orgUsers || []).find(u => u.id === id)?.name || TEAM_MAP[id]?.name || id || "";
+
+  // ── Line-manager alignment ──
+  // managers = anyone with at least one direct report (solid reportsTo or
+  // dotted line). Selecting one scopes the page to that whole branch, so a
+  // manager's product targets and their team's roll up together.
+  const managers = useMemo(() => {
+    const all = userOpts;
+    return all.filter(m => all.some(u => u.id !== m.id && (u.reportsTo === m.id || (Array.isArray(u.dottedTo) && u.dottedTo.includes(m.id)))))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [orgUsers]);
+  const teamIds = useMemo(() => teamF === "All" ? null : getScopedUserIds(teamF, orgUsers), [teamF, orgUsers]);
+  // Direct manager of a user — shown as a column so every target says which
+  // line manager owns it.
+  const managerOf = (uid) => {
+    const u = (orgUsers || []).find(x => x.id === uid);
+    return u?.reportsTo ? userName(u.reportsTo) : "";
+  };
 
   // Auto-compute achievement for a target from won opps (revenue + deal count)
   // and call reports (calls), matched on owner × fiscal-quarter × product.
@@ -89,8 +110,12 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
   const filtered = useMemo(() => {
     let list = [...enriched];
     if (periodF !== "All") list = list.filter(t => t.period === periodF);
+    // "__company" = the company-wide targets, which store product "All".
+    if (productF === "__company") list = list.filter(t => !t.product || t.product === "All");
+    else if (productF !== "All") list = list.filter(t => t.product === productF);
+    if (teamIds) list = list.filter(t => teamIds.has(t.userId));
     return list;
-  }, [enriched, periodF]);
+  }, [enriched, periodF, productF, teamIds]);
 
   // Summary KPIs
   const totalTarget = filtered.reduce((s, t) => s + t.targetValue, 0);
@@ -143,7 +168,13 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
           </div>
         </div>
         <div className="pg-actions">
-          <button className="btn btn-sec" onClick={() => exportCSV(filtered, CSV_COLS, "targets")}><Download size={14}/>Export</button>
+          {/* Export resolves names from LIVE users (CSV_COLS' static TEAM_MAP
+              left real Supabase users blank) and includes the line manager. */}
+          <button className="btn btn-sec" onClick={() => exportCSV(filtered, [
+            { label: "Salesperson", accessor: t => userName(t.userId) },
+            { label: "Line Manager", accessor: t => managerOf(t.userId) },
+            ...CSV_COLS.slice(1),
+          ], "targets")}><Download size={14}/>Export</button>
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>Add Target</button>
         </div>
       </div>
@@ -192,11 +223,29 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
         </div>
       )}
 
-      <div className="filter-bar">
+      <div className="filter-bar" style={{flexWrap:"wrap"}}>
         <select className="filter-select" value={periodF} onChange={e => setPeriodF(e.target.value)}>
           <option value="All">All Periods</option>
           {periods.map(p => <option key={p}>{p}</option>)}
         </select>
+        {/* Product focus — surfaces the product-specific targets that drive
+            per-LOB attainment on Reports → LOB Analysis. */}
+        <select className="filter-select" value={productF} onChange={e => setProductF(e.target.value)}
+          title="Filter by the target's product focus">
+          <option value="All">Any Product Focus</option>
+          <option value="__company">— Company-wide (All Products) —</option>
+          {PRODUCTS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        {managers.length > 0 && (
+          <select className="filter-select" value={teamF} onChange={e => setTeamF(e.target.value)}
+            title="Roll up to one line manager's team (manager + all their reports)">
+            <option value="All">All Teams</option>
+            {managers.map(m => <option key={m.id} value={m.id}>{m.name}'s team</option>)}
+          </select>
+        )}
+        {(periodF !== "All" || productF !== "All" || teamF !== "All") && (
+          <button className="btn btn-sec btn-xs" onClick={() => { setPeriodF("All"); setProductF("All"); setTeamF("All"); }}>Clear</button>
+        )}
       </div>
 
       <div className="card" style={{padding:0}}>
@@ -209,6 +258,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
             <thead>
               <tr>
                 <th>Salesperson</th>
+                <th>Line Manager</th>
                 <th>Period</th>
                 <th>Product</th>
                 <th>Target (₹L)</th>
@@ -226,8 +276,13 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
                 return (
                   <tr key={t.id}>
                     <td><UserPill uid={t.userId}/></td>
+                    <td style={{fontSize:12,color:"var(--text3)"}}>{managerOf(t.userId) || "—"}</td>
                     <td style={{fontSize:12.5,fontWeight:600}}>{t.period}</td>
-                    <td style={{fontSize:12}}>{t.product === "All" ? "All Products" : (PROD_MAP[t.product]?.name || t.product)}</td>
+                    <td style={{fontSize:12}}>
+                      {t.product === "All" || !t.product
+                        ? <span style={{color:"var(--text3)"}}>All Products</span>
+                        : <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:4,color:"#1E40AF",background:"#1E40AF18"}}>{PROD_MAP[t.product]?.name || t.product}</span>}
+                    </td>
                     <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{t.targetValue}L</td>
                     <td style={{fontFamily:"'Outfit',sans-serif",color:pctColor(+pct)}}>₹{t.achievedValue}L</td>
                     <td>
