@@ -18,6 +18,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { requireSupabase, isSupabaseConfigured } from '@/lib/supabase';
+import { toLocalISODate } from '@/utils/format';
 
 export type PlanFilter = 'today' | 'tomorrow' | 'week' | 'overdue';
 
@@ -45,18 +46,21 @@ const COLS = {
 };
 
 // ── Date window helpers ──────────────────────────────────────────────
+// Local calendar days, not UTC: these build the from/to bounds sent to
+// Supabase against DATE columns, so a UTC-formatted bound shifted the whole
+// Plan window back a day for IST users between 00:00 and 05:30.
 function isoToday(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toLocalISODate(new Date());
 }
 function isoTomorrow(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  return toLocalISODate(d);
 }
 function isoPlusDays(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return toLocalISODate(d);
 }
 
 function dateRangeFor(filter: PlanFilter): { from: string; to: string } | { lt: string } {
