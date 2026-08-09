@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
-import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert, buildNotificationUpdate } from "./utils/helpers";
+import { loadState, saveState, ErrorBoundary, today, uid, canWriteTargets, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert, buildNotificationUpdate } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
 
@@ -744,6 +744,13 @@ export default function SmartCRM() {
     const role = normalizeRole(orgUsers.find(u => u.id === currentUser)?.role);
     return ["admin","md","director"].includes(role);
   }, [currentUser, orgUsers]);
+  // Targets are deliberately not self-settable, so this is narrower than the
+  // generic write check. Mirrors the `targets_write` RLS policy — when the two
+  // disagree the UI offers an edit the database then refuses, and the row
+  // vanishes on the next reload.
+  const _canWriteTargets = useMemo(
+    () => canWriteTargets(orgUsers.find(u => u.id === currentUser)?.role),
+    [currentUser, orgUsers]);
 
   // Only the same top-tier roles can restore from Trash — keeping the
   // restore gate aligned with the delete gate so the same people own
@@ -2638,7 +2645,7 @@ export default function SmartCRM() {
             {page.startsWith("quote-accept/") && <QuoteAcceptLanding quoteId={page.replace(/^quote-accept\//,"")} quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} contracts={contracts} setContracts={setContracts} setActivities={setActivities} currentUser={currentUser} onBack={()=>setPage("quotations")}/>}
             {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="communications"&& <CommLog commLogs={visibleCommLogs} setCommLogs={setCommLogs} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} canDelete={canDelete} orgUsers={orgUsers} catalog={catalog} onRespondEditAccess={respondEditAccess} aiConfig={aiConfig} setActivities={setActivities}/>}
-            {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} opps={visibleOpps} callReports={visibleCallReports} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete}/>}
+            {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} opps={visibleOpps} callReports={visibleCallReports} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete} masters={masters} canWrite={_canWriteTargets}/>}
             {page==="reports"    && <Reports accounts={visibleAccounts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} contacts={visibleContacts} contracts={visibleContracts} quotes={visibleQuotes} currentUser={currentUser} orgUsers={orgUsers} masters={masters}/>}
             {page==="dashboards" && <Dashboards accounts={visibleAccounts} opps={visibleOpps} projects={visibleProjects} contracts={visibleContracts} tickets={visibleTickets} quotes={visibleQuotes} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
             {page==="leadassign" && _canSeeLeadAssign && <LeadAssignment leads={visibleLeads} setLeads={setLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage} commLogs={commLogs} catalog={catalog} setActivities={setActivities} setUpdates={setUpdates}/>}
