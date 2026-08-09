@@ -80,10 +80,6 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
   // Lalchand's team" rather than one flat list.
   const [productF, setProductF] = useState("All");
   const [teamF, setTeamF] = useState("All");
-  // Rollup mode: direct reports only (rows sum to the page total) vs the full
-  // branch (everyone beneath a manager at any depth — what a sales head needs,
-  // but nested teams are counted in the parent so rows deliberately overlap).
-  const [branchMode, setBranchMode] = useState(false);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_TARGET);
   const [confirm, setConfirm] = useState(null);
@@ -97,18 +93,28 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
   // managers = anyone with at least one direct report (solid reportsTo or
   // dotted line). Selecting one scopes the page to that whole branch, so a
   // manager's product targets and their team's roll up together.
-  // Sales-leadership roles only. The rollup is a SALES target view, so it tops
-  // out at VP Sales & Marketing — the MD, Finance and Product Head aren't
-  // sales line managers and their rows only muddied the picture. Adjust this
-  // list if the org adds a sales-leadership role.
-  const SALES_LEAD_ROLES = ["vp_sales_mkt", "director", "line_mgr", "country_mgr", "bd_lead"];
-  const managers = useMemo(() => {
-    const all = userOpts;
-    return all.filter(m =>
-        SALES_LEAD_ROLES.includes(String(m.role || "").trim().toLowerCase()) &&
-        all.some(u => u.id !== m.id && (u.reportsTo === m.id || (Array.isArray(u.dottedTo) && u.dottedTo.includes(m.id)))))
-      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  }, [orgUsers]);
+  // ── Who owns a slice of the ABP/AOP ──
+  // The annual plan is cut across the Line Managers by vertical/product, and
+  // whatever stays company-level is owned by the VP Sales & Marketing. So the
+  // panel lists every BD / line-management / sales-leadership role up to VP —
+  // and does NOT require the person to have direct reports.
+  //
+  // That last part matters: the previous rule also demanded at least one
+  // report, which silently dropped a Line Manager who owns an ABP number but
+  // hasn't been assigned a team yet. They own a commitment, so they get a row
+  // and it reads "no target" rather than the manager vanishing.
+  //
+  // Roles above the sales line (MD, Admin) and outside it (Finance, Product
+  // Head, Tech Lead, Support, Viewer) stay out — their rows were noise. Add
+  // "sales_exec" here if you ever want individual contributors listed too;
+  // today their targets roll up into their Line Manager's row instead, and
+  // the detail table below already lists them line by line.
+  const ABP_OWNER_ROLES = ["vp_sales_mkt", "director", "line_mgr", "country_mgr", "bd_lead"];
+  const managers = useMemo(
+    () => userOpts
+      .filter(m => ABP_OWNER_ROLES.includes(String(m.role || "").trim().toLowerCase()))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || "")),
+    [orgUsers]);
   const teamIds = useMemo(() => teamF === "All" ? null : getScopedUserIds(teamF, orgUsers), [teamF, orgUsers]);
   // Direct manager of a user — shown as a column so every target says which
   // line manager owns it.
@@ -243,31 +249,59 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
     return Object.values(byUser).sort((a, b) => b.target - a.target);
   }, [filtered]);
 
-  // ── Rollup by line manager ──
-  // Each target is credited to the OWNER'S line manager (users.reportsTo), so
-  // a manager's row is their whole team's commitment vs achievement. Targets
-  // whose owner has no manager (top of the org, or reportsTo unset) group
-  // under "— No line manager —" so nothing is silently dropped and the rows
-  // always add up to the page totals.
+  // ── ABP / AOP rollup ──
+  // The annual plan is distributed across the Line Managers by vertical and
+  // product; whatever stays company-level is owned by the VP. Each row
+  // therefore answers two different questions, which is why it carries two
+  // sets of figures:
+  //
+  //   ABP (owned)    — the commitment this person is ACCOUNTABLE for, and the
+  //                    revenue booked against it from ANY seller. A product's
+  //                    number belongs to the manager who owns that product,
+  //                    whoever closed the deal.
+  //   Team sold      — what this person's own reports actually closed, across
+  //                    the WHOLE portfolio, because every team is expected to
+  //                    cross-sell outside its primary line.
+  //
+  // The gap between them is the cross-sell story: positive Δ means this team
+  // sold more into other lines than other teams sold into theirs.
+  //
+  // Neither figure double-counts inside itself — a deal matching several of a
+  // person's commitments is counted once. Across rows they deliberately
+  // overlap (a cross-sold deal appears in one manager's ABP and another's Team
+  // sold), so only the ABP Target column is meant to reconcile with the page
+  // totals above.
   const byManager = useMemo(() => {
     const users = orgUsers || [];
-    const sum = (ids) => filtered.reduce((acc, t) => {
-      if (!ids.has(t.userId)) return acc;
-      acc.target += Number(t.targetValue) || 0;
-      acc.achieved += Number(t.achievedValue) || 0;
-      acc.deals += Number(t.targetDeals) || 0;
-      acc.wonDeals += Number(t.achievedDeals) || 0;
-      acc.people.add(t.userId);
-      return acc;
-    }, { target: 0, achieved: 0, deals: 0, wonDeals: 0, people: new Set() });
-
     const byId = Object.fromEntries(users.map(u => [u.id, u]));
     const gridIds = new Set(managers.map(m => m.id));
-    // Credit a target to the NEAREST sales manager at or above its owner.
-    // Walking up matters because the person directly above may be outside the
-    // sales grid (e.g. a rep's VP reports to the MD): the target then lands on
-    // the highest sales manager instead of falling into "no line manager".
-    // A manager with no sales manager above them keeps their own quota.
+
+    // True reporting branch: this person plus everyone reporting up to them at
+    // any depth, solid or dotted line. Deliberately NOT getScopedUserIds —
+    // that is a VISIBILITY scope and short-circuits to the entire org for
+    // global roles (admin, md, director, vp_sales_mkt), which would have made
+    // the VP's "team sold" the whole company, Finance and Support included.
+    const childrenOf = {};
+    users.forEach(u => {
+      [u.reportsTo, ...(Array.isArray(u.dottedTo) ? u.dottedTo : [])]
+        .filter(Boolean)
+        .forEach(pid => (childrenOf[pid] || (childrenOf[pid] = [])).push(u.id));
+    });
+    const branchOf = (rootId) => {
+      const out = new Set([rootId]);
+      const stack = [rootId];
+      while (stack.length) {
+        for (const child of childrenOf[stack.pop()] || []) {
+          if (!out.has(child)) { out.add(child); stack.push(child); }
+        }
+      }
+      return out;
+    };
+
+    // Credit a target to the NEAREST ABP owner at or above its owner. Targets
+    // are currently captured against sales executives, so this is what rolls an
+    // exec's number up into their Line Manager's commitment. It also means the
+    // panel keeps working unchanged if you later enter targets at LM level.
     const creditOf = (uid) => {
       let cur = byId[uid];
       const seen = new Set();
@@ -278,47 +312,94 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
       }
       return gridIds.has(uid) ? uid : "__none";
     };
-    // Direct mode: each target counted exactly once, so rows reconcile.
+
+    // Every target, grouped under the ABP owner accountable for it.
     const credited = {};
     filtered.forEach(t => {
       const key = creditOf(t.userId);
-      if (!credited[key]) credited[key] = { target: 0, achieved: 0, deals: 0, wonDeals: 0, people: new Set() };
-      const c = credited[key];
+      const c = credited[key] || (credited[key] = {
+        target: 0, deals: 0, people: new Set(), pairs: new Set(), products: new Set(),
+      });
       c.target += Number(t.targetValue) || 0;
-      c.achieved += Number(t.achievedValue) || 0;
       c.deals += Number(t.targetDeals) || 0;
-      c.wonDeals += Number(t.achievedDeals) || 0;
       c.people.add(t.userId);
+      // The (period, product) commitments this owner is measured against.
+      // A blank product means the company-level objective, which matches
+      // every product — that is the VP's row.
+      c.pairs.add(`${t.period}|${t.product || "All"}`);
+      if (t.product && t.product !== "All") c.products.add(t.product);
     });
-    const blank = { target: 0, achieved: 0, deals: 0, wonDeals: 0, people: new Set() };
 
-    // EVERY sales manager gets a row — including ones with no targets yet, so
-    // missing commitments are visible instead of the manager silently absent.
+    // Periods currently in view — used to scope "team sold" for a manager who
+    // holds no target yet, so their team's contribution is still visible.
+    const visiblePeriods = [...new Set(filtered.map(t => t.period).filter(Boolean))];
+
+    // Won revenue matching a set of "period|product" commitments. `owners`,
+    // when given, restricts to deals closed BY those people. Each deal is
+    // counted at most once even if several commitments would match it.
+    const revenueFor = (pairs, owners) => {
+      let value = 0, deals = 0;
+      (opps || []).forEach(o => {
+        // Masters-driven won stage (see wonStageNames) — the ABP rollup has to
+        // agree with the KPI cards about what "won" means, or a stage rename
+        // would zero one and not the other.
+        if (!isWon(o)) return;
+        if (owners && !owners.has(o.owner)) return;
+        const per = periodOf(o.closeDate);
+        if (!per) return;                       // no close date → no period to book against
+        for (const pair of pairs) {
+          const sep = pair.indexOf("|");
+          if (pair.slice(0, sep) !== per) continue;
+          if (!prodMatches(pair.slice(sep + 1), o.products)) continue;
+          value += Number(o.value) || 0; deals += 1;
+          return;                               // count this deal once
+        }
+      });
+      return { value: +value.toFixed(2), deals };
+    };
+
+    const teamPairs = new Set(visiblePeriods.map(p => `${p}|All`));
+
+    // EVERY ABP owner gets a row — including one with no target yet, so a
+    // missing commitment is visible instead of the manager silently absent.
     const rows = managers.map(m => {
-      // Full branch = the manager + every direct/indirect report. This is what
-      // a sales head needs: a direct-only number would exclude the whole org
-      // beneath their line managers.
-      const branchIds = getScopedUserIds(m.id, users);
-      const b = sum(branchIds);
-      const d = credited[m.id] || blank;
-      const pick = branchMode ? b : d;
-      const headIds = branchMode ? new Set([...branchIds].filter(id => id !== m.id)) : d.people;
+      const c = credited[m.id];
+      const pairs = c ? c.pairs : new Set();
+      const abpTarget = c ? c.target : 0;
+      // Accountability: the products this person owns, booked from any seller.
+      const abp = pairs.size ? revenueFor(pairs, null) : { value: 0, deals: 0 };
+      // Contribution: what this person's own reports closed, any product.
+      const branchIds = branchOf(m.id);
+      const team = revenueFor(teamPairs, branchIds);
       return {
         mgrId: m.id, role: m.role || "",
-        headcount: headIds.size,
-        target: pick.target, achieved: pick.achieved, deals: pick.deals, wonDeals: pick.wonDeals,
-        pct: pick.target > 0 ? Math.round((pick.achieved / pick.target) * 100) : null,
+        products: c ? [...c.products] : [],
+        companyWide: [...pairs].some(p => p.endsWith("|All")),
+        headcount: Math.max(branchIds.size - 1, 0),   // reports, excluding self
+        target: abpTarget,
+        achieved: abp.value,
+        wonDeals: abp.deals,
+        deals: c ? c.deals : 0,
+        teamSold: team.value,
+        delta: +(team.value - abp.value).toFixed(2),
+        pct: abpTarget > 0 ? Math.round((abp.value / abpTarget) * 100) : null,
       };
     });
 
-    // Anything that couldn't be credited to a sales manager stays visible.
+    // Any target whose owner sits outside the sales roles stays visible, so
+    // the ABP Target column can never silently under-sum the page total.
     const o = credited["__none"];
-    if (o && o.target + o.achieved > 0) {
-      rows.push({ mgrId: "__none", role: "", headcount: o.people.size, target: o.target, achieved: o.achieved,
-        deals: o.deals, wonDeals: o.wonDeals, pct: o.target > 0 ? Math.round((o.achieved / o.target) * 100) : null });
+    if (o && o.target > 0) {
+      const abp = revenueFor(o.pairs, null);
+      rows.push({
+        mgrId: "__none", role: "", products: [], companyWide: false,
+        headcount: o.people.size, target: o.target, achieved: abp.value,
+        wonDeals: abp.deals, deals: o.deals, teamSold: 0, delta: 0,
+        pct: o.target > 0 ? Math.round((abp.value / o.target) * 100) : null,
+      });
     }
-    return rows.sort((a, b) => b.target - a.target || a.headcount - b.headcount);
-  }, [filtered, orgUsers, managers, branchMode]);
+    return rows.sort((a, b) => b.target - a.target || b.teamSold - a.teamSold);
+  }, [filtered, orgUsers, managers, opps, wonNames]);
 
   const openAdd = () => {
     setForm({ ...BLANK_TARGET, id: `tgt${uid()}`, period: periods[0] || "2026-Q1", userId: currentUser || BLANK_TARGET.userId });
@@ -419,69 +500,74 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
         </div>
       )}
 
-      {/* ── Rollup by line manager ── team commitment vs achievement ── */}
+      {/* ── ABP / AOP rollup ── accountability vs contribution ── */}
       {byManager.length > 0 && (
         <div className="card" style={{padding:0, marginBottom:16}}>
           <div style={{padding:"10px 14px", borderBottom:"1px solid var(--border)", fontSize:13, fontWeight:700, color:"var(--text1)", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
-            <Users size={15} style={{color:"var(--brand)"}}/> Rollup by line manager
+            <Users size={15} style={{color:"var(--brand)"}}/> ABP / AOP by owner
             <span style={{fontSize:11, fontWeight:400, color:"var(--text3)"}}>
-              {branchMode ? "full branch — includes every level beneath the manager" : "direct reports only — rows add up to the totals above"} · reflects the filters below
+              ABP = the plan this owner is accountable for, booked from any seller · Team sold = what their own reports closed across the portfolio · reflects the filters below
             </span>
-            <div style={{marginLeft:"auto", display:"flex", gap:0, border:"1.5px solid var(--border)", borderRadius:6, overflow:"hidden"}}>
-              <button onClick={() => setBranchMode(false)} style={{fontSize:11, padding:"4px 10px", fontWeight:600, cursor:"pointer", border:"none", background: branchMode ? "#fff" : "var(--brand)", color: branchMode ? "var(--text2)" : "#fff"}}>Direct</button>
-              <button onClick={() => setBranchMode(true)} style={{fontSize:11, padding:"4px 10px", fontWeight:600, cursor:"pointer", border:"none", background: branchMode ? "var(--brand)" : "#fff", color: branchMode ? "#fff" : "var(--text2)"}}>Full branch</button>
-            </div>
           </div>
           <div style={{overflowX:"auto"}}>
-            <table className="tbl" style={{minWidth:620}}>
+            <table className="tbl" style={{minWidth:900}}>
               <thead>
                 <tr>
-                  <th>Line Manager</th>
+                  <th>Owner</th>
                   <th>Role</th>
-                  <th style={{textAlign:"right"}}>{branchMode ? "Branch" : "Reports"}</th>
-                  <th style={{textAlign:"right"}}>Target (₹L)</th>
-                  <th style={{textAlign:"right"}}>Achieved (₹L)</th>
-                  <th style={{textAlign:"right"}}>Gap (₹L)</th>
+                  <th>Vertical / Products</th>
+                  <th style={{textAlign:"right"}}>Team</th>
+                  <th style={{textAlign:"right"}}>ABP Target (₹L)</th>
+                  <th style={{textAlign:"right"}}>ABP Achieved (₹L)</th>
                   <th>Attainment</th>
+                  <th style={{textAlign:"right"}}>Team Sold (₹L)</th>
+                  <th style={{textAlign:"right"}} title="Team sold minus ABP achieved. Positive = this team sold more into other lines than other teams sold into theirs.">Cross-sell Δ</th>
                   <th style={{textAlign:"right"}}>Deals (T/A)</th>
                 </tr>
               </thead>
               <tbody>
-                {byManager.map(r => {
-                  const gap = r.target - r.achieved;
-                  return (
-                    <tr key={r.mgrId} style={{cursor: r.mgrId !== "__none" ? "pointer" : "default"}}
-                      onClick={() => r.mgrId !== "__none" && setTeamF(teamF === r.mgrId ? "All" : r.mgrId)}
-                      title={r.mgrId !== "__none" ? "Click to filter the page to this team" : ""}>
-                      <td style={{fontWeight:600}}>{r.mgrId === "__none" ? <span style={{color:"var(--text3)"}}>— Outside sales line —</span> : userName(r.mgrId)}</td>
-                      <td style={{fontSize:11, color:"var(--text3)"}}>{(r.role || "").replace(/_/g," ") || "—"}</td>
-                      <td style={{textAlign:"right"}}>{r.headcount}</td>
-                      <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700}}>₹{r.target}L</td>
-                      <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", color:pctColor(r.pct ?? 0)}}>₹{r.achieved}L</td>
-                      <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", color: gap > 0 ? "var(--red)" : "var(--green)"}}>₹{gap.toFixed(1)}L</td>
-                      <td>
-                        {r.pct === null ? <span style={{color:"var(--text3)", fontSize:11}}>no target</span> : (
-                          <div style={{display:"flex", alignItems:"center", gap:8}}>
-                            <div style={{width:60, height:6, background:"#E2E8F0", borderRadius:3, overflow:"hidden"}}>
-                              <div style={{width:`${Math.min(r.pct,100)}%`, height:"100%", background:pctColor(r.pct), borderRadius:3}}/>
-                            </div>
-                            <span style={{fontSize:12, fontWeight:700, color:pctColor(r.pct)}}>{r.pct}%</span>
-                            {r.pct >= 100 ? <TrendingUp size={13} style={{color:"#22C55E"}}/> : <TrendingDown size={13} style={{color:pctColor(r.pct)}}/>}
+                {byManager.map(r => (
+                  <tr key={r.mgrId} style={{cursor: r.mgrId !== "__none" ? "pointer" : "default"}}
+                    onClick={() => r.mgrId !== "__none" && setTeamF(teamF === r.mgrId ? "All" : r.mgrId)}
+                    title={r.mgrId !== "__none" ? "Click to filter the page to this team" : ""}>
+                    <td style={{fontWeight:600}}>{r.mgrId === "__none" ? <span style={{color:"var(--text3)"}}>— Outside sales roles —</span> : userName(r.mgrId)}</td>
+                    <td style={{fontSize:11, color:"var(--text3)"}}>{(r.role || "").replace(/_/g," ") || "—"}</td>
+                    <td style={{fontSize:11}}>
+                      {r.products.length === 0 && !r.companyWide && <span style={{color:"var(--text3)"}}>—</span>}
+                      {r.companyWide && <span style={{fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:4, color:"#0F766E", background:"#0D948818", marginRight:4}}>Company-wide</span>}
+                      {r.products.map(pid => (
+                        <span key={pid} style={{fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:4, color:"#1E40AF", background:"#1E40AF18", marginRight:4}}>
+                          {PROD_MAP[pid]?.name || pid}
+                        </span>
+                      ))}
+                    </td>
+                    <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{r.headcount || "—"}</td>
+                    <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700}}>₹{r.target.toFixed(1)}L</td>
+                    <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", color:pctColor(r.pct ?? 0)}}>₹{r.achieved.toFixed(1)}L</td>
+                    <td>
+                      {r.pct === null ? <span style={{color:"var(--text3)", fontSize:11}}>no target</span> : (
+                        <div style={{display:"flex", alignItems:"center", gap:8}}>
+                          <div style={{width:60, height:6, background:"#E2E8F0", borderRadius:3, overflow:"hidden"}}>
+                            <div style={{width:`${Math.min(r.pct,100)}%`, height:"100%", background:pctColor(r.pct), borderRadius:3}}/>
                           </div>
-                        )}
-                      </td>
-                      <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{r.deals}/{r.wonDeals}</td>
-                    </tr>
-                  );
-                })}
+                          <span style={{fontSize:12, fontWeight:700, color:pctColor(r.pct)}}>{r.pct}%</span>
+                          {r.pct >= 100 ? <TrendingUp size={13} style={{color:"#22C55E"}}/> : <TrendingDown size={13} style={{color:pctColor(r.pct)}}/>}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", color:"var(--text2)"}}>{r.headcount ? `₹${r.teamSold.toFixed(1)}L` : <span style={{color:"var(--text3)"}}>—</span>}</td>
+                    <td style={{textAlign:"right", fontSize:12, fontWeight:700, color: r.delta > 0 ? "#16A34A" : r.delta < 0 ? "#D97706" : "var(--text3)"}}>
+                      {!r.headcount || r.delta === 0 ? "—" : `${r.delta > 0 ? "+" : "−"}₹${Math.abs(r.delta).toFixed(1)}L`}
+                    </td>
+                    <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{r.deals}/{r.wonDeals}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-          {branchMode && (
-            <div style={{padding:"8px 14px", fontSize:11, color:"var(--text3)", borderTop:"1px solid var(--border)"}}>
-              Nested teams are counted inside their parent manager, so these rows overlap — don't add them up. Switch to <b>Direct</b> for figures that reconcile with the totals above.
-            </div>
-          )}
+          <div style={{padding:"8px 14px", fontSize:11, color:"var(--text3)", borderTop:"1px solid var(--border)"}}>
+            <b>ABP Target</b> counts every target once, so it reconciles with the totals above. <b>ABP Achieved</b> books a product's revenue to the owner of that product whoever sold it; <b>Team Sold</b> books it to the seller's team — so those two columns overlap across rows by design and shouldn't be added up.
+          </div>
         </div>
       )}
 
