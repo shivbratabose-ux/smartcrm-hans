@@ -36,7 +36,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { requireSupabase } from '@/lib/supabase';
 import { useAuth } from '@/auth/AuthContext';
 import { useLeads, type Lead } from '@/hooks/useLeads';
-import { todayIso } from '@/utils/format';
+import { todayIso, toLocalISODate, parseLocalDate } from '@/utils/format';
 
 type Props = {
   onBack: () => void;
@@ -398,13 +398,13 @@ function DateField({ value, onChange }: { value: string; onChange: (iso: string)
       )}
       {pickerVisible && DateTimePicker ? (
         <DateTimePicker
-          value={value ? new Date(value) : new Date()}
+          value={value ? parseLocalDate(value) : new Date()}
           mode="date"
           display={Platform.OS === 'ios' ? 'inline' : 'default'}
           minimumDate={new Date()}
           onChange={(_e: any, d: Date | undefined) => {
             setPickerVisible(false);
-            if (d) onChange(d.toISOString().slice(0, 10));
+            if (d) onChange(toLocalISODate(d));
           }}
         />
       ) : null}

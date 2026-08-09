@@ -625,6 +625,58 @@ const toCamel = (obj, module) => {
 // DATABASE OPERATIONS
 // ═══════════════════════════════════════════════════════════════════
 
+// ── Paginated table reads ───────────────────────────────────────────
+// PostgREST caps every response at `max-rows` (1000 on Supabase by default)
+// and returns the truncated page with NO error — a short read is
+// indistinguishable from a complete one. Unpaginated `.select("*")` therefore
+// silently loses every row past the cap, and the loss is not cosmetic:
+// mergeOnLoad sees the missing rows as local-only, retries the insert, gets a
+// duplicate-key 23505, concludes "the cloud already has it" and drops the row
+// from local cache. The record still exists in Postgres but becomes
+// unreachable from the UI, and is re-dropped on every load.
+//
+// So we page explicitly. Two details that matter:
+//
+//  1. `created_at` is NOT a total order — a bulk upload writes hundreds of
+//     rows sharing a timestamp. Postgres gives no stability guarantee for
+//     ties across separate LIMIT/OFFSET queries, so rows can shift between
+//     pages and be fetched twice or skipped entirely. We add `id` as a
+//     tiebreaker to make the sort total and the paging deterministic.
+//
+//  2. We advance by the number of rows actually returned and stop only on an
+//     empty page, rather than assuming a fixed page size. That keeps us
+//     correct if `max-rows` is ever configured below PAGE_SIZE (a fixed-size
+//     assumption would see the first short page and stop early — the same
+//     silent-truncation bug in a new costume). Cost is one extra empty
+//     request per table.
+const PAGE_SIZE = 1000;
+const MAX_PAGES = 500; // 500k rows — a runaway guard, not an expected limit
+
+// Fetch every row matching a filter, paging until exhausted.
+// Returns { rows, error }: on ANY page failure we surface the error and
+// discard the partial result, because returning a short list here would
+// recreate exactly the truncation bug this function exists to prevent.
+async function fetchAllRows(table, orderCol, applyFilter) {
+  const rows = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = rows.length;
+    const { data, error } = await applyFilter(supabase.from(table).select("*"))
+      .order(orderCol, { ascending: false })
+      .order("id", { ascending: false }) // tiebreaker → total, stable order
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) return { rows: null, error };
+    const batch = data || [];
+    rows.push(...batch);
+    if (batch.length === 0) return { rows, error: null };
+  }
+  // Ran out of pages before the table was exhausted. Returning what we have
+  // would be a silent truncation, so treat it as an error.
+  return {
+    rows: null,
+    error: { message: `${table}: exceeded ${MAX_PAGES} pages (${rows.length}+ rows) — refusing to return a truncated result` },
+  };
+}
+
 /**
  * Load all data for a module from Supabase (or localStorage fallback)
  */
@@ -636,9 +688,9 @@ export async function loadAll(module) {
 
   // files table uses uploaded_at instead of created_at
   const orderCol = table === "files" ? "uploaded_at" : "created_at";
-  const { data, error } = await supabase.from(table).select("*").eq("is_deleted", false).order(orderCol, { ascending: false });
+  const { rows, error } = await fetchAllRows(table, orderCol, q => q.eq("is_deleted", false));
   if (error) { dbLog('error', `[DB] loadAll ${module}:`, error); return null; }
-  return (data || []).map(r => toCamel(r, module));
+  return rows.map(r => toCamel(r, module));
 }
 
 /**
@@ -866,9 +918,11 @@ export async function loadDeleted(module) {
   if (!isSupabaseConfigured) return [];
   const table = TABLE_MAP[module];
   if (!table) return [];
-  const { data, error } = await supabase.from(table).select("*").eq("is_deleted", true).order("deleted_at", { ascending: false });
+  // Paged for the same reason as loadAll — Trash on a long-lived org easily
+  // exceeds the 1000-row cap, and a truncated Trash hides restorable records.
+  const { rows, error } = await fetchAllRows(table, "deleted_at", q => q.eq("is_deleted", true));
   if (error) { dbLog('error', `[DB] loadDeleted ${module}:`, error); return []; }
-  return (data || []).map(r => toCamel(r, module));
+  return rows.map(r => toCamel(r, module));
 }
 
 /**

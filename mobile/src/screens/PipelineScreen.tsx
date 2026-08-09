@@ -41,6 +41,7 @@ import {
 } from '@/components/ui';
 import { colors, fontSize, fontWeight, spacing, radii } from '@/theme';
 import { useOpportunities, useUpdateOppStage, type Opportunity, type Stage } from '@/hooks/useOpportunities';
+import { parseLocalDate, daysFromToday } from '@/utils/format';
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -55,9 +56,12 @@ function fmtINR(n: number): string {
 
 function fmtRelativeClose(iso: string | null): string {
   if (!iso) return '';
-  const d = new Date(iso);
+  const d = parseLocalDate(iso);
   if (Number.isNaN(d.getTime())) return '';
-  const diff = Math.floor((d.getTime() - Date.now()) / 86400000);
+  // Compare calendar days, not instants. Against a UTC-midnight parse, a
+  // deal closing today read as ~-8.5h in IST and floored to "1d overdue"
+  // for the whole of its own close date.
+  const diff = daysFromToday(iso) ?? 0;
   if (diff < 0) return `${-diff}d overdue`;
   if (diff === 0) return 'today';
   if (diff < 7)  return `in ${diff}d`;
