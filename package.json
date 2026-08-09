@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:pricing": "node scripts/test-pricing-engine.mjs",
-    "test:abp": "node scripts/test-abp-rollup.mjs"
+    "test:abp": "node scripts/test-abp-rollup.mjs",
+    "check:rls": "node scripts/check-rls-role-parity.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
