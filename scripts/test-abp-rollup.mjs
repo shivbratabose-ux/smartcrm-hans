@@ -36,12 +36,14 @@ const ABP_OWNER_ROLES = ["vp_sales_mkt", "director", "line_mgr", "country_mgr", 
 
 // ── Mirror of byManager ───────────────────────────────────────────
 function byManager(filtered, users, opps) {
-  const managers = users
-    .filter(u => u.active !== false)
-    .filter(m => ABP_OWNER_ROLES.includes(String(m.role || "").trim().toLowerCase()))
+  const byId = Object.fromEntries(users.map(u => [u.id, u]));
+  const isSalesLead = (u) => ABP_OWNER_ROLES.includes(String(u?.role || "").trim().toLowerCase());
+  const leads = users.filter(u => u.active !== false).filter(isSalesLead);
+  const tops = new Set(leads.filter(u => !isSalesLead(byId[u.reportsTo])).map(u => u.id));
+  const managers = leads
+    .filter(u => tops.has(u.id) || tops.has(u.reportsTo))
     .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
-  const byId = Object.fromEntries(users.map(u => [u.id, u]));
   const gridIds = new Set(managers.map(m => m.id));
 
   const childrenOf = {};
@@ -135,7 +137,7 @@ const USERS = [
   { id: "u_amit",  name: "Amit Mopari",      role: "line_mgr",     reportsTo: "u_shiv" },
   { id: "u_lotak", name: "Lotak Mohapatra",  role: "line_mgr",     reportsTo: "u_shiv" },
   { id: "u_rit",   name: "Ritesh Kumar",     role: "line_mgr",     reportsTo: "u_shiv" }, // no team yet
-  { id: "u_adarsh",name: "Adarsh Raj",       role: "sales_exec",   reportsTo: "u_amit" },
+  { id: "u_adarsh",name: "Adarsh Raj",       role: "bd_lead",      reportsTo: "u_amit" }, // sales-lead ROLE but reports into a Line Manager
   { id: "u_neha",  name: "Neha S",           role: "sales_exec",   reportsTo: "u_lotak" },
   { id: "u_fin",   name: "Finance Person",   role: "finance",      reportsTo: "u_parv" },
 ];
@@ -158,6 +160,11 @@ check("period mapping: 15 Aug 2026 → 2026-Q2", periodOf(CLOSE), Q);
   check("Ritesh reads 'no target' rather than 0%", row(rows, "u_rit").pct, null);
   check("non-sales roles get no row (MD, Finance)",
     rows.some(r => r.mgrId === "u_parv" || r.mgrId === "u_fin"), false);
+  // Adarsh holds a sales-leadership ROLE (bd_lead) but reports into a Line
+  // Manager, so he is a team member and not a plan owner. He was appearing as
+  // an all-zero noise row because his targets already credit up to Amit.
+  check("someone reporting INTO a Line Manager gets no row",
+    rows.some(r => r.mgrId === "u_adarsh"), false);
 }
 
 // ── 2. Exec targets roll up into their Line Manager's commitment ──
