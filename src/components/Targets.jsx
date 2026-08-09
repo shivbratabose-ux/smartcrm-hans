@@ -110,11 +110,28 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
   // today their targets roll up into their Line Manager's row instead, and
   // the detail table below already lists them line by line.
   const ABP_OWNER_ROLES = ["vp_sales_mkt", "director", "line_mgr", "country_mgr", "bd_lead"];
-  const managers = useMemo(
-    () => userOpts
-      .filter(m => ABP_OWNER_ROLES.includes(String(m.role || "").trim().toLowerCase()))
-      .sort((a, b) => (a.name || "").localeCompare(b.name || "")),
-    [orgUsers]);
+  const managers = useMemo(() => {
+    const all = userOpts;
+    const byId = Object.fromEntries(all.map(u => [u.id, u]));
+    const isSalesLead = (u) => ABP_OWNER_ROLES.includes(String(u?.role || "").trim().toLowerCase());
+    const leads = all.filter(isSalesLead);
+
+    // Top of the sales line: a sales-leadership person with no sales-leadership
+    // manager above them — the VP Sales, whose own manager is the MD. Computed
+    // rather than hardcoded so a title change doesn't empty the panel, and so
+    // a Line Manager parked under the MD by a data slip still gets a row
+    // instead of vanishing.
+    const tops = new Set(leads.filter(u => !isSalesLead(byId[u.reportsTo])).map(u => u.id));
+
+    // The plan tier is the top plus the layer directly beneath it. Anyone who
+    // reports INTO a Line Manager is a team member, not a plan owner, so they
+    // get no row even when their role says otherwise — their targets already
+    // roll up into their manager's commitment via creditOf, so a row of their
+    // own would be empty noise.
+    return leads
+      .filter(u => tops.has(u.id) || tops.has(u.reportsTo))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [orgUsers]);
   const teamIds = useMemo(() => teamF === "All" ? null : getScopedUserIds(teamF, orgUsers), [teamF, orgUsers]);
   // Direct manager of a user — shown as a column so every target says which
   // line manager owns it.
