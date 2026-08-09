@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check:rls": "node scripts/check-rls-role-parity.mjs",
     "test:abp": "node scripts/test-abp-rollup.mjs",
+    "test:dates": "node scripts/test-dates.mjs",
     "test:pagination": "node scripts/test-pagination.mjs",
     "test:pricing": "node scripts/test-pricing-engine.mjs",
     "test:targets": "node scripts/test-targets-attainment.mjs"

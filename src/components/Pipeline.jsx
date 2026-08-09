@@ -28,7 +28,7 @@ import {
   VERTICALS, LEAD_SOURCES, REGIONS, LEAD_TEMPERATURES, BUDGET_RANGES, DECISION_TIMELINES
 } from "../data/constants";
 import { BLANK_OPP } from "../data/seed";
-import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds, canEditRecord, hasPendingAccessReq } from "../utils/helpers";
+import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, toLocalISODate, parseLocalDate, isOverdue, getScopedUserIds, canEditRecord, hasPendingAccessReq } from "../utils/helpers";
 import { exportCSV } from "../utils/csv";
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect, EditLockActions, RecordJourney } from "./shared";
 import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from "./ProductModulePicker";
@@ -1532,7 +1532,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
     if (!mgrView) return [];
     return filtered.filter(o => {
       if (closingNames.includes(o.stage) || o.stage === firstStageName) return false;
-      const recent = (activities || []).filter(a => a.oppId === o.id && a.status === "Completed" && a.date >= (() => { const d = new Date(today); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); })());
+      const recent = (activities || []).filter(a => a.oppId === o.id && a.status === "Completed" && a.date >= (() => { const d = parseLocalDate(today); d.setDate(d.getDate() - 7); return toLocalISODate(d); })());
       return recent.length === 0;
     });
   }, [filtered, activities, mgrView, closingNames, firstStageName]);
