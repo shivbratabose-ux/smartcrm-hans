@@ -132,7 +132,8 @@ function byManager(filtered, users, opps) {
     return {
       mgrId: m.id, role: m.role || "", consolidated, products: c ? [...c.products] : [],
       companyWide: [...pairs].some(pr => pr.endsWith("|All")),
-      headcount: Math.max(branchIds.size - 1, 0),
+      headcount: [...branchIds].filter(id2 => id2 !== m.id &&
+        [...ABP_OWNER_ROLES, "sales_exec"].includes(String(byId[id2]?.role || "").trim().toLowerCase())).length,
       target: abpTarget, achieved,
       own: sum(ownDeals), team: sum(teamDeals), crossIn: sum(crossInDeals),
       crossOut: sum(crossOutDeals),
@@ -165,6 +166,9 @@ const USERS = [
   { id: "u_adarsh",name: "Adarsh Raj",       role: "bd_lead",      reportsTo: "u_amit" }, // sales-lead ROLE but reports into a Line Manager
   { id: "u_neha",  name: "Neha S",           role: "sales_exec",   reportsTo: "u_lotak" },
   { id: "u_fin",   name: "Finance Person",   role: "finance",      reportsTo: "u_parv" },
+  { id: "u_raj",   name: "Rajesh Kumar",     role: "product_head", reportsTo: "u_shiv" }, // non-sales manager under the VP
+  { id: "u_sud",   name: "Sudhir",           role: "sales_exec",   reportsTo: "u_raj" },  // seller under a non-sales manager
+  { id: "u_yog",   name: "Yogesh",           role: "support",      reportsTo: "u_amit" }, // support inside a sales team
 ];
 const Q = "2026-Q2";
 const CLOSE = "2026-08-15";                    // inside 2026-Q2 (India FY, Apr–Mar)
@@ -209,7 +213,10 @@ check("period mapping: 15 Aug 2026 → 2026-Q2", periodOf(CLOSE), Q);
   check("consolidated VP row equals the page total", row(rows, "u_shiv").target, 180);
   check("Amit's owned vertical is iCAFFE", row(rows, "u_amit").products, ["iCAFFE"]);
   check("VP's row is flagged company-wide", row(rows, "u_shiv").companyWide, true);
-  check("headcount is the real branch, not visibility scope", row(rows, "u_shiv").headcount, 5);
+  // Selling capacity only: Sudhir (seller under the Product Head) counts,
+  // Rajesh (product_head) and Yogesh (support) do not.
+  check("VP team = quota-carrying branch only", row(rows, "u_shiv").headcount, 6);
+  check("support engineer doesn't inflate Amit's team", row(rows, "u_amit").headcount, 1);
 }
 
 // ── 3. Cross-sell: Amit's exec sells WiseCargo, which Lotak owns ──
@@ -290,6 +297,16 @@ check("period mapping: 15 Aug 2026 → 2026-Q2", periodOf(CLOSE), Q);
   ];
   const rows = byManager([{ userId: "c", period: Q, product: "iCAFFE", targetValue: 10, targetDeals: 1 }], cyclic, []);
   check("cyclic reportsTo terminates and still credits", rows.reduce((s, r) => s + r.target, 0), 10);
+}
+
+// ── 7b. A seller under a NON-sales manager credits to the VP ──
+// Sudhir reports to Rajesh (product_head, outside the sales grid); the walk
+// skips Rajesh and lands Sudhir's commitment on the VP row.
+{
+  const targets = [{ userId: "u_sud", period: Q, product: "iCAFFE", targetValue: 10, targetDeals: 1 }];
+  const rows = byManager(targets, USERS, []);
+  check("Sudhir's target credits to the VP, skipping the Product Head", row(rows, "u_shiv").target, 10);
+  check("nothing falls into the outside-sales bucket", rows.some(r => r.mgrId === "__none"), false);
 }
 
 // ── 8. The live-data regression (numbers from production, 9 Aug 2026) ──
