@@ -244,9 +244,16 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
   // Individual). Company = a company-wide (product All) target held by the
   // plan tier; Product = product-specific; Individual = held by a team member.
   const managerIds = useMemo(() => new Set(managers.map(m => m.id)), [managers]);
+  // Top of the sales line (the VP) — only THEIR company-wide rows are the
+  // company plan; a Line Manager's "All Products" target is an allocation.
+  const topIds = useMemo(() => {
+    const byId = Object.fromEntries(userOpts.map(u => [u.id, u]));
+    const isLead = (u) => ABP_OWNER_ROLES.includes(String(u?.role || "").trim().toLowerCase());
+    return new Set(managers.filter(u => !isLead(byId[u.reportsTo])).map(u => u.id));
+  }, [managers, orgUsers]);
   const typeOfTarget = (t) => {
     const wide = !t.product || t.product === "All";
-    if (wide && managerIds.has(t.userId)) return "Company";
+    if (wide && topIds.has(t.userId)) return "Company";
     if (!wide) return t.vertical ? "Vertical" : "Product";
     return "Individual";
   };
@@ -351,17 +358,17 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
           .filter(d => sourceF === "All" || d.origin === sourceF),
     [ledger, scopePairs, sourceF]);
 
-  // ── Company ABP vs allocations ──
-  // LM and salesperson targets are ALLOCATIONS of the company plan, not
-  // additions to it. When a company-level target (product All, held by the
-  // plan tier) is in scope, the headline ABP is THAT number; the sum of every
-  // row is shown alongside as "allocated" so over/under-allocation is visible
-  // instead of silently doubling the plan.
+  // ── Company ABP ──
+  // The company plan is the CONSOLIDATION of every commitment, each target
+  // counted once — the VP's own company-wide rows plus every Line Manager /
+  // salesperson allocation. The split between "held company-wide" and
+  // "allocated to teams" is shown on the card so the distribution stays
+  // visible without ever double-counting a row.
   const companyTarget = +filtered.filter(t => typeOfTarget(t) === "Company")
     .reduce((s, t) => s + (Number(t.targetValue) || 0), 0).toFixed(2);
   const allRowsTarget = +filtered.reduce((s, t) => s + (Number(t.targetValue) || 0), 0).toFixed(2);
   const allocatedTarget = +(allRowsTarget - companyTarget).toFixed(2);
-  const totalTarget = companyTarget > 0 ? companyTarget : allRowsTarget;
+  const totalTarget = allRowsTarget;
   const totalTargetDeals = filtered.reduce((s, t) => s + (Number(t.targetDeals) || 0), 0);
 
   // Achieved: every won deal matching an in-scope commitment, counted once —
@@ -477,11 +484,14 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       return out;
     };
 
-    // Credit a target to the NEAREST ABP owner at or above its owner. Targets
-    // are currently captured against sales executives, so this is what rolls an
-    // exec's number up into their Line Manager's commitment. It also means the
-    // panel keeps working unchanged if you later enter targets at LM level.
+    // Credit a target to its accountable ABP owner: the holder themselves when
+    // they are in the grid, else the NEAREST grid member above them. The
+    // self-check comes FIRST — the previous version consulted reportsTo before
+    // considering the holder, so a Line Manager's own targets bubbled up to
+    // the VP: Lotak read "no target" while the VP's row silently absorbed his
+    // ₹49.1L. An owner is accountable for their own commitment.
     const creditOf = (uid) => {
+      if (gridIds.has(uid)) return uid;
       let cur = byId[uid];
       const seen = new Set();
       while (cur && cur.reportsTo && !seen.has(cur.id)) {
@@ -489,7 +499,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
         if (gridIds.has(cur.reportsTo)) return cur.reportsTo;
         cur = byId[cur.reportsTo];
       }
-      return gridIds.has(uid) ? uid : "__none";
+      return "__none";
     };
 
     // Every target, grouped under the ABP owner accountable for it.
@@ -525,17 +535,43 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
 
     const teamPairs = new Set(visiblePeriods.map(p => `${p}|All`));
 
+    // The top of the sales line (the VP) is a CONSOLIDATION: every
+    // allocation beneath them is part of their number, so their row carries
+    // the union of the whole branch's commitments — own targets plus every
+    // Line Manager's slice, each counted once. "Amit's ₹75L" is IN the VP's
+    // figure, not beside it. LM rows remain the distribution of that plan,
+    // so the ABP Target column must not be summed down (footnote says so).
+    const isSalesLead2 = (u) => ABP_OWNER_ROLES.includes(String(u?.role || "").trim().toLowerCase());
+    const tops = new Set(managers.filter(u => !isSalesLead2(byId[u.reportsTo])).map(u => u.id));
+
     // EVERY ABP owner gets a row — including one with no target yet, so a
     // missing commitment is visible instead of the manager silently absent.
     const rows = managers.map(m => {
-      const c = credited[m.id];
-      const pairs = c ? c.pairs : new Set();
-      const abpTarget = c ? c.target : 0;
+      const isTop = tops.has(m.id);
       const branchIds = branchOf(m.id);
+      let pairs, abpTarget, consolidated = false;
+      if (isTop) {
+        // Union of every commitment held anywhere in the branch.
+        pairs = new Set(); abpTarget = 0;
+        Object.entries(credited).forEach(([ownerId, c2]) => {
+          if (ownerId !== "__none" && !branchIds.has(ownerId)) return;
+          if (ownerId === "__none") return;
+          c2.pairs.forEach(pr => pairs.add(pr));
+          abpTarget += c2.target;
+        });
+        abpTarget = +abpTarget.toFixed(2);
+        consolidated = pairs.size > 0 && (credited[m.id] ? abpTarget > credited[m.id].target : true);
+      } else {
+        const c = credited[m.id];
+        pairs = c ? c.pairs : new Set();
+        abpTarget = c ? c.target : 0;
+      }
+      const c = credited[m.id];
 
-      // Accountability: deals on the products this owner holds, from ANY
-      // seller — then PARTITIONED by who sold them, so the columns sum to
-      // Total Achieved with nothing counted twice:
+      // Accountability: deals on the commitments this owner holds (for the
+      // top row: the whole consolidated plan), from ANY seller — then
+      // PARTITIONED by who sold them, so the columns sum to Total Achieved
+      // with nothing counted twice:
       //   own (the owner personally) + team (their branch) + crossIn
       //   (sellers outside the branch) = total.
       const abpDeals = pairs.size ? dealsFor(pairs, null) : [];
@@ -561,9 +597,10 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       const achieved = sum(abpDeals);
       return {
         mgrId: m.id, role: m.role || "",
+        consolidated,
         products: c ? [...c.products] : [],
         verticals: c ? [...c.verticals] : [],
-        companyWide: [...pairs].some(pr => pr.endsWith("|All")),
+        companyWide: [...(c ? c.pairs : pairs)].some(pr => pr.endsWith("|All")),
         headcount: Math.max(branchIds.size - 1, 0),   // reports, excluding self
         target: abpTarget,
         achieved,
@@ -586,7 +623,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
     if (o && o.target > 0) {
       const abpDeals = dealsFor(o.pairs, null);
       rows.push({
-        mgrId: "__none", role: "", products: [], verticals: [], companyWide: false,
+        mgrId: "__none", role: "", consolidated: false, products: [], verticals: [], companyWide: false,
         headcount: o.people.size, target: o.target, achieved: sum(abpDeals),
         own: 0, team: 0, crossIn: sum(abpDeals), dept: 0, crossOut: 0, pipeline: 0,
         wonDeals: abpDeals.length, deals: o.deals, teamSold: 0,
@@ -598,11 +635,11 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
   }, [filtered, orgUsers, managers, ledgerScoped, openDeals]);
 
   // Company-level cross-sell = revenue that landed in an owner's plan from a
-  // seller OUTSIDE that owner's branch. Summed over product/vertical owners
-  // only — the company-wide row would count every cross-sold deal a second
-  // time, since it matches all products by definition.
+  // seller OUTSIDE that owner's branch. Summed over Line-Manager rows only —
+  // the consolidation row and company-wide commitments match everything by
+  // definition and would re-count every cross-sold deal.
   const crossSellTotal = +byManager
-    .filter(r => r.mgrId !== "__none" && !r.companyWide)
+    .filter(r => r.mgrId !== "__none" && !r.consolidated && !r.companyWide)
     .reduce((acc, r) => acc + r.crossIn, 0).toFixed(2);
 
   // ── Hans portfolio ──
@@ -720,11 +757,11 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       {/* KPI Cards — company ABP is the plan, not the sum of its allocations */}
       <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:12,marginBottom:16}}>
         <div className="kpi">
-          <div className="kpi-label">{companyTarget > 0 ? "Company ABP" : "Revenue Target"}</div>
+          <div className="kpi-label">Company ABP</div>
           <div className="kpi-val">{fmt.inr(totalTarget)}</div>
           {companyTarget > 0 && allocatedTarget > 0 && (
-            <div className="kpi-sub" title="Line Manager / salesperson targets are allocations of the company plan — they don't add to it.">
-              {fmt.inr(allocatedTarget)} allocated to teams{allocatedTarget > companyTarget ? " · over-allocated" : ""}
+            <div className="kpi-sub" title="The plan consolidates to the VP: company-wide commitments plus every team allocation, each counted once.">
+              {fmt.inr(companyTarget)} company-wide · {fmt.inr(allocatedTarget)} allocated
             </div>
           )}
         </div>
@@ -840,7 +877,8 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                     <td style={{fontSize:11, color:"var(--text3)"}}>{(r.role || "").replace(/_/g," ") || "—"}</td>
                     <td style={{fontSize:11}}>
                       {r.products.length === 0 && r.verticals.length === 0 && !r.companyWide && <span style={{color:"var(--text3)"}}>—</span>}
-                      {r.companyWide && <span style={{fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:4, color:"#0F766E", background:"#0D948818", marginRight:4}}>Company-wide</span>}
+                      {r.consolidated && <span style={{fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:4, color:"#0F766E", background:"#0D948818", marginRight:4}} title="This row is the whole plan: own commitments plus every allocation beneath, each counted once. Don't add the rows below to it.">Consolidated</span>}
+                      {!r.consolidated && r.companyWide && <span style={{fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:4, color:"#0F766E", background:"#0D948818", marginRight:4}}>Company-wide</span>}
                       {r.verticals.map(v => (
                         <span key={v} style={{fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:4, color:"#9333EA", background:"#9333EA15", marginRight:4}}>{v}</span>
                       ))}
@@ -880,7 +918,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
             </table>
           </div>
           <div style={{padding:"8px 14px", fontSize:11, color:"var(--text3)", borderTop:"1px solid var(--border)"}}>
-            <b>Own + Team + Cross-in = Total Achieved</b> — a partition, every deal counted once per owner. <b>Cross-out</b> is this branch's revenue landing in other owners' plans, and <b>via Depts</b> is the slice of Total Achieved originated by a non-sales department — both informational, never added to the partition. <b>ABP Target</b> counts every target once and reconciles with the totals above; a cross-sold deal appears in one owner's Cross-in and another's Cross-out by design.
+            The <b>Consolidated</b> row is the company plan rolled up to the VP — every allocation beneath is inside it, so <b>don't sum the ABP Target column</b>; the Line Manager rows are its distribution. Per row, <b>Own + Team + Cross-in = Total Achieved</b> (a partition, every deal counted once); <b>Cross-out</b> and <b>via Depts</b> are informational overlays. A cross-sold deal appears in one owner's Cross-in and another's Cross-out by design.
           </div>
         </div>
       )}

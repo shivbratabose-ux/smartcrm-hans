@@ -61,13 +61,14 @@ function byManager(filtered, users, opps) {
   };
 
   const creditOf = (uid) => {
+    if (gridIds.has(uid)) return uid;         // an owner keeps their own commitment
     let cur = byId[uid]; const seen = new Set();
     while (cur && cur.reportsTo && !seen.has(cur.id)) {
       seen.add(cur.id);
       if (gridIds.has(cur.reportsTo)) return cur.reportsTo;
       cur = byId[cur.reportsTo];
     }
-    return gridIds.has(uid) ? uid : "__none";
+    return "__none";
   };
 
   const credited = {};
@@ -100,11 +101,26 @@ function byManager(filtered, users, opps) {
   const sum = (ds) => +ds.reduce((acc, d) => acc + d.value, 0).toFixed(2);
   const teamPairs = new Set(visiblePeriods.map(p2 => `${p2}|All`));
 
+  const tops2 = new Set(managers.filter(u => !isSalesLead(byId[u.reportsTo])).map(u => u.id));
   const rows = managers.map(m => {
-    const c = credited[m.id];
-    const pairs = c ? c.pairs : new Set();
-    const abpTarget = c ? c.target : 0;
+    const isTop = tops2.has(m.id);
     const branchIds = branchOf(m.id);
+    let pairs, abpTarget, consolidated = false;
+    if (isTop) {
+      pairs = new Set(); abpTarget = 0;
+      Object.entries(credited).forEach(([ownerId, c2]) => {
+        if (ownerId === "__none" || !branchIds.has(ownerId)) return;
+        c2.pairs.forEach(pr => pairs.add(pr));
+        abpTarget += c2.target;
+      });
+      abpTarget = +abpTarget.toFixed(2);
+      consolidated = pairs.size > 0 && (credited[m.id] ? abpTarget > credited[m.id].target : true);
+    } else {
+      const c0 = credited[m.id];
+      pairs = c0 ? c0.pairs : new Set();
+      abpTarget = c0 ? c0.target : 0;
+    }
+    const c = credited[m.id];
     const abpDeals = pairs.size ? dealsFor(pairs, null) : [];
     const ownDeals = abpDeals.filter(d => d.owner === m.id);
     const teamDeals = abpDeals.filter(d => d.owner !== m.id && branchIds.has(d.owner));
@@ -114,7 +130,7 @@ function byManager(filtered, users, opps) {
     const crossOutDeals = soldDeals.filter(d => !soldIds.has(d.id));
     const achieved = sum(abpDeals);
     return {
-      mgrId: m.id, role: m.role || "", products: c ? [...c.products] : [],
+      mgrId: m.id, role: m.role || "", consolidated, products: c ? [...c.products] : [],
       companyWide: [...pairs].some(pr => pr.endsWith("|All")),
       headcount: Math.max(branchIds.size - 1, 0),
       target: abpTarget, achieved,
@@ -186,9 +202,11 @@ check("period mapping: 15 Aug 2026 → 2026-Q2", periodOf(CLOSE), Q);
   const rows = byManager(targets, USERS, []);
   check("Adarsh's ₹50L credits to Amit", row(rows, "u_amit").target, 50);
   check("Neha's ₹30L credits to Lotak", row(rows, "u_lotak").target, 30);
-  check("VP keeps the company-level ₹100L", row(rows, "u_shiv").target, 100);
-  check("ABP Target reconciles with the page total",
-    rows.reduce((s, r) => s + r.target, 0), 180);
+  // The VP row is the CONSOLIDATION — allocations are inside it, not beside
+  // it, so the VP reads the full plan and the column must not be summed down.
+  check("VP row consolidates own 100 + Amit 50 + Lotak 30", row(rows, "u_shiv").target, 180);
+  check("VP row is flagged consolidated", row(rows, "u_shiv").consolidated, true);
+  check("consolidated VP row equals the page total", row(rows, "u_shiv").target, 180);
   check("Amit's owned vertical is iCAFFE", row(rows, "u_amit").products, ["iCAFFE"]);
   check("VP's row is flagged company-wide", row(rows, "u_shiv").companyWide, true);
   check("headcount is the real branch, not visibility scope", row(rows, "u_shiv").headcount, 5);
@@ -258,8 +276,9 @@ check("period mapping: 15 Aug 2026 → 2026-Q2", periodOf(CLOSE), Q);
   ];
   const rows = byManager(targets, USERS, []);
   check("orphan target surfaces in the catch-all row", row(rows, "__none").target, 10);
-  check("ABP Target still reconciles with the page total",
-    rows.reduce((s, r) => s + r.target, 0), 60);
+  check("consolidated VP + outside-sales row = page total",
+    +(row(rows, "u_shiv").target + row(rows, "__none").target).toFixed(2), 60);
+  check("an outside-sales target never inflates the consolidation", row(rows, "u_shiv").target, 50);
 }
 
 // ── 7. A reporting cycle must not hang the credit walk ──
@@ -271,6 +290,32 @@ check("period mapping: 15 Aug 2026 → 2026-Q2", periodOf(CLOSE), Q);
   ];
   const rows = byManager([{ userId: "c", period: Q, product: "iCAFFE", targetValue: 10, targetDeals: 1 }], cyclic, []);
   check("cyclic reportsTo terminates and still credits", rows.reduce((s, r) => s + r.target, 0), 10);
+}
+
+// ── 8. The live-data regression (numbers from production, 9 Aug 2026) ──
+// Shivbrata holds 33.5+29+40+35 = 137.5 personally, Lotak 26.8+22.3 = 49.1,
+// Adarsh (under Amit) 22.5+19.5+18+15 = 75. Before the creditOf fix Lotak
+// read ₹0 (his targets bubbled to the VP) and the VP read 186.6 with Amit's
+// 75 beside it. Now: Lotak keeps 49.1, Amit 75, and the VP consolidates
+// 137.5 + 49.1 + 75 = 261.6 — the company ABP, each target counted once.
+{
+  const targets = [
+    { userId: "u_shiv",  period: "2026-Q4", product: "All", targetValue: 33.5, targetDeals: 0 },
+    { userId: "u_shiv",  period: "2026-Q3", product: "All", targetValue: 29,   targetDeals: 0 },
+    { userId: "u_shiv",  period: "2026-Q1", product: "All", targetValue: 40,   targetDeals: 6 },
+    { userId: "u_shiv",  period: "2025-Q4", product: "All", targetValue: 35,   targetDeals: 5 },
+    { userId: "u_lotak", period: "2026-Q2", product: "All", targetValue: 26.8, targetDeals: 0 },
+    { userId: "u_lotak", period: "2026-Q1", product: "All", targetValue: 22.3, targetDeals: 0 },
+    { userId: "u_adarsh", period: "2026-Q3", product: "All", targetValue: 22.5, targetDeals: 30 },
+    { userId: "u_adarsh", period: "2026-Q3", product: "All", targetValue: 19.5, targetDeals: 30 },
+    { userId: "u_adarsh", period: "2026-Q2", product: "All", targetValue: 18,   targetDeals: 30 },
+    { userId: "u_adarsh", period: "2026-Q1", product: "All", targetValue: 15,   targetDeals: 30 },
+  ];
+  const rows = byManager(targets, USERS, []);
+  check("live shape: Lotak keeps his own ₹49.1L (was ₹0)", row(rows, "u_lotak").target, 49.1);
+  check("live shape: Amit carries Adarsh's ₹75L", row(rows, "u_amit").target, 75);
+  check("live shape: VP consolidates to the company ABP ₹261.6L", row(rows, "u_shiv").target, 261.6);
+  check("live shape: VP row is the consolidation", row(rows, "u_shiv").consolidated, true);
 }
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} ${pass} passed, ${fail} failed\n`);
