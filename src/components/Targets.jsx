@@ -642,6 +642,15 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
     .filter(r => r.mgrId !== "__none" && !r.consolidated && !r.companyWide)
     .reduce((acc, r) => acc + r.crossIn, 0).toFixed(2);
 
+  // True while every Line Manager's commitment is "All Products". In that
+  // state structural cross-sell is undefined (there is no product boundary to
+  // cross), every owner's figures overlap the same deals, and the fix is in
+  // the DATA — scope targets by product/vertical. The UI says so explicitly
+  // rather than showing numbers that contradict each other.
+  const allCompanyWide = byManager.length > 0 &&
+    byManager.filter(r => r.mgrId !== "__none" && !r.consolidated && r.target > 0)
+             .every(r => r.companyWide);
+
   // ── Hans portfolio ──
   // Per-product plan vs revenue from the live catalog. A deal carrying
   // several products is shown under each (breakdown view — the company totals
@@ -667,8 +676,13 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       const deals = ledgerScoped.filter(d => d.products.includes(prod.id));
       const revenue = +deals.reduce((acc, d) => acc + d.value, 0).toFixed(2);
       const crossSell = +deals.filter(d => {
+        // Cross-sell needs a product boundary to cross. An owner whose
+        // commitments are company-wide (empty product set) has no boundary,
+        // so nothing their team sells is "cross" — the earlier version
+        // treated the empty set as owning NOTHING and marked 100% of all
+        // revenue as cross-sell.
         const own = ownerProducts[creditOwnerOf(d.owner)];
-        return own ? !own.has(prod.id) : false;
+        return own && own.size > 0 ? !own.has(prod.id) : false;
       }).reduce((acc, d) => acc + d.value, 0).toFixed(2);
       const customers = new Set(deals.map(d => d.accountId).filter(Boolean)).size;
       return { id: prod.id, name: prod.name, target, revenue, crossSell, customers, dealCount: deals.length };
@@ -778,12 +792,22 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
         <div className="kpi">
           <div className="kpi-label">Pipeline</div>
           <div className="kpi-val" style={{color:"var(--brand)"}}>{fmt.inr(totalPipeline)}</div>
-          <div className="kpi-sub">{totalGap > 0 ? `${Math.round((totalPipeline / totalGap) * 100)}% of remaining gap` : "open deals in scope"}</div>
+          <div className="kpi-sub">{totalGap > 0
+            ? (totalPipeline >= totalGap
+                ? `covers the remaining gap ${(totalPipeline / totalGap).toFixed(1)}×`
+                : `${Math.round((totalPipeline / totalGap) * 100)}% of remaining gap`)
+            : "open deals in scope"}</div>
         </div>
         <div className="kpi">
           <div className="kpi-label">Cross-sell</div>
           <div className="kpi-val" style={{color:"#7C3AED"}}>{fmt.inr(crossSellTotal)}</div>
-          <div className="kpi-sub">{totalAchieved > 0 ? `${Math.round((crossSellTotal / totalAchieved) * 100)}% of achieved` : "sold outside own line"}</div>
+          <div className="kpi-sub">
+            {crossSellTotal > 0 && totalAchieved > 0
+              ? `${Math.round((crossSellTotal / totalAchieved) * 100)}% of achieved`
+              : allCompanyWide
+                ? "needs product-scoped targets"
+                : "sold outside own line"}
+          </div>
         </div>
         <div className="kpi">
           <div className="kpi-label">Deals</div>
@@ -810,7 +834,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
             </div>
           </div>
           <ResponsiveContainer width="100%" height={Math.max(180, Math.min(260, 120 + chartData.length * 18))}>
-            <BarChart data={chartData} barGap={4} barSize={Math.max(14, Math.min(40, Math.floor(360 / Math.max(chartData.length, 1))))}>
+            <BarChart data={chartData} barGap={4} barCategoryGap="22%" maxBarSize={44}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)"/>
               <XAxis dataKey="name" tick={{fontSize:11}} tickLine={false}/>
               <YAxis tick={{fontSize:11}} tickLine={false} axisLine={false}/>
@@ -892,7 +916,9 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                     <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700}}>{fmt.inr(r.target)}</td>
                     <td style={{textAlign:"right", fontSize:12}}>{r.own ? fmt.inr(r.own) : <span style={{color:"var(--text3)"}}>—</span>}</td>
                     <td style={{textAlign:"right", fontSize:12}}>{r.team ? fmt.inr(r.team) : <span style={{color:"var(--text3)"}}>—</span>}</td>
-                    <td style={{textAlign:"right", fontSize:12, color:"#7C3AED"}}>{r.crossIn ? fmt.inr(r.crossIn) : <span style={{color:"var(--text3)"}}>—</span>}</td>
+                    <td style={{textAlign:"right", fontSize:12, color: r.companyWide && !r.consolidated ? "var(--text3)" : "#7C3AED"}}
+                      title={r.companyWide && !r.consolidated ? "This commitment spans all products, so \"cross\" has no boundary — these are simply deals closed by sellers outside the branch. Scope the target by product/vertical for true cross-sell." : undefined}>
+                      {r.crossIn ? fmt.inr(r.crossIn) : <span style={{color:"var(--text3)"}}>—</span>}{r.companyWide && !r.consolidated && r.crossIn ? " *" : ""}</td>
                     <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700, color:pctColor(r.pct ?? 0), cursor: r.drillDeals.length ? "pointer" : "default", textDecoration: r.drillDeals.length ? "underline dotted" : "none"}}
                       onClick={(e) => { e.stopPropagation(); if (r.drillDeals.length) setDrill({ title: `${r.mgrId === "__none" ? "Outside sales roles" : userName(r.mgrId)} — ${fmt.inr(r.achieved)} achieved`, deals: r.drillDeals }); }}
                       title={r.drillDeals.length ? "Click to see the contributing deals" : ""}>
@@ -908,7 +934,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                         </div>
                       )}
                     </td>
-                    <td style={{textAlign:"right", fontSize:12, color:"#0D9488"}}>{r.crossOut ? fmt.inr(r.crossOut) : <span style={{color:"var(--text3)"}}>—</span>}</td>
+                    <td style={{textAlign:"right", fontSize:12, color: r.companyWide && !r.consolidated ? "var(--text3)" : "#0D9488"}}>{r.crossOut ? fmt.inr(r.crossOut) : <span style={{color:"var(--text3)"}}>—</span>}</td>
                     <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{r.dept ? fmt.inr(r.dept) : "—"}</td>
                     <td style={{textAlign:"right", fontSize:12, color:"var(--brand)"}}>{r.pipeline ? fmt.inr(r.pipeline) : <span style={{color:"var(--text3)"}}>—</span>}</td>
                     <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{r.deals}/{r.wonDeals}</td>
@@ -979,13 +1005,16 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
 
       {/* Data-quality notices — these distort attainment, so say so rather
           than letting the numbers quietly disagree with the pipeline. */}
-      {(dupKeys.size > 0 || overlapCount > 0 || undatedWon > 0) && (
+      {(dupKeys.size > 0 || overlapCount > 0 || undatedWon > 0 || allCompanyWide) && (
         <div style={{marginBottom:12, padding:"10px 14px", borderRadius:8, border:"1px solid #F59E0B55", background:"#FFFBEB", fontSize:12, color:"#92400E", display:"flex", flexDirection:"column", gap:4}}>
           {dupKeys.size > 0 && (
             <div><b>{dupKeys.size} duplicate commitment{dupKeys.size === 1 ? "" : "s"}</b> — the same salesperson, period and product appears on more than one row (marked <b>duplicate</b> below). Each row claims the same won deals, so per-row attainment is inflated. Keep one and delete the rest.</div>
           )}
           {overlapCount > 0 && (
             <div><b>{overlapCount} overlapping commitment{overlapCount === 1 ? "" : "s"}</b> — someone holds a company-wide target and a product target for the same period, so that product's deals count toward both rows.</div>
+          )}
+          {allCompanyWide && (
+            <div><b>Targets aren't product-scoped</b> — every Line Manager's commitment is "All Products", so their figures all match the same deals (marked *), cross-sell reads zero, and the portfolio strip has no per-product targets. Edit each target and set its Product / Vertical to give ownership a boundary.</div>
           )}
           {undatedWon > 0 && (
             <div><b>{undatedWon} won deal{undatedWon === 1 ? "" : "s"} with no close date</b> — they can't be booked to a quarter and are missing from every figure here. Set a close date on the deal to include them.</div>
