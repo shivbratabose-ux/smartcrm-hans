@@ -1,15 +1,17 @@
 {
   "name": "smartcrm-hans",
   "version": "1.0.0",
-  "description": "SmartCRM – Hans Infomatic Pvt. Ltd.",
+  "description": "SmartCRM \u2013 Hans Infomatic Pvt. Ltd.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:pricing": "node scripts/test-pricing-engine.mjs",
+    "check:rls": "node scripts/check-rls-role-parity.mjs",
+    "test:abp": "node scripts/test-abp-rollup.mjs",
     "test:pagination": "node scripts/test-pagination.mjs",
-    "check:rls": "node scripts/check-rls-role-parity.mjs"
+    "test:pricing": "node scripts/test-pricing-engine.mjs",
+    "test:targets": "node scripts/test-targets-attainment.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
