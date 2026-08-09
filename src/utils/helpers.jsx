@@ -515,6 +515,14 @@ export const canManageUsers = (role) => USER_ADMIN_ROLES.includes(normalizeRole(
 export const LEAD_ASSIGN_ROLES = ["admin", "md", "director", "vp_sales_mkt", "line_mgr", "country_mgr", "bd_lead"];
 export const canSeeLeadAssignment = (role) => LEAD_ASSIGN_ROLES.includes(normalizeRole(role));
 
+// Roles allowed to set targets. MUST mirror the `targets_write` RLS policy
+// (supabase/add_vp_sales_mkt_writes_v1.sql) — targets are deliberately not
+// self-settable, so this is narrower than the generic canRoleWrite() check,
+// which lets any non-viewer through. When the two disagree the UI offers an
+// edit the database then refuses, and the row disappears on the next reload.
+export const TARGET_WRITE_ROLES = ["admin", "md", "director", "vp_sales_mkt", "line_mgr", "country_mgr", "bd_lead"];
+export const canWriteTargets = (role) => TARGET_WRITE_ROLES.includes(normalizeRole(role));
+
 // ── Lead assignment tracking ─────────────────────────────────────────
 // Single source of truth for what a (re)assignment writes on a lead:
 // the new owner, who assigned it, when, and an append-only history entry

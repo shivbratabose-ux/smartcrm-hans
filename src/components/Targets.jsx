@@ -8,6 +8,9 @@ import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
 
+// Column 0 (Salesperson) is supplied by the Export button instead, which
+// resolves names from LIVE users — this static TEAM_MAP left every real
+// Supabase user blank. Kept as the shared tail via CSV_COLS.slice(1).
 const CSV_COLS = [
   { label: "Salesperson", accessor: t => TEAM_MAP[t.userId]?.name || "" },
   { label: "Period", accessor: t => t.period },
@@ -24,16 +27,45 @@ const CSV_COLS = [
 
 // Fiscal-quarter (India FY, Apr–Mar) key for a date → "YYYY-Q#", where YYYY
 // is the FY start year and Q1 = Apr–Jun. Matches the app's "2026-Q1" usage.
+//
+// Reads the calendar fields straight out of a "YYYY-MM-DD" string rather than
+// going through `new Date(...)`, which parses a bare date as UTC midnight.
+// That matters more here than anywhere else in the app: this function decides
+// which fiscal quarter a won deal books to, and west of UTC a deal closing on
+// 1 April was pushed back into the PREVIOUS financial year's Q4. Reading the
+// string is also exactly right for a DATE column, which stores a calendar day
+// and not an instant.
 function periodOf(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d)) return "";
-  const m = d.getMonth(), y = d.getFullYear();
-  const fyStart = m >= 3 ? y : y - 1;
-  const q = Math.floor(((m - 3 + 12) % 12) / 3) + 1;
+  let y, mo;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr));
+  if (m) {
+    y = Number(m[1]); mo = Number(m[2]) - 1;
+  } else {
+    const d = new Date(dateStr);            // full timestamp or other format
+    if (isNaN(d)) return "";
+    y = d.getFullYear(); mo = d.getMonth();
+  }
+  if (mo < 0 || mo > 11) return "";
+  const fyStart = mo >= 3 ? y : y - 1;
+  const q = Math.floor(((mo - 3 + 12) % 12) / 3) + 1;
   return `${fyStart}-Q${q}`;
 }
-const isWonStage = (o) => o.stage === "Won" || o.stage === "closed_won";
+
+// Stage names meaning "won", whatever Masters currently calls the stage.
+// Pipeline stages are editable in Masters → Pipeline Stages, and Pipeline
+// resolves the won stage by `kind === "won"` precisely so a rename cannot
+// break forecasting. Targets compared against the literal "Won", so renaming
+// the stage silently dropped every target on this page to 0% with no error.
+//
+// The legacy literals stay in the match set because opportunity rows keep
+// whatever stage string they were saved with — renaming a stage in Masters
+// does not rewrite history, so both the configured name and the old one count.
+const LEGACY_WON_STAGES = ["Won", "closed_won"];
+const wonStageNames = (masters) => {
+  const won = Array.isArray(masters?.stages) ? masters.stages.find(s => s?.kind === "won") : null;
+  return new Set([won?.name, ...LEGACY_WON_STAGES].filter(Boolean));
+};
 // A target's product focus matches an item with a products[] array (opps) or
 // a single product + productSelection[] (call reports). "All" matches everything.
 const prodMatches = (tProd, arr, single) => {
@@ -42,7 +74,7 @@ const prodMatches = (tProd, arr, single) => {
   return single === tProd;
 };
 
-function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = [], currentUser, canDelete }) {
+function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = [], currentUser, canDelete, masters, canWrite = true }) {
   const [periodF, setPeriodF] = useState("All");
   // Product + line-manager filters: lets leadership see "iCAFFE targets for
   // Lalchand's team" rather than one flat list.
@@ -85,12 +117,17 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
     return u?.reportsTo ? userName(u.reportsTo) : "";
   };
 
+  // Won-stage names resolved from Masters, so renaming the stage doesn't
+  // silently zero this page. See wonStageNames().
+  const wonNames = useMemo(() => wonStageNames(masters), [masters]);
+  const isWon = (o) => wonNames.has(o?.stage);
+
   // Auto-compute achievement for a target from won opps (revenue + deal count)
   // and call reports (calls), matched on owner × fiscal-quarter × product.
   const computeAchievement = (t) => {
     let rev = 0, deals = 0, calls = 0;
     (opps || []).forEach(o => {
-      if (o.owner !== t.userId || !isWonStage(o)) return;
+      if (o.owner !== t.userId || !isWon(o)) return;
       if (periodOf(o.closeDate) !== t.period) return;
       if (!prodMatches(t.product, o.products)) return;
       rev += Number(o.value) || 0; deals += 1;
@@ -105,7 +142,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
   };
   // Targets with achievement overlaid from live CRM data (ignores any stored
   // manual achieved* values so the screen always reflects reality).
-  const enriched = useMemo(() => targets.map(t => ({ ...t, ...computeAchievement(t) })), [targets, opps, callReports]);
+  const enriched = useMemo(() => targets.map(t => ({ ...t, ...computeAchievement(t) })), [targets, opps, callReports, wonNames]);
 
   const periods = useMemo(() => [...new Set(enriched.map(t => t.period))].sort().reverse(), [enriched]);
 
@@ -128,12 +165,70 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
     return list;
   }, [enriched, periodF, productF, teamIds]);
 
-  // Summary KPIs
-  const totalTarget = filtered.reduce((s, t) => s + t.targetValue, 0);
-  const totalAchieved = filtered.reduce((s, t) => s + t.achievedValue, 0);
+  // ── Overlapping commitments ──
+  // Nothing stops two targets covering the same salesperson, period and
+  // product — the live data already carries a pair like that. Because
+  // achievement is computed PER TARGET, both rows claim the same won deals,
+  // so the old `sum of every row's achieved` double-counted them. A softer
+  // version of the same problem: an "All Products" target and a
+  // product-specific one for the same person and period both match that
+  // product's deals.
+  //
+  // Exact duplicates are now blocked on save and flagged below; for anything
+  // already in the data, the KPI cards count each won deal ONCE instead of
+  // once per matching target.
+  const dupKeys = useMemo(() => {
+    const seen = {};
+    filtered.forEach(t => {
+      const k = `${t.userId}|${t.period}|${t.product || "All"}`;
+      seen[k] = (seen[k] || 0) + 1;
+    });
+    return new Set(Object.keys(seen).filter(k => seen[k] > 1));
+  }, [filtered]);
+  const keyOf = (t) => `${t.userId}|${t.period}|${t.product || "All"}`;
+
+  // People holding both a company-wide and a product-specific target in the
+  // same period — legitimate (a split quota), but their achievement overlaps.
+  const overlapCount = useMemo(() => {
+    const wide = new Set(), narrow = new Set();
+    filtered.forEach(t => {
+      const k = `${t.userId}|${t.period}`;
+      (!t.product || t.product === "All" ? wide : narrow).add(k);
+    });
+    return [...narrow].filter(k => wide.has(k)).length;
+  }, [filtered]);
+
+  // Summary KPIs. Targets sum normally (each is a distinct commitment);
+  // achievement is deduplicated by deal so overlapping targets can't inflate
+  // it. Number() guards a value arriving as a string from CSV import, and the
+  // rounding keeps float noise (17.850000000000001) off the cards.
+  const totalTarget = +filtered.reduce((s, t) => s + (Number(t.targetValue) || 0), 0).toFixed(2);
+  const totalTargetDeals = filtered.reduce((s, t) => s + (Number(t.targetDeals) || 0), 0);
+  const achievedTotals = useMemo(() => {
+    const counted = new Set();
+    let value = 0, deals = 0;
+    (opps || []).forEach(o => {
+      if (!o?.id || counted.has(o.id) || !isWon(o)) return;
+      const per = periodOf(o.closeDate);
+      if (!per) return;
+      const matches = filtered.some(t =>
+        t.userId === o.owner && t.period === per && prodMatches(t.product, o.products));
+      if (!matches) return;
+      counted.add(o.id);
+      value += Number(o.value) || 0;
+      deals += 1;
+    });
+    return { value: +value.toFixed(2), deals };
+  }, [filtered, opps, wonNames]);
+  const totalAchieved = achievedTotals.value;
+  const totalAchievedDeals = achievedTotals.deals;
   const overallPct = totalTarget > 0 ? ((totalAchieved / totalTarget) * 100).toFixed(0) : 0;
-  const totalTargetDeals = filtered.reduce((s, t) => s + t.targetDeals, 0);
-  const totalAchievedDeals = filtered.reduce((s, t) => s + t.achievedDeals, 0);
+
+  // Won deals that can't be booked to any quarter because they have no close
+  // date. They are silently absent from every attainment figure, so say so.
+  const undatedWon = useMemo(
+    () => (opps || []).filter(o => isWon(o) && !periodOf(o.closeDate)).length,
+    [opps, wonNames]);
 
   const pg = usePagination(filtered);
 
@@ -236,6 +331,19 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
     if (!form.userId) errs.userId = "Salesperson is required";
     if (!form.period?.trim()) errs.period = "Period is required";
     if (form.targetValue <= 0) errs.targetValue = "Target must be > 0";
+    // One commitment per salesperson × period × product. A second one does not
+    // mean "a bigger target" — achievement is computed per target, so the two
+    // rows claim the same won deals and every roll-up above counts them twice.
+    // Checked against ALL targets, not the filtered view, so a duplicate
+    // hidden by the current filters is still caught.
+    const dupe = targets.find(t =>
+      t.id !== form.id && !t.isDeleted &&
+      t.userId === form.userId &&
+      t.period === form.period &&
+      (t.product || "All") === (form.product || "All"));
+    if (dupe) {
+      errs.period = `${userName(form.userId)} already has a ${(!form.product || form.product === "All") ? "company-wide" : (PROD_MAP[form.product]?.name || form.product)} target for ${form.period} (₹${dupe.targetValue}L). Edit that one instead — a second target double-counts the same won deals.`;
+    }
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const clean = sanitizeObj(form);
     if (modal.mode === "add") setTargets(p => [...p, { ...clean }]);
@@ -263,7 +371,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
             { label: "Line Manager", accessor: t => managerOf(t.userId) },
             ...CSV_COLS.slice(1),
           ], "targets")}><Download size={14}/>Export</button>
-          <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>Add Target</button>
+          {canWrite && <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>Add Target</button>}
         </div>
       </div>
 
@@ -377,6 +485,23 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
         </div>
       )}
 
+      {/* Data-quality notices — these distort attainment, so say so rather
+          than letting the numbers quietly disagree with the pipeline. */}
+      {(dupKeys.size > 0 || overlapCount > 0 || undatedWon > 0) && (
+        <div style={{marginBottom:12, padding:"10px 14px", borderRadius:8, border:"1px solid #F59E0B55", background:"#FFFBEB", fontSize:12, color:"#92400E", display:"flex", flexDirection:"column", gap:4}}>
+          {dupKeys.size > 0 && (
+            <div><b>{dupKeys.size} duplicate commitment{dupKeys.size === 1 ? "" : "s"}</b> — the same salesperson, period and product appears on more than one row (marked <b>duplicate</b> below). Each row claims the same won deals, so per-row attainment is inflated. Keep one and delete the rest.</div>
+          )}
+          {overlapCount > 0 && (
+            <div><b>{overlapCount} overlapping commitment{overlapCount === 1 ? "" : "s"}</b> — someone holds a company-wide target and a product target for the same period, so that product's deals count toward both rows.</div>
+          )}
+          {undatedWon > 0 && (
+            <div><b>{undatedWon} won deal{undatedWon === 1 ? "" : "s"} with no close date</b> — they can't be booked to a quarter and are missing from every figure here. Set a close date on the deal to include them.</div>
+          )}
+          <div style={{color:"#B45309"}}>The cards above already count each won deal once, so they stay correct regardless.</div>
+        </div>
+      )}
+
       <div className="filter-bar" style={{flexWrap:"wrap"}}>
         <select className="filter-select" value={periodF} onChange={e => setPeriodF(e.target.value)}>
           <option value="All">All Periods</option>
@@ -429,7 +554,15 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
                 const dealPct = t.targetDeals > 0 ? ((t.achievedDeals / t.targetDeals) * 100).toFixed(0) : 0;
                 return (
                   <tr key={t.id}>
-                    <td><UserPill uid={t.userId}/></td>
+                    <td>
+                      <UserPill uid={t.userId}/>
+                      {dupKeys.has(keyOf(t)) && (
+                        <span title="Another target covers the same salesperson, period and product. Both claim the same won deals."
+                          style={{marginLeft:6, fontSize:9, fontWeight:700, padding:"1px 6px", borderRadius:4, color:"#92400E", background:"#F59E0B22", verticalAlign:"middle"}}>
+                          duplicate
+                        </span>
+                      )}
+                    </td>
                     <td style={{fontSize:12,color:"var(--text3)"}}>{managerOf(t.userId) || "—"}</td>
                     <td style={{fontSize:12.5,fontWeight:600}}>{t.period}</td>
                     <td style={{fontSize:12}}>
@@ -452,7 +585,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], orgUsers = 
                     <td style={{fontSize:12,color:"var(--text3)"}}>{t.targetCalls}/{t.achievedCalls}</td>
                     <td>
                       <div style={{display:"flex",gap:4}}>
-                        <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(t)}><Edit2 size={14}/></button>
+                        {canWrite && <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(t)}><Edit2 size={14}/></button>}
                         {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(t.id)}><Trash2 size={14}/></button>}
                       </div>
                     </td>
