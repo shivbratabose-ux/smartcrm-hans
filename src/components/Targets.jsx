@@ -3,7 +3,7 @@ import { Plus, Edit2, Trash2, Check, Download, Target, TrendingUp, TrendingDown,
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP } from '../data/constants';
 import { BLANK_TARGET } from '../data/seed';
-import { fmt, uid, sanitizeObj, hasErrors, softDeleteById, getScopedUserIds } from '../utils/helpers';
+import { fmt, uid, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
@@ -194,12 +194,83 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       .filter(u => tops.has(u.id) || tops.has(u.reportsTo))
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   }, [orgUsers]);
-  const teamIds = useMemo(() => teamF === "All" ? null : getScopedUserIds(teamF, orgUsers), [teamF, orgUsers]);
-  // Direct manager of a user — shown as a column so every target says which
-  // line manager owns it.
+  // ── The org graph, built once from the confirmed hierarchy ──
+  // Everything hierarchy-shaped on this page reads from here, so "team",
+  // "line manager" and "branch" mean the same thing in every widget.
+  const orgGraph = useMemo(() => {
+    const users = orgUsers || [];
+    const byId = Object.fromEntries(users.map(u => [u.id, u]));
+    const gridIds = new Set(managers.map(m => m.id));
+    const childrenOf = {};
+    users.forEach(u => {
+      [u.reportsTo, ...(Array.isArray(u.dottedTo) ? u.dottedTo : [])]
+        .filter(Boolean)
+        .forEach(pid => (childrenOf[pid] || (childrenOf[pid] = [])).push(u.id));
+    });
+    // True reporting branch (self + every report at any depth, solid or
+    // dotted). Deliberately NOT getScopedUserIds — that is a VISIBILITY
+    // scope and short-circuits to the entire org for global roles, which
+    // once made the VP's team the whole company, Finance included.
+    const branchOf = (rootId) => {
+      const out = new Set([rootId]);
+      const stack = [rootId];
+      while (stack.length) {
+        for (const child of childrenOf[stack.pop()] || []) {
+          if (!out.has(child)) { out.add(child); stack.push(child); }
+        }
+      }
+      return out;
+    };
+    // Accountable ABP owner for a user's numbers: themselves if they are in
+    // the sales grid, else the nearest grid member above them. This is what
+    // routes Sudhir (sales exec under the Product Head) past Rajesh and onto
+    // the VP's row — the walk skips non-sales managers.
+    const creditOf = (uid2) => {
+      if (gridIds.has(uid2)) return uid2;
+      let cur = byId[uid2];
+      const seen = new Set();
+      while (cur && cur.reportsTo && !seen.has(cur.id)) {
+        seen.add(cur.id);                       // cycle guard
+        if (gridIds.has(cur.reportsTo)) return cur.reportsTo;
+        cur = byId[cur.reportsTo];
+      }
+      return "__none";
+    };
+    // Nearest sales-line manager strictly ABOVE a user — the "Line Manager"
+    // column. The direct reportsTo was wrong per the real hierarchy: it
+    // showed the MD for the VP's rows and the Product Head for Sudhir's,
+    // neither of whom is a sales Line Manager.
+    const salesManagerOf = (uid2) => {
+      let cur = byId[uid2];
+      const seen = new Set();
+      while (cur && cur.reportsTo && !seen.has(cur.id)) {
+        seen.add(cur.id);
+        if (gridIds.has(cur.reportsTo)) return cur.reportsTo;
+        cur = byId[cur.reportsTo];
+      }
+      return null;                              // top of the sales line, or outside it
+    };
+    // Selling headcount: people who carry quota. Amit's branch includes
+    // three Support Engineers per the org chart — they belong to his team
+    // but not to his selling capacity, so the Team column excludes them.
+    const SELLING_ROLES = new Set([...ABP_OWNER_ROLES, "sales_exec"]);
+    const sellingCount = (rootId) => {
+      let n = 0;
+      branchOf(rootId).forEach(id2 => {
+        if (id2 !== rootId && SELLING_ROLES.has(String(byId[id2]?.role || "").trim().toLowerCase())) n++;
+      });
+      return n;
+    };
+    return { byId, gridIds, branchOf, creditOf, salesManagerOf, sellingCount };
+  }, [orgUsers, managers]);
+
+  // Team filter = the manager's real reporting branch, not their visibility
+  // scope (getScopedUserIds returns the whole org for global roles, which
+  // made "Shivbrata's team" a no-op that included Finance).
+  const teamIds = useMemo(() => teamF === "All" ? null : orgGraph.branchOf(teamF), [teamF, orgGraph]);
   const managerOf = (uid) => {
-    const u = (orgUsers || []).find(x => x.id === uid);
-    return u?.reportsTo ? userName(u.reportsTo) : "";
+    const mid = orgGraph.salesManagerOf(uid);
+    return mid ? userName(mid) : "";
   };
 
   // Won-stage names resolved from Masters, so renaming the stage doesn't
@@ -412,7 +483,10 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       g[field] = +(g[field] + v).toFixed(2);
       if (field === "achieved") g.deals += 1;
     };
-    const mgrIdOf = (uid2) => { const u = (orgUsers || []).find(x => x.id === uid2); return u?.reportsTo || ""; };
+    // Nearest ABP owner (self for grid members) — a target held by Sudhir
+    // groups under the VP, not under the Product Head; a support engineer's
+    // stray deal groups under their Line Manager.
+    const mgrIdOf = (uid2) => { const m2 = orgGraph.creditOf(uid2); return m2 === "__none" ? "" : m2; };
     filtered.forEach(t => {
       const v = Number(t.targetValue) || 0;
       if (groupBy === "salesperson") add(t.userId, (userName(t.userId) || "?").split(" ")[0], "target", v);
@@ -433,7 +507,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       pct: g.target > 0 ? Math.round((g.achieved / g.target) * 100) : null,
       gap: +(g.target - g.achieved).toFixed(2),
     })).sort((a, b) => b.target - a.target);
-  }, [filtered, ledgerScoped, groupBy, orgUsers, managerIds]);
+  }, [filtered, ledgerScoped, groupBy, orgUsers, managerIds, orgGraph]);
 
   // ── ABP / AOP rollup ──
   // The annual plan is distributed across the Line Managers by vertical and
@@ -462,45 +536,9 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
     const byId = Object.fromEntries(users.map(u => [u.id, u]));
     const gridIds = new Set(managers.map(m => m.id));
 
-    // True reporting branch: this person plus everyone reporting up to them at
-    // any depth, solid or dotted line. Deliberately NOT getScopedUserIds —
-    // that is a VISIBILITY scope and short-circuits to the entire org for
-    // global roles (admin, md, director, vp_sales_mkt), which would have made
-    // the VP's "team sold" the whole company, Finance and Support included.
-    const childrenOf = {};
-    users.forEach(u => {
-      [u.reportsTo, ...(Array.isArray(u.dottedTo) ? u.dottedTo : [])]
-        .filter(Boolean)
-        .forEach(pid => (childrenOf[pid] || (childrenOf[pid] = [])).push(u.id));
-    });
-    const branchOf = (rootId) => {
-      const out = new Set([rootId]);
-      const stack = [rootId];
-      while (stack.length) {
-        for (const child of childrenOf[stack.pop()] || []) {
-          if (!out.has(child)) { out.add(child); stack.push(child); }
-        }
-      }
-      return out;
-    };
-
-    // Credit a target to its accountable ABP owner: the holder themselves when
-    // they are in the grid, else the NEAREST grid member above them. The
-    // self-check comes FIRST — the previous version consulted reportsTo before
-    // considering the holder, so a Line Manager's own targets bubbled up to
-    // the VP: Lotak read "no target" while the VP's row silently absorbed his
-    // ₹49.1L. An owner is accountable for their own commitment.
-    const creditOf = (uid) => {
-      if (gridIds.has(uid)) return uid;
-      let cur = byId[uid];
-      const seen = new Set();
-      while (cur && cur.reportsTo && !seen.has(cur.id)) {
-        seen.add(cur.id);                       // cycle guard
-        if (gridIds.has(cur.reportsTo)) return cur.reportsTo;
-        cur = byId[cur.reportsTo];
-      }
-      return "__none";
-    };
+    // Branch / credit walks come from the shared org graph so every widget
+    // agrees on what the hierarchy means.
+    const { branchOf, creditOf } = orgGraph;
 
     // Every target, grouped under the ABP owner accountable for it.
     const credited = {};
@@ -601,7 +639,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
         products: c ? [...c.products] : [],
         verticals: c ? [...c.verticals] : [],
         companyWide: [...(c ? c.pairs : pairs)].some(pr => pr.endsWith("|All")),
-        headcount: Math.max(branchIds.size - 1, 0),   // reports, excluding self
+        headcount: orgGraph.sellingCount(m.id),       // quota-carrying reports only
         target: abpTarget,
         achieved,
         own: sum(ownDeals), team: sum(teamDeals), crossIn: sum(crossInDeals),
@@ -632,7 +670,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       });
     }
     return rows.sort((a, b) => b.target - a.target || b.teamSold - a.teamSold);
-  }, [filtered, orgUsers, managers, ledgerScoped, openDeals]);
+  }, [filtered, orgUsers, managers, ledgerScoped, openDeals, orgGraph]);
 
   // Company-level cross-sell = revenue that landed in an owner's plan from a
   // seller OUTSIDE that owner's branch. Summed over Line-Manager rows only —
@@ -659,17 +697,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
   const portfolio = useMemo(() => {
     const ownerProducts = {};   // creditOwnerId → Set(products)
     byManager.forEach(r => { if (r.mgrId !== "__none") ownerProducts[r.mgrId] = new Set(r.products); });
-    const byId = Object.fromEntries((orgUsers || []).map(u => [u.id, u]));
-    const gridIds = new Set(managers.map(m => m.id));
-    const creditOwnerOf = (uid2) => {
-      let cur = byId[uid2]; const seen = new Set();
-      while (cur && cur.reportsTo && !seen.has(cur.id)) {
-        seen.add(cur.id);
-        if (gridIds.has(cur.reportsTo)) return cur.reportsTo;
-        cur = byId[cur.reportsTo];
-      }
-      return gridIds.has(uid2) ? uid2 : null;
-    };
+    const creditOwnerOf = (uid2) => { const m2 = orgGraph.creditOf(uid2); return m2 === "__none" ? null : m2; };
     return PRODUCTS.map(prod => {
       const target = +filtered.filter(t => t.product === prod.id)
         .reduce((acc, t) => acc + (Number(t.targetValue) || 0), 0).toFixed(2);
@@ -687,7 +715,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       const customers = new Set(deals.map(d => d.accountId).filter(Boolean)).size;
       return { id: prod.id, name: prod.name, target, revenue, crossSell, customers, dealCount: deals.length };
     }).filter(prow => prow.target > 0 || prow.revenue > 0);
-  }, [filtered, ledgerScoped, byManager, orgUsers, managers]);
+  }, [filtered, ledgerScoped, byManager, orgUsers, managers, orgGraph]);
 
   // ── Contribution by source ──
   // Won revenue in scope grouped by originating department, plus raw lead
@@ -877,7 +905,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                   <th>Owner</th>
                   <th>Role</th>
                   <th>Vertical / Products</th>
-                  <th style={{textAlign:"right"}}>Team</th>
+                  <th style={{textAlign:"right"}} title="Quota-carrying people in this branch — support engineers report here too but don't count toward selling capacity">Team</th>
                   <th style={{textAlign:"right"}}>ABP Target</th>
                   <th style={{textAlign:"right"}} title="Deals the owner closed personally on their own plan">Own</th>
                   <th style={{textAlign:"right"}} title="Deals the owner's branch closed on the plan (excluding the owner)">Team</th>
