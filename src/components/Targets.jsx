@@ -142,6 +142,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
   const [sourceF, setSourceF] = useState("All");    // deal origin (contribution source)
   const [groupBy, setGroupBy] = useState("salesperson"); // chart grouping
   const [drill, setDrill] = useState(null);         // { title, deals } → drill-down modal
+  const [goalsFor, setGoalsFor] = useState(null);   // owner id → per-owner goals editor
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_TARGET);
   const [confirm, setConfirm] = useState(null);
@@ -545,7 +546,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
     filtered.forEach(t => {
       const key = creditOf(t.userId);
       const c = credited[key] || (credited[key] = {
-        target: 0, deals: 0, people: new Set(), pairs: new Set(), products: new Set(), verticals: new Set(),
+        target: 0, deals: 0, people: new Set(), pairs: new Set(), products: new Set(), verticals: new Set(), rows: [],
       });
       c.target += Number(t.targetValue) || 0;
       c.deals += Number(t.targetDeals) || 0;
@@ -556,6 +557,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       c.pairs.add(`${t.period}|${t.product || "All"}`);
       if (t.product && t.product !== "All") c.products.add(t.product);
       if (t.vertical) c.verticals.add(t.vertical);
+      c.rows.push(t);
     });
 
     // Periods currently in view — used to scope "team sold" for a manager who
@@ -652,6 +654,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
         pct: abpTarget > 0 ? Math.round((achieved / abpTarget) * 100) : null,
         gap: +(abpTarget - achieved).toFixed(2),
         drillDeals: abpDeals,           // powers click-through to the deals
+        targetRows: c ? c.rows : [],    // commitments credited to THIS owner (goals editor)
       };
     });
 
@@ -667,6 +670,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
         wonDeals: abpDeals.length, deals: o.deals, teamSold: 0,
         pct: o.target > 0 ? Math.round((sum(abpDeals) / o.target) * 100) : null,
         gap: +(o.target - sum(abpDeals)).toFixed(2), drillDeals: abpDeals,
+        targetRows: o.rows,
       });
     }
     return rows.sort((a, b) => b.target - a.target || b.teamSold - a.teamSold);
@@ -735,8 +739,12 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
     return Object.values(rows);
   }, [ledgerScoped, leads]);
 
-  const openAdd = () => {
-    setForm({ ...BLANK_TARGET, id: `tgt${uid()}`, period: periods[0] || "2026-Q1", userId: currentUser || BLANK_TARGET.userId });
+  // presetUserId lets the per-owner goals editor open the form pre-filled.
+  // Always called via an arrow fn — passing it straight to onClick would hand
+  // it the click event as presetUserId.
+  const openAdd = (presetUserId) => {
+    setForm({ ...BLANK_TARGET, id: `tgt${uid()}`, period: periods[0] || "2026-Q1",
+      userId: (typeof presetUserId === "string" && presetUserId) || currentUser || BLANK_TARGET.userId });
     setFormErrors({});
     setModal({ mode: "add" });
   };
@@ -792,7 +800,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
             { label: "Line Manager", accessor: t => managerOf(t.userId) },
             ...CSV_COLS.slice(1),
           ], "targets")}><Download size={14}/>Export</button>
-          {canWrite && <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>Add Target</button>}
+          {canWrite && <button className="btn btn-primary" onClick={() => openAdd()}><Plus size={14}/>Add Target</button>}
         </div>
       </div>
 
@@ -916,6 +924,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                   <th style={{textAlign:"right"}} title="Of Total Achieved, deals originated by a non-sales department (Marketing, Pre-Sales, Customer Success, Partner, Operations). A subset of the partition, not an addition.">via Depts</th>
                   <th style={{textAlign:"right"}}>Pipeline</th>
                   <th style={{textAlign:"right"}}>Deals (T/A)</th>
+                  {canWrite && <th></th>}
                 </tr>
               </thead>
               <tbody>
@@ -966,6 +975,14 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                     <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{r.dept ? fmt.inr(r.dept) : "—"}</td>
                     <td style={{textAlign:"right", fontSize:12, color:"var(--brand)"}}>{r.pipeline ? fmt.inr(r.pipeline) : <span style={{color:"var(--text3)"}}>—</span>}</td>
                     <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{r.deals}/{r.wonDeals}</td>
+                    {canWrite && (
+                      <td style={{textAlign:"right"}}>
+                        {r.mgrId !== "__none" && (
+                          <button className="icon-btn" aria-label="Edit goals" title="View and edit this owner's goals"
+                            onClick={() => setGoalsFor(r.mgrId)}><Edit2 size={14}/></button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1104,7 +1121,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       <div className="card" style={{padding:0}}>
         {filtered.length === 0 ? (
           <Empty icon={<Target size={22}/>} title="No targets set" sub="Define targets for your sales team.">
-            <button className="btn btn-primary" style={{marginTop:12}} onClick={openAdd}><Plus size={14}/>Add First Target</button>
+            <button className="btn btn-primary" style={{marginTop:12}} onClick={() => openAdd()}><Plus size={14}/>Add First Target</button>
           </Empty>
         ) : (
           <table className="tbl">
@@ -1257,6 +1274,57 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
           })()}
         </Modal>
       )}
+
+      {/* Per-owner goals editor: the commitments credited to one ABP owner,
+          editable in place. Team members' targets appear on their MANAGER's
+          list (that's where they credit); the consolidated VP row edits only
+          the VP's own slice — allocations are edited on each Line Manager. */}
+      {goalsFor && (() => {
+        const r = byManager.find(x => x.mgrId === goalsFor);
+        if (!r) return null;
+        const rows = [...(r.targetRows || [])].sort((a, b) =>
+          (b.period || "").localeCompare(a.period || "") || (a.userId || "").localeCompare(b.userId || ""));
+        return (
+          <Modal title={`Goals — ${userName(goalsFor)}`} onClose={() => setGoalsFor(null)} lg
+            footer={<>
+              <button className="btn btn-sec" onClick={() => setGoalsFor(null)}><X size={14}/>Close</button>
+              <button className="btn btn-primary" onClick={() => { setGoalsFor(null); openAdd(goalsFor); }}><Plus size={14}/>Add Goal</button>
+            </>}>
+            <div style={{fontSize:11, color:"var(--text3)", marginBottom:8}}>
+              Commitments credited to this owner{r.consolidated ? " — their own slice only; team allocations are edited on each Line Manager's row" : " (their team's targets roll up here)"}. Total {fmt.inr(+rows.reduce((acc2, t) => acc2 + (Number(t.targetValue) || 0), 0).toFixed(2))}.
+            </div>
+            {rows.length === 0 ? (
+              <Empty icon={<Target size={20}/>} title="No goals yet" sub="Add the first commitment for this owner."/>
+            ) : (
+              <table className="tbl">
+                <thead><tr><th>Salesperson</th><th>Period</th><th>Product</th><th>Vertical</th>
+                  <th style={{textAlign:"right"}}>Target</th><th style={{textAlign:"right"}}>Achieved</th>
+                  <th style={{textAlign:"right"}}>Deals</th><th style={{textAlign:"right"}}>Calls</th><th></th></tr></thead>
+                <tbody>
+                  {rows.map(t => (
+                    <tr key={t.id}>
+                      <td><UserPill uid={t.userId}/></td>
+                      <td style={{fontSize:12, fontWeight:600}}>{t.period}</td>
+                      <td style={{fontSize:11}}>{!t.product || t.product === "All" ? <span style={{color:"var(--text3)"}}>All Products</span> : (PROD_MAP[t.product]?.name || t.product)}</td>
+                      <td style={{fontSize:11, color:"var(--text3)"}}>{t.vertical || "—"}</td>
+                      <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700}}>{fmt.inr(t.targetValue)}</td>
+                      <td style={{textAlign:"right", fontSize:12, color:"var(--text2)"}}>{fmt.inr(t.achievedValue)}</td>
+                      <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{t.targetDeals}/{t.achievedDeals}</td>
+                      <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{t.targetCalls}/{t.achievedCalls}</td>
+                      <td style={{textAlign:"right"}}>
+                        <div style={{display:"flex", gap:4, justifyContent:"flex-end"}}>
+                          <button className="icon-btn" aria-label="Edit" onClick={() => { setGoalsFor(null); openEdit(t); }}><Edit2 size={14}/></button>
+                          {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => { setGoalsFor(null); setConfirm(t.id); }}><Trash2 size={14}/></button>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </Modal>
+        );
+      })()}
 
       {/* Drill-down: the deals behind a number. Live opportunity rows — no
           synthesised data. */}
