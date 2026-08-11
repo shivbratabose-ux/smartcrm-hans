@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Plus, Edit2, Trash2, Check, Download, Target, TrendingUp, TrendingDown, Users, Package, GitBranch, X } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LabelList } from "recharts";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP } from '../data/constants';
 import { BLANK_TARGET } from '../data/seed';
 import { fmt, uid, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
@@ -592,7 +592,11 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
         return own && own.size > 0 ? !own.has(prod.id) : false;
       }).reduce((acc, d) => acc + d.value, 0).toFixed(2);
       const customers = new Set(deals.map(d => d.accountId).filter(Boolean)).size;
-      return { id: prod.id, name: prod.name, target, revenue, crossSell, customers, dealCount: deals.length };
+      return { id: prod.id, name: prod.name, target, revenue, crossSell,
+        // The stack is direct + cross-sell = revenue, so the two segments
+        // never double-count the same rupees.
+        direct: +(revenue - crossSell).toFixed(2),
+        customers, dealCount: deals.length };
     }).filter(prow => prow.target > 0 || prow.revenue > 0);
   }, [filtered, ledgerScoped, byManager, orgUsers, managers, orgGraph]);
 
@@ -613,6 +617,13 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
     });
     return Object.values(rows);
   }, [ledgerScoped, leads]);
+
+  // Chart form of the same data: only sources that actually contributed,
+  // biggest first, so the bars read as a ranking.
+  const contribChart = useMemo(
+    () => contribRows.filter(r => r.revenue > 0 || r.leads > 0 || r.deals > 0)
+                     .sort((a, b) => b.revenue - a.revenue || b.leads - a.leads),
+    [contribRows]);
 
   // presetUserId lets the per-owner goals editor open the form pre-filled.
   // Always called via an arrow fn — passing it straight to onClick would hand
@@ -911,56 +922,113 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
         </div>
       )}
 
-      {/* ── Hans portfolio ── per-product plan vs revenue vs cross-sell.
-          Renders from the LIVE product catalog (Masters → Product Catalogue),
-          so adding Eannex / AMS / WiseStox / SmartCRM / SmartHRMS there makes
-          them appear here — no code change. */}
+      {/* ── Hans portfolio ── per-product plan vs revenue.
+          Horizontal bars because there are up to eleven products with long
+          names. Target is the de-emphasis gray (context); revenue is the
+          brand hue and is STACKED into direct + cross-sell, because
+          cross-sell is a part OF revenue — showing it as a third sibling bar
+          would double-represent the same rupees. Renders from the LIVE
+          product catalog, so adding products in Masters makes them appear. */}
       {portfolio.length > 0 && (
         <div className="card" style={{padding:0, marginBottom:16}}>
-          <div style={{padding:"10px 14px", borderBottom:"1px solid var(--border)", fontSize:13, fontWeight:700, color:"var(--text1)", display:"flex", alignItems:"center", gap:8}}>
+          <div style={{padding:"10px 14px", borderBottom:"1px solid var(--border)", fontSize:13, fontWeight:700, color:"var(--text1)", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
             <Package size={15} style={{color:"var(--brand)"}}/> Hans portfolio
-            <span style={{fontSize:11, fontWeight:400, color:"var(--text3)"}}>click a product to focus the page on it · a multi-product deal appears under each of its products</span>
+            <span style={{fontSize:11, fontWeight:400, color:"var(--text3)"}}>target vs revenue by product · click a bar to focus the page on it · a multi-product deal appears under each of its products</span>
           </div>
-          <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(170px, 1fr))", gap:0}}>
-            {portfolio.map(pr => (
-              <div key={pr.id} onClick={() => setProductF(productF === pr.id ? "All" : pr.id)}
-                style={{padding:"10px 14px", borderRight:"1px solid var(--border)", borderBottom:"1px solid var(--border)", cursor:"pointer",
-                  background: productF === pr.id ? "var(--s2)" : "transparent"}}>
-                <div style={{fontSize:12, fontWeight:700, color: PROD_MAP[pr.id]?.color || "var(--text1)", marginBottom:4}}>{pr.name}</div>
-                <div style={{display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text3)"}}><span>Target</span><b style={{color:"var(--text2)"}}>{pr.target ? fmt.inr(pr.target) : "—"}</b></div>
-                <div style={{display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text3)"}}><span>Revenue</span><b style={{color:pr.target ? pctColor(pr.target > 0 ? Math.round((pr.revenue/pr.target)*100) : 0) : "var(--text2)"}}>{pr.revenue ? fmt.inr(pr.revenue) : "—"}</b></div>
-                <div style={{display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text3)"}}><span>Cross-sell</span><b style={{color:"#7C3AED"}}>{pr.crossSell ? fmt.inr(pr.crossSell) : "—"}</b></div>
-                <div style={{display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--text3)"}}>
-                  <span>{pr.customers} customer{pr.customers === 1 ? "" : "s"}</span>
-                  <span>{pr.dealCount} deal{pr.dealCount === 1 ? "" : "s"}</span>
-                </div>
-              </div>
-            ))}
+          <div style={{padding:"12px 14px 4px"}}>
+            <ResponsiveContainer width="100%" height={Math.max(140, portfolio.length * 38 + 30)}>
+              <BarChart data={portfolio} layout="vertical" barGap={2}
+                margin={{top:0, right:64, left:8, bottom:0}}>
+                <CartesianGrid horizontal={false} stroke="var(--border)"/>
+                <XAxis type="number" tick={{fontSize:11, fill:"var(--text3)"}} tickLine={false} axisLine={false}
+                  tickFormatter={v => `₹${v}L`}/>
+                <YAxis type="category" dataKey="name" width={92} tick={{fontSize:11.5, fill:"var(--text2)"}}
+                  tickLine={false} axisLine={false}/>
+                <Tooltip cursor={{fill:"var(--s2)"}} content={({active, payload}) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload;
+                  const pct = d.target > 0 ? Math.round((d.revenue / d.target) * 100) : null;
+                  return (
+                    <div style={{background:"#fff",border:"1px solid var(--border)",borderRadius:8,padding:"8px 12px",fontSize:12,boxShadow:"0 4px 12px rgba(0,0,0,0.08)"}}>
+                      <div style={{fontWeight:700,marginBottom:4}}>{d.name}</div>
+                      <div>Target <b>{d.target ? fmt.inr(d.target) : "none set"}</b></div>
+                      <div>Revenue <b>{fmt.inr(d.revenue)}</b>{pct !== null && <> · <b style={{color:pctColor(pct)}}>{pct}%</b></>}</div>
+                      <div>Cross-sell <b style={{color:"#7C3AED"}}>{d.crossSell ? fmt.inr(d.crossSell) : "—"}</b>{d.revenue > 0 && d.crossSell > 0 ? ` (${Math.round((d.crossSell / d.revenue) * 100)}% of revenue)` : ""}</div>
+                      <div style={{color:"var(--text3)",marginTop:2}}>{d.customers} customer{d.customers === 1 ? "" : "s"} · {d.dealCount} deal{d.dealCount === 1 ? "" : "s"}</div>
+                    </div>
+                  );
+                }}/>
+                <Legend wrapperStyle={{fontSize:11.5}} iconSize={9}/>
+                {/* Target is context, not a peer series — de-emphasis gray, and
+                    directly labelled because that gray sits under 3:1 on this
+                    surface. */}
+                <Bar dataKey="target" name="Target" fill="#94A3B8" radius={[0,4,4,0]} barSize={9} isAnimationActive={false}
+                  onClick={(d) => d && setProductF(productF === d.id ? "All" : d.id)} cursor="pointer">
+                  <LabelList dataKey="target" position="right" offset={6}
+                    formatter={v => v ? fmt.inr(v) : ""} style={{fontSize:10, fill:"var(--text3)"}}/>
+                </Bar>
+                <Bar dataKey="direct" name="Revenue" stackId="rev" fill="var(--brand)" barSize={9} isAnimationActive={false}
+                  onClick={(d) => d && setProductF(productF === d.id ? "All" : d.id)} cursor="pointer"/>
+                <Bar dataKey="crossSell" name="of which cross-sell" stackId="rev" fill="#7C3AED" radius={[0,4,4,0]} barSize={9} isAnimationActive={false}
+                  onClick={(d) => d && setProductF(productF === d.id ? "All" : d.id)} cursor="pointer">
+                  <LabelList dataKey="revenue" position="right" offset={6}
+                    formatter={v => v ? fmt.inr(v) : ""} style={{fontSize:10, fill:"var(--text2)", fontWeight:700}}/>
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       )}
 
       {/* ── Contribution by source ── which department originated the business.
-          Derived from data the CRM already captures (campaign source, opp
-          source, linked lead source) — nothing is invented. */}
-      {(contribRows.some(r => r.revenue > 0 || r.leads > 0)) && (
+          One series, so one hue for every bar and no legend — colouring each
+          bar darker-where-bigger would double-encode length as hue on
+          categories that have no natural order. Derived from data the CRM
+          already captures (campaign source, opp source, linked lead source). */}
+      {contribChart.length > 0 && (
         <div className="card" style={{padding:0, marginBottom:16}}>
-          <div style={{padding:"10px 14px", borderBottom:"1px solid var(--border)", fontSize:13, fontWeight:700, color:"var(--text1)", display:"flex", alignItems:"center", gap:8}}>
+          <div style={{padding:"10px 14px", borderBottom:"1px solid var(--border)", fontSize:13, fontWeight:700, color:"var(--text1)", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
             <GitBranch size={15} style={{color:"var(--brand)"}}/> Contribution by source
-            <span style={{fontSize:11, fontWeight:400, color:"var(--text3)"}}>where the business in scope originated · click a revenue figure for its deals</span>
+            <span style={{fontSize:11, fontWeight:400, color:"var(--text3)"}}>won revenue by originating department · click a bar for its deals</span>
           </div>
-          <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(150px, 1fr))", gap:0}}>
-            {contribRows.filter(r => r.revenue > 0 || r.leads > 0 || r.deals > 0).map(r => (
-              <div key={r.source} style={{padding:"10px 14px", borderRight:"1px solid var(--border)", borderBottom:"1px solid var(--border)"}}>
-                <div style={{fontSize:11.5, fontWeight:700, marginBottom:4}}>{r.source}</div>
-                <div style={{fontSize:15, fontWeight:800, fontFamily:"'Outfit',sans-serif", color: r.revenue ? "var(--text1)" : "var(--text3)",
-                    cursor: r.dealsList.length ? "pointer" : "default", textDecoration: r.dealsList.length ? "underline dotted" : "none"}}
-                  onClick={() => r.dealsList.length && setDrill({ title: `${r.source} — ${fmt.inr(r.revenue)} originated`, deals: r.dealsList })}>
-                  {r.revenue ? fmt.inr(r.revenue) : "—"}
-                </div>
-                <div style={{fontSize:10.5, color:"var(--text3)"}}>{r.deals} deal{r.deals === 1 ? "" : "s"} won{r.leads ? ` · ${r.leads} lead${r.leads === 1 ? "" : "s"}` : ""}</div>
-              </div>
-            ))}
+          <div style={{padding:"12px 14px 4px"}}>
+            <ResponsiveContainer width="100%" height={Math.max(120, contribChart.length * 34 + 20)}>
+              <BarChart data={contribChart} layout="vertical"
+                margin={{top:0, right:96, left:8, bottom:0}}>
+                <CartesianGrid horizontal={false} stroke="var(--border)"/>
+                <XAxis type="number" tick={{fontSize:11, fill:"var(--text3)"}} tickLine={false} axisLine={false}
+                  tickFormatter={v => `₹${v}L`}/>
+                <YAxis type="category" dataKey="source" width={116} tick={{fontSize:11.5, fill:"var(--text2)"}}
+                  tickLine={false} axisLine={false}/>
+                <Tooltip cursor={{fill:"var(--s2)"}} content={({active, payload}) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div style={{background:"#fff",border:"1px solid var(--border)",borderRadius:8,padding:"8px 12px",fontSize:12,boxShadow:"0 4px 12px rgba(0,0,0,0.08)"}}>
+                      <div style={{fontWeight:700,marginBottom:4}}>{d.source}</div>
+                      <div>Revenue <b>{fmt.inr(d.revenue)}</b>{totalAchieved > 0 && d.revenue > 0 ? ` · ${Math.round((d.revenue / totalAchieved) * 100)}% of achieved` : ""}</div>
+                      <div style={{color:"var(--text3)",marginTop:2}}>{d.deals} deal{d.deals === 1 ? "" : "s"} won{d.leads ? ` · ${d.leads} lead${d.leads === 1 ? "" : "s"} generated` : ""}</div>
+                      {d.dealsList.length > 0 && <div style={{color:"var(--text3)",marginTop:2,fontStyle:"italic"}}>click for the deals</div>}
+                    </div>
+                  );
+                }}/>
+                <Bar dataKey="revenue" name="Revenue" fill="var(--brand)" radius={[0,4,4,0]} barSize={14} isAnimationActive={false}
+                  cursor="pointer"
+                  onClick={(d) => d?.dealsList?.length && setDrill({ title: `${d.source} — ${fmt.inr(d.revenue)} originated`, deals: d.dealsList })}>
+                  <LabelList position="right" offset={6} style={{fontSize:10, fill:"var(--text2)"}}
+                    content={({x, y, width, height, index}) => {
+                      const d = contribChart[index];
+                      if (!d) return null;
+                      const parts = [d.revenue ? fmt.inr(d.revenue) : "—"];
+                      if (d.leads) parts.push(`${d.leads} lead${d.leads === 1 ? "" : "s"}`);
+                      return (
+                        <text x={x + width + 6} y={y + height / 2} dy={4}
+                          style={{fontSize:10, fill:"var(--text2)"}}>{parts.join(" · ")}</text>
+                      );
+                    }}/>
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       )}
