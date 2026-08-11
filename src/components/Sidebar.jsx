@@ -51,6 +51,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
     ]},
     {section:"Analytics",items:[
       {id:"dashboards",label:"Dashboards",icon:<Gauge size={17}/>},
+      {id:"myperf",label:"My Performance",icon:<Activity size={17}/>},
       ...(canSeeLeadAssignment(userRole)?[{id:"leadassign",label:"Lead Assignment",icon:<UserCheck size={17}/>}]:[]),
       {id:"targets",label:"Targets",icon:<Target size={17}/>},
       {id:"reports",label:"Reports",icon:<BarChart3 size={17}/>},
