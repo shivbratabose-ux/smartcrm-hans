@@ -11,6 +11,8 @@
 // mirrored here. KEEP IN SYNC with byManager.
 // ═══════════════════════════════════════════════════════════════════
 
+import { buildSalesGraph, allocationFor, ABP_OWNER_ROLES as REAL_ROLES } from "../src/utils/salesOrg.js";
+
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -36,40 +38,15 @@ const ABP_OWNER_ROLES = ["vp_sales_mkt", "director", "line_mgr", "country_mgr", 
 
 // ── Mirror of byManager ───────────────────────────────────────────
 function byManager(filtered, users, opps) {
-  const byId = Object.fromEntries(users.map(u => [u.id, u]));
-  const isSalesLead = (u) => ABP_OWNER_ROLES.includes(String(u?.role || "").trim().toLowerCase());
-  const leads = users.filter(u => u.active !== false).filter(isSalesLead);
-  const tops = new Set(leads.filter(u => !isSalesLead(byId[u.reportsTo])).map(u => u.id));
-  const managers = leads
-    .filter(u => tops.has(u.id) || tops.has(u.reportsTo))
-    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  // The org graph and the allocation maths come from the REAL module, so
+  // this file can only drift on the achievement partition it still mirrors.
+  const G = buildSalesGraph(users);
+  const byId = G.byId;
+  const managers = G.managers;
+  const gridIds = G.gridIds;
+  const alloc = allocationFor(filtered, G);
 
-  const gridIds = new Set(managers.map(m => m.id));
-
-  const childrenOf = {};
-  users.forEach(u => {
-    [u.reportsTo, ...(Array.isArray(u.dottedTo) ? u.dottedTo : [])]
-      .filter(Boolean)
-      .forEach(pid => (childrenOf[pid] || (childrenOf[pid] = [])).push(u.id));
-  });
-  const branchOf = (rootId) => {
-    const out = new Set([rootId]); const stack = [rootId];
-    while (stack.length) {
-      for (const c of childrenOf[stack.pop()] || []) if (!out.has(c)) { out.add(c); stack.push(c); }
-    }
-    return out;
-  };
-
-  const creditOf = (uid) => {
-    if (gridIds.has(uid)) return uid;         // an owner keeps their own commitment
-    let cur = byId[uid]; const seen = new Set();
-    while (cur && cur.reportsTo && !seen.has(cur.id)) {
-      seen.add(cur.id);
-      if (gridIds.has(cur.reportsTo)) return cur.reportsTo;
-      cur = byId[cur.reportsTo];
-    }
-    return "__none";
-  };
+  const { branchOf, creditOf } = G;
 
   const credited = {};
   filtered.forEach(t => {
@@ -101,27 +78,27 @@ function byManager(filtered, users, opps) {
   const sum = (ds) => +ds.reduce((acc, d) => acc + d.value, 0).toFixed(2);
   const teamPairs = new Set(visiblePeriods.map(p2 => `${p2}|All`));
 
-  const tops2 = new Set(managers.filter(u => !isSalesLead(byId[u.reportsTo])).map(u => u.id));
   const rows = managers.map(m => {
-    const isTop = tops2.has(m.id);
+    const isTop = G.tops.has(m.id);
     const branchIds = branchOf(m.id);
-    let pairs, abpTarget, consolidated = false;
+    const a = alloc[m.id] || { teamTarget: 0, allocated: 0, individual: 0 };
+    let pairs;
     if (isTop) {
-      pairs = new Set(); abpTarget = 0;
+      pairs = new Set();
       Object.entries(credited).forEach(([ownerId, c2]) => {
         if (ownerId === "__none" || !branchIds.has(ownerId)) return;
         c2.pairs.forEach(pr => pairs.add(pr));
-        abpTarget += c2.target;
       });
-      abpTarget = +abpTarget.toFixed(2);
-      consolidated = pairs.size > 0 && (credited[m.id] ? abpTarget > credited[m.id].target : true);
     } else {
-      const c0 = credited[m.id];
-      pairs = c0 ? c0.pairs : new Set();
-      abpTarget = c0 ? c0.target : 0;
+      pairs = credited[m.id] ? credited[m.id].pairs : new Set();
     }
+    const abpTarget = a.teamTarget;
+    const consolidated = isTop;
     const c = credited[m.id];
-    const abpDeals = pairs.size ? dealsFor(pairs, null) : [];
+    // Team achievement is branch-scoped unless the owner holds a real
+    // product boundary — mirrors Targets.jsx.
+    const hasProductScope = !!c && c.products.size > 0;
+    const abpDeals = pairs.size ? dealsFor(pairs, hasProductScope || isTop ? null : branchIds) : [];
     const ownDeals = abpDeals.filter(d => d.owner === m.id);
     const teamDeals = abpDeals.filter(d => d.owner !== m.id && branchIds.has(d.owner));
     const crossInDeals = abpDeals.filter(d => !branchIds.has(d.owner));
@@ -130,10 +107,11 @@ function byManager(filtered, users, opps) {
     const crossOutDeals = soldDeals.filter(d => !soldIds.has(d.id));
     const achieved = sum(abpDeals);
     return {
-      mgrId: m.id, role: m.role || "", consolidated, products: c ? [...c.products] : [],
+      mgrId: m.id, role: m.role || "", consolidated,
+      teamTarget: a.teamTarget, allocated: a.allocated, individual: a.individual,
+      products: c ? [...c.products] : [],
       companyWide: [...pairs].some(pr => pr.endsWith("|All")),
-      headcount: [...branchIds].filter(id2 => id2 !== m.id &&
-        [...ABP_OWNER_ROLES, "sales_exec"].includes(String(byId[id2]?.role || "").trim().toLowerCase())).length,
+      headcount: G.sellingCount(m.id),
       target: abpTarget, achieved,
       own: sum(ownDeals), team: sum(teamDeals), crossIn: sum(crossInDeals),
       crossOut: sum(crossOutDeals),
@@ -204,13 +182,18 @@ check("period mapping: 15 Aug 2026 → 2026-Q2", periodOf(CLOSE), Q);
     { userId: "u_shiv",   period: Q, product: "All",       targetValue: 100, targetDeals: 10 },
   ];
   const rows = byManager(targets, USERS, []);
-  check("Adarsh's ₹50L credits to Amit", row(rows, "u_amit").target, 50);
-  check("Neha's ₹30L credits to Lotak", row(rows, "u_lotak").target, 30);
-  // The VP row is the CONSOLIDATION — allocations are inside it, not beside
-  // it, so the VP reads the full plan and the column must not be summed down.
-  check("VP row consolidates own 100 + Amit 50 + Lotak 30", row(rows, "u_shiv").target, 180);
-  check("VP row is flagged consolidated", row(rows, "u_shiv").consolidated, true);
-  check("consolidated VP row equals the page total", row(rows, "u_shiv").target, 180);
+  check("Adarsh's ₹50L credits to Amit as his team target", row(rows, "u_amit").teamTarget, 50);
+  check("Neha's ₹30L credits to Lotak as his team target", row(rows, "u_lotak").teamTarget, 30);
+  // Allocation model: the VP's team target is what was ASSIGNED to them
+  // (100); the Line Managers' team targets are carved OUT of it, so the VP's
+  // own individual number is the 20 left over. Nothing is summed twice.
+  check("VP team target = the 100 assigned to them", row(rows, "u_shiv").teamTarget, 100);
+  check("VP allocated = Amit 50 + Lotak 30", row(rows, "u_shiv").allocated, 80);
+  check("VP individual = the unallocated 20", row(rows, "u_shiv").individual, 20);
+  check("rule 7 at the top: allocated + individual = team target",
+    +(row(rows, "u_shiv").allocated + row(rows, "u_shiv").individual).toFixed(2),
+    row(rows, "u_shiv").teamTarget);
+  check("VP row is flagged as the top of the sales line", row(rows, "u_shiv").consolidated, true);
   check("Amit's owned vertical is iCAFFE", row(rows, "u_amit").products, ["iCAFFE"]);
   check("VP's row is flagged company-wide", row(rows, "u_shiv").companyWide, true);
   // Selling capacity only: Sudhir (seller under the Product Head) counts,
@@ -283,9 +266,11 @@ check("period mapping: 15 Aug 2026 → 2026-Q2", periodOf(CLOSE), Q);
   ];
   const rows = byManager(targets, USERS, []);
   check("orphan target surfaces in the catch-all row", row(rows, "__none").target, 10);
-  check("consolidated VP + outside-sales row = page total",
-    +(row(rows, "u_shiv").target + row(rows, "__none").target).toFixed(2), 60);
-  check("an outside-sales target never inflates the consolidation", row(rows, "u_shiv").target, 50);
+  // With no target explicitly assigned to the VP the plan is IMPLIED from the
+  // sales branch (Amit's 50). The point of the assertion is that the finance
+  // person's 10 is NOT part of it — it stays in the catch-all row.
+  check("an outside-sales target never inflates the plan", row(rows, "u_shiv").teamTarget, 50);
+  check("…and the orphan 10 sits outside it", row(rows, "__none").target, 10);
 }
 
 // ── 7. A reporting cycle must not hang the credit walk ──
@@ -329,10 +314,15 @@ check("period mapping: 15 Aug 2026 → 2026-Q2", periodOf(CLOSE), Q);
     { userId: "u_adarsh", period: "2026-Q1", product: "All", targetValue: 15,   targetDeals: 30 },
   ];
   const rows = byManager(targets, USERS, []);
-  check("live shape: Lotak keeps his own ₹49.1L (was ₹0)", row(rows, "u_lotak").target, 49.1);
-  check("live shape: Amit carries Adarsh's ₹75L", row(rows, "u_amit").target, 75);
-  check("live shape: VP consolidates to the company ABP ₹261.6L", row(rows, "u_shiv").target, 261.6);
-  check("live shape: VP row is the consolidation", row(rows, "u_shiv").consolidated, true);
+  check("live shape: Lotak keeps his own ₹49.1L (was ₹0)", row(rows, "u_lotak").teamTarget, 49.1);
+  check("live shape: Amit carries Adarsh's ₹75L", row(rows, "u_amit").teamTarget, 75);
+  // Under the allocation model the VP's ₹137.5L is the plan ASSIGNED to them,
+  // and Lotak's ₹49.1L + Amit's ₹75L are carved out of it — which leaves the
+  // VP over-allocated by ₹13.4L on this data, surfaced rather than hidden.
+  check("live shape: VP team target = the ₹137.5L assigned", row(rows, "u_shiv").teamTarget, 137.5);
+  check("live shape: VP allocated = Lotak 49.1 + Amit 75", row(rows, "u_shiv").allocated, 124.1);
+  check("live shape: VP individual = ₹13.4L left unallocated", row(rows, "u_shiv").individual, 13.4);
+  check("live shape: VP row is the top of the sales line", row(rows, "u_shiv").consolidated, true);
 }
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} ${pass} passed, ${fail} failed\n`);

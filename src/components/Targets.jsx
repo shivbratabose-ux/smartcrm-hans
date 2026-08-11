@@ -8,6 +8,7 @@ import { fmt, uid, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpe
 // definition so the two dashboards can never disagree about quarters or
 // what "won" means.
 import { periodOf, fyOf, wonStageNames, lostStageNames, prodMatches } from '../utils/fiscal';
+import { buildSalesGraph, allocationFor } from '../utils/salesOrg';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
@@ -96,118 +97,12 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
   const userOpts = (orgUsers && orgUsers.length ? orgUsers.filter(u => u.active !== false) : TEAM);
   const userName = (id) => (orgUsers || []).find(u => u.id === id)?.name || TEAM_MAP[id]?.name || id || "";
 
-  // ── Line-manager alignment ──
-  // managers = anyone with at least one direct report (solid reportsTo or
-  // dotted line). Selecting one scopes the page to that whole branch, so a
-  // manager's product targets and their team's roll up together.
-  // ── Who owns a slice of the ABP/AOP ──
-  // The annual plan is cut across the Line Managers by vertical/product, and
-  // whatever stays company-level is owned by the VP Sales & Marketing. So the
-  // panel lists every BD / line-management / sales-leadership role up to VP —
-  // and does NOT require the person to have direct reports.
-  //
-  // That last part matters: the previous rule also demanded at least one
-  // report, which silently dropped a Line Manager who owns an ABP number but
-  // hasn't been assigned a team yet. They own a commitment, so they get a row
-  // and it reads "no target" rather than the manager vanishing.
-  //
-  // Roles above the sales line (MD, Admin) and outside it (Finance, Product
-  // Head, Tech Lead, Support, Viewer) stay out — their rows were noise. Add
-  // "sales_exec" here if you ever want individual contributors listed too;
-  // today their targets roll up into their Line Manager's row instead, and
-  // the detail table below already lists them line by line.
-  const ABP_OWNER_ROLES = ["vp_sales_mkt", "director", "line_mgr", "country_mgr", "bd_lead"];
-  const managers = useMemo(() => {
-    const all = userOpts;
-    const byId = Object.fromEntries(all.map(u => [u.id, u]));
-    const isSalesLead = (u) => ABP_OWNER_ROLES.includes(String(u?.role || "").trim().toLowerCase());
-    const leads = all.filter(isSalesLead);
-
-    // Top of the sales line: a sales-leadership person with no sales-leadership
-    // manager above them — the VP Sales, whose own manager is the MD. Computed
-    // rather than hardcoded so a title change doesn't empty the panel, and so
-    // a Line Manager parked under the MD by a data slip still gets a row
-    // instead of vanishing.
-    const tops = new Set(leads.filter(u => !isSalesLead(byId[u.reportsTo])).map(u => u.id));
-
-    // The plan tier is the top plus the layer directly beneath it. Anyone who
-    // reports INTO a Line Manager is a team member, not a plan owner, so they
-    // get no row even when their role says otherwise — their targets already
-    // roll up into their manager's commitment via creditOf, so a row of their
-    // own would be empty noise.
-    return leads
-      .filter(u => tops.has(u.id) || tops.has(u.reportsTo))
-      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  }, [orgUsers]);
-  // ── The org graph, built once from the confirmed hierarchy ──
-  // Everything hierarchy-shaped on this page reads from here, so "team",
-  // "line manager" and "branch" mean the same thing in every widget.
-  const orgGraph = useMemo(() => {
-    const users = orgUsers || [];
-    const byId = Object.fromEntries(users.map(u => [u.id, u]));
-    const gridIds = new Set(managers.map(m => m.id));
-    const childrenOf = {};
-    users.forEach(u => {
-      [u.reportsTo, ...(Array.isArray(u.dottedTo) ? u.dottedTo : [])]
-        .filter(Boolean)
-        .forEach(pid => (childrenOf[pid] || (childrenOf[pid] = [])).push(u.id));
-    });
-    // True reporting branch (self + every report at any depth, solid or
-    // dotted). Deliberately NOT getScopedUserIds — that is a VISIBILITY
-    // scope and short-circuits to the entire org for global roles, which
-    // once made the VP's team the whole company, Finance included.
-    const branchOf = (rootId) => {
-      const out = new Set([rootId]);
-      const stack = [rootId];
-      while (stack.length) {
-        for (const child of childrenOf[stack.pop()] || []) {
-          if (!out.has(child)) { out.add(child); stack.push(child); }
-        }
-      }
-      return out;
-    };
-    // Accountable ABP owner for a user's numbers: themselves if they are in
-    // the sales grid, else the nearest grid member above them. This is what
-    // routes Sudhir (sales exec under the Product Head) past Rajesh and onto
-    // the VP's row — the walk skips non-sales managers.
-    const creditOf = (uid2) => {
-      if (gridIds.has(uid2)) return uid2;
-      let cur = byId[uid2];
-      const seen = new Set();
-      while (cur && cur.reportsTo && !seen.has(cur.id)) {
-        seen.add(cur.id);                       // cycle guard
-        if (gridIds.has(cur.reportsTo)) return cur.reportsTo;
-        cur = byId[cur.reportsTo];
-      }
-      return "__none";
-    };
-    // Nearest sales-line manager strictly ABOVE a user — the "Line Manager"
-    // column. The direct reportsTo was wrong per the real hierarchy: it
-    // showed the MD for the VP's rows and the Product Head for Sudhir's,
-    // neither of whom is a sales Line Manager.
-    const salesManagerOf = (uid2) => {
-      let cur = byId[uid2];
-      const seen = new Set();
-      while (cur && cur.reportsTo && !seen.has(cur.id)) {
-        seen.add(cur.id);
-        if (gridIds.has(cur.reportsTo)) return cur.reportsTo;
-        cur = byId[cur.reportsTo];
-      }
-      return null;                              // top of the sales line, or outside it
-    };
-    // Selling headcount: people who carry quota. Amit's branch includes
-    // three Support Engineers per the org chart — they belong to his team
-    // but not to his selling capacity, so the Team column excludes them.
-    const SELLING_ROLES = new Set([...ABP_OWNER_ROLES, "sales_exec"]);
-    const sellingCount = (rootId) => {
-      let n = 0;
-      branchOf(rootId).forEach(id2 => {
-        if (id2 !== rootId && SELLING_ROLES.has(String(byId[id2]?.role || "").trim().toLowerCase())) n++;
-      });
-      return n;
-    };
-    return { byId, gridIds, branchOf, creditOf, salesManagerOf, sellingCount };
-  }, [orgUsers, managers]);
+  // ── The sales org graph (shared with My Performance) ──
+  // Who owns a slice of the plan, whose branch is whose, and where a
+  // person's numbers credit — one definition in utils/salesOrg so no page
+  // can disagree with another about the hierarchy.
+  const orgGraph = useMemo(() => buildSalesGraph(orgUsers && orgUsers.length ? orgUsers : TEAM), [orgUsers]);
+  const managers = orgGraph.managers;
 
   // Team filter = the manager's real reporting branch, not their visibility
   // scope (getScopedUserIds returns the whole org for global roles, which
@@ -259,14 +154,10 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
   // Target TYPE is derived, not stored (Company / Vertical / Product /
   // Individual). Company = a company-wide (product All) target held by the
   // plan tier; Product = product-specific; Individual = held by a team member.
-  const managerIds = useMemo(() => new Set(managers.map(m => m.id)), [managers]);
-  // Top of the sales line (the VP) — only THEIR company-wide rows are the
-  // company plan; a Line Manager's "All Products" target is an allocation.
-  const topIds = useMemo(() => {
-    const byId = Object.fromEntries(userOpts.map(u => [u.id, u]));
-    const isLead = (u) => ABP_OWNER_ROLES.includes(String(u?.role || "").trim().toLowerCase());
-    return new Set(managers.filter(u => !isLead(byId[u.reportsTo])).map(u => u.id));
-  }, [managers, orgUsers]);
+  const managerIds = orgGraph.gridIds;
+  // Top of the sales line (the VP) — only THEIR rows are the company plan;
+  // a Line Manager's target is an allocation of it.
+  const topIds = orgGraph.tops;
   const typeOfTarget = (t) => {
     const wide = !t.product || t.product === "All";
     if (wide && topIds.has(t.userId)) return "Company";
@@ -375,16 +266,20 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
     [ledger, scopePairs, sourceF]);
 
   // ── Company ABP ──
-  // The company plan is the CONSOLIDATION of every commitment, each target
-  // counted once — the VP's own company-wide rows plus every Line Manager /
-  // salesperson allocation. The split between "held company-wide" and
-  // "allocated to teams" is shown on the card so the distribution stays
-  // visible without ever double-counting a row.
-  const companyTarget = +filtered.filter(t => typeOfTarget(t) === "Company")
-    .reduce((s, t) => s + (Number(t.targetValue) || 0), 0).toFixed(2);
-  const allRowsTarget = +filtered.reduce((s, t) => s + (Number(t.targetValue) || 0), 0).toFixed(2);
-  const allocatedTarget = +(allRowsTarget - companyTarget).toFixed(2);
-  const totalTarget = allRowsTarget;
+  // The company plan is the target ASSIGNED to the top of the sales line —
+  // NOT the sum of every row. Line Manager and salesperson targets are
+  // allocations OF it (rule 1: a target assigned to a manager is the
+  // complete team target and must never be added on top again). The card
+  // shows the distribution alongside: what is allocated to teams and what
+  // therefore remains as the VP's own individual number.
+  // Computed once here and reused by the owner panel below, so the card and
+  // the table can never disagree about the plan.
+  const planAlloc = useMemo(() => allocationFor(filtered, orgGraph), [filtered, orgGraph]);
+  const topPlans = [...orgGraph.tops].map(id => planAlloc[id]).filter(Boolean);
+  const companyTarget = +topPlans.reduce((s, a) => s + a.teamTarget, 0).toFixed(2);
+  const allocatedTarget = +topPlans.reduce((s, a) => s + a.allocated, 0).toFixed(2);
+  const companyIndividual = +topPlans.reduce((s, a) => s + a.individual, 0).toFixed(2);
+  const totalTarget = companyTarget;
   const totalTargetDeals = filtered.reduce((s, t) => s + (Number(t.targetDeals) || 0), 0);
 
   // Achieved: every won deal matching an in-scope commitment, counted once —
@@ -519,37 +414,40 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
 
     const teamPairs = new Set(visiblePeriods.map(p => `${p}|All`));
 
-    // The top of the sales line (the VP) is a CONSOLIDATION: every
-    // allocation beneath them is part of their number, so their row carries
-    // the union of the whole branch's commitments — own targets plus every
-    // Line Manager's slice, each counted once. "Amit's ₹75L" is IN the VP's
-    // figure, not beside it. LM rows remain the distribution of that plan,
-    // so the ABP Target column must not be summed down (footnote says so).
-    const isSalesLead2 = (u) => ABP_OWNER_ROLES.includes(String(u?.role || "").trim().toLowerCase());
-    const tops = new Set(managers.filter(u => !isSalesLead2(byId[u.reportsTo])).map(u => u.id));
+    // ── Allocation model ──
+    // A target assigned TO a manager is their COMPLETE TEAM TARGET; targets
+    // held by their reports are carve-outs of it, never additions. The
+    // unallocated remainder is automatically that manager's own individual
+    // target, so at every level
+    //     Σ member targets + manager individual = manager team target
+    // and nothing is ever counted twice. allocationFor() recurses the same
+    // rule upward: each Line Manager's team target is an allocation of the
+    // VP's, whose individual target is what remains.
+    const tops = orgGraph.tops;
+    const alloc = planAlloc;
 
     // EVERY ABP owner gets a row — including one with no target yet, so a
     // missing commitment is visible instead of the manager silently absent.
     const rows = managers.map(m => {
       const isTop = tops.has(m.id);
       const branchIds = branchOf(m.id);
-      let pairs, abpTarget, consolidated = false;
+      const a = alloc[m.id] || { teamTarget: 0, allocated: 0, individual: 0, noTeamTarget: false, overAllocated: false };
+
+      // Commitments the TEAM is measured against — the manager's own rows
+      // plus their members' (creditOf routes members here). The top row
+      // unions the whole branch so company achievement is complete.
+      let pairs;
       if (isTop) {
-        // Union of every commitment held anywhere in the branch.
-        pairs = new Set(); abpTarget = 0;
+        pairs = new Set();
         Object.entries(credited).forEach(([ownerId, c2]) => {
-          if (ownerId !== "__none" && !branchIds.has(ownerId)) return;
-          if (ownerId === "__none") return;
+          if (ownerId === "__none" || !branchIds.has(ownerId)) return;
           c2.pairs.forEach(pr => pairs.add(pr));
-          abpTarget += c2.target;
         });
-        abpTarget = +abpTarget.toFixed(2);
-        consolidated = pairs.size > 0 && (credited[m.id] ? abpTarget > credited[m.id].target : true);
       } else {
-        const c = credited[m.id];
-        pairs = c ? c.pairs : new Set();
-        abpTarget = c ? c.target : 0;
+        pairs = credited[m.id] ? credited[m.id].pairs : new Set();
       }
+      const abpTarget = a.teamTarget;
+      const consolidated = isTop;
       const c = credited[m.id];
 
       // Accountability: deals on the commitments this owner holds (for the
@@ -558,7 +456,16 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       // with nothing counted twice:
       //   own (the owner personally) + team (their branch) + crossIn
       //   (sellers outside the branch) = total.
-      const abpDeals = pairs.size ? dealsFor(pairs, null) : [];
+      // A TEAM target is the team's number, so achievement against it is what
+      // that branch delivered. Revenue from OUTSIDE the branch only belongs
+      // here when the owner holds a genuine product boundary to own — with
+      // company-wide ("All Products") commitments every owner would otherwise
+      // match every deal in the company, which showed a Line Manager with no
+      // team and no sales at 90% attainment.
+      const hasProductScope = !!c && c.products.size > 0;
+      const abpDeals = pairs.size
+        ? dealsFor(pairs, hasProductScope || isTop ? null : branchIds)
+        : [];
       const ownDeals   = abpDeals.filter(d => d.owner === m.id);
       const teamDeals  = abpDeals.filter(d => d.owner !== m.id && branchIds.has(d.owner));
       const crossInDeals = abpDeals.filter(d => !branchIds.has(d.owner));
@@ -582,11 +489,19 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       return {
         mgrId: m.id, role: m.role || "",
         consolidated,
+        // Allocation view (rules 1-9): team target assigned from above, the
+        // slice distributed to the team, and the automatically-derived
+        // remainder that IS this manager's own individual number.
+        teamTarget: a.teamTarget,
+        allocated: a.allocated,
+        individual: a.individual,
+        noTeamTarget: a.noTeamTarget,
+        overAllocated: a.overAllocated,
+        balance: +(a.teamTarget - achieved).toFixed(2),
         products: c ? [...c.products] : [],
         verticals: c ? [...c.verticals] : [],
         companyWide: [...(c ? c.pairs : pairs)].some(pr => pr.endsWith("|All")),
         headcount: orgGraph.sellingCount(m.id),       // quota-carrying reports only
-        target: abpTarget,
         achieved,
         own: sum(ownDeals), team: sum(teamDeals), crossIn: sum(crossInDeals),
         dept: sum(deptDeals),
@@ -597,6 +512,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
         teamSold: sum(soldDeals),
         pct: abpTarget > 0 ? Math.round((achieved / abpTarget) * 100) : null,
         gap: +(abpTarget - achieved).toFixed(2),
+        target: abpTarget,
         drillDeals: abpDeals,           // powers click-through to the deals
         targetRows: c ? c.rows : [],    // commitments credited to THIS owner (goals editor)
       };
@@ -609,6 +525,9 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       const abpDeals = dealsFor(o.pairs, null);
       rows.push({
         mgrId: "__none", role: "", consolidated: false, products: [], verticals: [], companyWide: false,
+        teamTarget: o.target, allocated: 0, individual: o.target,
+        noTeamTarget: false, overAllocated: false,
+        balance: +(o.target - sum(abpDeals)).toFixed(2),
         headcount: o.people.size, target: o.target, achieved: sum(abpDeals),
         own: 0, team: 0, crossIn: sum(abpDeals), dept: 0, crossOut: 0, pipeline: 0,
         wonDeals: abpDeals.length, deals: o.deals, teamSold: 0,
@@ -617,8 +536,11 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
         targetRows: o.rows,
       });
     }
-    return rows.sort((a, b) => b.target - a.target || b.teamSold - a.teamSold);
-  }, [filtered, orgUsers, managers, ledgerScoped, openDeals, orgGraph]);
+    // Top of the sales line first (it is the whole plan), then by size.
+    return rows.sort((x, y) =>
+      (y.consolidated ? 1 : 0) - (x.consolidated ? 1 : 0) ||
+      y.teamTarget - x.teamTarget || y.teamSold - x.teamSold);
+  }, [filtered, orgUsers, managers, ledgerScoped, openDeals, orgGraph, planAlloc]);
 
   // Company-level cross-sell = revenue that landed in an owner's plan from a
   // seller OUTSIDE that owner's branch. Summed over Line-Manager rows only —
@@ -717,6 +639,29 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
     if (dupe) {
       errs.period = `${userName(form.userId)} already has a ${(!form.product || form.product === "All") ? "company-wide" : (PROD_MAP[form.product]?.name || form.product)} target for ${form.period} (₹${dupe.targetValue}L). Edit that one instead — a second target double-counts the same won deals.`;
     }
+    // Rule 8: team-member allocations must never exceed the manager's
+    // assigned team target. Checked against ALL live targets (not the
+    // filtered view) for the same period, because the manager's team target
+    // is a period commitment and a hidden row still consumes it.
+    if (!hasErrors(errs)) {
+      const mgrId = orgGraph.salesManagerOf(form.userId);
+      const isOwnerRow = orgGraph.gridIds.has(form.userId);
+      if (mgrId && !isOwnerRow) {
+        const teamTarget = targets
+          .filter(t => !t.isDeleted && t.userId === mgrId && t.period === form.period)
+          .reduce((acc, t) => acc + (Number(t.targetValue) || 0), 0);
+        if (teamTarget > 0) {
+          const others = targets
+            .filter(t => !t.isDeleted && t.id !== form.id && t.period === form.period &&
+                         orgGraph.salesManagerOf(t.userId) === mgrId && !orgGraph.gridIds.has(t.userId))
+            .reduce((acc, t) => acc + (Number(t.targetValue) || 0), 0);
+          const proposed = others + (Number(form.targetValue) || 0);
+          if (proposed > teamTarget) {
+            errs.targetValue = `${userName(mgrId)}'s team target for ${form.period} is ${fmt.inr(teamTarget)} and ${fmt.inr(others)} is already allocated — at most ${fmt.inr(+(teamTarget - others).toFixed(2))} is left. Raise the team target first, or reduce another member's.`;
+          }
+        }
+      }
+    }
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const clean = sanitizeObj(form);
     if (modal.mode === "add") setTargets(p => [...p, { ...clean }]);
@@ -753,9 +698,9 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
         <div className="kpi">
           <div className="kpi-label">Company ABP</div>
           <div className="kpi-val">{fmt.inr(totalTarget)}</div>
-          {companyTarget > 0 && allocatedTarget > 0 && (
-            <div className="kpi-sub" title="The plan consolidates to the VP: company-wide commitments plus every team allocation, each counted once.">
-              {fmt.inr(companyTarget)} company-wide · {fmt.inr(allocatedTarget)} allocated
+          {companyTarget > 0 && (
+            <div className="kpi-sub" title="The plan assigned to the top of the sales line. Team targets beneath are allocations OF it, never additions to it.">
+              {fmt.inr(allocatedTarget)} allocated · {fmt.inr(companyIndividual)} unallocated
             </div>
           )}
         </div>
@@ -858,12 +803,15 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                   <th>Role</th>
                   <th>Vertical / Products</th>
                   <th style={{textAlign:"right"}} title="Quota-carrying people in this branch — support engineers report here too but don't count toward selling capacity">Team</th>
-                  <th style={{textAlign:"right"}}>ABP Target</th>
-                  <th style={{textAlign:"right"}} title="Deals the owner closed personally on their own plan">Own</th>
-                  <th style={{textAlign:"right"}} title="Deals the owner's branch closed on the plan (excluding the owner)">Team</th>
-                  <th style={{textAlign:"right"}} title="Deals sellers OUTSIDE this branch closed into this owner's plan">Cross-in</th>
-                  <th style={{textAlign:"right"}} title="Own + Team + Cross-in — every deal counted once. Click to see the deals.">Total Achieved</th>
+                  <th style={{textAlign:"right"}} title="The complete team target assigned to this manager from above. Allocations beneath are carved OUT of it, never added to it.">Team Target</th>
+                  <th style={{textAlign:"right"}} title="Sum of the individual targets distributed to this manager's team">Allocated</th>
+                  <th style={{textAlign:"right"}} title="Team Target minus Allocated — automatically this manager's own individual number. It falls as team allocations rise and rises as they fall.">Mgr Individual</th>
+                  <th style={{textAlign:"right"}} title="Deals the owner closed personally">Own</th>
+                  <th style={{textAlign:"right"}} title="Deals the owner's branch closed (excluding the owner)">Team</th>
+                  <th style={{textAlign:"right"}} title="Deals sellers OUTSIDE this branch closed into this plan">Cross-in</th>
+                  <th style={{textAlign:"right"}} title="Own + Team + Cross-in — every deal counted once. Click to see the deals.">Team Achieved</th>
                   <th>Attainment</th>
+                  <th style={{textAlign:"right"}} title="Team Target minus Team Achieved — what is still to be brought in">Balance</th>
                   <th style={{textAlign:"right"}} title="Revenue this branch closed into OTHER owners' plans">Cross-out</th>
                   <th style={{textAlign:"right"}} title="Of Total Achieved, deals originated by a non-sales department (Marketing, Pre-Sales, Customer Success, Partner, Operations). A subset of the partition, not an addition.">via Depts</th>
                   <th style={{textAlign:"right"}}>Pipeline</th>
@@ -894,7 +842,19 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                       ))}
                     </td>
                     <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{r.headcount || "—"}</td>
-                    <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700}}>{fmt.inr(r.target)}</td>
+                    <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700}}>
+                      {fmt.inr(r.teamTarget)}
+                      {r.noTeamTarget && r.teamTarget > 0 && (
+                        <span title="No team target has been assigned to this manager, so the sum of their team's allocations is shown. Assign one to make the split explicit." style={{marginLeft:4, fontSize:9, fontWeight:700, padding:"1px 5px", borderRadius:4, color:"#92400E", background:"#F59E0B22"}}>implied</span>
+                      )}
+                    </td>
+                    <td style={{textAlign:"right", fontSize:12, color: r.overAllocated ? "var(--red)" : "var(--text2)"}}>
+                      {r.allocated ? fmt.inr(r.allocated) : <span style={{color:"var(--text3)"}}>—</span>}
+                      {r.overAllocated && <span title="Team allocations exceed the assigned team target" style={{marginLeft:3}}>⚠</span>}
+                    </td>
+                    <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontWeight:700, color: r.individual < 0 ? "var(--red)" : "var(--text1)"}}>
+                      {r.teamTarget || r.allocated ? fmt.inr(r.individual) : <span style={{color:"var(--text3)"}}>—</span>}
+                    </td>
                     <td style={{textAlign:"right", fontSize:12}}>{r.own ? fmt.inr(r.own) : <span style={{color:"var(--text3)"}}>—</span>}</td>
                     <td style={{textAlign:"right", fontSize:12}}>{r.team ? fmt.inr(r.team) : <span style={{color:"var(--text3)"}}>—</span>}</td>
                     <td style={{textAlign:"right", fontSize:12, color: r.companyWide && !r.consolidated ? "var(--text3)" : "#7C3AED"}}
@@ -915,6 +875,10 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                         </div>
                       )}
                     </td>
+                    <td style={{textAlign:"right", fontFamily:"'Outfit',sans-serif", fontSize:12, fontWeight:700, color: r.balance > 0 ? "var(--red)" : "var(--green)"}}>
+                      {r.teamTarget ? fmt.inr(Math.abs(r.balance)) : <span style={{color:"var(--text3)"}}>—</span>}
+                      {r.teamTarget > 0 && r.balance < 0 && <span style={{fontSize:9, marginLeft:3}}>over</span>}
+                    </td>
                     <td style={{textAlign:"right", fontSize:12, color: r.companyWide && !r.consolidated ? "var(--text3)" : "#0D9488"}}>{r.crossOut ? fmt.inr(r.crossOut) : <span style={{color:"var(--text3)"}}>—</span>}</td>
                     <td style={{textAlign:"right", fontSize:12, color:"var(--text3)"}}>{r.dept ? fmt.inr(r.dept) : "—"}</td>
                     <td style={{textAlign:"right", fontSize:12, color:"var(--brand)"}}>{r.pipeline ? fmt.inr(r.pipeline) : <span style={{color:"var(--text3)"}}>—</span>}</td>
@@ -933,7 +897,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
             </table>
           </div>
           <div style={{padding:"8px 14px", fontSize:11, color:"var(--text3)", borderTop:"1px solid var(--border)"}}>
-            The <b>Consolidated</b> row is the company plan rolled up to the VP — every allocation beneath is inside it, so <b>don't sum the ABP Target column</b>; the Line Manager rows are its distribution. Per row, <b>Own + Team + Cross-in = Total Achieved</b> (a partition, every deal counted once); <b>Cross-out</b> and <b>via Depts</b> are informational overlays. A cross-sold deal appears in one owner's Cross-in and another's Cross-out by design.
+            A target assigned to a manager is their <b>complete team target</b>; the targets beneath are carved out of it. So <b>Allocated + Mgr Individual = Team Target</b> on every row, and the <b>Team Target column must not be summed down</b> — the top row already contains every allocation below it. Give a team member more and that manager's individual number falls automatically; take it away and it rises. Per row, <b>Own + Team + Cross-in = Team Achieved</b> (a partition, every deal counted once); <b>Cross-out</b> and <b>via Depts</b> are informational overlays.
           </div>
         </div>
       )}
