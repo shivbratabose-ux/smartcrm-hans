@@ -20,6 +20,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { PROD_MAP } from '../data/constants';
 import { fmt, today, isOverdue, getScopedUserIds } from '../utils/helpers';
 import { periodOf, fiscalRanges, wonStageNames, lostStageNames } from '../utils/fiscal';
+import { buildSalesGraph, allocationFor } from '../utils/salesOrg';
 import { UserPill, StatusBadge, Empty, PageTip } from './shared';
 
 // Attention thresholds — days without activity before a deal counts as
@@ -66,12 +67,40 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
   // split is the honest default rather than inventing a seasonal curve.
   const myTargets = useMemo(() => (targets || []).filter(t => t.userId === me && !t.isDeleted), [targets, me]);
   const qTargets = myTargets.filter(t => t.period === currentPeriod);
-  const quarterGoal = +qTargets.reduce((s, t) => s + (Number(t.targetValue) || 0), 0).toFixed(2);
+
+  // ── A manager's own number is what's LEFT after their team ──
+  // A target assigned to a manager is their complete TEAM target; the slices
+  // held by their reports are carved out of it. So the goal this page holds
+  // them to personally is team target − allocated, recomputed automatically
+  // as allocations change. A seller with no team just uses their own rows.
+  const salesGraph = useMemo(() => buildSalesGraph(orgUsers), [orgUsers]);
+  const qAlloc = useMemo(
+    () => allocationFor((targets || []).filter(t => t.period === currentPeriod), salesGraph),
+    [targets, currentPeriod, salesGraph]);
+  const myPlan = qAlloc[me] || null;
+  const isPlanOwner = salesGraph.gridIds.has(me);
+  const assignedTeamTarget = myPlan ? myPlan.teamTarget : 0;
+  const allocatedToTeam = myPlan ? myPlan.allocated : 0;
+  const quarterGoal = isPlanOwner && myPlan
+    ? myPlan.individual
+    : +qTargets.reduce((s, t) => s + (Number(t.targetValue) || 0), 0).toFixed(2);
   const monthGoal = +(quarterGoal / 3).toFixed(2);
   const mtdPct = monthGoal > 0 ? Math.round((mtdRevenue / monthGoal) * 100) : null;
   const qtdPct = quarterGoal > 0 ? Math.round((qtdRevenue / quarterGoal) * 100) : null;
-  const fyGoal = +(targets || []).filter(t => t.userId === me && !t.isDeleted && String(t.period || "").startsWith(fyStart.slice(0, 4)))
-    .reduce((s, t) => s + (Number(t.targetValue) || 0), 0).toFixed(2);
+  const fyGoal = useMemo(() => {
+    const fy = fyStart.slice(0, 4);
+    const rows = (targets || []).filter(t => String(t.period || "").startsWith(fy));
+    if (!isPlanOwner) {
+      return +rows.filter(t => t.userId === me && !t.isDeleted)
+        .reduce((s, t) => s + (Number(t.targetValue) || 0), 0).toFixed(2);
+    }
+    // Own individual share across every quarter of the FY.
+    const periods = [...new Set(rows.map(t => t.period))];
+    return +periods.reduce((s, per) => {
+      const a = allocationFor(rows.filter(t => t.period === per), salesGraph)[me];
+      return s + (a ? a.individual : 0);
+    }, 0).toFixed(2);
+  }, [targets, fyStart, me, isPlanOwner, salesGraph]);
   const fytdPct = fyGoal > 0 ? Math.round((fytdRevenue / fyGoal) * 100) : null;
 
   // ── My open pipeline, grouped by stage in Masters order ──
@@ -219,7 +248,14 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
         <div className="kpi">
           <div className="kpi-label">QTD Revenue</div>
           <div className="kpi-val" style={{color: qtdPct === null ? "var(--text1)" : pctColor(qtdPct)}}>{fmt.inr(qtdRevenue)}</div>
-          <div className="kpi-sub">{qtdPct === null ? currentPeriod : `${qtdPct}% of ${fmt.inr(quarterGoal)} · ${currentPeriod}`}</div>
+          <div className="kpi-sub" title={isPlanOwner && assignedTeamTarget > 0 ? "Your team target minus what you've allocated to your team — it moves automatically as you distribute." : undefined}>
+            {qtdPct === null ? currentPeriod : `${qtdPct}% of ${fmt.inr(quarterGoal)} · ${currentPeriod}`}
+            {isPlanOwner && assignedTeamTarget > 0 && (
+              <div style={{fontSize:10.5,color:"var(--text3)",marginTop:2}}>
+                team {fmt.inr(assignedTeamTarget)} − allocated {fmt.inr(allocatedToTeam)}
+              </div>
+            )}
+          </div>
         </div>
         <div className="kpi">
           <div className="kpi-label">FYTD Revenue</div>

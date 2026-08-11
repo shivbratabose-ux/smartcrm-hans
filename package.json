@@ -12,6 +12,7 @@
     "test:dates": "node scripts/test-dates.mjs",
     "test:pagination": "node scripts/test-pagination.mjs",
     "test:pricing": "node scripts/test-pricing-engine.mjs",
+    "test:alloc": "node scripts/test-target-allocation.mjs",
     "test:targets": "node scripts/test-targets-attainment.mjs"
   },
   "dependencies": {
