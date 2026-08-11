@@ -97,11 +97,13 @@ function byManager(filtered, users, opps) {
     const c = credited[m.id];
     // Team achievement is branch-scoped unless the owner holds a real
     // product boundary — mirrors Targets.jsx.
-    const hasProductScope = !!c && c.products.size > 0;
-    const abpDeals = pairs.size ? dealsFor(pairs, hasProductScope || isTop ? null : branchIds) : [];
-    const ownDeals = abpDeals.filter(d => d.owner === m.id);
-    const teamDeals = abpDeals.filter(d => d.owner !== m.id && branchIds.has(d.owner));
-    const crossInDeals = abpDeals.filter(d => !branchIds.has(d.owner));
+    const productPairs = new Set([...pairs].filter(pr => !pr.endsWith("|All")));
+    const branchDeals = pairs.size ? dealsFor(pairs, branchIds) : [];
+    const crossInDeals = productPairs.size
+      ? dealsFor(productPairs, null).filter(d => !branchIds.has(d.owner)) : [];
+    const abpDeals = [...branchDeals, ...crossInDeals];
+    const ownDeals = branchDeals.filter(d => d.owner === m.id);
+    const teamDeals = branchDeals.filter(d => d.owner !== m.id);
     const soldDeals = dealsFor(teamPairs, branchIds);
     const soldIds = new Set(abpDeals.map(d => d.id));
     const crossOutDeals = soldDeals.filter(d => !soldIds.has(d.id));
@@ -323,6 +325,28 @@ check("period mapping: 15 Aug 2026 → 2026-Q2", periodOf(CLOSE), Q);
   check("live shape: VP allocated = Lotak 49.1 + Amit 75", row(rows, "u_shiv").allocated, 124.1);
   check("live shape: VP individual = ₹13.4L left unallocated", row(rows, "u_shiv").individual, 13.4);
   check("live shape: VP row is the top of the sales line", row(rows, "u_shiv").consolidated, true);
+}
+
+// ── 9. Company-wide targets must not give every manager every deal ──
+// The reported bug: two Line Managers with different teams both showed the
+// SAME "team achieved" figure, because an "All Products" commitment matches
+// every deal in the company. Each must see only their own branch's closes.
+{
+  const targets = [
+    { userId: "u_amit",  period: Q, product: "All", targetValue: 50, targetDeals: 5 },
+    { userId: "u_lotak", period: Q, product: "All", targetValue: 40, targetDeals: 4 },
+  ];
+  const opps = [
+    { id: "x1", owner: "u_adarsh", stage: "Won", closeDate: CLOSE, products: ["iCAFFE"],    value: 30 },
+    { id: "x2", owner: "u_neha",   stage: "Won", closeDate: CLOSE, products: ["WiseCargo"], value: 12 },
+  ];
+  const rows = byManager(targets, USERS, opps);
+  const amit = row(rows, "u_amit"), lotak = row(rows, "u_lotak");
+  check("Amit sees only his branch's closes", amit.achieved, 30);
+  check("Lotak sees only his branch's closes", lotak.achieved, 12);
+  check("two managers no longer report the SAME figure", amit.achieved !== lotak.achieved, true);
+  check("company-wide commitments generate no phantom cross-in",
+    [amit.crossIn, lotak.crossIn], [0, 0]);
 }
 
 console.log(`\n${fail === 0 ? "✓" : "✗"} ${pass} passed, ${fail} failed\n`);

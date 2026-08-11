@@ -457,18 +457,27 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       //   own (the owner personally) + team (their branch) + crossIn
       //   (sellers outside the branch) = total.
       // A TEAM target is the team's number, so achievement against it is what
-      // that branch delivered. Revenue from OUTSIDE the branch only belongs
-      // here when the owner holds a genuine product boundary to own — with
-      // company-wide ("All Products") commitments every owner would otherwise
-      // match every deal in the company, which showed a Line Manager with no
-      // team and no sales at 90% attainment.
-      const hasProductScope = !!c && c.products.size > 0;
-      const abpDeals = pairs.size
-        ? dealsFor(pairs, hasProductScope || isTop ? null : branchIds)
+      // THIS BRANCH delivered — plus revenue others closed on a product this
+      // owner specifically owns (genuine cross-sell in).
+      //
+      // Splitting it this way matters because a company-wide ("All Products")
+      // commitment matches every deal in the company. Judging the whole row
+      // by "does any pair match" therefore gave every Line Manager the entire
+      // company's closes — two managers with different teams showing the same
+      // achieved figure. Cross-in is now drawn ONLY from product-specific
+      // commitments, where "someone else sold my product" is meaningful.
+      // The top of the sales line still gets everything, because its branch
+      // IS the whole sales org.
+      const productPairs = new Set([...pairs].filter(pr => !pr.endsWith("|All")));
+      const branchDeals = pairs.size ? dealsFor(pairs, branchIds) : [];
+      const crossInDeals = productPairs.size
+        ? dealsFor(productPairs, null).filter(d => !branchIds.has(d.owner))
         : [];
-      const ownDeals   = abpDeals.filter(d => d.owner === m.id);
-      const teamDeals  = abpDeals.filter(d => d.owner !== m.id && branchIds.has(d.owner));
-      const crossInDeals = abpDeals.filter(d => !branchIds.has(d.owner));
+      // Disjoint by construction: branchDeals are inside the branch,
+      // crossInDeals explicitly outside it.
+      const abpDeals = [...branchDeals, ...crossInDeals];
+      const ownDeals  = branchDeals.filter(d => d.owner === m.id);
+      const teamDeals = branchDeals.filter(d => d.owner !== m.id);
       // Origin overlay (informational — a subset of the partition above, NOT
       // an extra column to add): deals a non-sales department originated.
       const deptDeals = abpDeals.filter(d => d.origin !== "Direct Sales" && d.origin !== "Cross-Sell");
