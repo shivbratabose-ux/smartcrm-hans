@@ -136,5 +136,64 @@ console.log("\nTarget allocation — parent/child model\n");
     rows.reduce((s, r) => s + r.targetValue, 0), 540);
 }
 
+// ── Hierarchy resilience ──────────────────────────────────────────
+// The plan tier must come from STRUCTURE, not from every role field being
+// perfect. Reporting into a Line Manager makes you a team member; and if the
+// sales head's own role is mis-set, whoever the Line Managers report to is
+// still the head of the line.
+{
+  const withBd = [...USERS, { id: "bd", name: "BD Under LM", role: "bd_lead", reportsTo: "lmA" }];
+  const g = buildSalesGraph(withBd);
+  const ids = g.managers.map(m => m.id).sort();
+  check("a BD Lead reporting into a Line Manager is NOT a plan owner", ids.includes("bd"), false);
+  check("the real plan tier is unchanged", ids, ["lmA", "lmB", "vp"]);
+  check("the VP is the single consolidation row", [...g.tops], ["vp"]);
+  check("no head auto-discovery was needed", g.discoveredHead, null);
+}
+
+{
+  // The reported live case: the sales head's role is "admin", so no sales
+  // role sits above the Line Managers. Previously every LM became a top and
+  // their BD Lead then qualified as "the tier below a top".
+  const brokenRole = [
+    { id: "md",  name: "MD",             role: "md" },
+    { id: "vp",  name: "Sales Head",     role: "admin",      reportsTo: "md" },
+    { id: "lmA", name: "Line Manager A", role: "line_mgr",   reportsTo: "vp" },
+    { id: "lmB", name: "Line Manager B", role: "line_mgr",   reportsTo: "vp" },
+    { id: "lmC", name: "Line Manager C", role: "line_mgr",   reportsTo: "vp" },
+    { id: "bd",  name: "BD Under LM",    role: "bd_lead",    reportsTo: "lmA" },
+    { id: "e1",  name: "Employee 1",     role: "sales_exec", reportsTo: "lmA" },
+  ];
+  const g = buildSalesGraph(brokenRole);
+  const ids = g.managers.map(m => m.id).sort();
+  check("mis-set head role: the BD Lead is still excluded", ids.includes("bd"), false);
+  check("mis-set head role: the Line Managers are still the tier", ids, ["lmA", "lmB", "lmC", "vp"]);
+  check("mis-set head role: the head is discovered from who they report to", [...g.tops], ["vp"]);
+  check("mis-set head role: the discovery is reported, not silent",
+    g.discoveredHead && g.discoveredHead.id, "vp");
+  const rows = [
+    { id: "t1", userId: "vp",  period: Q, product: "All", targetValue: 3 * CR },
+    { id: "t2", userId: "lmA", period: Q, product: "All", targetValue: 1 * CR },
+    { id: "t3", userId: "bd",  period: Q, product: "All", targetValue: 20 * L },
+  ];
+  const a = allocationFor(rows, g);
+  check("mis-set head role: the head still consolidates", a.vp.teamTarget, 300);
+  check("mis-set head role: the BD Lead's target credits to their manager", a.lmA.allocated, 20);
+  check("mis-set head role: nothing falls outside the sales line",
+    Object.keys(a).sort(), ["lmA", "lmB", "lmC", "vp"]);
+}
+
+{
+  // One Line Manager under a mis-set head is too little signal — we must not
+  // invent a head from a single data point.
+  const oneLm = [
+    { id: "boss", name: "Boss",    role: "admin" },
+    { id: "lm",   name: "Only LM", role: "line_mgr", reportsTo: "boss" },
+  ];
+  const g = buildSalesGraph(oneLm);
+  check("one Line Manager alone: no head invented", g.discoveredHead, null);
+  check("one Line Manager alone: they are the top", [...g.tops], ["lm"]);
+}
+
 console.log(`\n${fail === 0 ? "✓" : "✗"} ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

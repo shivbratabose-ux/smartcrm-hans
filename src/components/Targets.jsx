@@ -1035,13 +1035,16 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
 
       {/* Data-quality notices — these distort attainment, so say so rather
           than letting the numbers quietly disagree with the pipeline. */}
-      {(dupKeys.size > 0 || overlapCount > 0 || undatedWon > 0 || allCompanyWide) && (
+      {(dupKeys.size > 0 || overlapCount > 0 || undatedWon > 0 || allCompanyWide || orgGraph.discoveredHead) && (
         <div style={{marginBottom:12, padding:"10px 14px", borderRadius:8, border:"1px solid #F59E0B55", background:"#FFFBEB", fontSize:12, color:"#92400E", display:"flex", flexDirection:"column", gap:4}}>
           {dupKeys.size > 0 && (
             <div><b>{dupKeys.size} duplicate commitment{dupKeys.size === 1 ? "" : "s"}</b> — the same salesperson, period and product appears on more than one row (marked <b>duplicate</b> below). Each row claims the same won deals, so per-row attainment is inflated. Keep one and delete the rest.</div>
           )}
           {overlapCount > 0 && (
             <div><b>{overlapCount} overlapping commitment{overlapCount === 1 ? "" : "s"}</b> — someone holds a company-wide target and a product target for the same period, so that product's deals count toward both rows.</div>
+          )}
+          {orgGraph.discoveredHead && (
+            <div><b>{userName(orgGraph.discoveredHead.id)} heads the sales line but their role is "{String(orgGraph.discoveredHead.role || "").replace(/_/g," ")}"</b> — the Line Managers report to them, so they're treated as the plan owner here. Set their role to VP Sales &amp; Marketing (or Director) in Team &amp; Users so the hierarchy is explicit rather than inferred.</div>
           )}
           {allCompanyWide && (
             <div><b>Targets aren't product-scoped</b> — every Line Manager's commitment is "All Products", so their figures all match the same deals (marked *), cross-sell reads zero, and the portfolio strip has no per-product targets. Edit each target and set its Product / Vertical to give ownership a boundary.</div>

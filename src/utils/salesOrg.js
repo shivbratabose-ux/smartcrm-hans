@@ -11,6 +11,11 @@
 export const ABP_OWNER_ROLES = ["vp_sales_mkt", "director", "line_mgr", "country_mgr", "bd_lead"];
 // Roles that carry quota — the "selling headcount".
 export const SELLING_ROLES = new Set([...ABP_OWNER_ROLES, "sales_exec"]);
+// Roles that HEAD the sales line — Line Managers report to these.
+export const SALES_HEAD_ROLES = ["vp_sales_mkt", "director"];
+// Roles that LEAD A TEAM but sit beneath a head. Reporting into one of
+// these makes you a team member, whatever your own title says.
+export const TEAM_LEAD_ROLES = ["line_mgr", "country_mgr", "bd_lead"];
 
 const roleOf = (u) => String(u?.role || "").trim().toLowerCase();
 
@@ -21,17 +26,56 @@ export function buildSalesGraph(orgUsers) {
   const active = users.filter(u => u.active !== false);
   const isSalesLead = (u) => ABP_OWNER_ROLES.includes(roleOf(u));
 
-  // Top of the sales line: a sales-leadership person with no sales-leadership
-  // manager above them — the VP Sales, whose own manager is the MD. Computed
-  // rather than hardcoded so a title change doesn't empty the panel.
-  const leads = active.filter(isSalesLead);
-  const tops = new Set(leads.filter(u => !isSalesLead(byId[u.reportsTo])).map(u => u.id));
+  const isTeamLead = (u) => TEAM_LEAD_ROLES.includes(roleOf(u));
 
-  // The plan tier: the top plus the layer directly beneath it. Reporting
-  // INTO a Line Manager disqualifies you whatever your role title says.
-  const managers = leads
-    .filter(u => tops.has(u.id) || tops.has(u.reportsTo))
-    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  // ── The plan tier, derived from STRUCTURE rather than titles alone ──
+  //
+  // Rule: a sales-leadership person is a plan owner unless they report INTO
+  // someone who leads a team (a Line Manager / Country Manager / BD Lead).
+  // Reporting into a Line Manager makes you part of that manager's team, so
+  // a BD Lead under a Line Manager is a team member and gets no plan row —
+  // which is true no matter what anyone's role field says.
+  //
+  // The previous rule was "a top, or reporting to a top", which collapsed
+  // when the sales head's own role was set to something outside the sales
+  // list: every Line Manager became a top, and their BD Lead then qualified
+  // as "the tier below a top".
+  const leads = active.filter(isSalesLead);
+  const tier = leads.filter(u => !isTeamLead(byId[u.reportsTo]));
+  const tierIds = new Set(tier.map(u => u.id));
+
+  // ── The head of the sales line ──
+  // Normally the VP / Director the tier reports to. If nobody in the tier
+  // holds a head role — because that person's role is mis-set — fall back to
+  // whoever at least two tier members report to: whoever the Line Managers
+  // report to IS heading the sales line, whatever their role field says.
+  // Reported through `discoveredHead` so the UI can ask for the role to be
+  // corrected instead of the hierarchy silently fragmenting.
+  let head = tier.find(u => SALES_HEAD_ROLES.includes(roleOf(u)) && !isSalesLead(byId[u.reportsTo]));
+  let discoveredHead = null;
+  if (!head) {
+    const counts = {};
+    tier.forEach(u => {
+      if (u.reportsTo && !tierIds.has(u.reportsTo)) {
+        counts[u.reportsTo] = (counts[u.reportsTo] || 0) + 1;
+      }
+    });
+    const best = Object.entries(counts)
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1])[0];
+    if (best && byId[best[0]]) { head = byId[best[0]]; discoveredHead = head; }
+  }
+
+  const managers = [...tier];
+  if (head && !tierIds.has(head.id)) managers.push(head);
+  managers.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+  // Whoever heads the line is the single consolidation row. Without one
+  // (a flat org, or fewer than two Line Managers) fall back to the tier
+  // members who have no sales leadership above them.
+  const tops = new Set(head
+    ? [head.id]
+    : tier.filter(u => !isSalesLead(byId[u.reportsTo])).map(u => u.id));
   const gridIds = new Set(managers.map(m => m.id));
 
   const childrenOf = {};
@@ -88,7 +132,8 @@ export function buildSalesGraph(orgUsers) {
     return n;
   };
 
-  return { byId, users: active, managers, tops, gridIds, childrenOf, branchOf, creditOf, salesManagerOf, sellingCount };
+  return { byId, users: active, managers, tops, gridIds, childrenOf, branchOf,
+           creditOf, salesManagerOf, sellingCount, discoveredHead };
 }
 
 // ═══════════════════════════════════════════════════════════════════
