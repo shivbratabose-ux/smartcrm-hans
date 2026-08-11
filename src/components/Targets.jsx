@@ -4,6 +4,10 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP } from '../data/constants';
 import { BLANK_TARGET } from '../data/seed';
 import { fmt, uid, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpers';
+// Fiscal calendar + stage-kind helpers shared with My Performance — one
+// definition so the two dashboards can never disagree about quarters or
+// what "won" means.
+import { periodOf, fyOf, wonStageNames, lostStageNames, prodMatches } from '../utils/fiscal';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
@@ -25,66 +29,6 @@ const CSV_COLS = [
   { label: "Achieved Calls", accessor: t => t.achievedCalls },
 ];
 
-// Fiscal-quarter (India FY, Apr–Mar) key for a date → "YYYY-Q#", where YYYY
-// is the FY start year and Q1 = Apr–Jun. Matches the app's "2026-Q1" usage.
-//
-// Reads the calendar fields straight out of a "YYYY-MM-DD" string rather than
-// going through `new Date(...)`, which parses a bare date as UTC midnight.
-// That matters more here than anywhere else in the app: this function decides
-// which fiscal quarter a won deal books to, and west of UTC a deal closing on
-// 1 April was pushed back into the PREVIOUS financial year's Q4. Reading the
-// string is also exactly right for a DATE column, which stores a calendar day
-// and not an instant.
-function periodOf(dateStr) {
-  if (!dateStr) return "";
-  let y, mo;
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr));
-  if (m) {
-    y = Number(m[1]); mo = Number(m[2]) - 1;
-  } else {
-    const d = new Date(dateStr);            // full timestamp or other format
-    if (isNaN(d)) return "";
-    y = d.getFullYear(); mo = d.getMonth();
-  }
-  if (mo < 0 || mo > 11) return "";
-  const fyStart = mo >= 3 ? y : y - 1;
-  const q = Math.floor(((mo - 3 + 12) % 12) / 3) + 1;
-  return `${fyStart}-Q${q}`;
-}
-
-// Stage names meaning "won", whatever Masters currently calls the stage.
-// Pipeline stages are editable in Masters → Pipeline Stages, and Pipeline
-// resolves the won stage by `kind === "won"` precisely so a rename cannot
-// break forecasting. Targets compared against the literal "Won", so renaming
-// the stage silently dropped every target on this page to 0% with no error.
-//
-// The legacy literals stay in the match set because opportunity rows keep
-// whatever stage string they were saved with — renaming a stage in Masters
-// does not rewrite history, so both the configured name and the old one count.
-const LEGACY_WON_STAGES = ["Won", "closed_won"];
-const wonStageNames = (masters) => {
-  const won = Array.isArray(masters?.stages) ? masters.stages.find(s => s?.kind === "won") : null;
-  return new Set([won?.name, ...LEGACY_WON_STAGES].filter(Boolean));
-};
-// A target's product focus matches an item with a products[] array (opps) or
-// a single product + productSelection[] (call reports). "All" matches everything.
-const prodMatches = (tProd, arr, single) => {
-  if (!tProd || tProd === "All") return true;
-  if (Array.isArray(arr) && arr.includes(tProd)) return true;
-  return single === tProd;
-};
-
-// Stages meaning "closed lost" — a deal in neither won nor lost is PIPELINE.
-// Resolved from Masters by kind (same rationale as wonStageNames); legacy
-// literals kept for historical rows.
-const lostStageNames = (masters) => {
-  const lost = Array.isArray(masters?.stages) ? masters.stages.find(st => st?.kind === "lost") : null;
-  return new Set([lost?.name, "Lost", "closed_lost", "Suspended"].filter(Boolean));
-};
-
-// FY of a period key: "2026-Q2" → "2026". Periods already carry the FY start
-// year (India FY, Apr–Mar), so this is a string slice, not date math.
-const fyOf = (period) => String(period || "").slice(0, 4);
 
 // ── Business verticals ──────────────────────────────────────────────
 // Falls back to the Hans ecosystem's known verticals when Masters carries no
