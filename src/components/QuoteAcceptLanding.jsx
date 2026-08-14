@@ -18,7 +18,9 @@ import { BLANK_CONTRACT } from "../data/seed";
    with the link + the quote present in localStorage can interact.
    ────────────────────────────────────────────────────────────────── */
 export default function QuoteAcceptLanding({ quoteId, quotes, setQuotes, accounts, contacts, contracts=[], setContracts, setActivities, currentUser, onBack }) {
-  const quote = useMemo(() => quotes.find(q => q.id === quoteId), [quotes, quoteId]);
+  // Resolves by id (legacy in-app links) OR by accept token (the public
+  // link shape) so a signed-in rep opening a customer's link isn't stranded.
+  const quote = useMemo(() => quotes.find(q => q.id === quoteId || q.acceptToken === quoteId), [quotes, quoteId]);
   const account = useMemo(() => accounts.find(a => a.id === quote?.accountId), [accounts, quote]);
   const contact = useMemo(() => contacts.find(c => c.id === quote?.contactId), [contacts, quote]);
   const owner = quote ? (TEAM_MAP[quote.owner]?.name || quote.owner) : "—";

@@ -33,6 +33,7 @@ import Tickets from "./components/Tickets";
 import Reports from "./components/Reports";
 import Dashboards from "./components/Dashboards";
 import MyPerformance from "./components/MyPerformance";
+import PublicQuoteAccept from "./components/PublicQuoteAccept";
 import Masters from "./components/Masters";
 import AiSettings from "./components/AiSettings";
 import OrgHierarchy from "./components/OrgHierarchy";
@@ -2580,6 +2581,20 @@ export default function SmartCRM() {
       } break;
     }
   }, [accounts, contacts, leads, tickets, contracts, collections, invoices, opps, orgUsers, currentUser]);
+
+  // ── Public quote-accept ──
+  // A customer arriving from the emailed link / printed QR has no CRM login,
+  // so this branch renders BEFORE the login gate. The page holds no org data:
+  // it talks only to the token-validating `quote-accept` edge function.
+  // (Signed-in users fall through to the in-app QuoteAcceptLanding instead —
+  // the rep-hands-device-to-customer flow.)
+  const publicAcceptToken = (() => {
+    const m = /^#\/?quote-accept\/([A-Za-z0-9]+)/.exec(window.location.hash || "");
+    return m ? m[1] : null;
+  })();
+  if (!currentUser && publicAcceptToken) return (
+    <><style dangerouslySetInnerHTML={{__html:CSS}}/><PublicQuoteAccept token={publicAcceptToken}/></>
+  );
 
   if(!currentUser) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><ToastContainer /><Login onLogin={login} orgUsers={orgUsers}/></>
