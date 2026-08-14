@@ -215,7 +215,7 @@ export const LEAD_PRODUCT_FIELDS_DEFAULT = {
     ],
   },
   "CRM Expert": {
-    label: "CRM Expert", aliases: ["crmexpert", "crm"],
+    label: "CRM Expert", aliases: ["crmexpert", "crm", "smartcrm"],
     fields: [
       { key: "salesSeats", label: "Number of Sales Seats", type: "number", required: true, sizing: true },
       { key: "teamStructure", label: "Team Structure", type: "dropdown", options: ["Single team", "Multi-team", "Multi-branch"], sizing: true },
