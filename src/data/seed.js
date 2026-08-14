@@ -102,8 +102,12 @@ export const INIT_PRODUCT_CATALOG = [
   { id:"WiseFleet",    name:"WiseFleet",    color:"#EA580C", bg:"#FFF7ED", desc:"Fleet & Transport Management (TMS)",         modules:[] },
   { id:"WiseDo",       name:"WiseDo",       color:"#059669", bg:"#ECFDF5", desc:"Electronic Delivery Order",                  modules:[] },
   { id:"BagTrack",     name:"BagTrack",     color:"#DB2777", bg:"#FDF2F8", desc:"Baggage Tracking & Reconciliation",          modules:[] },
-  { id:"WiseHRMS",     name:"WiseHRMS",     color:"#4F46E5", bg:"#EEF2FF", desc:"Human Resource Management System",           modules:[] },
-  { id:"CRMExpert",    name:"CRM Expert",   color:"#0D9488", bg:"#F0FDFA", desc:"Sales & Customer Relationship Management",   modules:[] },
+  // Named to match their existing price-book rows (P17 HRMS, P14 SmartCRM) so
+  // the quotation catalogue dedupes them instead of listing the same product
+  // twice. The ids stay distinct and are what the lead field dictionary
+  // matches on, so their qualifying questions are unaffected.
+  { id:"WiseHRMS",     name:"HRMS",         color:"#4F46E5", bg:"#EEF2FF", desc:"Human Resource Management System",           modules:[] },
+  { id:"CRMExpert",    name:"SmartCRM",     color:"#0D9488", bg:"#F0FDFA", desc:"Sales & Customer Relationship Management",   modules:[] },
   { id:"VMS",          name:"VMS",          color:"#65A30D", bg:"#F7FEE7", desc:"Vehicle / Visitor Management System",        modules:[] },
 ];
 
@@ -118,17 +122,39 @@ export const INIT_PRODUCT_CATALOG = [
 // normalised id/name so an admin who renamed "WiseDox" → "WiseDOX" doesn't
 // get a duplicate. Stored entries are never touched: an admin's edits to
 // colour, description, modules and lineManagerId all survive.
+//
+// CATALOG_RENAMES additionally corrects names we shipped and then changed.
+// Renaming in the seed alone would not reach an org that already stored the
+// old name — the same "cloud blob wins" trap this whole function exists for.
+// Applied only when the stored name still matches the exact string we
+// shipped, so an admin who has since renamed the product keeps their label.
+const CATALOG_RENAMES = {
+  // id → { from: name as shipped, to: name that dedupes against the price book }
+  WiseHRMS:  { from: "WiseHRMS",   to: "HRMS" },
+  CRMExpert: { from: "CRM Expert", to: "SmartCRM" },
+};
+
 export function mergeCatalogSeed(stored) {
   if (!Array.isArray(stored) || stored.length === 0) return INIT_PRODUCT_CATALOG;
+  let renamed = false;
+  const next = stored.map(p => {
+    const r = p?.id && CATALOG_RENAMES[p.id];
+    if (!r || p.name !== r.from) return p;
+    renamed = true;
+    return { ...p, name: r.to };
+  });
   const seen = new Set();
-  stored.forEach(p => {
+  next.forEach(p => {
     if (p?.id)   seen.add(normProductKey(p.id));
     if (p?.name) seen.add(normProductKey(p.name));
   });
   const missing = INIT_PRODUCT_CATALOG.filter(
     p => !seen.has(normProductKey(p.id)) && !seen.has(normProductKey(p.name))
   );
-  return missing.length === 0 ? stored : [...stored, ...missing];
+  // Return the original array when nothing changed, so callers that diff on
+  // identity (setCatalog → the debounced app_settings push) don't see a write.
+  if (!renamed && missing.length === 0) return stored;
+  return [...next, ...missing];
 }
 
 // ── Org Hierarchy: Market -> Company -> Division -> Country -> Branch -> Department (structural — keep) ──
