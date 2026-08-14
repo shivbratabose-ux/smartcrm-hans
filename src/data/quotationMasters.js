@@ -81,10 +81,10 @@ export const HANS_CATALOGUE = [
   { code: "P16", name: "WiseTrax", module: "Track & Trace", description: "Shipment / asset track-and-trace, SaaS", pricingModel: "SaaS Subscription", unit: "User", listPrice: null, rateSource: "Band", minMonthFloor: null, notes: "Per-user/month from pricing bands", active: true },
   { code: "P17", name: "HRMS", module: "Human Resource Management", description: "HR management system (employees, payroll, leave, attendance), SaaS", pricingModel: "SaaS Subscription", unit: "User", listPrice: null, rateSource: "Band", minMonthFloor: null, notes: "Per-user/month from pricing bands", active: true },
   // Billed per filing, matching how the lead form sizes the deal (monthly
-  // Bills of Entry + monthly Shipping Bills). listPrice null keeps the
-  // engine's missingRate flag on until a rate is set in Quotation Masters —
-  // it never silently prices a filing at zero.
-  { code: "P18", name: "E-Annex Ultra", module: "ICEGATE Customs Filing", description: "ICEGATE customs filing — Bills of Entry & Shipping Bills", pricingModel: "Per-transaction", unit: "Transaction", listPrice: null, rateSource: "Flat", minMonthFloor: null, notes: "Enter list price — per filing (BoE / SB)", active: true },
+  // Bills of Entry + monthly Shipping Bills). Flat rate — one price at any
+  // volume; if this ever needs to tier by monthly filing count it becomes a
+  // rate card (matrixId) like iCAFFE, not a listPrice change.
+  { code: "P18", name: "E-Annex Ultra", module: "ICEGATE Customs Filing", description: "ICEGATE customs filing — Bills of Entry & Shipping Bills", pricingModel: "Per-transaction", unit: "Transaction", listPrice: 250, rateSource: "Flat", minMonthFloor: null, notes: "Per filing (BoE / SB)", active: true },
 
   // Services (S01–S04)
   { code: "S01", name: "Implementation & Onboarding", module: "Professional Services", description: "One-time implementation, configuration & onboarding", pricingModel: "Implementation", unit: "Fixed", listPrice: null, rateSource: "Flat", minMonthFloor: null, notes: "Enter list price", active: true },
