@@ -1,3 +1,4 @@
+import { normProductKey } from './leadFieldDict.js';
 import {
   ACT_TYPES, ACT_STATUS, CUST_TYPES, COUNTRIES, REGIONS, PRIORITIES,
   STAGES, STAGE_PROB, STAGE_COL, TICKET_TYPES, TICKET_STATUSES, CALL_TYPES, CALL_OBJECTIVES,
@@ -84,7 +85,51 @@ export const INIT_PRODUCT_CATALOG = [
       {id:"m_wt4",name:"Monitoring Console",type:"Add-on",      desc:"Real-time message queue monitoring"},
       {id:"m_wt5",name:"API Connector",     type:"Integration", desc:"REST API bridge for modern system integration"},
     ]},
+  // ── Product lines carried by the lead-capture field dictionary ──────
+  // These ship with no modules on purpose: their qualifying questions are
+  // already defined in leadFieldDict.js, but the module/pricing breakdown
+  // is owned by each product's PM and gets filled in via Masters →
+  // Product Catalogue. An empty modules[] still lets sales select the line
+  // (the picker auto-sets noAddons), so nothing is blocked while it's empty.
+  // `id` is the alias the field dictionary matches on (see normProductKey);
+  // `name` is what sales sees on the chip.
+  { id:"EANNEX",       name:"E-Annex Ultra", color:"#0EA5E9", bg:"#F0F9FF", desc:"ICEGATE Customs Filing — BE / SB",           modules:[] },
+  { id:"AMSOcean",     name:"AMS - Ocean Consol", color:"#0369A1", bg:"#F0F9FF", desc:"Ocean Consol Manifest Filing",         modules:[] },
+  { id:"AMSAir",       name:"AMS - Air Consol",   color:"#0284C7", bg:"#F0F9FF", desc:"Air Consol Manifest Filing",           modules:[] },
+  { id:"AMSIGM",       name:"AMS - IGM-EGM Filing", color:"#075985", bg:"#F0F9FF", desc:"IGM / EGM Filing to Customs",        modules:[] },
+  { id:"WiseGSA",      name:"WiseGSA",      color:"#9333EA", bg:"#FAF5FF", desc:"GSA / Airline Representation Management",    modules:[] },
+  { id:"WiseStox",     name:"WiseStox",     color:"#CA8A04", bg:"#FEFCE8", desc:"Warehouse & Inventory Management",           modules:[] },
+  { id:"WiseFleet",    name:"WiseFleet",    color:"#EA580C", bg:"#FFF7ED", desc:"Fleet & Transport Management (TMS)",         modules:[] },
+  { id:"WiseDo",       name:"WiseDo",       color:"#059669", bg:"#ECFDF5", desc:"Electronic Delivery Order",                  modules:[] },
+  { id:"BagTrack",     name:"BagTrack",     color:"#DB2777", bg:"#FDF2F8", desc:"Baggage Tracking & Reconciliation",          modules:[] },
+  { id:"WiseHRMS",     name:"WiseHRMS",     color:"#4F46E5", bg:"#EEF2FF", desc:"Human Resource Management System",           modules:[] },
+  { id:"CRMExpert",    name:"CRM Expert",   color:"#0D9488", bg:"#F0FDFA", desc:"Sales & Customer Relationship Management",   modules:[] },
+  { id:"VMS",          name:"VMS",          color:"#65A30D", bg:"#F7FEE7", desc:"Vehicle / Visitor Management System",        modules:[] },
 ];
+
+// ── Product-catalogue backfill ────────────────────────────────────────
+// The catalogue is org data: it lives in localStorage and in the Supabase
+// app_settings blob, and the cloud copy is authoritative. That means adding
+// a product to INIT_PRODUCT_CATALOG above does NOT reach an org that has
+// already saved a catalogue — their stored blob simply wins and the new
+// product never appears in any picker.
+//
+// This merges any seed product the stored catalogue is missing, keyed on a
+// normalised id/name so an admin who renamed "WiseDox" → "WiseDOX" doesn't
+// get a duplicate. Stored entries are never touched: an admin's edits to
+// colour, description, modules and lineManagerId all survive.
+export function mergeCatalogSeed(stored) {
+  if (!Array.isArray(stored) || stored.length === 0) return INIT_PRODUCT_CATALOG;
+  const seen = new Set();
+  stored.forEach(p => {
+    if (p?.id)   seen.add(normProductKey(p.id));
+    if (p?.name) seen.add(normProductKey(p.name));
+  });
+  const missing = INIT_PRODUCT_CATALOG.filter(
+    p => !seen.has(normProductKey(p.id)) && !seen.has(normProductKey(p.name))
+  );
+  return missing.length === 0 ? stored : [...stored, ...missing];
+}
 
 // ── Org Hierarchy: Market -> Company -> Division -> Country -> Branch -> Department (structural — keep) ──
 export const INIT_ORG = {

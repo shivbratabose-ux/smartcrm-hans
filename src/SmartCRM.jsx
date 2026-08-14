@@ -5,7 +5,7 @@ import { INIT_USERS, PROD_MAP, STAGE_PROB, registerCatalog, registerMasters } fr
 import {
   INIT_ACCOUNTS, INIT_CONTACTS, INIT_OPPS, INIT_ACTIVITIES,
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
-  INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
+  INIT_PRODUCT_CATALOG, mergeCatalogSeed, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS, INIT_PROJECTS,
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
@@ -161,6 +161,9 @@ function migrateState(raw) {
   if (!Array.isArray(s.files))       s.files       = INIT_FILES;
   if (!s.masters || typeof s.masters !== "object") s.masters = INIT_MASTERS;
   if (!Array.isArray(s.catalog))     s.catalog     = INIT_PRODUCT_CATALOG;
+  // Product lines added in code since this browser last saved get appended
+  // without disturbing any product the org has edited. See mergeCatalogSeed.
+  else                               s.catalog     = mergeCatalogSeed(s.catalog);
   if (!s.org || typeof s.org !== "object") s.org   = INIT_ORG;
   if (!Array.isArray(s.teams))       s.teams       = INIT_TEAMS;
   if (!Array.isArray(s.orgUsers))    s.orgUsers    = INIT_USERS;
@@ -396,6 +399,13 @@ export default function SmartCRM() {
       "WiseDox":      lookup("ritesh@hansinfomatic.com","ritesh.srivastava@hansinfomatic.com"),
       "WiseTrax":     lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
       "AMS":          lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
+      // The three AMS filing lines inherit the AMS owner above. The remaining
+      // catalogue products (WiseGSA, WiseStox, WiseFleet, WiseDo, BagTrack,
+      // WiseHRMS, CRM Expert, VMS) have no PM declared yet — their leads stay
+      // unrouted until an admin sets an owner in Masters → Product Catalogue.
+      "AMSOcean":     lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
+      "AMSAir":       lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
+      "AMSIGM":       lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
     };
     let dirty = false;
     const next = catalog.map(p => {
@@ -1283,7 +1293,9 @@ export default function SmartCRM() {
           setMasters(prev => ({ ...INIT_MASTERS, ...prev, ...remote.masters }));
         }
         if (Array.isArray(remote.catalog) && remote.catalog.length > 0) {
-          setCatalog(remote.catalog);
+          // Cloud is authoritative for the products it carries; seed products
+          // added since the org last saved are appended (mergeCatalogSeed).
+          setCatalog(mergeCatalogSeed(remote.catalog));
         }
         if (remote.aiConfig && Object.keys(remote.aiConfig).length > 0) {
           // Cloud is authoritative; merge over defaults so a newly added
@@ -1533,7 +1545,7 @@ export default function SmartCRM() {
         }
       }
       if (m && Object.keys(m).length > 0) setMasters(prev => ({ ...prev, ...m }));
-      if (Array.isArray(c) && c.length > 0) setCatalog(c);
+      if (Array.isArray(c) && c.length > 0) setCatalog(mergeCatalogSeed(c));
       if (ai && Object.keys(ai).length > 0) setAiConfig(prev => ({ ...DEFAULT_AI_CONFIG, ...prev, ...ai, features: { ...DEFAULT_AI_CONFIG.features, ...(ai.features || {}) } }));
     });
     return unsubscribe;
