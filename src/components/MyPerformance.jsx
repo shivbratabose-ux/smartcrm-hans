@@ -14,12 +14,12 @@
 // so this page and Targets can never disagree about quarters or what
 // "won" means.
 // ═══════════════════════════════════════════════════════════════════
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Gauge, TrendingUp, PhoneMissed, Building2, Snowflake, Trophy } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { PROD_MAP } from '../data/constants';
 import { fmt, today, isOverdue, getScopedUserIds } from '../utils/helpers';
-import { periodOf, fiscalRanges, wonStageNames, lostStageNames } from '../utils/fiscal';
+import { periodOf, fiscalRanges, fiscalWindows, wonStageNames, lostStageNames } from '../utils/fiscal';
 import { buildSalesGraph, allocationFor } from '../utils/salesOrg';
 import { UserPill, StatusBadge, Empty, PageTip } from './shared';
 
@@ -51,14 +51,21 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
   const isWon = (o) => wonNames.has(o?.stage);
   const isOpen = (o) => !wonNames.has(o?.stage) && !lostNames.has(o?.stage);
 
-  const { monthStart, quarterStart, fyStart, currentPeriod } = fiscalRanges(today);
+  const { quarterStart, fyStart, currentPeriod } = fiscalRanges(today);
+
+  // ── Timeline window (This Month / quarters / Last 3M / H1 / H2 / FY) ──
+  // The selected window drives the Revenue and Calls cards; QTD and FYTD
+  // stay as fixed anchors, and the attention lists always reflect today.
+  const windows = useMemo(() => fiscalWindows(today), []);
+  const [winKey, setWinKey] = useState("month");
+  const win = windows.find(w => w.key === winKey) || windows[0];
 
   // ── My revenue (won deals I own, booked by close date) ──
   const myWon = useMemo(() =>
     (opps || []).filter(o => o.owner === me && isWon(o) && o.closeDate),
     [opps, me, wonNames]);
   const sumVal = (list) => +list.reduce((s, o) => s + (Number(o.value) || 0), 0).toFixed(2);
-  const mtdRevenue = sumVal(myWon.filter(o => o.closeDate >= monthStart && o.closeDate <= today));
+  const winRevenue = sumVal(myWon.filter(o => o.closeDate >= win.start && o.closeDate <= win.end));
   const qtdRevenue = sumVal(myWon.filter(o => o.closeDate >= quarterStart && o.closeDate <= today));
   const fytdRevenue = sumVal(myWon.filter(o => o.closeDate >= fyStart && o.closeDate <= today));
 
@@ -84,9 +91,26 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
   const quarterGoal = isPlanOwner && myPlan
     ? myPlan.individual
     : +qTargets.reduce((s, t) => s + (Number(t.targetValue) || 0), 0).toFixed(2);
-  const monthGoal = +(quarterGoal / 3).toFixed(2);
-  const mtdPct = monthGoal > 0 ? Math.round((mtdRevenue / monthGoal) * 100) : null;
   const qtdPct = quarterGoal > 0 ? Math.round((qtdRevenue / quarterGoal) * 100) : null;
+
+  // ── Goal for the selected window ──
+  // Same allocation-aware logic as the current quarter, generalised to any
+  // quarter period, then composed per month (quarter ÷ 3) so every window
+  // shape — month, rolling 3, quarter, half, FY — uses one formula.
+  const goalForPeriod = useCallback((per) => {
+    const rows = (targets || []).filter(t => t.period === per);
+    if (rows.length === 0) return 0;
+    if (isPlanOwner) {
+      const a = allocationFor(rows, salesGraph)[me];
+      return a ? a.individual : 0;
+    }
+    return rows.filter(t => t.userId === me && !t.isDeleted)
+      .reduce((s, t) => s + (Number(t.targetValue) || 0), 0);
+  }, [targets, isPlanOwner, salesGraph, me]);
+  const winGoal = useMemo(
+    () => +win.months.reduce((s, ym) => s + goalForPeriod(periodOf(`${ym}-15`)) / 3, 0).toFixed(2),
+    [win, goalForPeriod]);
+  const winPct = winGoal > 0 ? Math.round((winRevenue / winGoal) * 100) : null;
   const fyGoal = useMemo(() => {
     const fy = fyStart.slice(0, 4);
     const rows = (targets || []).filter(t => String(t.period || "").startsWith(fy));
@@ -174,11 +198,18 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
       .slice(0, 5),
     [accounts, me, lastTouch]);
 
-  // ── Calls QTD vs target ──
-  const qtdCalls = useMemo(() =>
-    (callReports || []).filter(r => r.marketingPerson === me && r.callDate >= quarterStart && r.callDate <= today).length,
-    [callReports, me, quarterStart]);
-  const callGoal = qTargets.reduce((s, t) => s + (Number(t.targetCalls) || 0), 0);
+  // ── Calls in the selected window vs target ──
+  // Call goals aren't allocation-carved (same as before): a user's own
+  // target rows carry targetCalls; the window prorates quarters by month.
+  const winCalls = useMemo(() =>
+    (callReports || []).filter(r => r.marketingPerson === me && r.callDate >= win.start && r.callDate <= win.end).length,
+    [callReports, me, win]);
+  const winCallGoal = Math.round(win.months.reduce((s, ym) => {
+    const per = periodOf(`${ym}-15`);
+    return s + (targets || [])
+      .filter(t => t.userId === me && !t.isDeleted && t.period === per)
+      .reduce((x, t) => x + (Number(t.targetCalls) || 0), 0) / 3;
+  }, 0));
 
   // ── Cross-sell: my won revenue on products outside my own target focus ──
   // Only meaningful once my targets are product-scoped; "—" otherwise.
@@ -205,7 +236,7 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
   const maxAcc = topAccounts[0]?.value || 1;
 
   const pctColor = (pct) => pct >= 100 ? "#22C55E" : pct >= 75 ? "#F59E0B" : pct >= 50 ? "#F97316" : "#EF4444";
-  const gaugePct = Math.min(mtdPct ?? 0, 100);
+  const gaugePct = Math.min(winPct ?? 0, 100);
   const attention = stalled.length + pastDue.length + neglected.length;
 
   return (
@@ -226,7 +257,20 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
         )}
       </div>
 
-      {/* ── KPI row: goal attainment across the three fiscal windows ── */}
+      {/* ── Timeline: fiscal windows the Revenue and Calls cards follow ── */}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+        {windows.map(w => (
+          <button key={w.key}
+            className={`btn btn-sm ${winKey === w.key ? "btn-primary" : "btn-sec"}`}
+            style={{fontSize:11,padding:"4px 10px",borderRadius:6}}
+            title={`${fmt.date(w.start)} – ${fmt.date(w.end)}`}
+            onClick={() => setWinKey(w.key)}>
+            {w.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── KPI row: selected window + fixed QTD / FYTD anchors ── */}
       <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:16}}>
         <div className="kpi" style={{display:"flex",gap:10,alignItems:"center"}}>
           <div style={{width:74,height:44,flexShrink:0}}>
@@ -234,15 +278,15 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
               <PieChart>
                 <Pie data={[{v:gaugePct},{v:100-gaugePct}]} dataKey="v" startAngle={180} endAngle={0}
                   innerRadius={24} outerRadius={36} stroke="none" isAnimationActive={false}>
-                  <Cell fill={pctColor(mtdPct ?? 0)}/><Cell fill="#E2E8F0"/>
+                  <Cell fill={pctColor(winPct ?? 0)}/><Cell fill="#E2E8F0"/>
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
           </div>
           <div>
-            <div className="kpi-label">MTD Revenue</div>
-            <div className="kpi-val" style={{fontSize:18}}>{fmt.inr(mtdRevenue)}</div>
-            <div className="kpi-sub">{mtdPct === null ? "no goal this quarter" : <span style={{color:pctColor(mtdPct),fontWeight:700}}>{mtdPct}% of {fmt.inr(monthGoal)}</span>}</div>
+            <div className="kpi-label">Revenue · {win.short}</div>
+            <div className="kpi-val" style={{fontSize:18}}>{fmt.inr(winRevenue)}</div>
+            <div className="kpi-sub">{winPct === null ? "no goal for this window" : <span style={{color:pctColor(winPct),fontWeight:700}}>{winPct}% of {fmt.inr(winGoal)}</span>}</div>
           </div>
         </div>
         <div className="kpi">
@@ -268,8 +312,8 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
           <div className="kpi-sub">{myOpen.length} open deal{myOpen.length === 1 ? "" : "s"}</div>
         </div>
         <div className="kpi">
-          <div className="kpi-label">Calls QTD</div>
-          <div className="kpi-val">{qtdCalls}{callGoal > 0 ? `/${callGoal}` : ""}</div>
+          <div className="kpi-label">Calls · {win.short}</div>
+          <div className="kpi-val">{winCalls}{winCallGoal > 0 ? `/${winCallGoal}` : ""}</div>
           <div className="kpi-sub">{crossSell === null ? "cross-sell needs product-scoped targets" : `cross-sell ${fmt.inr(crossSell)} FYTD`}</div>
         </div>
       </div>
@@ -405,7 +449,7 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
       </div>
 
       <PageTip id="myperf-tip" title="How these numbers work"
-        text="MTD goal is your quarter target ÷ 3. Stalled and neglected use your last activity of any status — clear them by logging the touch you actually made, or by closing what's dead."/>
+        text="The timeline drives the Revenue and Calls cards; QTD and FYTD stay fixed for reference. Window goals come from your quarterly targets (a month counts as quarter ÷ 3; H1/H2/FY sum their quarters). Stalled and neglected use your last activity of any status — clear them by logging the touch you actually made, or by closing what's dead."/>
     </div>
   );
 }

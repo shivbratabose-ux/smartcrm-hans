@@ -53,6 +53,49 @@ export function fiscalRanges(todayStr) {
   };
 }
 
+// Timeline windows for the My Performance period selector: the current
+// calendar month, a rolling last-3-calendar-months, each fiscal quarter of
+// the CURRENT FY (Q1 Apr–Jun … Q4 Jan–Mar), both halves, and the full FY
+// (Apr–Mar). Pure string math like the rest of this file.
+//
+// Each window carries `months` ("YYYY-MM" list) because goals are quarterly:
+// a window's goal = Σ over its months of (that month's quarter goal ÷ 3),
+// which reduces to exactly the quarter goal for quarter windows and the sum
+// of all four for the FY — one formula, no special cases.
+export function fiscalWindows(todayStr) {
+  const y = Number(todayStr.slice(0, 4));
+  const mo = Number(todayStr.slice(5, 7));            // 1-based
+  const fyStartYear = mo >= 4 ? y : y - 1;
+  const pad = (n) => String(n).padStart(2, "0");
+  const monthsFrom = (startYear, startMonth, n) => Array.from({ length: n }, (_, i) => {
+    const m0 = startMonth - 1 + i;
+    return `${startYear + Math.floor(m0 / 12)}-${pad((m0 % 12) + 1)}`;
+  });
+  const lastDay = (ym) => {
+    const [yy, mm] = ym.split("-").map(Number);
+    return `${ym}-${pad(new Date(yy, mm, 0).getDate())}`;
+  };
+  const win = (key, label, short, months) => ({
+    key, label, short, months,
+    start: `${months[0]}-01`,
+    end: lastDay(months[months.length - 1]),
+  });
+  const fyLabel = `FY ${String(fyStartYear).slice(2)}–${String(fyStartYear + 1).slice(2)}`;
+  const l3mStart = mo - 2;
+  return [
+    win("month", "This Month", "This Month", monthsFrom(y, mo, 1)),
+    win("l3m", "Last 3 Months", "Last 3M",
+        l3mStart >= 1 ? monthsFrom(y, l3mStart, 3) : monthsFrom(y - 1, l3mStart + 12, 3)),
+    win("q1", "Q1 (Apr–Jun)", "Q1", monthsFrom(fyStartYear, 4, 3)),
+    win("q2", "Q2 (Jul–Sep)", "Q2", monthsFrom(fyStartYear, 7, 3)),
+    win("q3", "Q3 (Oct–Dec)", "Q3", monthsFrom(fyStartYear, 10, 3)),
+    win("q4", "Q4 (Jan–Mar)", "Q4", monthsFrom(fyStartYear + 1, 1, 3)),
+    win("h1", "H1 (Apr–Sep)", "H1", monthsFrom(fyStartYear, 4, 6)),
+    win("h2", "H2 (Oct–Mar)", "H2", monthsFrom(fyStartYear, 10, 6)),
+    win("fy", `${fyLabel} (Apr–Mar)`, fyLabel, monthsFrom(fyStartYear, 4, 12)),
+  ];
+}
+
 // Stage names meaning "won", whatever Masters currently calls the stage.
 // Pipeline resolves the won stage by `kind === "won"` so a rename cannot
 // break forecasting; the legacy literals stay because opportunity rows keep

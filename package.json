@@ -13,7 +13,8 @@
     "test:pagination": "node scripts/test-pagination.mjs",
     "test:pricing": "node scripts/test-pricing-engine.mjs",
     "test:alloc": "node scripts/test-target-allocation.mjs",
-    "test:targets": "node scripts/test-targets-attainment.mjs"
+    "test:targets": "node scripts/test-targets-attainment.mjs",
+    "test:windows": "node scripts/test-fiscal-windows.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
