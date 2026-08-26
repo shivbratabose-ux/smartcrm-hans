@@ -1,5 +1,6 @@
 import { Component } from "react";
 import { INIT_USERS, PERMISSIONS } from "../data/constants.js";
+import { isSupabaseConfigured } from "../lib/supabase";
 
 // ═══════════════════════════════════════════════════════════════════
 // UTILS
@@ -205,8 +206,16 @@ export const loadState = () => {
 // yet exists only in this browser, so it is NEVER dropped. We degrade in
 // stages and only warn if even the minimal payload won't fit.
 const SYNC_STAMP = "_syncedAt";
-// Biggest arrays first — dropping these frees the most space.
-const BULK_TABLES = ["accounts", "contacts", "leads", "activities", "callReports", "opps", "commLogs", "quotes", "collections", "events", "notes", "files"];
+// Every record table that mergeOnLoad stamps. The original list stopped at
+// the "big" tables, which left updates (the notification feed — append-only,
+// grows every day and is never pruned), tickets, contracts, projects,
+// invoices and targets in EVERY degradation attempt; on long-lived orgs the
+// feed alone outgrew the quota and users hit the final "storage is full"
+// message even though the staged fallback existed. Synced rows in any of
+// these reload from the cloud, so all are safe to shed. Invoices are not
+// stamped today — their rows fail the stamp check and are kept, which is
+// exactly the never-synced behaviour we want.
+const BULK_TABLES = ["accounts", "contacts", "leads", "activities", "callReports", "opps", "commLogs", "quotes", "collections", "events", "notes", "files", "updates", "tickets", "contracts", "projects", "invoices", "targets"];
 const dropSynced = (data, tables, onlyDeleted) => {
   const out = { ...data };
   for (const t of tables) {
@@ -219,11 +228,43 @@ const dropSynced = (data, tables, onlyDeleted) => {
   return out;
 };
 
+// Settings-shaped keys that fully rehydrate from the cloud (app_settings /
+// users table) on next load. Dropped only in the last-resort attempt, and
+// only when Supabase is configured — in pure-local mode this browser holds
+// the sole copy, so they are never shed.
+const CLOUD_SETTINGS_KEYS = ["masters", "catalog", "aiConfig", "org", "teams", "orgUsers"];
+const dropCloudSettings = (data) => {
+  if (!isSupabaseConfigured) return data;
+  const out = { ...data };
+  for (const k of CLOUD_SETTINGS_KEYS) delete out[k];
+  return out;
+};
+
+// One-time-per-session console breakdown of what is actually eating the
+// quota, logged on the first quota failure. "Storage is full" reports were
+// undiagnosable without knowing WHICH table is the elephant.
+let loggedQuotaBreakdown = false;
+const logQuotaBreakdown = (data) => {
+  if (loggedQuotaBreakdown) return;
+  loggedQuotaBreakdown = true;
+  try {
+    const sizes = Object.entries(data)
+      .map(([k, v]) => [k, Math.round(JSON.stringify(v ?? null).length / 1024)])
+      .sort((a, b) => b[1] - a[1]);
+    // eslint-disable-next-line no-console
+    console.warn("[storage] localStorage quota hit. Payload by key (KB):",
+      Object.fromEntries(sizes.filter(([, kb]) => kb > 0)));
+  } catch { /* diagnostics only — never block the save path */ }
+};
+
 export const saveState = (data) => {
   const attempts = [
     () => data,                                        // 1. everything
     () => dropSynced(data, BULK_TABLES, true),         // 2. minus synced soft-deletes (Trash reloads from cloud)
     () => dropSynced(data, BULK_TABLES, false),        // 3. minus all synced bulk rows (unsynced work preserved)
+    // 4. last resort: unsynced work + tiny config only. Masters/catalog/org
+    //    rehydrate from app_settings and the users table on next open.
+    () => dropCloudSettings(dropSynced(data, BULK_TABLES, false)),
   ];
   for (const build of attempts) {
     try {
@@ -231,7 +272,7 @@ export const saveState = (data) => {
       return;                                          // fit — done
     } catch (err) {
       const isQuota = err?.name === "QuotaExceededError" || /quota/i.test(err?.message || "");
-      if (isQuota) continue;                           // too big → try a slimmer payload
+      if (isQuota) { logQuotaBreakdown(data); continue; } // too big → try a slimmer payload
       // Non-quota failure (private mode, storage disabled): report and stop.
       const now = Date.now();
       if (now - lastStorageErrorAt > 30000) {
