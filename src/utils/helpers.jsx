@@ -13,6 +13,16 @@ export const fmt = {
   time: t => { if(!t) return ""; const [h,m]=t.split(":"); const hr=parseInt(h); return `${hr>12?hr-12:hr||12}:${m} ${hr>=12?"PM":"AM"}`; },
 };
 export const uid  = () => Math.random().toString(36).slice(2,9);
+
+// Unguessable capability token for the public quote-accept link. 24 random
+// bytes → 48 hex chars (~192 bits). Distinct from uid() on purpose: uid() is
+// Math.random-based and fine for record ids, but this token IS the customer's
+// credential, so it must come from a CSPRNG.
+export const generateAcceptToken = () => {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+};
 // Shared column comparator for sortable tables (Leads / Accounts / Contacts…).
 // NUMERIC-AWARE: numbers — and numeric strings, e.g. CSV-imported "50" — are
 // compared as numbers. The old stringify-everything version sorted Est. Value
