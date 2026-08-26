@@ -587,6 +587,23 @@ export default function DataGrid({
               </tr>
             ))}
           </tbody>
+          {/* Σ summary footer — renders only when a visible column defines
+              foot(). Each foot receives the rows prop; callers wanting
+              totals over the FULL filtered set (not just the current page)
+              close over their own list instead of using the argument. */}
+          {rows.length > 0 && visible.some(c => typeof c.foot === "function") && (
+            <tfoot style={{ position: "sticky", bottom: 0, zIndex: 2 }}>
+              <tr style={{ background: "var(--s2)", borderTop: "2px solid var(--border2)", fontWeight: 700 }}>
+                {selection && <td style={{ position: "sticky", left: 0, background: "var(--s2)" }} />}
+                {visible.map(c => (
+                  <td key={c.key} style={{ width: c.width, minWidth: c.width, maxWidth: c.width, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", background: "var(--s2)" }}>
+                    {typeof c.foot === "function" ? c.foot(rows) : null}
+                  </td>
+                ))}
+                {rowActions && <td style={{ background: "var(--s2)" }} />}
+              </tr>
+            </tfoot>
+          )}
         </table>
         {rows.length === 0 && emptyState}
         {!loaded && rows.length > 0 && (

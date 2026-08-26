@@ -3,13 +3,20 @@ import {
   PhoneCall, Mail, CalendarDays, Zap, MessageSquare, Globe,
   MapPin, BookOpen, Users, Search, Activity, CalendarPlus,
   CheckSquare, Clock, Building2, TrendingUp, Paperclip,
-  Check, Edit2, Trash2, LayoutGrid, List
+  Check, Edit2, Trash2, LayoutGrid, List, ChevronDown
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { ACT_TYPES, ACT_STATUS, TEAM, TEAM_MAP } from '../data/constants';
 import { uid, fmt, today, toLocalISODate, parseLocalDate, sanitizeObj, validateActivity, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
+import DataGrid from './DataGrid';
+
+// Header sort glyph — same visual contract Pipeline's grid uses.
+function SortIcon({ col, sortKey, sortDir }) {
+  if (col !== sortKey) return <ChevronDown size={12} style={{ opacity: 0.3 }} />;
+  return <ChevronDown size={12} style={{ transform: sortDir === "asc" ? "rotate(180deg)" : "none", opacity: 0.8 }} />;
+}
 
 const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
 const TYPE_COL={Call:"var(--brand)",Email:"var(--blue)",Meeting:"var(--purple)",Demo:"var(--orange)",WhatsApp:"var(--green)",LinkedIn:"#0077B5","Site Visit":"var(--amber)",Presentation:"var(--teal)",Conference:"var(--red-t)"};
@@ -30,6 +37,13 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
   const [confirm,setConfirm]=useState(null);
   const [formErrors,setFormErrors]=useState({});
   const [viewMode,setViewMode]=useState("card");
+  // Table-view sorting (card view keeps the date-desc default).
+  const [sortKey,setSortKey]=useState("schedule");
+  const [sortDir,setSortDir]=useState("desc");
+  const toggleSort=(key)=>{
+    if(sortKey===key) setSortDir(d=>d==="asc"?"desc":"asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
 
   const filtered=useMemo(()=>{
     let list=[...activities];
@@ -70,7 +84,36 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
     setForm(prev=>({...prev,files:[...(prev.files||[]),f]}));
   };
 
-  const pg = usePagination(filtered);
+  // Days a Planned activity is past its date (0 when not overdue).
+  const overdueDays=(a)=>a.status==="Planned"&&a.date&&a.date<today
+    ? Math.round((parseLocalDate(today)-parseLocalDate(a.date))/864e5) : 0;
+
+  // Column sort values — resolves linked names so Account/Owner sort by
+  // what the user sees, not by internal ids.
+  const sortVal=(a,key)=>{
+    switch(key){
+      case "schedule":    return (a.date||"")+(a.time||"");
+      case "overdue":     return overdueDays(a);
+      case "account":     return accounts.find(x=>x.id===a.accountId)?.name||"";
+      case "contact":     return contacts.find(x=>x.id===a.contactId)?.name||"";
+      case "opp":         return opps.find(x=>x.id===a.oppId)?.title||"";
+      case "owner":       return teamMap[a.owner]?.name||"";
+      case "duration":    return Number(a.duration)||0;
+      case "files":       return (a.files||[]).length;
+      default:            return a[key]??"";
+    }
+  };
+  const sorted=useMemo(()=>{
+    if(viewMode!=="table"||!sortKey) return filtered;
+    const factor=sortDir==="asc"?1:-1;
+    return [...filtered].sort((a,b)=>{
+      const va=sortVal(a,sortKey), vb=sortVal(b,sortKey);
+      if(typeof va==="number"&&typeof vb==="number") return (va-vb)*factor;
+      return String(va).toLowerCase().localeCompare(String(vb).toLowerCase())*factor;
+    });
+  },[filtered,viewMode,sortKey,sortDir,accounts,contacts,opps,teamMap]);
+
+  const pg = usePagination(sorted);
 
   const TABS=[{id:"All",label:"All",count:activities.length},{id:"Upcoming",label:"Upcoming",count:planned},{id:"Today",label:"Today",count:todayActs},{id:"Overdue",label:"Overdue",count:overdue},{id:"Completed",label:"Completed",count:activities.filter(a=>a.status==="Completed").length}];
 
@@ -261,62 +304,71 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
           );
         })
       ) : (
-        /* Table View */
-        <div className="card" style={{padding:0,overflow:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead>
-              <tr style={{background:"var(--s2)",textAlign:"left"}}>
-                <th style={{padding:"10px 14px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"var(--text3)",borderBottom:"1px solid var(--border)"}}>Schedule</th>
-                <th style={{padding:"10px 14px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"var(--text3)",borderBottom:"1px solid var(--border)"}}>Lead & Customer</th>
-                <th style={{padding:"10px 14px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"var(--text3)",borderBottom:"1px solid var(--border)"}}>Type</th>
-                <th style={{padding:"10px 14px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"var(--text3)",borderBottom:"1px solid var(--border)"}}>Duration</th>
-                <th style={{padding:"10px 14px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"var(--text3)",borderBottom:"1px solid var(--border)"}}>Outcome</th>
-                <th style={{padding:"10px 14px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"var(--text3)",borderBottom:"1px solid var(--border)"}}>Assignee</th>
-                <th style={{padding:"10px 14px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"var(--text3)",borderBottom:"1px solid var(--border)"}}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pg.paged.map(a=>{
-                const acc=accounts.find(x=>x.id===a.accountId);
-                const con=contacts.find(x=>x.id===a.contactId);
-                const owner=teamMap[a.owner];
-                const oc=outcomeStyle(a.outcome);
-                const tc=typeBadgeColor(a.type);
-                return (
-                  <tr key={a.id} style={{borderBottom:"1px solid var(--border)"}}>
-                    <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}>
-                      <div style={{fontWeight:600,fontSize:13}}>{fmtSchedule(a.date,a.time)}</div>
-                    </td>
-                    <td style={{padding:"12px 14px"}}>
-                      <div style={{fontWeight:600,fontSize:12.5}}>#{a.id?.toUpperCase().replace("ACT","LD-")}{acc?` (${acc.name})`:""}</div>
-                      {con&&<div style={{fontSize:11.5,color:"var(--text3)",marginTop:2}}>{con.name}</div>}
-                    </td>
-                    <td style={{padding:"12px 14px"}}>
-                      <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:tc+"18",color:tc,textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{typeBadgeLabel(a.type)}</span>
-                    </td>
-                    <td style={{padding:"12px 14px",fontWeight:600,fontSize:13}}>{fmtDuration(a.duration)}</td>
-                    <td style={{padding:"12px 14px"}}>
-                      <span style={{fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:4,background:oc.bg,color:oc.color}}>{oc.label}</span>
-                    </td>
-                    <td style={{padding:"12px 14px"}}>
-                      {owner&&(
-                        <div style={{display:"flex",alignItems:"center",gap:8}}>
-                          <div style={{width:28,height:28,borderRadius:"50%",background:"var(--brand)",color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700}}>{owner.initials}</div>
-                          <div>
-                            <div style={{fontSize:12,fontWeight:600}}>{owner.name.split(" ")[0]} {owner.name.split(" ").pop()?.charAt(0)}.</div>
-                            <div style={{fontSize:10,color:"var(--text3)"}}>{owner.role}</div>
-                          </div>
-                        </div>
-                      )}
-                    </td>
-                    <td style={{padding:"12px 14px"}}>
-                      <button onClick={()=>openEdit(a)} style={{background:"none",border:"none",color:"var(--brand)",fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>View Details</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        /* Table View — shared DataGrid: sortable columns, per-user column
+           presets ("Columns" / "Save as…"), resize, and a Σ summary footer.
+           Same grid the Pipeline list uses. */
+        <div className="card" style={{padding:0}}>
+          <DataGrid
+            dense
+            module="activities_list"
+            userId={currentUser}
+            columns={(()=>{
+              const tot=filtered; // footer totals cover the full filtered set, not the page
+              return [
+                { key:"schedule", label:"Schedule", defaultWidth:170,
+                  render:a=>{const ov=overdueDays(a)>0;return <span style={{fontWeight:600,color:ov?"var(--red)":"inherit"}}>{fmtSchedule(a.date,a.time)}</span>;},
+                  foot:()=>`Σ ${tot.length} activit${tot.length===1?"y":"ies"}` },
+                { key:"title", label:"Activity", defaultWidth:260,
+                  render:a=><span className="tbl-link" onClick={()=>openEdit(a)}>{a.title}</span> },
+                { key:"type", label:"Type", defaultWidth:130,
+                  render:a=>{const tc=typeBadgeColor(a.type);return <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:tc+"18",color:tc,textTransform:"uppercase",letterSpacing:"0.04em"}}>{a.type}</span>;} },
+                { key:"status", label:"Status", defaultWidth:110, render:a=><StatusBadge status={a.status}/> },
+                { key:"overdue", label:"Overdue", defaultWidth:90,
+                  render:a=>{const d=overdueDays(a);return d>0?<span style={{color:"var(--red)",fontWeight:700}}>{d}d</span>:<span style={{color:"var(--text3)"}}>—</span>;},
+                  foot:()=>{const n=tot.filter(x=>overdueDays(x)>0).length;return n>0?<span style={{color:"var(--red)"}}>{n} overdue</span>:null;} },
+                { key:"account", label:"Account", defaultWidth:190,
+                  render:a=>accounts.find(x=>x.id===a.accountId)?.name||<span style={{color:"var(--text3)"}}>—</span> },
+                { key:"contact", label:"Contact", defaultWidth:150,
+                  render:a=>contacts.find(x=>x.id===a.contactId)?.name||<span style={{color:"var(--text3)"}}>—</span> },
+                { key:"opp", label:"Opportunity", defaultWidth:200,
+                  render:a=>opps.find(x=>x.id===a.oppId)?.title||<span style={{color:"var(--text3)"}}>—</span> },
+                { key:"owner", label:"Owner", defaultWidth:140, render:a=><UserPill uid={a.owner}/> },
+                { key:"duration", label:"Duration", defaultWidth:90,
+                  render:a=><span style={{fontWeight:600}}>{fmtDuration(a.duration)}</span>,
+                  foot:()=>{const m=tot.reduce((s,x)=>s+(Number(x.duration)||0),0);return m>0?`${m.toLocaleString("en-IN")}m`:null;} },
+                { key:"outcome", label:"Outcome", defaultWidth:110,
+                  render:a=>{const oc=outcomeStyle(a.outcome);return <span style={{fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:4,background:oc.bg,color:oc.color}}>{oc.label}</span>;} },
+                { key:"notes", label:"Notes", defaultWidth:260, wrap:true, sortable:false,
+                  render:a=><span style={{fontSize:12,color:"var(--text2)"}}>{a.notes||""}</span> },
+                { key:"files", label:"Files", defaultWidth:70,
+                  render:a=>(a.files||[]).length>0?<span><Paperclip size={10} style={{verticalAlign:"middle",marginRight:3}}/>{a.files.length}</span>:<span style={{color:"var(--text3)"}}>—</span> },
+              ];
+            })()}
+            defaultColumnConfig={[
+              {key:"schedule",visible:true,width:170},{key:"title",visible:true,width:260},
+              {key:"type",visible:true,width:130},{key:"status",visible:true,width:110},
+              {key:"overdue",visible:true,width:90},{key:"account",visible:true,width:190},
+              {key:"owner",visible:true,width:140},{key:"duration",visible:true,width:90},
+              {key:"outcome",visible:true,width:110},
+              {key:"contact",visible:false,width:150},{key:"opp",visible:false,width:200},
+              {key:"notes",visible:false,width:260},{key:"files",visible:false,width:70},
+            ]}
+            rows={pg.paged}
+            rowKey={a=>a.id}
+            sortKey={sortKey} sortDir={sortDir} onSort={toggleSort}
+            SortIcon={SortIcon}
+            rowStyle={a=>overdueDays(a)>0?{background:"var(--red-bg, #FEF2F2)"}:undefined}
+            emptyState={<Empty icon={<Activity size={22}/>} title="No activities found" sub="Adjust filters or log a new activity."/>}
+            rowActions={a=>(
+              <EditLockActions
+                editable={canEditAct(a)}
+                pending={hasPendingAccessReq(commLogs,"activity",a.id,currentUser)}
+                onEdit={()=>openEdit(a)} onDelete={()=>setConfirm(a.id)}
+                onRequest={()=>requestAccess(a)} canDelete={canDelete}>
+                {a.status==="Planned"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(a.id)} title="Mark complete"><Check size={12}/></button>}
+              </EditLockActions>
+            )}
+          />
         </div>
       )}
       <Pagination {...pg} />
