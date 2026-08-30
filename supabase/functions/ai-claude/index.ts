@@ -48,6 +48,21 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 // newer request fields are sent through regardless of typed surface.
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk";
 
+
+// Service-caller check that survives both key regimes. On new-API-key
+// projects the platform injects an sb_secret (not a JWT) as
+// SUPABASE_SERVICE_ROLE_KEY while the functions gateway only admits
+// JWTs — so equality with the env var can never pass there. The gateway
+// has already verified the JWT signature; trusting its role claim is
+// exactly what the legacy service_role key encodes.
+function isServiceCaller(bearer: string, envKey: string): boolean {
+  if (bearer && bearer === envKey) return true;
+  try {
+    const payload = JSON.parse(atob(bearer.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return payload?.role === "service_role";
+  } catch { return false; }
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -474,7 +489,7 @@ serve(async (req) => {
     // key). Trusted like any service-role access to this project; attributed
     // as "agent" in responses. User JWTs take the normal path below.
     let callerProfile: any = null;
-    if (jwt === SERVICE_ROLE) {
+    if (isServiceCaller(jwt, SERVICE_ROLE)) {
       callerProfile = { id: "agent", name: "Email Agent", role: "service", active: true };
     } else {
       const asCaller = createClient(SUPABASE_URL, ANON_KEY, {
@@ -577,8 +592,10 @@ serve(async (req) => {
       max_tokens: tuning.maxTokens,
       system,
       messages: [{ role: "user", content: userBlocks }],
+      // effort is not supported by every allowed model (Haiku 4.5 rejects
+      // it with a 400) — include it only where the API accepts it.
       output_config: {
-        effort: tuning.effort,
+        ...(model === "claude-haiku-4-5" ? {} : { effort: tuning.effort }),
         format: { type: "json_schema", schema: SCHEMAS[feature] },
       },
     };

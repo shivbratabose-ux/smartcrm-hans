@@ -27,6 +27,21 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+
+// Service-caller check that survives both key regimes. On new-API-key
+// projects the platform injects an sb_secret (not a JWT) as
+// SUPABASE_SERVICE_ROLE_KEY while the functions gateway only admits
+// JWTs — so equality with the env var can never pass there. The gateway
+// has already verified the JWT signature; trusting its role claim is
+// exactly what the legacy service_role key encodes.
+function isServiceCaller(bearer: string, envKey: string): boolean {
+  if (bearer && bearer === envKey) return true;
+  try {
+    const payload = JSON.parse(atob(bearer.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return payload?.role === "service_role";
+  } catch { return false; }
+}
+
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const daysBetween = (a: string, b: string) =>
   Math.round((new Date(b).getTime() - new Date(a).getTime()) / 864e5);
@@ -38,7 +53,7 @@ serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  if (bearer !== SERVICE_ROLE) return json({ error: "Service credential required" }, 401);
+  if (!isServiceCaller(bearer, SERVICE_ROLE)) return json({ error: "Service credential required" }, 401);
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false, autoRefreshToken: false } });
   const audit = (ref: string, event: string, detail: Record<string, unknown> = {}) =>
@@ -157,16 +172,16 @@ serve(async (req) => {
           .select("date,type,title,notes").eq("account_id", cand.account_id)
           .eq("is_deleted", false).eq("status", "Completed")
           .order("date", { ascending: false }).limit(6);
-        const { data: opps } = await admin.from("opps")
+        const { data: opps } = await admin.from("opportunities")
           .select("title,stage,value,next_step").eq("account_id", cand.account_id)
           .eq("is_deleted", false).not("stage", "in", "(Won,Lost)").limit(4);
-        const { data: quotes } = await admin.from("quotes")
+        const { data: quotes } = await admin.from("quotations")
           .select("quote_no,status,total,created_at").eq("account_id", cand.account_id)
           .eq("is_deleted", false).order("created_at", { ascending: false }).limit(3);
 
         const aiRes = await fetch(`${SUPABASE_URL}/functions/v1/ai-claude`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_ROLE}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
           body: JSON.stringify({
             action: "run", feature: "reEngageDraft",
             payload: {
