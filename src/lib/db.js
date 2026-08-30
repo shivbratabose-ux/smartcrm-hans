@@ -1557,6 +1557,53 @@ export async function reviewEmailActivity(fingerprint, patch, reviewerId) {
   return { error: error?.message || null };
 }
 
+// ── E3: conditional suggestions (spec §7/§9) ─────────────────────────
+// Pending suggestions load alongside the queue; approving applies the
+// change to the target row UNDER THE USER'S JWT (their RLS decides),
+// then marks the suggestion. Realtime propagates the entity change to
+// every client, including this one.
+import { CONDITIONAL_FIELDS as EM_CONDITIONAL_FIELDS } from "../../supabase/functions/em-ingest/logic.mjs";
+export { EM_CONDITIONAL_FIELDS };
+
+export async function loadEmSuggestions(fingerprints) {
+  if (!isSupabaseConfigured || !fingerprints?.length) return { rows: [], error: null };
+  const camelKey = (k) => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  const { data, error } = await supabase
+    .from("em_suggested_updates").select("*")
+    .in("fingerprint", fingerprints)
+    .order("created_at", { ascending: false });
+  if (error) return { rows: [], error: error.message };
+  return {
+    rows: (data || []).map(r => Object.fromEntries(Object.entries(r).map(([k, v]) => [camelKey(k), v]))),
+    error: null,
+  };
+}
+
+export async function decideEmSuggestion(sugg, approve, userId) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  if (approve) {
+    const spec = EM_CONDITIONAL_FIELDS[`${sugg.entityType}:${sugg.field}`];
+    if (!spec) return { error: `No apply mapping for ${sugg.entityType}:${sugg.field}` };
+    const value = spec.isInt ? Number(sugg.newValue) : sugg.newValue;
+    const { error: aerr } = await supabase.from(spec.table)
+      .update({ [spec.column]: value, updated_at: new Date().toISOString() })
+      .eq("id", sugg.entityId);
+    if (aerr) return { error: `Couldn't apply: ${aerr.message}` };
+  }
+  const { error } = await supabase.from("em_suggested_updates")
+    .update({ status: approve ? "approved" : "rejected", decided_by: userId, decided_at: new Date().toISOString() })
+    .eq("id", sugg.id);
+  return { error: error?.message || null };
+}
+
+export async function saveEmFeedback(fingerprint, feedback, userId) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  const { error } = await supabase.from("em_processed")
+    .update({ feedback: (feedback || "").slice(0, 500), reviewed_by: userId, reviewed_at: new Date().toISOString() })
+    .eq("fingerprint", fingerprint);
+  return { error: error?.message || null };
+}
+
 export async function loadAgentConfig() {
   if (!isSupabaseConfigured) return { config: null, error: "not-configured" };
   const { data, error } = await supabase.from("agent_config").select("*").eq("scope", "org").maybeSingle();

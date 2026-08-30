@@ -133,6 +133,69 @@ export function filterAutoUpdates(updates, minConfidence = 0.9) {
   return { applied, rejected };
 }
 
+// ── Conditional updates (spec §7 "conditional", E3) ─────────────────
+// Fields the agent may SUGGEST (never apply) when the email is explicit
+// AND the admin has enabled the specific rule. Each carries the target
+// table/column so approve-time application needs no second mapping.
+// Values are lightly validated here; the human is the real validator.
+export const CONDITIONAL_FIELDS = {
+  "lead:stage":        { table: "leads",  column: "stage",        maxLen: 60 },
+  "opp:stage":         { table: "opps",   column: "stage",        maxLen: 60 },
+  "opp:closeDate":     { table: "opps",   column: "close_date",   isDate: true },
+  "opp:probability":   { table: "opps",   column: "probability",  isInt: true },
+  "quote:status":      { table: "quotes", column: "status",       maxLen: 60 },
+  "account:priority":  { table: "accounts", column: "priority",   maxLen: 30 },
+};
+
+const condValueOk = (spec, v) => {
+  const s = String(v ?? "").trim();
+  if (!s) return false;
+  if (spec.isDate) return /^\d{4}-\d{2}-\d{2}$/.test(s);
+  if (spec.isInt) { const n = Number(s); return Number.isInteger(n) && n >= 0 && n <= 100; }
+  return s.length <= (spec.maxLen || 60);
+};
+
+// Splits the allowlist-rejected updates into suggestions (conditional
+// field + rule enabled + value sane) and true drops. Won/Lost stage
+// values are ALWAYS suggestions and ALWAYS high-impact, independent of
+// rule config — spec §7 lists them under "never automatically" but §9
+// says record + request approval, which is exactly a suggestion.
+const WONLOST = /^(won|lost|closed[ _-]?won|closed[ _-]?lost)$/i;
+export function splitConditionalUpdates(rejected, rules = {}) {
+  const suggest = [];
+  const drop = [];
+  for (const u of rejected || []) {
+    const key = `${u?.entityType}:${u?.field}`;
+    const spec = CONDITIONAL_FIELDS[key];
+    if (!spec || !u?.entityId || !condValueOk(spec, u.newValue)) { drop.push(u); continue; }
+    const isWonLost = key.endsWith(":stage") && WONLOST.test(String(u.newValue).trim());
+    const enabled = rules && rules[key] === true;
+    if (!enabled && !isWonLost) { drop.push(u); continue; }
+    suggest.push({ ...u, table: spec.table, column: spec.column, highImpact: isWonLost });
+  }
+  return { suggest, drop };
+}
+
+// §6 intents that signal a possible terminal outcome — surfaced as a
+// high-impact suggestion even when the model proposed no field update,
+// so a "your offer is approved, please proceed" email can never slip
+// through as a mere activity.
+export function highImpactFromIntent(intent, matchedType, matchedId) {
+  const list = Array.isArray(intent) ? intent : [];
+  if (matchedType !== "opp" || !matchedId) return null;
+  if (list.includes("Opportunity won indication") || list.includes("Customer approval received") || list.includes("Order confirmation")) {
+    return { entityType: "opp", entityId: matchedId, field: "stage", newValue: "Won",
+      reason: "Email indicates approval/win — confirm before closing", confidence: 0.5,
+      table: "opps", column: "stage", highImpact: true };
+  }
+  if (list.includes("Opportunity lost indication")) {
+    return { entityType: "opp", entityId: matchedId, field: "stage", newValue: "Lost",
+      reason: "Email indicates the opportunity is lost — confirm before closing", confidence: 0.5,
+      table: "opps", column: "stage", highImpact: true };
+  }
+  return null;
+}
+
 // ── Output hygiene (spec §12 "do not include…") ─────────────────────
 // The model is told not to echo content; this enforces it. A summary
 // that smuggles a full quoted block or an email address fails closed
