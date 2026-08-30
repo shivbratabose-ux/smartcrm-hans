@@ -371,6 +371,10 @@ const toSnake = (obj, module) => {
     addressId:"address_id", decisionLevel:"decision_level",
     preferredContactMode:"preferred_contact_mode",
     doNotContact:"do_not_contact",
+    // Agent consent & cooldown (add_agent_consent_fields_v1.sql)
+    emailVerified:"email_verified", emailOptOut:"email_opt_out",
+    doNotContactReason:"do_not_contact_reason",
+    lastAgentFollowupAt:"last_agent_followup_at",
     // Ticket triage / classification
     ticketNo:"ticket_no", subCategory:"sub_category",
     reportedBy:"reported_by", reportedDate:"reported_date",
@@ -602,6 +606,9 @@ const toCamel = (obj, module) => {
     address_id:"addressId", decision_level:"decisionLevel",
     preferred_contact_mode:"preferredContactMode",
     do_not_contact:"doNotContact",
+    email_verified:"emailVerified", email_opt_out:"emailOptOut",
+    do_not_contact_reason:"doNotContactReason",
+    last_agent_followup_at:"lastAgentFollowupAt",
     // Ticket triage / classification
     ticket_no:"ticketNo", sub_category:"subCategory",
     reported_by:"reportedBy", reported_date:"reportedDate",
