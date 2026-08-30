@@ -33,6 +33,8 @@ export const DEFAULT_AI_CONFIG = {
     // model calls. Gated here so an admin can stop the agent's AI step
     // without touching the mailbox polling.
     emailToActivity: true,
+    // Customer Re-engagement Agent (Module A) — the daily draft run.
+    reEngageDraft: true,
   },
 };
 

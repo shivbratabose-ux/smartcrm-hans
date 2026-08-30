@@ -1572,6 +1572,64 @@ export async function saveAgentConfig(patch, userId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// RE-ENGAGEMENT AGENT (Module A) — queue reads + review writes
+// ═══════════════════════════════════════════════════════════════════
+// Same posture as the email agent: relational tables, RLS-scoped
+// (owners see their queue, global roles see all), not part of the
+// JSONB app state. Sending goes through send-email with the USER's
+// JWT so the audit shows who actually approved.
+
+const _camelRow = (r) =>
+  Object.fromEntries(Object.entries(r).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), v]));
+
+export async function loadReQueue(limit = 300) {
+  if (!isSupabaseConfigured) return { rows: [], error: "not-configured" };
+  const { data: cands, error } = await supabase
+    .from("re_candidates").select("*")
+    .in("status", ["new", "drafted", "sent", "skipped"])
+    .order("created_at", { ascending: false }).limit(limit);
+  if (error) return { rows: [], error: error.message };
+  const ids = (cands || []).filter(c => c.status !== "new").map(c => c.id);
+  let draftsBy = {};
+  if (ids.length) {
+    const { data: drafts } = await supabase.from("re_drafts").select("*").in("candidate_id", ids);
+    (drafts || []).forEach(d => { draftsBy[d.candidate_id] = _camelRow(d); });
+  }
+  return { rows: (cands || []).map(c => ({ ..._camelRow(c), draft: draftsBy[c.id] || null })), error: null };
+}
+
+// Approve + send: the caller has already sent the email via send-email
+// (user JWT). This records the outcome and stamps the account cooldown.
+export async function markReSent(candidateId, accountId, { subject, body, messageId }, userId) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  const now = new Date().toISOString();
+  const { error: e1 } = await supabase.from("re_drafts")
+    .update({ edited_subject: subject, edited_body: body, approved_by: userId, sent_at: now, send_message_id: messageId || "" })
+    .eq("candidate_id", candidateId);
+  if (e1) return { error: e1.message };
+  const { error: e2 } = await supabase.from("re_candidates")
+    .update({ status: "sent", decided_by: userId, decided_at: now }).eq("id", candidateId);
+  if (e2) return { error: e2.message };
+  // Cooldown stamp — RLS: account owner (or global) is exactly who's here.
+  await supabase.from("accounts").update({ last_agent_followup_at: now.slice(0, 10) }).eq("id", accountId);
+  return { error: null };
+}
+
+export async function skipReCandidate(candidateId, reason, userId, markDnc = false, accountId = null) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  const { error } = await supabase.from("re_candidates")
+    .update({ status: "skipped", skip_reason: (reason || "").slice(0, 200), decided_by: userId, decided_at: new Date().toISOString() })
+    .eq("id", candidateId);
+  if (error) return { error: error.message };
+  if (markDnc && accountId) {
+    await supabase.from("accounts")
+      .update({ do_not_contact: "Yes", do_not_contact_reason: "Marked from re-engagement queue" })
+      .eq("id", accountId);
+  }
+  return { error: null };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // SEED DATA MIGRATION
 // ═══════════════════════════════════════════════════════════════════
 

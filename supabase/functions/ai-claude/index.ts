@@ -80,6 +80,7 @@ const FEATURE_FLAG: Record<string, string> = {
   complianceMatrix: "complianceMatrix",
   emailAnalysis: "emailAnalysis",
   emailToActivity: "emailToActivity",
+  reEngageDraft: "reEngageDraft",
 };
 
 // ── Static, cacheable company context ──────────────────────────────
@@ -127,6 +128,26 @@ TASK: Summarise the following sales meeting / call note into a clean, structured
   complianceMatrix: `${COMPANY_CONTEXT}
 
 TASK: From the supplied RFP / tender document, extract a compliance matrix: the list of requirements the bidder must respond to. For each requirement capture its clause/section reference (if present), the requirement text (concise), a category (e.g. Technical, Functional, Eligibility, Commercial, Legal, SLA, Documentation), whether it is mandatory, and an initial complianceStatus assessment for Hans Infomatic given the company context — one of "Compliant", "Partial", "Non-Compliant", "Needs Review" (use "Needs Review" when you cannot tell from the document alone). Add a short ourResponse suggestion and note any gap. Be thorough but do not fabricate clauses that are not in the document.`,
+
+  reEngageDraft: `${COMPANY_CONTEXT}
+
+TASK: You are the Customer Re-engagement Agent. An account has had no meaningful contact for a while; draft the follow-up email its owner will review, edit and send from their own name.
+
+You receive JSON: account, contact (name/designation), owner (name/designation), daysQuiet, openOpps (titles/stages/values), recentInteractions (dated one-line summaries, newest first), openQuotes, productContext.
+
+Rules for the email body:
+- Continue naturally from the most recent real interaction. Reference only facts present in the input — never invent discussions, commitments, dates, people, or products.
+- 80–150 words. One clear, low-pressure call to action (a single question).
+- Warm, professional, human. Written in the owner's first person voice. No greeting-card fluff, no hard sell.
+- NEVER use: "tracked", "monitored", "inactive", "no activity", "our CRM/system/records show", any mention of elapsed-days counts, or anything implying automation or AI.
+- Do not include a signature block — the sender's signature is appended by their mail client.
+- If the input has too little substance for an honest, personalised email, say so in reasoning, set riskFlags ["insufficient context"], and still produce the best safe draft (a short, generic-but-honest reconnect).
+
+Also return:
+- crmSummary: what the customer needed · last discussed · latest commitment by either side · pending questions/actions · sentiment · recommended next action · doNotMention (internal-only topics you noticed).
+- subjectOptions: exactly 2, ≤60 chars, no clickbait; recommendedSubject one of them.
+- reasoning: 1-2 sentences on why this follow-up is appropriate now.
+- recommendedAction + suggestedFollowUpDate (YYYY-MM-DD, if no reply).`,
 
   emailToActivity: `${COMPANY_CONTEXT}
 
@@ -274,6 +295,34 @@ const SCHEMAS: Record<string, any> = {
     },
     required: ["summary", "totals", "items"],
   },
+  reEngageDraft: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      crmSummary: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          customerNeeded: { type: "string" },
+          lastDiscussed: { type: "string" },
+          latestCommitment: { type: "string" },
+          pendingActions: { type: "array", items: { type: "string" } },
+          sentiment: { type: "string", enum: ["Positive", "Neutral", "Negative", "Mixed", ""] },
+          recommendedNextAction: { type: "string" },
+          doNotMention: { type: "array", items: { type: "string" } },
+        },
+        required: ["customerNeeded", "lastDiscussed", "latestCommitment", "pendingActions", "sentiment", "recommendedNextAction", "doNotMention"],
+      },
+      subjectOptions: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 2 },
+      recommendedSubject: { type: "string" },
+      emailBody: { type: "string" },
+      reasoning: { type: "string" },
+      recommendedAction: { type: "string" },
+      suggestedFollowUpDate: { type: "string" },
+      riskFlags: { type: "array", items: { type: "string" } },
+    },
+    required: ["crmSummary", "subjectOptions", "recommendedSubject", "emailBody", "reasoning", "recommendedAction", "suggestedFollowUpDate", "riskFlags"],
+  },
   emailToActivity: {
     type: "object",
     additionalProperties: false,
@@ -399,6 +448,7 @@ const FEATURE_TUNING: Record<string, { maxTokens: number; thinking: boolean; eff
   complianceMatrix: { maxTokens: 32000, thinking: true, effort: "high" },
   emailAnalysis: { maxTokens: 4000, thinking: false, effort: "low" },
   emailToActivity: { maxTokens: 4000, thinking: false, effort: "low" },
+  reEngageDraft: { maxTokens: 3000, thinking: false, effort: "medium" },
 };
 
 serve(async (req) => {
