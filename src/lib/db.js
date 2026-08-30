@@ -1519,6 +1519,59 @@ export async function deleteProductResource(id) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// EMAIL-TO-CRM AGENT (Module B) — queue reads + review writes
+// ═══════════════════════════════════════════════════════════════════
+// em_processed is deliberately NOT part of the JSONB app state or the
+// localStorage mirror: it is agent metadata, append-heavy, and RLS-scoped
+// (each user sees their own rows; global roles see all). The queue page
+// reads it directly; realtime is unnecessary at E1 — a manual refresh
+// matches how often anyone works this queue.
+
+export async function loadEmailAgentQueue(limit = 200) {
+  if (!isSupabaseConfigured) return { rows: [], error: "not-configured" };
+  const { data, error } = await supabase
+    .from("em_processed")
+    .select("*")
+    .order("processed_at", { ascending: false })
+    .limit(limit);
+  if (error) return { rows: [], error: error.message };
+  // Generic snake→camel: em_processed keys are regular, no alias table needed.
+  const camelKey = (k) => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  const rows = (data || []).map(r =>
+    Object.fromEntries(Object.entries(r).map(([k, v]) => [camelKey(k), v])));
+  return { rows, error: null };
+}
+
+// Review actions (RLS restricts to own rows / global roles): re-link to a
+// chosen entity, or ignore. Column discipline lives here — only these
+// fields are ever sent.
+export async function reviewEmailActivity(fingerprint, patch, reviewerId) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  const allowed = {};
+  if (patch.status) allowed.status = patch.status;
+  if (patch.matchedEntityType !== undefined) allowed.matched_entity_type = patch.matchedEntityType;
+  if (patch.matchedEntityId !== undefined) allowed.matched_entity_id = patch.matchedEntityId;
+  allowed.reviewed_by = reviewerId || null;
+  allowed.reviewed_at = new Date().toISOString();
+  const { error } = await supabase.from("em_processed").update(allowed).eq("fingerprint", fingerprint);
+  return { error: error?.message || null };
+}
+
+export async function loadAgentConfig() {
+  if (!isSupabaseConfigured) return { config: null, error: "not-configured" };
+  const { data, error } = await supabase.from("agent_config").select("*").eq("scope", "org").maybeSingle();
+  return { config: data || null, error: error?.message || null };
+}
+
+export async function saveAgentConfig(patch, userId) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  const { error } = await supabase.from("agent_config")
+    .update({ ...patch, updated_by: userId || null, updated_at: new Date().toISOString() })
+    .eq("scope", "org");
+  return { error: error?.message || null };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // SEED DATA MIGRATION
 // ═══════════════════════════════════════════════════════════════════
 

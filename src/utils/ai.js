@@ -29,6 +29,10 @@ export const DEFAULT_AI_CONFIG = {
     callSummary: true,
     complianceMatrix: true,
     emailAnalysis: true,
+    // Email-to-CRM Activity Agent (Module B) — the em-ingest pipeline's
+    // model calls. Gated here so an admin can stop the agent's AI step
+    // without touching the mailbox polling.
+    emailToActivity: true,
   },
 };
 
