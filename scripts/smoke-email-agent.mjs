@@ -145,6 +145,21 @@ try {
     check("fingerprint dedupe", dupe.body?.status === "duplicate", JSON.stringify(dupe.body));
   }
 
+  // ── 4b. Poll mode (E2) — Graph credential probe ────────────────────
+  // Without EM_GRAPH_* secrets the function answers with a clear
+  // "not configured" skip; with them it drains the real mailbox. Both
+  // are valid smoke outcomes — the check is that it never errors.
+  if (process.argv.includes("--poll")) {
+    console.log("— 4b · poll mode —");
+    const poll = await fetch(`${URL_}/functions/v1/em-ingest`, {
+      method: "POST", headers: H, body: JSON.stringify({ mode: "poll" }),
+    }).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }));
+    check("poll answers cleanly", poll.status === 200 && (poll.body?.ok === true || /not configured/i.test(poll.body?.skipped || "")),
+      JSON.stringify(poll.body));
+    if (poll.body?.ok) console.log(`    polled=${poll.body.polled} byStatus=${JSON.stringify(poll.body.byStatus)}`);
+    else console.log(`    ${poll.body?.skipped || ""}`);
+  }
+
   // ── 5. No identifiers → unmatched ──────────────────────────────────
   console.log("— 5 · unmatched —");
   const unm = await ingest({

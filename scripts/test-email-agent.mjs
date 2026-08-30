@@ -6,6 +6,7 @@
 import {
   splitEmailBody, scanIdentifiers, decideMatch,
   filterAutoUpdates, summaryViolations, fingerprintEmail, INTENTS,
+  htmlToText, mapGraphMessage,
 } from "../supabase/functions/em-ingest/logic.mjs";
 
 let pass = 0, fail = 0;
@@ -85,6 +86,34 @@ check("content never enters fingerprint input", /msg1/.test(f1), false);
 
 console.log("— intents —");
 check("spec §6 label count", INTENTS.length, 21);
+
+console.log("— Graph message mapping (E2) —");
+check("html→text strips tags, keeps content",
+  htmlToText("<div>Please send <b>rates</b> for<br>10 containers.</div><style>p{color:red}</style>"),
+  "Please send rates for\n10 containers.");
+check("entities decoded", htmlToText("Rates &amp; terms &lt;attached&gt;"), "Rates & terms <attached>");
+const graphMsg = {
+  id: "AAMk123",
+  internetMessageId: "<abc@mail.example>",
+  receivedDateTime: "2026-08-27T09:30:00Z",
+  from: { emailAddress: { address: "Rep@HansInfomatic.com" } },
+  toRecipients: [{ emailAddress: { address: "customer@abc.com" } }],
+  ccRecipients: [{ emailAddress: { address: "communication@hansinfomatic.com" } }],
+  body: { contentType: "html", content: "<p>Re OPP-2026-042: approved.</p>" },
+  hasAttachments: true,
+  internetMessageHeaders: [
+    { name: "Authentication-Results", value: "spf=pass dkim=pass dmarc=pass" },
+  ],
+};
+const mapped = mapGraphMessage(graphMsg);
+check("prefers internetMessageId over Graph id", mapped.messageId, "<abc@mail.example>");
+check("from address extracted", mapped.fromAddress, "Rep@HansInfomatic.com");
+check("to + cc merged", mapped.toAddresses, ["customer@abc.com", "communication@hansinfomatic.com"]);
+check("html body converted", mapped.body, "Re OPP-2026-042: approved.");
+check("auth-results header found case-insensitively", mapped.authenticationResults, "spf=pass dkim=pass dmarc=pass");
+check("attachments flagged", mapped.hasAttachments, true);
+check("plain-text body passes through", mapGraphMessage({ body: { contentType: "text", content: "plain body" } }).body, "plain body");
+check("empty message maps safely", mapGraphMessage(null).messageId, "");
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
