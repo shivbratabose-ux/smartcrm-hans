@@ -38,6 +38,7 @@ import AiSettings from "./components/AiSettings";
 import OrgHierarchy from "./components/OrgHierarchy";
 import TeamUsers from "./components/TeamUsers";
 import LeadAssignment from "./components/LeadAssignment";
+import EmailAgent from "./components/EmailAgent";
 import Leads from "./components/Leads";
 import CallReports from "./components/CallReports";
 import Contracts from "./components/Contracts";
@@ -2731,6 +2732,7 @@ export default function SmartCRM() {
             {page==="myperf"     && <MyPerformance targets={visibleTargets} opps={visibleOpps} activities={visibleActivities} accounts={visibleAccounts} leads={visibleLeads} callReports={visibleCallReports} orgUsers={orgUsers} currentUser={currentUser} masters={masters}/>}
             {page==="dashboards" && <Dashboards accounts={visibleAccounts} opps={visibleOpps} projects={visibleProjects} contracts={visibleContracts} tickets={visibleTickets} quotes={visibleQuotes} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
             {page==="leadassign" && _canSeeLeadAssign && <LeadAssignment leads={visibleLeads} setLeads={setLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage} commLogs={commLogs} catalog={catalog} setActivities={setActivities} setUpdates={setUpdates}/>}
+            {page==="emailagent" && <EmailAgent accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} activities={visibleActivities} orgUsers={orgUsers} currentUser={currentUser}/>}
             {page==="updates"    && <Updates updates={visibleUpdates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} catalog={catalog} orgUsers={orgUsers} existingData={{ leads: visibleLeads, accounts: visibleAccounts, contacts: visibleContacts, collections: visibleCollections, tickets: visibleTickets, contracts: visibleContracts, invoices: visibleInvoices, opps: visibleOpps }}/>}
