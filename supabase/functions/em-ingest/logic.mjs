@@ -158,6 +158,47 @@ export const INTENTS = [
   "Relationship-building communication", "Other",
 ];
 
+// ── Graph message mapping (E2) ──────────────────────────────────────
+// Converts a Microsoft Graph message resource into the neutral email
+// payload em-ingest processes. Pure and provider-shaped so the poll
+// loop stays a thin fetch-and-forward and this stays testable.
+
+// Minimal HTML→text: Graph returns body.contentType "html" for most
+// real mail. Tags out, entities decoded enough for analysis; layout
+// fidelity is irrelevant because nothing is stored.
+export function htmlToText(html) {
+  return String(html || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function mapGraphMessage(msg) {
+  const m = msg || {};
+  const isHtml = (m.body?.contentType || "").toLowerCase() === "html";
+  const authHeader = (m.internetMessageHeaders || [])
+    .find(h => (h?.name || "").toLowerCase() === "authentication-results");
+  return {
+    messageId: m.internetMessageId || m.id || "",
+    receivedAt: m.receivedDateTime || "",
+    fromAddress: m.from?.emailAddress?.address || m.sender?.emailAddress?.address || "",
+    toAddresses: [
+      ...(m.toRecipients || []), ...(m.ccRecipients || []),
+    ].map(r => r?.emailAddress?.address).filter(Boolean),
+    body: isHtml ? htmlToText(m.body?.content) : String(m.body?.content || ""),
+    hasAttachments: !!m.hasAttachments,
+    authenticationResults: authHeader?.value || "",
+  };
+}
+
 // ── Fingerprint (spec §4 dedupe, content-free) ──────────────────────
 // HMAC-SHA256(messageId + "|" + mailbox) via WebCrypto — available in
 // both Deno and Node ≥ 20 as globalThis.crypto.
