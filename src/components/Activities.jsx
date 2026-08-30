@@ -1,13 +1,11 @@
 import { useState, useMemo } from "react";
 import {
-  PhoneCall, Mail, CalendarDays, Zap, MessageSquare, Globe,
-  MapPin, BookOpen, Users, Search, Activity, CalendarPlus,
-  CheckSquare, Clock, Building2, TrendingUp, Paperclip,
-  Check, Edit2, Trash2, LayoutGrid, List, ChevronDown
+  PhoneCall, Mail, Search, Activity, CalendarPlus,
+  CheckSquare, Paperclip, Check, ChevronDown
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { ACT_TYPES, ACT_STATUS, TEAM, TEAM_MAP } from '../data/constants';
-import { uid, fmt, today, toLocalISODate, parseLocalDate, sanitizeObj, validateActivity, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { uid, today, toLocalISODate, parseLocalDate, sanitizeObj, validateActivity, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import DataGrid from './DataGrid';
@@ -19,8 +17,6 @@ function SortIcon({ col, sortKey, sortDir }) {
 }
 
 const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
-const TYPE_COL={Call:"var(--brand)",Email:"var(--blue)",Meeting:"var(--purple)",Demo:"var(--orange)",WhatsApp:"var(--green)",LinkedIn:"#0077B5","Site Visit":"var(--amber)",Presentation:"var(--teal)",Conference:"var(--red-t)"};
-const TYPE_ICON={Call:<PhoneCall size={15}/>,Email:<Mail size={15}/>,Meeting:<CalendarDays size={15}/>,Demo:<Zap size={15}/>,WhatsApp:<MessageSquare size={15}/>,LinkedIn:<Globe size={15}/>,"Site Visit":<MapPin size={15}/>,Presentation:<BookOpen size={15}/>,Conference:<Users size={15}/>};
 
 function Activities({activities,setActivities,accounts,contacts,opps,currentUser,files,onAddFile,orgUsers,canDelete,commLogs=[],onRequestEditAccess}) {
   const canEditAct=(a)=>canEditRecord({ownerId:a?.owner,currentUser,orgUsers,recordType:"activity",recordId:a?.id,commLogs});
@@ -36,8 +32,7 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
   const [mTab,setMTab]=useState("details");
   const [confirm,setConfirm]=useState(null);
   const [formErrors,setFormErrors]=useState({});
-  const [viewMode,setViewMode]=useState("card");
-  // Table-view sorting (card view keeps the date-desc default).
+  // Grid sorting (defaults to newest first).
   const [sortKey,setSortKey]=useState("schedule");
   const [sortDir,setSortDir]=useState("desc");
   const toggleSort=(key)=>{
@@ -104,14 +99,14 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
     }
   };
   const sorted=useMemo(()=>{
-    if(viewMode!=="table"||!sortKey) return filtered;
+    if(!sortKey) return filtered;
     const factor=sortDir==="asc"?1:-1;
     return [...filtered].sort((a,b)=>{
       const va=sortVal(a,sortKey), vb=sortVal(b,sortKey);
       if(typeof va==="number"&&typeof vb==="number") return (va-vb)*factor;
       return String(va).toLowerCase().localeCompare(String(vb).toLowerCase())*factor;
     });
-  },[filtered,viewMode,sortKey,sortDir,accounts,contacts,opps,teamMap]);
+  },[filtered,sortKey,sortDir,accounts,contacts,opps,teamMap]);
 
   const pg = usePagination(sorted);
 
@@ -136,10 +131,6 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
   const connectedRate=activities.length>0?Math.round(activities.filter(a=>a.outcome==="Positive").length/activities.length*100):0;
 
   // Type badge helper
-  const typeBadgeLabel=(type)=>{
-    const map={"Call":"FOLLOW-UP CALL","Email":"EMAIL OUTREACH","Meeting":"DISCOVERY CALL","Demo":"DEMO SESSION","WhatsApp":"WHATSAPP MSG","LinkedIn":"LINKEDIN REACH","Site Visit":"SITE VISIT","Presentation":"PRESENTATION","Conference":"CONFERENCE"};
-    return map[type]||type.toUpperCase();
-  };
   const typeBadgeColor=(type)=>{
     const map={"Call":"#2563EB","Email":"#7C3AED","Meeting":"#0D9488","Demo":"#D97706","WhatsApp":"#16A34A","LinkedIn":"#0077B5","Site Visit":"#B45309","Presentation":"#0F766E","Conference":"#DC2626"};
     return map[type]||"#64748B";
@@ -255,58 +246,13 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
           value={ownerF} onChange={setOwnerF}
           options={team.map(u=>({ value:u.id, label:u.name, sub:u.role }))}
         />
-        <div style={{display:"flex",marginLeft:"auto",background:"var(--s2)",borderRadius:8,padding:2}}>
-          <button onClick={()=>setViewMode("card")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:viewMode==="card"?"white":"transparent",color:viewMode==="card"?"var(--brand)":"var(--text3)",boxShadow:viewMode==="card"?"0 1px 3px rgba(0,0,0,0.1)":"none"}}><LayoutGrid size={13}/>Card View</button>
-          <button onClick={()=>setViewMode("table")} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:viewMode==="table"?"white":"transparent",color:viewMode==="table"?"var(--brand)":"var(--text3)",boxShadow:viewMode==="table"?"0 1px 3px rgba(0,0,0,0.1)":"none"}}><List size={13}/>Table View</button>
-        </div>
       </div>
 
-      {filtered.length===0?(
-        <div className="card"><Empty icon={<Activity size={22}/>} title="No activities found" sub="Schedule a call, plan an activity, or log a completed interaction."/></div>
-      ): viewMode==="card" ? (
-        pg.paged.map(a=>{
-          const acc=accounts.find(x=>x.id===a.accountId);
-          const con=contacts.find(x=>x.id===a.contactId);
-          const opp=opps.find(x=>x.id===a.oppId);
-          const col=TYPE_COL[a.type]||"var(--text3)";
-          const ov=a.status==="Planned"&&a.date<today;
-          return (
-            <div key={a.id} className={`act-card ${a.status==="Planned"&&!ov?"planned":ov?"overdue":a.status==="Completed"?"completed":""}`}>
-              <div className="act-card-icon" style={{background:col+"18",color:col}}>{TYPE_ICON[a.type]||<Activity size={15}/>}</div>
-              <div className="act-card-main">
-                <div className="act-card-title">{a.title}</div>
-                <div className="act-card-meta">
-                  <span style={{fontSize:11,fontWeight:700,padding:"2px 7px",borderRadius:4,background:col+"18",color:col}}>{a.type}</span>
-                  <StatusBadge status={a.status}/>
-                  {ov&&<span className="act-overdue-badge">OVERDUE</span>}
-                  <span style={{fontSize:11,color:"var(--text3)"}}><Clock size={10} style={{marginRight:3,verticalAlign:"middle"}}/>{fmt.date(a.date)}{a.time?" · "+fmt.time(a.time):""}{a.duration?" · "+a.duration+"min":""}</span>
-                  {a.outcome&&<span style={{fontSize:11,padding:"1px 6px",borderRadius:4,background:a.outcome==="Positive"?"var(--green-bg)":a.outcome==="Negative"?"var(--red-bg)":"var(--s3)",color:a.outcome==="Positive"?"var(--green-t)":a.outcome==="Negative"?"var(--red-t)":"var(--text3)"}}>{a.outcome}</span>}
-                </div>
-                <div className="act-card-links">
-                  {acc&&<span className="act-card-link"><Building2 size={10}/>{acc.name}</span>}
-                  {con&&<span className="act-card-link"><Users size={10}/>{con.name}</span>}
-                  {opp&&<span className="act-card-link"><TrendingUp size={10}/>{opp.title.substring(0,40)}{opp.title.length>40?"…":""}</span>}
-                  <UserPill uid={a.owner}/>
-                  {(a.files||[]).length>0&&<span className="act-card-link"><Paperclip size={10}/>{a.files.length} file{a.files.length>1?"s":""}</span>}
-                </div>
-                {a.notes&&<div style={{fontSize:12,color:"var(--text2)",marginTop:6,padding:"6px 9px",background:"var(--s2)",borderRadius:6,borderLeft:"2px solid var(--border2)"}}>{a.notes}</div>}
-              </div>
-              <div className="act-card-actions">
-                <EditLockActions
-                  editable={canEditAct(a)}
-                  pending={hasPendingAccessReq(commLogs,"activity",a.id,currentUser)}
-                  onEdit={()=>openEdit(a)} onDelete={()=>setConfirm(a.id)}
-                  onRequest={()=>requestAccess(a)} canDelete={canDelete}>
-                  {a.status==="Planned"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(a.id)} title="Mark complete"><Check size={12}/></button>}
-                </EditLockActions>
-              </div>
-            </div>
-          );
-        })
-      ) : (
-        /* Table View — shared DataGrid: sortable columns, per-user column
-           presets ("Columns" / "Save as…"), resize, and a Σ summary footer.
-           Same grid the Pipeline list uses. */
+      {(
+        /* Activities list — shared DataGrid: sortable columns, per-user
+           column presets ("Columns" / "Save as…"), resize, and a Σ summary
+           footer. Same grid the Pipeline list uses. Card view was retired
+           at the business's request (19 Aug 2026) — the grid is the view. */
         <div className="card" style={{padding:0}}>
           <DataGrid
             dense
