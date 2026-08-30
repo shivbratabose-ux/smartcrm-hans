@@ -11,8 +11,8 @@
 // a mismatched row to the right record, ignore noise. Suggested field
 // changes (em_suggested_updates) get their approval UI in E3.
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Inbox, RefreshCw, Link2, EyeOff, ShieldAlert, PauseCircle, PlayCircle, ChevronDown } from "lucide-react";
-import { loadEmailAgentQueue, reviewEmailActivity, loadAgentConfig, saveAgentConfig, isSupabaseConfigured } from "../lib/db";
+import { Inbox, RefreshCw, Link2, EyeOff, ShieldAlert, PauseCircle, PlayCircle, ChevronDown, Check, X, MessageSquare, Settings2 } from "lucide-react";
+import { loadEmailAgentQueue, reviewEmailActivity, loadAgentConfig, saveAgentConfig, isSupabaseConfigured, loadEmSuggestions, decideEmSuggestion, saveEmFeedback, EM_CONDITIONAL_FIELDS } from "../lib/db";
 import { fmt } from "../utils/helpers";
 import { Modal, Empty, UserPill, TypeaheadSelect, PageTip } from "./shared";
 import { notify } from "../utils/toast";
@@ -53,12 +53,16 @@ function EmailAgent({ accounts = [], contacts = [], opps = [], leads = [], activ
     return ["admin", "md", "director"].includes(r);
   }, [orgUsers, currentUser]);
 
+  const [suggestions, setSuggestions] = useState([]);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const refresh = useCallback(async () => {
     setLoading(true);
     const { rows: r, error } = await loadEmailAgentQueue();
     setRows(r); setLoadErr(error); setLoading(false);
     const { config: c } = await loadAgentConfig();
     setConfig(c);
+    const { rows: sg } = await loadEmSuggestions(r.map(x => x.fingerprint));
+    setSuggestions(sg);
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -109,6 +113,31 @@ function EmailAgent({ accounts = [], contacts = [], opps = [], leads = [], activ
   const doIgnore = async (row) => {
     const { error } = await reviewEmailActivity(row.fingerprint, { status: "ignored" }, currentUser);
     if (error) { notify.error(`Couldn't save: ${error}`); return; }
+    refresh();
+  };
+  const decideSuggestion = async (sg, approve) => {
+    if (sg.highImpact && approve && !window.confirm(
+      `HIGH-IMPACT change: set ${sg.entityType} ${sg.field} to "${sg.newValue}"?
+
+This is the kind of change the agent never applies on its own. Confirm you have verified it.`)) return;
+    const { error } = await decideEmSuggestion(sg, approve, currentUser);
+    if (error) { notify.error(error); return; }
+    notify.success(approve ? "Applied. Realtime will sync it everywhere." : "Rejected — recorded.");
+    refresh();
+  };
+  const giveFeedback = async (r) => {
+    const fb = window.prompt("Feedback on this result (what was wrong / right — improves future processing):", r.feedback || "");
+    if (fb === null) return;
+    const { error } = await saveEmFeedback(r.fingerprint, fb, currentUser);
+    if (error) { notify.error(error); return; }
+    notify.success("Feedback recorded.");
+    refresh();
+  };
+  const toggleRule = async (key) => {
+    const rules = { ...(config?.em_conditional_rules || {}) };
+    rules[key] = !rules[key];
+    const { error } = await saveAgentConfig({ em_conditional_rules: rules }, currentUser);
+    if (error) { notify.error(error); return; }
     refresh();
   };
   const togglePause = async () => {
@@ -169,6 +198,82 @@ function EmailAgent({ accounts = [], contacts = [], opps = [], leads = [], activ
         ))}
       </div>
 
+      {/* §15 metrics — computed over the loaded window */}
+      {rows.length > 0 && (() => {
+        const total = rows.filter(r => !["duplicate"].includes(r.status)).length;
+        const auto = rows.filter(r => r.status === "processed").length;
+        const corrected = rows.filter(r => r.reviewedBy && r.status === "processed").length;
+        const pend = suggestions.filter(sg => sg.status === "pending").length;
+        const pct = (n, d) => d > 0 ? Math.round((n / d) * 100) : 0;
+        const kpi = (label, val, sub) => (
+          <div key={label} className="kpi" style={{ flex: 1, minWidth: 130 }}>
+            <div className="kpi-label">{label}</div>
+            <div className="kpi-val" style={{ fontSize: 20 }}>{val}</div>
+            <div className="kpi-sub">{sub}</div>
+          </div>);
+        return (
+          <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+            {kpi("Auto-logged", `${pct(auto, total)}%`, `${auto}/${total} emails became activities unaided`)}
+            {kpi("Needed a human", `${pct(total - auto, total)}%`, "match / review / unverified")}
+            {kpi("Corrections", `${pct(corrected, auto)}%`, "auto-processed rows later re-linked")}
+            {kpi("Pending suggestions", pend, "field changes awaiting approval")}
+          </div>
+        );
+      })()}
+
+      {/* §9 conflict cards — pending suggestions with old vs new */}
+      {suggestions.filter(sg => sg.status === "pending").length > 0 && (
+        <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Suggested field changes</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {suggestions.filter(sg => sg.status === "pending").map(sg => (
+              <div key={sg.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
+                border: `1px solid ${sg.highImpact ? "#FCA5A5" : "var(--border)"}`, borderRadius: 8,
+                background: sg.highImpact ? "var(--red-bg, #FEF2F2)" : "var(--s2)" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>
+                    {sg.highImpact && <span style={{ color: "var(--red)", fontWeight: 800, marginRight: 6 }}>HIGH IMPACT</span>}
+                    {entityName(sg.entityType, sg.entityId)} · {sg.field}
+                  </div>
+                  <div style={{ fontSize: 12, marginTop: 2 }}>
+                    <span style={{ textDecoration: "line-through", color: "var(--text3)" }}>{sg.oldValue || "(empty)"}</span>
+                    <span style={{ margin: "0 8px" }}>→</span>
+                    <b>{sg.newValue}</b>
+                    <span style={{ color: "var(--text3)", marginLeft: 8 }}>{Math.round((sg.confidence || 0) * 100)}%</span>
+                  </div>
+                  {sg.reason && <div style={{ fontSize: 11.5, color: "var(--text3)", marginTop: 2 }}>{sg.reason}</div>}
+                </div>
+                <button className="btn btn-sm btn-green" style={{ fontSize: 11 }} onClick={() => decideSuggestion(sg, true)}><Check size={12} />Apply</button>
+                <button className="btn btn-sm btn-sec" style={{ fontSize: 11 }} onClick={() => decideSuggestion(sg, false)}><X size={12} />Reject</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Admin: per-rule toggles for conditional updates (spec §7) */}
+      {isAdmin && (
+        <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", cursor: "pointer", gap: 8 }} onClick={() => setRulesOpen(v => !v)}>
+            <Settings2 size={14} style={{ color: "var(--brand)" }} />
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Conditional update rules</span>
+            <span style={{ fontSize: 11, color: "var(--text3)" }}>
+              which explicit email statements may become suggestions — Won/Lost always suggests, never applies
+            </span>
+          </div>
+          {rulesOpen && (
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10 }}>
+              {Object.keys(EM_CONDITIONAL_FIELDS).map(key => (
+                <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+                  <input type="checkbox" checked={!!config?.em_conditional_rules?.[key]} onChange={() => toggleRule(key)} style={{ width: "auto" }} />
+                  <span className="mono" style={{ fontFamily: "monospace" }}>{key}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {loadErr && loadErr !== "not-configured" && (
         <div className="card" style={{ padding: 14, marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
           <ShieldAlert size={16} style={{ color: "var(--red)" }} />
@@ -227,6 +332,8 @@ function EmailAgent({ accounts = [], contacts = [], opps = [], leads = [], activ
                 <button className="btn btn-sm btn-sec" style={{ fontSize: 11 }} title="Ignore this email (noise, misdirected)"
                   onClick={() => doIgnore(r)}><EyeOff size={12} /></button>
               )}
+              <button className="btn btn-sm btn-sec" style={{ fontSize: 11 }} title="Feedback on this result"
+                onClick={() => giveFeedback(r)}><MessageSquare size={12} /></button>
             </div>
           )}
         />

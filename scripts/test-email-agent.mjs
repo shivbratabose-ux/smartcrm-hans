@@ -7,6 +7,7 @@ import {
   splitEmailBody, scanIdentifiers, decideMatch,
   filterAutoUpdates, summaryViolations, fingerprintEmail, INTENTS,
   htmlToText, mapGraphMessage,
+  splitConditionalUpdates, highImpactFromIntent, CONDITIONAL_FIELDS,
 } from "../supabase/functions/em-ingest/logic.mjs";
 
 let pass = 0, fail = 0;
@@ -114,6 +115,37 @@ check("auth-results header found case-insensitively", mapped.authenticationResul
 check("attachments flagged", mapped.hasAttachments, true);
 check("plain-text body passes through", mapGraphMessage({ body: { contentType: "text", content: "plain body" } }).body, "plain body");
 check("empty message maps safely", mapGraphMessage(null).messageId, "");
+
+console.log("— conditional suggestions (E3) —");
+const mkU = (entityType, field, newValue, confidence = 0.9) =>
+  ({ entityType, entityId: "x1", field, newValue, reason: "email says so", confidence });
+// rule disabled → drop (except Won/Lost)
+check("disabled rule drops", splitConditionalUpdates([mkU("opp", "closeDate", "2026-09-30")], {}).suggest.length, 0);
+check("enabled rule suggests",
+  splitConditionalUpdates([mkU("opp", "closeDate", "2026-09-30")], { "opp:closeDate": true }).suggest.length, 1);
+check("bad date never suggests",
+  splitConditionalUpdates([mkU("opp", "closeDate", "next week")], { "opp:closeDate": true }).suggest.length, 0);
+check("probability bounds enforced",
+  splitConditionalUpdates([mkU("opp", "probability", "250")], { "opp:probability": true }).suggest.length, 0);
+const wonSplit = splitConditionalUpdates([mkU("opp", "stage", "Won")], {}); // rules ALL OFF
+check("Won suggests even with all rules off", wonSplit.suggest.length, 1);
+check("Won is high-impact", wonSplit.suggest[0].highImpact, true);
+check("ordinary stage change respects rule gate",
+  splitConditionalUpdates([mkU("opp", "stage", "Negotiation")], {}).suggest.length, 0);
+check("non-conditional junk drops",
+  splitConditionalUpdates([mkU("account", "owner", "u_someone")], { "account:owner": true }).suggest.length, 0);
+check("suggestion carries table/column for approve-time apply",
+  splitConditionalUpdates([mkU("lead", "stage", "SQL")], { "lead:stage": true }).suggest[0].table, "leads");
+
+check("won-intent raises high-impact suggestion",
+  highImpactFromIntent(["Opportunity won indication"], "opp", "o1")?.newValue, "Won");
+check("approval intent too",
+  highImpactFromIntent(["Customer approval received"], "opp", "o1")?.newValue, "Won");
+check("lost-intent", highImpactFromIntent(["Opportunity lost indication"], "opp", "o1")?.newValue, "Lost");
+check("no opp match → no intent suggestion", highImpactFromIntent(["Opportunity won indication"], "account", "a1"), null);
+check("neutral intent → null", highImpactFromIntent(["General follow-up"], "opp", "o1"), null);
+check("conditional map has no owner/value/consent entries",
+  Object.keys(CONDITIONAL_FIELDS).some(k => /owner|value|consent|doNotContact/i.test(k)), false);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

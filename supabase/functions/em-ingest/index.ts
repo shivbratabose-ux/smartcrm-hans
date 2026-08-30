@@ -35,6 +35,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
   splitEmailBody, scanIdentifiers, decideMatch,
   filterAutoUpdates, summaryViolations, fingerprintEmail, mapGraphMessage,
+  splitConditionalUpdates, highImpactFromIntent,
 } from "./logic.mjs";
 
 const corsHeaders = {
@@ -286,10 +287,45 @@ async function processEmail(admin: any, cfg: any, env: Env, email: any) {
           });
         }
       }
-      if (rejected.length) {
+      // E3 ── Conditional suggestions (spec §7 conditional + §9 conflict
+      // flow). Allowlist-rejected updates naming a conditional field —
+      // when the admin has enabled that rule, or always for Won/Lost —
+      // become PENDING suggestions carrying old value, new value, reason
+      // and confidence. Nothing is applied here; a human approves in the
+      // Email Agent page. Won/Lost-flavoured intents also raise a
+      // high-impact suggestion even when the model proposed no update.
+      const rules = (cfg?.em_conditional_rules || {}) as Record<string, boolean>;
+      const { suggest, drop } = splitConditionalUpdates(rejected, rules);
+      const intentHi = highImpactFromIntent(row.intent, finalMatch!.type, finalMatch!.id);
+      if (intentHi && !suggest.some((x: any) => x.field === "stage" && x.entityType === "opp")) suggest.push(intentHi);
+      let si = 0;
+      for (const u of suggest) {
+        // Only ever about the matched record — same rule as auto-updates.
+        if (u.entityType !== finalMatch!.type || u.entityId !== finalMatch!.id) continue;
+        const { data: cur } = await admin.from(u.table).select(u.column).eq("id", u.entityId).maybeSingle();
+        const oldValue = cur ? String(cur[u.column] ?? "") : "";
+        const newValue = String(u.newValue).trim();
+        if (oldValue === newValue) continue;
+        await admin.from("em_suggested_updates").insert({
+          id: `ems_${fp.slice(0, 12)}_${si++}`,
+          fingerprint: fp,
+          entity_type: u.entityType, entity_id: u.entityId,
+          field: u.field,
+          old_value: oldValue.slice(0, 200), new_value: newValue.slice(0, 200),
+          reason: String(u.reason || "").slice(0, 300),
+          confidence: Math.max(0, Math.min(1, Number(u.confidence) || 0)),
+          high_impact: !!u.highImpact,
+          status: "pending",
+        });
+        await audit(fp, "update_suggested", {
+          entity: `${u.entityType}:${u.entityId}`, field: u.field,
+          highImpact: !!u.highImpact, oldValue: oldValue.slice(0, 120), newValue: newValue.slice(0, 120),
+        });
+      }
+      if (drop.length) {
         await audit(fp, "updates_rejected", {
-          count: rejected.length,
-          fields: rejected.map((x: any) => `${x?.entityType}:${x?.field}`).slice(0, 10),
+          count: drop.length,
+          fields: drop.map((x: any) => `${x?.entityType}:${x?.field}`).slice(0, 10),
         });
       }
     }
