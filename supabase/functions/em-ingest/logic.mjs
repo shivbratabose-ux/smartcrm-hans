@@ -140,10 +140,10 @@ export function filterAutoUpdates(updates, minConfidence = 0.9) {
 // Values are lightly validated here; the human is the real validator.
 export const CONDITIONAL_FIELDS = {
   "lead:stage":        { table: "leads",  column: "stage",        maxLen: 60 },
-  "opp:stage":         { table: "opps",   column: "stage",        maxLen: 60 },
-  "opp:closeDate":     { table: "opps",   column: "close_date",   isDate: true },
-  "opp:probability":   { table: "opps",   column: "probability",  isInt: true },
-  "quote:status":      { table: "quotes", column: "status",       maxLen: 60 },
+  "opp:stage":         { table: "opportunities",   column: "stage",        maxLen: 60 },
+  "opp:closeDate":     { table: "opportunities",   column: "close_date",   isDate: true },
+  "opp:probability":   { table: "opportunities",   column: "probability",  isInt: true },
+  "quote:status":      { table: "quotations", column: "status",       maxLen: 60 },
   "account:priority":  { table: "accounts", column: "priority",   maxLen: 30 },
 };
 

@@ -22,7 +22,7 @@ SELECT a.id AS account_id,
               WHERE cr.account_id = a.id AND cr.is_deleted = false), '1900-01-01'::date),
     COALESCE((SELECT MAX(cl.date) FROM public.comm_logs cl
               WHERE cl.account_id = a.id AND cl.is_deleted = false), '1900-01-01'::date),
-    COALESCE((SELECT MAX(q.created_at::date) FROM public.quotes q
+    COALESCE((SELECT MAX(q.created_at::date) FROM public.quotations q
               WHERE q.account_id = a.id AND q.is_deleted = false), '1900-01-01'::date),
     COALESCE((SELECT MAX(t.updated_at::date) FROM public.tickets t
               WHERE t.account_id = a.id AND t.is_deleted = false), '1900-01-01'::date)

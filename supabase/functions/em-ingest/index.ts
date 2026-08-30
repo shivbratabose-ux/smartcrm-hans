@@ -46,6 +46,21 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+// Service-caller check that survives both key regimes. On new-API-key
+// projects the platform injects an sb_secret (not a JWT) as
+// SUPABASE_SERVICE_ROLE_KEY while the functions gateway only admits
+// JWTs — so equality with the env var can never pass there. The gateway
+// has already verified the JWT signature; trusting its role claim is
+// exactly what the legacy service_role key encodes.
+function isServiceCaller(bearer: string, envKey: string): boolean {
+  if (bearer && bearer === envKey) return true;
+  try {
+    const payload = JSON.parse(atob(bearer.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return payload?.role === "service_role";
+  } catch { return false; }
+}
+
+
 // Field-level writers for allowlisted auto-updates (spec §7). Only columns
 // that exist get a writer; each validates its value in code. Everything the
 // model proposes outside this map is rejected upstream by filterAutoUpdates
@@ -54,12 +69,13 @@ const VALID_TEMPS = new Set(["Hot", "Warm", "Cool", "Cold", "Dead"]);
 const AUTO_WRITERS: Record<string, { table: string; column: string; valid: (v: string) => boolean }> = {
   "lead:nextCall":    { table: "leads", column: "next_call",   valid: v => /^\d{4}-\d{2}-\d{2}$/.test(v) },
   "lead:temperature": { table: "leads", column: "temperature", valid: v => VALID_TEMPS.has(v) },
-  "opp:nextStep":     { table: "opps",  column: "next_step",   valid: v => v.length > 0 && v.length <= 200 },
+  "opp:nextStep":     { table: "opportunities",  column: "next_step",   valid: v => v.length > 0 && v.length <= 200 },
 };
 
 type Env = {
   SUPABASE_URL: string; SERVICE_ROLE: string;
   FP_SECRET: string; MAILBOX: string;
+  CALLER_BEARER: string; // forwarded to ai-claude — a gateway-valid JWT
 };
 
 // ── The per-email pipeline (shared by ingest + poll) ─────────────────
@@ -107,10 +123,10 @@ async function processEmail(admin: any, cfg: any, env: Env, email: any) {
       const { data } = await admin.from("leads").select("id").eq("lead_id", `#${hit.value}`).maybeSingle();
       if (data) candidates.push({ type: "lead", id: data.id, basis: `explicit id ${hit.value}`, confidence: 0.97 });
     } else if (hit.type === "opp") {
-      const { data } = await admin.from("opps").select("id").eq("opp_no", hit.value).maybeSingle();
+      const { data } = await admin.from("opportunities").select("id").eq("opp_no", hit.value).maybeSingle();
       if (data) candidates.push({ type: "opp", id: data.id, basis: `explicit id ${hit.value}`, confidence: 0.97 });
     } else if (hit.type === "quote") {
-      const { data } = await admin.from("quotes").select("id, opp_id").eq("quote_no", hit.value).maybeSingle();
+      const { data } = await admin.from("quotations").select("id, opp_id").eq("quote_no", hit.value).maybeSingle();
       if (data?.opp_id) candidates.push({ type: "opp", id: data.opp_id, basis: `quote ${hit.value}`, confidence: 0.95 });
     } else if (hit.type === "ticket") {
       const { data } = await admin.from("tickets").select("id, account_id").eq("id", hit.value).maybeSingle();
@@ -144,7 +160,7 @@ async function processEmail(admin: any, cfg: any, env: Env, email: any) {
   // 5 ── AI extraction — email text as untrusted data, schema-bound output.
   const aiRes = await fetch(`${env.SUPABASE_URL}/functions/v1/ai-claude`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.SERVICE_ROLE}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.CALLER_BEARER}` },
     body: JSON.stringify({
       action: "run",
       feature: "emailToActivity",
@@ -222,7 +238,7 @@ async function processEmail(admin: any, cfg: any, env: Env, email: any) {
     }
     if (finalMatch!.type === "opp") {
       act.opp_id = finalMatch!.id;
-      const { data: o } = await admin.from("opps").select("account_id").eq("id", finalMatch!.id).maybeSingle();
+      const { data: o } = await admin.from("opportunities").select("account_id").eq("id", finalMatch!.id).maybeSingle();
       if (o?.account_id) act.account_id = o.account_id;
     }
     if (finalMatch!.type === "lead") act.lead_id = finalMatch!.id;
@@ -427,12 +443,16 @@ serve(async (req) => {
     SERVICE_ROLE: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     FP_SECRET: Deno.env.get("EM_FINGERPRINT_SECRET") || "",
     MAILBOX: (Deno.env.get("EM_MAILBOX") || "communication@hansinfomatic.com").toLowerCase(),
+    CALLER_BEARER: "",
   };
 
   // Service-role only: this function writes with elevated rights and its
   // input is raw mail — no browser has any business calling it.
   const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  if (bearer !== env.SERVICE_ROLE) return json({ error: "Service credential required" }, 401);
+  if (!isServiceCaller(bearer, env.SERVICE_ROLE)) return json({ error: "Service credential required" }, 401);
+  // The internal ai-claude hop forwards the caller's own (gateway-valid)
+  // JWT — the injected env key may be an sb_secret the gateway rejects.
+  env.CALLER_BEARER = bearer;
 
   const admin = createClient(env.SUPABASE_URL, env.SERVICE_ROLE, {
     auth: { persistSession: false, autoRefreshToken: false },
