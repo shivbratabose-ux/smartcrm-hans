@@ -7,7 +7,7 @@ import {
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
   INIT_PRODUCT_CATALOG, mergeCatalogSeed, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS, INIT_PROJECTS,
-  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
+  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_CON, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, refreshToday, uid, canWriteTargets, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert, buildNotificationUpdate } from "./utils/helpers";
@@ -1832,7 +1832,9 @@ export default function SmartCRM() {
     const data = conversionData || {};
     // Build contact roles array from the contactRoles map
     const contactRoles = data.contactRoles ? Object.entries(data.contactRoles).filter(([,role]) => role).map(([contactId, role], i) => ({ contactId, role, isPrimary: i === 0 })) : [];
-    const primaryContact = contactRoles.find(r => r.isPrimary)?.contactId || data.primaryContactId || (lead.contactIds?.[0]) || "";
+    // let: the contact-creation block below may resolve/mint the person
+    // when the modal supplied none, so the initial activity links them too.
+    let primaryContact = contactRoles.find(r => r.isPrimary)?.contactId || data.primaryContactId || (lead.contactIds?.[0]) || "";
     // Generate opportunity ID: O# prefix derived from lead ID
     const oppId = lead.leadId
       ? `O${lead.leadId}`  // e.g. #FL-2026-001 -> O#FL-2026-001
@@ -1905,6 +1907,48 @@ export default function SmartCRM() {
       };
       setAccounts(p => [...p, newAcc]);
       newOpp.accountId = newAccId;
+    }
+    // ── Contact creation on conversion (Agents Phase 0) ──────────────
+    // Before this, converting a lead created an opp + account but let the
+    // person die on the lead: Priya's name/email/phone stayed on a record
+    // nobody revisits, and Account 360 opened with no people in it. If no
+    // CRM contact is linked yet and the lead carries a person, create one —
+    // deduping by email first so re-converting (keepLeadOpen flow) or a
+    // contact added meanwhile never produces twins.
+    if (!primaryContact && (lead.contact || "").trim() && (lead.email || lead.phone)) {
+      const leadEmail = (lead.email || "").trim().toLowerCase();
+      const existing = leadEmail
+        ? (contacts || []).find(c => !c.isDeleted && (c.email || "").trim().toLowerCase() === leadEmail)
+        : null;
+      if (existing) {
+        primaryContact = existing.id;
+        newOpp.primaryContactId = existing.id;
+        newOpp.contactRoles = [{ contactId: existing.id, role: "Primary", isPrimary: true }];
+        // Backfill the account link if the contact floated unattached.
+        if (!existing.accountId && newOpp.accountId) {
+          setContacts(p => p.map(c => c.id === existing.id ? { ...c, accountId: newOpp.accountId } : c));
+        }
+      } else {
+        const newContact = {
+          ...BLANK_CON,
+          id: `c${uid()}`,
+          name: lead.contact,
+          email: lead.email || "",
+          phone: lead.phone || "",
+          designation: lead.designation || "",
+          accountId: newOpp.accountId || "",
+          primary: true,
+          source: "Lead Conversion",
+          // The rep typed this address and worked the lead with it — that
+          // is real-world verification, unlike a bulk-imported address.
+          emailVerified: !!leadEmail,
+          linkedOpps: [newOpp.id],
+        };
+        setContacts(p => [...p, newContact]);
+        primaryContact = newContact.id;
+        newOpp.primaryContactId = newContact.id;
+        newOpp.contactRoles = [{ contactId: newContact.id, role: "Primary", isPrimary: true }];
+      }
     }
     // Assign the opportunity its own canonical number (OPP-YYYY-NNN — the
     // same scheme the Pipeline and bulk import use), generated against the
@@ -1981,7 +2025,9 @@ export default function SmartCRM() {
         `It became opportunity ${newOpp.oppId || ""} (est. ₹${newOpp.value || 0}L).`))]);
     }
     if (!data.keepLeadOpen) setPage("pipeline");
-  }, []);
+    // contacts: the dedupe-by-email read above must see the live list — with
+    // [] deps it saw the mount-time (empty) array and minted duplicates.
+  }, [contacts, currentUser]);
 
   // ── Opportunity-number backfill (runs on the LIVE opps state) ──
   // migrateState only numbers opps on the localStorage path; cloud

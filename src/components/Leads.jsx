@@ -3112,7 +3112,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           {/* ── B. BUSINESS PROFILE ── */}
           <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:16,paddingTop:12,borderTop:"1px solid var(--border)"}}>B. Business Profile</div>
           <div className="form-row">
-            <div className="form-group"><label>Business Type</label><select value={form.businessType||"Customs Broker"} onChange={e => setForm(f => ({...f, businessType:e.target.value}))}>{BUSINESS_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
+            <div className="form-group"><label>Business Type</label><select value={form.businessType||""} onChange={e => setForm(f => ({...f, businessType:e.target.value}))}><option value="">Select…</option>{BUSINESS_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
             <div className="form-group"><label>Staff Size</label><select value={form.staffSize||""} onChange={e => setForm(f => ({...f, staffSize:e.target.value}))}><option value="">Select</option>{STAFF_SIZES.map(s => <option key={s}>{s}</option>)}</select></div>
           </div>
           <div className="form-row">
@@ -3147,7 +3147,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             dict={masters?.leadProductFields}
           />
           <div className="form-row">
-            <div className="form-group"><label>Industry / Vertical</label><select value={form.vertical} onChange={e => setForm(f => ({...f, vertical:e.target.value}))}>{VERTICALS.map(v => <option key={v}>{v}</option>)}</select></div>
+            <div className="form-group"><label>Industry / Vertical</label><select value={form.vertical} onChange={e => setForm(f => ({...f, vertical:e.target.value}))}><option value="">Select…</option>{VERTICALS.map(v => <option key={v}>{v}</option>)}</select></div>
             <div className="form-group"><label>Region</label><select value={form.region} onChange={e => setForm(f => ({...f, region:e.target.value}))}>{REGIONS.map(r => <option key={r}>{r}</option>)}</select></div>
           </div>
           {/* Monthly Volume */}
