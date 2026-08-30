@@ -15,7 +15,8 @@
     "test:alloc": "node scripts/test-target-allocation.mjs",
     "test:targets": "node scripts/test-targets-attainment.mjs",
     "test:windows": "node scripts/test-fiscal-windows.mjs",
-    "test:email": "node scripts/test-email-agent.mjs"
+    "test:email": "node scripts/test-email-agent.mjs",
+    "smoke:email": "node scripts/smoke-email-agent.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
