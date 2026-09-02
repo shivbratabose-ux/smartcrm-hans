@@ -168,19 +168,61 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       .sort((a, b) => b.value - a.value);
   }, [accounts]);
 
-  // ─── Activity trend (last 7 periods) ───
+  // ─── Activity trend — follows the selected date range ───
+  // Was hardcoded to the last 7 days whatever the filter said, so QTD /
+  // 6M / Year showed a week of data under a quarter's KPIs and the axes
+  // never moved. Now the buckets span the actual range, at a granularity
+  // that keeps the chart readable: daily up to 2 weeks, weekly up to ~3
+  // months, monthly beyond. Counts come from the range-filtered set so
+  // chart and KPI cards always agree.
   const activityTrend = useMemo(() => {
-    const days = rangeKey === "7d" ? 7 : rangeKey === "10d" ? 10 : 7;
-    const data = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(parseLocalDate(today).getTime() - i * 864e5);
-      const ds = toLocalISODate(d);
-      const label = d.toLocaleDateString("en-US", { weekday: "short" });
-      const count = activities.filter(a => a.date === ds).length;
-      data.push({ name: label, count });
+    const to = parseLocalDate(range.to);
+    // "All Time" ranges from 2000 — clamp the start to the earliest real
+    // activity so the chart isn't hundreds of empty buckets.
+    let from = parseLocalDate(range.from);
+    if (range.from <= "2001-01-01") {
+      const earliest = fActivities.reduce((m, a) => (a.date && a.date < m ? a.date : m), range.to);
+      from = parseLocalDate(earliest);
     }
-    return data;
-  }, [activities, rangeKey]);
+    const spanDays = Math.max(1, Math.round((to - from) / 864e5) + 1);
+
+    const buckets = [];
+    if (spanDays <= 14) {
+      for (let i = 0; i < spanDays; i++) {
+        const d = new Date(from.getTime() + i * 864e5);
+        buckets.push({
+          name: d.toLocaleDateString("en-US", { weekday: "short", day: "numeric" }),
+          from: toLocalISODate(d), to: toLocalISODate(d),
+        });
+      }
+    } else if (spanDays <= 92) {
+      // Weekly, aligned to the range start.
+      for (let t = from.getTime(); t <= to.getTime(); t += 7 * 864e5) {
+        const a = new Date(t), b = new Date(Math.min(t + 6 * 864e5, to.getTime()));
+        buckets.push({
+          name: a.toLocaleDateString("en-US", { day: "numeric", month: "short" }),
+          from: toLocalISODate(a), to: toLocalISODate(b),
+        });
+      }
+    } else {
+      // Monthly, capped at the most recent 24 buckets.
+      const cur = new Date(from.getFullYear(), from.getMonth(), 1);
+      while (cur <= to) {
+        const end = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+        buckets.push({
+          name: cur.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
+          from: toLocalISODate(cur), to: toLocalISODate(end < to ? end : to),
+        });
+        cur.setMonth(cur.getMonth() + 1);
+      }
+      if (buckets.length > 24) buckets.splice(0, buckets.length - 24);
+    }
+
+    return buckets.map(b => ({
+      name: b.name,
+      count: fActivities.filter(a => a.date && a.date >= b.from && a.date <= b.to).length,
+    }));
+  }, [fActivities, range]);
 
   // ─── Lead conversion funnel ───
   const leadFunnel = useMemo(() => {
