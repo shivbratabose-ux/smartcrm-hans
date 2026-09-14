@@ -9,6 +9,9 @@
 //   3. verified + explicit OPP-/#FL- id → processed, activity created
 //   4. exact duplicate    → deduped by fingerprint, no second activity
 //   5. no identifiers     → unmatched/needs_match, no activity
+//   5b. auto-reply / bounce / SmartCRM notification (from a VERIFIED
+//       sender, with a real record id in the body) → "automated", skipped
+//       before verification and AI, no activity, reason in the audit
 //   6. privacy audit      → no email content anywhere in em_processed
 //
 // This touches PRODUCTION tables on purpose — that is what a smoke test
@@ -171,6 +174,39 @@ try {
   check("lands in unmatched/needs_match", ["unmatched", "needs_match"].includes(unm.body?.status), JSON.stringify(unm.body));
   check("no activity for unmatched", !unm.body?.activityId);
 
+  // ── 5b. Machine-generated mail → skipped ───────────────────────────
+  // communication@ also SENDS SmartCRM notifications, so out-of-office
+  // replies and bounces come back to it. Each probe is from the verified
+  // sender and names a real record, so without the filter it WOULD be
+  // processed into an activity — that's what makes the check meaningful.
+  console.log("— 5b · auto-reply / bounce / own notification —");
+  const refLine = target ? ` Re ${target.ref}.` : "";
+  const probes = [
+    { label: "out-of-office (Auto-Submitted header)", reason: "auto_reply", email: {
+      fromAddress: sender.email, subject: "Automatic reply: Leave request",
+      autoHeaders: { "auto-submitted": "auto-replied" },
+      body: `out-of-office-probe: I am away until Monday.${refLine}` } },
+    { label: "bounce (postmaster NDR)", reason: "bounce", email: {
+      fromAddress: "postmaster@hansinfomatic.com", subject: "Undeliverable: Leave approved",
+      autoHeaders: { "content-type": "multipart/report; report-type=delivery-status" },
+      body: `bounce-probe: delivery failed.${refLine}` } },
+    { label: "SmartCRM's own notification", reason: "smartcrm_notification", email: {
+      fromAddress: sender.email, subject: "Leave request: smoke",
+      autoHeaders: { "x-smartcrm-notification": "leave", "x-auto-response-suppress": "All" },
+      body: `notification-probe: leave requested.${refLine}` } },
+  ];
+  for (const [i, p] of probes.entries()) {
+    const res = await ingest({ messageId: mkId(`auto-${i}`), receivedAt: new Date().toISOString(), ...p.email });
+    note(res);
+    const fp = res.body?.fingerprint;
+    const row = fp ? (await rest(`em_processed?fingerprint=eq.${fp}&select=status,activity_id,sender_user_id`)).body?.[0] : null;
+    const audit = fp ? (await rest(`agent_audit_events?module=eq.email_agent&ref=eq.${fp}&select=event,detail`)).body || [] : [];
+    check(`${p.label} → automated`, res.body?.status === "automated", JSON.stringify(res.body));
+    check(`${p.label}: no activity, no sender lookup`, !!row && !row.activity_id && !row.sender_user_id, JSON.stringify(row));
+    check(`${p.label}: audited as ${p.reason}, nothing else`,
+      audit.length === 1 && audit[0].event === "skipped_automated" && audit[0].detail?.reason === p.reason, JSON.stringify(audit));
+  }
+
   // ── 6. Privacy audit over everything this run wrote ────────────────
   console.log("— 6 · privacy audit —");
   for (const fp of createdFingerprints) {
@@ -180,7 +216,7 @@ try {
     check(`row ${fp.slice(0, 8)}… holds no content`,
       !/smoketest\.local/.test(dump) && !/evil-example\.com/.test(dump) &&
       !/revised commercial/.test(dump) && !/walk-in visitor/.test(dump) &&
-      !/@example-partner\.com/.test(dump),
+      !/@example-partner\.com/.test(dump) && !/-probe:|Automatic reply|Undeliverable/.test(dump),
       "email content leaked into em_processed!");
   }
   const audits = (await rest(`agent_audit_events?module=eq.email_agent&order=at.desc&limit=15&select=event,ref`)).body || [];
