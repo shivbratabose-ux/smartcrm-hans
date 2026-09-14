@@ -1,6 +1,6 @@
 // Verifies the Calendar's Team summary logic — the same module the
 // Team view renders. Run: node scripts/test-team-summary.mjs
-import { buildTeamSummary, teamColumns, callReportState, workingDaysElapsed, hasCallTarget } from "../src/utils/teamSummary.js";
+import { buildTeamSummary, teamColumns, callReportState, workingDaysElapsed, hasCallTarget, offDayMap, offDaysIn } from "../src/utils/teamSummary.js";
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -106,6 +106,33 @@ check("future Friday cell carries no target", SE.cellTargets["2026-09-11"], 0);
 check("line manager 8 / 20 → 40%", [LM.callTarget, LM.callCompliancePct], [20, 40]);
 check("support has no target, no compliance", [SP.targeted, SP.callTarget, SP.callCompliancePct], [false, 0, null]);
 check("team compliance excludes non-target roles", c.compliance, { target: 40, calls: 28, eligible: 2, onTarget: 1, pct: 70 });
+
+console.log("— holidays & admin days —");
+const hol = [
+  { date: "2026-09-08", name: "Festival", type: "Holiday" },     // Tue
+  { date: "2026-09-10", name: "Offsite", type: "Admin day" },    // Thu
+  { date: "2026-09-12", name: "Sat event", type: "Admin day" },  // Sat → no effect
+  { date: "bad", name: "Junk" },                                 // ignored
+];
+const off = offDayMap(hol);
+check("invalid dates ignored", off.size, 3);
+check("holiday + admin day drop from working days", workingDaysElapsed("2026-09-07", "2026-09-13", "2026-09-20", off), 3);
+check("weekend off-day changes nothing", workingDaysElapsed("2026-09-12", "2026-09-13", "2026-09-20", off), 0);
+check("only weekday off-days listed", offDaysIn("2026-09-07", "2026-09-13", off).map(h => h.name), ["Festival", "Offsite"]);
+
+const h = buildTeamSummary({
+  today: "2026-09-10", columns: wk, holidays: hol,
+  users: [{ id: "se", name: "Exec", role: "sales_exec" }],
+  callReports: [...calls("se", "2026-09-07", 5), ...calls("se", "2026-09-08", 2), ...calls("se", "2026-09-09", 5)],
+});
+const HS = h.rows[0];
+check("target to Thu with Tue+Thu off = 5 × 2", HS.callTarget, 10);
+check("holiday cell carries no target", HS.cellTargets["2026-09-08"], 0);
+check("calls on a holiday still count → 12 / 10 = 120%", [HS.total.callsMade, HS.callCompliancePct], [12, 120]);
+check("column off-days exposed for headers", h.columnOffDays["2026-09-10"].map(x => x.type), ["Admin day"]);
+check("period off-day list", h.offDays.length, 2);
+const mh = buildTeamSummary({ today: "2026-09-30", columns: teamColumns("month", "2026-09-14"), holidays: hol, users: [{ id: "se", name: "Exec", role: "sales_exec" }] });
+check("month target Sept 2026 = 5 × (22 − 2)", mh.rows[0].callTarget, 100);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
