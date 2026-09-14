@@ -17,7 +17,8 @@
     "test:windows": "node scripts/test-fiscal-windows.mjs",
     "test:email": "node scripts/test-email-agent.mjs",
     "smoke:email": "node scripts/smoke-email-agent.mjs",
-    "test:reagent": "node scripts/test-re-agent.mjs"
+    "test:reagent": "node scripts/test-re-agent.mjs",
+    "test:team": "node scripts/test-team-summary.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",

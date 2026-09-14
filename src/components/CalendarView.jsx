@@ -1,8 +1,10 @@
 import { useState, useMemo } from "react";
-import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap } from "lucide-react";
+import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap, X } from "lucide-react";
 import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_EVENT } from '../data/seed';
-import { fmt, uid, today, toLocalISODate, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { fmt, uid, today, toLocalISODate, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq, getScopedUserIds, isGlobalRole } from '../utils/helpers';
+import TeamSummary from './TeamSummary';
+import { teamColumns } from '../utils/teamSummary';
 import { Lock } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 
@@ -33,6 +35,14 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   const [scheduleForm,setScheduleForm]=useState({});
   // Source filter: show calls, activities, events, or everything together.
   const [sourceFilter,setSourceFilter]=useState("all");
+  // ── Team layer (admins + managers) ──
+  // Shown to anyone who actually has a team: global roles, or a manager
+  // whose scope includes people reporting to them. A rep with no reports
+  // never sees the toggle. Rows are the viewer's scope, nothing wider.
+  const scopeIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
+  const canSeeTeam = isGlobalRole(currentUser, orgUsers) || scopeIds.size > 1;
+  const [teamMode,setTeamMode]=useState("week");      // "week" | "month" buckets
+  const [ownerFilter,setOwnerFilter]=useState("");    // set by clicking a name in Team view
 
   const year=viewDate.getFullYear(), month=viewDate.getMonth();
   const monthName=viewDate.toLocaleString("default",{month:"long",year:"numeric"});
@@ -117,18 +127,23 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   // Apply the Calls / Activities / Events source filter. "all" = everything;
   // "scheduledCall" = pending call items only (planned call activities +
   // pending future call reports), regardless of source.
-  const visibleItems = useMemo(
-    () => sourceFilter === "all" ? allItems
+  const visibleItems = useMemo(() => {
+    const bySource = sourceFilter === "all" ? allItems
       : sourceFilter === "scheduledCall" ? allItems.filter(e => e._scheduledCall)
-      : allItems.filter(e => e._source === sourceFilter),
-    [allItems, sourceFilter]
-  );
+      : allItems.filter(e => e._source === sourceFilter);
+    return ownerFilter ? bySource.filter(e => e.owner === ownerFilter) : bySource;
+  }, [allItems, sourceFilter, ownerFilter]);
+
+  const teamUsers = useMemo(() => (orgUsers || [])
+    .filter(u => u.active !== false && u.status !== "Inactive" && u.role !== "viewer" && scopeIds.has(u.id)),
+    [orgUsers, scopeIds]);
+  const teamCols = useMemo(() => teamColumns(teamMode, toLocalISODate(viewDate)), [teamMode, viewDate]);
 
   const itemsOn=(d)=>visibleItems.filter(e=>e.date===dateStr(d));
 
   const nav=(dir)=>{
     const d=new Date(viewDate);
-    if(view==="month") d.setMonth(d.getMonth()+dir);
+    if(view==="month"||(view==="team"&&teamMode==="month")) d.setMonth(d.getMonth()+dir);
     else d.setDate(d.getDate()+dir*7);
     setViewDate(d);
   };
@@ -261,7 +276,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         </div>
         <div className="pg-actions">
           {/* Source filter — show calls, activities, scheduled events, or all */}
-          <select value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)}
+          {view!=="team"&&<select value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)}
             title="Choose which items appear on the calendar"
             style={{fontSize:12,fontWeight:600,padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"var(--surface)",color:"var(--text2)",cursor:"pointer"}}>
             <option value="all">Both — Calls + Activities</option>
@@ -269,11 +284,12 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             <option value="call">Calls only</option>
             <option value="activity">Activities only</option>
             <option value="event">Events only</option>
-          </select>
+          </select>}
           <div style={{display:"flex",gap:4,background:"var(--s2)",border:"1px solid var(--border)",borderRadius:8,padding:3}}>
             <button className={`btn btn-xs ${view==="week"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("week")}>Week</button>
             <button className={`btn btn-xs ${view==="month"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("month")}>Month</button>
             <button className={`btn btn-xs ${view==="list"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("list")}>List</button>
+            {canSeeTeam&&<button className={`btn btn-xs ${view==="team"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("team")} title="Summary of calls and activities per team member">Team</button>}
           </div>
           <button className="btn btn-sec" onClick={()=>openScheduleCall()}><Phone size={14}/>Schedule Call</button>
           <button className="btn btn-primary" onClick={()=>openAdd()}><Plus size={14}/>New Event</button>
@@ -283,17 +299,38 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
       {/* Nav bar + colour legend */}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
         <button className="icon-btn" onClick={()=>nav(-1)}><ChevronLeft size={18}/></button>
-        <div style={{fontSize:16,fontWeight:700,minWidth:220,textAlign:"center"}}>{view==="month"?monthName:weekLabel}</div>
+        <div style={{fontSize:16,fontWeight:700,minWidth:220,textAlign:"center"}}>{view==="month"||(view==="team"&&teamMode==="month")?monthName:weekLabel}</div>
         <button className="icon-btn" onClick={()=>nav(1)}><ChevronRight size={18}/></button>
         <button className="btn btn-sec btn-sm" onClick={()=>setViewDate(new Date(today))}>Today</button>
-        <div style={{marginLeft:"auto",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+        {view==="team"&&(
+          <div style={{display:"flex",gap:4,background:"var(--s2)",border:"1px solid var(--border)",borderRadius:8,padding:3}}>
+            <button className={`btn btn-xs ${teamMode==="week"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setTeamMode("week")}>By day</button>
+            <button className={`btn btn-xs ${teamMode==="month"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setTeamMode("month")}>By week</button>
+          </div>
+        )}
+        {ownerFilter&&view!=="team"&&(
+          <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,padding:"4px 6px 4px 10px",borderRadius:14,background:"var(--brand-bg)",color:"var(--brand)"}}>
+            Showing: {teamMap[ownerFilter]?.name||"member"}
+            <button type="button" onClick={()=>setOwnerFilter("")} aria-label="Show everyone" style={{display:"inline-flex",background:"none",border:0,cursor:"pointer",color:"var(--brand)",padding:0}}><X size={13}/></button>
+          </span>
+        )}
+        {view!=="team"&&<div style={{marginLeft:"auto",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
           {[["Scheduled Call",SCHEDULED_CALL_COL],["Logged Call","var(--brand)"],["Activity","var(--purple)"],["Event","var(--blue)"]].map(([label,c])=>(
             <span key={label} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,color:"var(--text3)",fontWeight:600}}>
               <span style={{width:9,height:9,borderRadius:"50%",background:c,display:"inline-block"}}/>{label}
             </span>
           ))}
-        </div>
+        </div>}
       </div>
+
+      {/* TEAM VIEW — manager summary layer */}
+      {view==="team"&&canSeeTeam&&(
+        <TeamSummary
+          activities={activities} callReports={callReports} events={events}
+          users={teamUsers} columns={teamCols} today={today}
+          onPickUser={(id)=>{ setOwnerFilter(id); setView("week"); }}
+        />
+      )}
 
       {/* WEEK VIEW */}
       {view==="week"&&(
