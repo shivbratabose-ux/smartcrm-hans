@@ -11,6 +11,7 @@ import {
   SLA_HOURS, TICKET_TYPES
 } from "../data/constants";
 import { today, fmt, isOverdue, getScopedUserIds, isGlobalRole } from "../utils/helpers";
+import { periodOf } from "../utils/fiscal";
 import { PageTip } from "./shared";
 import {
   TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle, Clock,
@@ -356,6 +357,32 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     accounts:new Set(accounts.filter(a=>a.products?.includes(p.id)).map(a=>a.id)).size
   })).filter(p=>p.arr+p.pipeline+p.won+p.target>0),[accounts,ownerOpps,targetsInScope]);
 
+  // Fiscal target periods covered by the selected window (spec: targets are
+  // quarterly). Was hardcoded to "2026-Q1", so every target number and
+  // Target% on this page was frozen to one quarter and never moved when the
+  // period filter changed — the same class of bug as the dashboard charts.
+  // Null window ("All Time") means every period the org has targets for.
+  const targetPeriods = useMemo(()=>{
+    const all = [...new Set((targets||[]).map(t=>t.period).filter(Boolean))];
+    if(!periodWindow) return new Set(all);
+    const keys = new Set();
+    const d = new Date(periodWindow.start);
+    const end = new Date(periodWindow.end);
+    // Walk month by month so a window spanning quarters collects them all.
+    while(d <= end){
+      keys.add(periodOf(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-15`));
+      d.setMonth(d.getMonth()+1);
+    }
+    return keys;
+  },[periodWindow,targets]);
+  const sumTargets = (userId)=>{
+    const rows = (targets||[]).filter(t=>t.userId===userId && targetPeriods.has(t.period));
+    return {
+      targetVal: rows.reduce((s,t)=>s+(Number(t.targetValue)||0),0),
+      achievedVal: rows.reduce((s,t)=>s+(Number(t.achievedValue)||0),0),
+    };
+  };
+
   // ── Team Performance ──
   // Use orgUsers (live) instead of the static TEAM constant so dynamically added users appear.
   // Team Performance rows follow the team filter too, so picking a manager
@@ -370,9 +397,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     const userCalls = wCalls.filter(r=>r.marketingPerson===u.id);
     // leads use assignedTo, not owner
     const userLeads = wLeads.filter(l=>l.assignedTo===u.id);
-    const userTargets = (targets||[]).filter(t=>t.userId===u.id&&t.period==="2026-Q1");
-    const targetVal = userTargets.reduce((s,t)=>s+t.targetValue,0);
-    const achievedVal = userTargets.reduce((s,t)=>s+t.achievedValue,0);
+    const { targetVal, achievedVal } = sumTargets(u.id);
     const pipelineVal = active.reduce((s,o)=>s+o.value,0);
     const wonVal = won.reduce((s,o)=>s+o.value,0);
     const wr = pct(won.length, won.length+lost.length);
@@ -473,14 +498,12 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
 
     // Target vs achievement
     const targetVsAchieved = _scopedTeamSrc.map(u=>{
-      const ut = (targets||[]).filter(t=>t.userId===u.id&&t.period==="2026-Q1");
-      const target = ut.reduce((s,t)=>s+t.targetValue,0);
-      const achieved = ut.reduce((s,t)=>s+t.achievedValue,0);
+      const { targetVal: target, achievedVal: achieved } = sumTargets(u.id);
       return {name:u.name.split(" ")[0],target,achieved,gap:target-achieved};
     }).filter(d=>d.target>0);
 
     return {weighted,bestCase,likelyCase,committed,months,targetVsAchieved};
-  },[filteredOpps,targets,_scopedTeamSrc]);
+  },[filteredOpps,targets,_scopedTeamSrc,targetPeriods]);
 
   // ── Activity Analytics ──
   const actData = useMemo(()=>{
@@ -1178,7 +1201,14 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
         <div>
           {/* Scorecards */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,marginBottom:20}}>
-            {teamPerf.slice(0,6).map(u=>(
+            {/* Top six by contribution — won value, then pipeline, then
+                activity. Previously an unsorted slice(0,6), so the cards
+                showed whoever happened to come first in the user list
+                while the leaderboard below ranked properly: the best
+                performer could be missing from the cards entirely. */}
+            {[...teamPerf].sort((a,b)=>
+              (b.wonVal-a.wonVal) || (b.pipelineVal-a.pipelineVal) || (b.actScore-a.actScore)
+            ).slice(0,6).map(u=>(
               <div key={u.id} style={{background:"#fff",borderRadius:12,padding:"14px 16px",border:"1px solid #E2E8F0"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
