@@ -1,6 +1,6 @@
 // Verifies the Calendar's Team summary logic — the same module the
 // Team view renders. Run: node scripts/test-team-summary.mjs
-import { buildTeamSummary, teamColumns, callReportState } from "../src/utils/teamSummary.js";
+import { buildTeamSummary, teamColumns, callReportState, workingDaysElapsed, hasCallTarget } from "../src/utils/teamSummary.js";
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -73,6 +73,39 @@ check("past Rescheduled = overdue", callReportState("Rescheduled", "2026-09-01",
 check("today Rescheduled = pending", callReportState("Rescheduled", T, T), "pending");
 check("future-dated any outcome = pending", callReportState("Completed", "2026-09-20", T), "pending");
 check("blank outcome in the past = made (a logged call)", callReportState("", "2026-09-01", T), "made");
+
+console.log("— call target compliance (5 calls / working day) —");
+check("Mon–Fri week, today Thu → 4 working days", workingDaysElapsed("2026-09-07", "2026-09-13", "2026-09-10"), 4);
+check("weekend days never count", workingDaysElapsed("2026-09-12", "2026-09-13", "2026-09-30"), 0);
+check("future bucket → 0", workingDaysElapsed("2026-09-14", "2026-09-18", "2026-09-10"), 0);
+check("full past week → 5", workingDaysElapsed("2026-09-07", "2026-09-13", "2026-09-20"), 5);
+check("month Sept 2026 to 30th → 22", workingDaysElapsed("2026-09-01", "2026-09-30", "2026-10-05"), 22);
+check("target roles", ["sales_exec", "bd_lead", "country_mgr", "line_mgr"].every(hasCallTarget), true);
+check("non-target roles", ["support", "tech_lead", "admin", "md", "viewer", undefined].some(hasCallTarget), false);
+
+const calls = (who, date, n) => Array.from({ length: n }, () => ({ marketingPerson: who, callDate: date, outcome: "No Answer" }));
+const c = buildTeamSummary({
+  today: "2026-09-10", columns: wk,
+  users: [
+    { id: "se", name: "Exec", role: "sales_exec" },
+    { id: "lm", name: "Line", role: "line_mgr" },
+    { id: "sp", name: "Support", role: "support" },
+  ],
+  callReports: [
+    ...calls("se", "2026-09-07", 5), ...calls("se", "2026-09-08", 5), ...calls("se", "2026-09-09", 6), ...calls("se", "2026-09-10", 4),
+    ...calls("lm", "2026-09-07", 3), ...calls("lm", "2026-09-09", 5),
+    ...calls("sp", "2026-09-08", 9),
+    ...calls("se", "2026-09-11", 5).map(r => ({ ...r, outcome: "Rescheduled" })), // future plan, not a call made
+  ],
+});
+const SE = c.rows.find(r => r.user.id === "se"), LM = c.rows.find(r => r.user.id === "lm"), SP = c.rows.find(r => r.user.id === "sp");
+check("exec target to date = 5 × 4", SE.callTarget, 20);
+check("exec 20 calls → 100%", SE.callCompliancePct, 100);
+check("Saturday cell carries no target", SE.cellTargets["2026-09-12"], 0);
+check("future Friday cell carries no target", SE.cellTargets["2026-09-11"], 0);
+check("line manager 8 / 20 → 40%", [LM.callTarget, LM.callCompliancePct], [20, 40]);
+check("support has no target, no compliance", [SP.targeted, SP.callTarget, SP.callCompliancePct], [false, 0, null]);
+check("team compliance excludes non-target roles", c.compliance, { target: 40, calls: 28, eligible: 2, onTarget: 1, pct: 70 });
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

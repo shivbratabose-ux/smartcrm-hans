@@ -7,14 +7,17 @@
 // live in utils/teamSummary.js (tested). Clicking a name opens the week
 // calendar filtered to that person.
 import { useMemo } from "react";
-import { Phone, PhoneCall, Users, CheckCircle2, Clock, AlertTriangle, UserX } from "lucide-react";
-import { buildTeamSummary } from "../utils/teamSummary";
+import { Phone, PhoneCall, Users, Target, Clock, AlertTriangle, UserX } from "lucide-react";
+import { buildTeamSummary, CALL_TARGET } from "../utils/teamSummary";
 
 const heat = (n, max) => {
   if (!n) return "transparent";
   const a = 0.12 + 0.55 * Math.min(1, n / Math.max(1, max));
   return `rgba(27,107,90,${a.toFixed(2)})`;
 };
+
+// Compliance colour: on target green, within 80% amber, below that red.
+const complianceTone = (pct) => pct == null ? "var(--text3)" : pct >= 100 ? "#15803D" : pct >= 80 ? "#B45309" : "var(--red)";
 
 const cellTitle = (c) =>
   `${c.callsMade} call${c.callsMade === 1 ? "" : "s"} (${c.connected} connected) · ${c.meetings} meeting${c.meetings === 1 ? "" : "s"} · ${c.otherDone} other · ${c.pending} pending · ${c.overdue} overdue`;
@@ -51,6 +54,12 @@ export default function TeamSummary({ activities, callReports, events, users, co
       <div style={{ display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
         <Kpi icon={<Phone size={12} />} label="Calls made" value={s.totals.callsMade}
           sub={`${s.totals.connected} connected · ${connectRate}% connect rate`} />
+        <Kpi icon={<Target size={12} />} label="On call target"
+          value={s.compliance.eligible ? `${s.compliance.onTarget}/${s.compliance.eligible}` : "—"}
+          sub={s.compliance.eligible
+            ? `${s.compliance.calls} of ${s.compliance.target} target calls · ${s.compliance.pct}%`
+            : `no working days yet · ${CALL_TARGET.perDay}/day target`}
+          tone={s.compliance.eligible ? complianceTone(s.compliance.pct) : undefined} />
         <Kpi icon={<Users size={12} />} label="Meetings" value={s.totals.meetings} sub={`${s.totals.otherDone} other activities done`} />
         <Kpi icon={<Clock size={12} />} label="Pending" value={s.totals.pending} sub="planned, not yet due" />
         <Kpi icon={<AlertTriangle size={12} />} label="Overdue" value={s.totals.overdue}
@@ -73,12 +82,13 @@ export default function TeamSummary({ activities, callReports, events, users, co
               <th style={{ ...th, textAlign: "right" }}>Other</th>
               <th style={{ ...th, textAlign: "right" }}>Pending</th>
               <th style={{ ...th, textAlign: "right" }}>Overdue</th>
-              <th style={{ ...th, textAlign: "right" }}><CheckCircle2 size={11} style={{ verticalAlign: "-1px" }} /> Done %</th>
+              <th style={{ ...th, textAlign: "right" }} title={`${CALL_TARGET.perDay} calls per working day (Mon–Fri) to date`}>Call target</th>
+              <th style={{ ...th, textAlign: "right" }}><Target size={11} style={{ verticalAlign: "-1px" }} /> Compliance</th>
             </tr>
           </thead>
           <tbody>
             {s.rows.length === 0 && (
-              <tr><td colSpan={columns.length + 8} style={{ ...td, textAlign: "center", color: "var(--text3)", padding: 24 }}>No team members in your scope.</td></tr>
+              <tr><td colSpan={columns.length + 9} style={{ ...td, textAlign: "center", color: "var(--text3)", padding: 24 }}>No team members in your scope.</td></tr>
             )}
             {s.rows.map(r => (
               <tr key={r.user.id}>
@@ -99,10 +109,18 @@ export default function TeamSummary({ activities, callReports, events, users, co
                 {columns.map(c => {
                   const cell = r.cells[c.key];
                   const done = s.doneOf(cell);
+                  const tgt = r.cellTargets[c.key];
+                  // Only a bucket that has fully passed can be "short"; today is still in play.
+                  const short = tgt > 0 && cell.callsMade < tgt && c.to < today;
                   return (
                     <td key={c.key} title={cellTitle(cell)}
                       style={{ ...td, textAlign: "center", background: heat(done, maxCell), color: done / Math.max(1, maxCell) > 0.6 ? "#fff" : "var(--text1)" }}>
                       <span style={{ ...num, fontWeight: 700 }}>{done || <span style={{ color: "var(--text3)", fontWeight: 400 }}>—</span>}</span>
+                      {tgt > 0 && (
+                        <span style={{ display: "block", fontSize: 9.5, fontWeight: short ? 700 : 500, color: short ? "var(--red)" : cell.callsMade >= tgt ? "#15803D" : "var(--text3)" }}>
+                          {cell.callsMade}/{tgt} calls
+                        </span>
+                      )}
                       {cell.overdue > 0 && <span style={{ display: "block", fontSize: 9.5, color: "var(--red)", fontWeight: 700 }}>{cell.overdue} overdue</span>}
                     </td>
                   );
@@ -113,8 +131,12 @@ export default function TeamSummary({ activities, callReports, events, users, co
                 <td style={{ ...td, ...num, textAlign: "right" }}>{r.total.otherDone}</td>
                 <td style={{ ...td, ...num, textAlign: "right", color: "var(--text3)" }}>{r.total.pending}</td>
                 <td style={{ ...td, ...num, textAlign: "right", color: r.total.overdue ? "var(--red)" : "var(--text3)", fontWeight: r.total.overdue ? 700 : 400 }}>{r.total.overdue}</td>
-                <td style={{ ...td, ...num, textAlign: "right", fontWeight: 700, color: r.completionPct == null ? "var(--text3)" : r.completionPct >= 80 ? "#15803D" : r.completionPct >= 50 ? "#B45309" : "var(--red)" }}>
-                  {r.completionPct == null ? "—" : `${r.completionPct}%`}
+                <td style={{ ...td, ...num, textAlign: "right", color: "var(--text2)" }}
+                  title={r.targeted ? `${r.total.callsMade} calls made of ${r.callTarget} due so far` : "No call target for this role"}>
+                  {r.targeted ? `${r.total.callsMade} / ${r.callTarget}` : "—"}
+                </td>
+                <td style={{ ...td, ...num, textAlign: "right", fontWeight: 700, color: complianceTone(r.callCompliancePct) }}>
+                  {r.callCompliancePct == null ? "—" : `${r.callCompliancePct}%`}
                 </td>
               </tr>
             ))}
@@ -130,7 +152,8 @@ export default function TeamSummary({ activities, callReports, events, users, co
                 <td style={{ ...td, ...num, textAlign: "right" }}>{s.totals.otherDone}</td>
                 <td style={{ ...td, ...num, textAlign: "right" }}>{s.totals.pending}</td>
                 <td style={{ ...td, ...num, textAlign: "right", color: s.totals.overdue ? "var(--red)" : undefined }}>{s.totals.overdue}</td>
-                <td style={{ ...td, textAlign: "right" }} />
+                <td style={{ ...td, ...num, textAlign: "right" }}>{s.compliance.eligible ? `${s.compliance.calls} / ${s.compliance.target}` : "—"}</td>
+                <td style={{ ...td, ...num, textAlign: "right", color: complianceTone(s.compliance.pct) }}>{s.compliance.pct == null ? "—" : `${s.compliance.pct}%`}</td>
               </tr>
             </tfoot>
           )}
@@ -138,6 +161,7 @@ export default function TeamSummary({ activities, callReports, events, users, co
       </div>
       <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8 }}>
         Cells show completed work (calls attempted + meetings + other activities). Hover a cell for the breakdown; click a name to open that person's calendar. A no-answer call counts as a call made, not as connected.
+        {" "}Call target: {CALL_TARGET.perDay} calls per working day (Mon–Fri) for Sales Executives, BD Leads, Country Managers and Line Managers, counted up to today — compliance = calls made ÷ target to date. Holidays are not excluded.
       </div>
     </div>
   );
