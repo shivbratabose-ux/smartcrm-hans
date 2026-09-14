@@ -28,7 +28,8 @@ export const MEETING_TYPES = new Set(["Meeting", "Demo", "Site Visit", "Presenta
 // roles (support, tech, finance, product, leadership) carry no target.
 // Holidays and Admin days (Masters → Activity → Holidays & Admin Days,
 // org-wide) are not working days: they carry no target, but calls made
-// on them still count.
+// on them still count. A person's own leave (see LEAVE_TYPES) takes that
+// day — or half of it — off their target the same way.
 export const CALL_TARGET = {
   perDay: 5,
   workDays: new Set([1, 2, 3, 4, 5]),           // Date#getDay(): Mon..Fri
@@ -60,20 +61,61 @@ export function offDaysIn(from, to, offDays = new Map()) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+// Every date in [from, to] as ISO strings (local calendar, DST-safe).
+function eachDate(from, to) {
+  if (!from || !to || from > to) return [];
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ey, em, ed] = to.split("-").map(Number);
+  const out = [];
+  for (const d = new Date(fy, fm - 1, fd), last = new Date(ey, em - 1, ed); d <= last; d.setDate(d.getDate() + 1)) out.push(isoOf(d));
+  return out;
+}
+const isWorkDay = (iso, offDays) => CALL_TARGET.workDays.has(new Date(iso + "T00:00:00").getDay()) && !offDays.has(iso);
+
 // Working days in [from, to] that have started (<= today), inclusive,
 // skipping weekends and any date in offDays (a Map or Set of ISO dates).
-export function workingDaysElapsed(from, to, today, offDays = new Map()) {
+// `leave` (Map date → 1 | 0.5) takes that share of a day off, so the
+// result can be fractional (a half-day leave counts as half a day).
+export function workingDaysElapsed(from, to, today, offDays = new Map(), leave = new Map()) {
   const end = to < today ? to : today;
-  if (!from || !end || from > end) return 0;
-  const [fy, fm, fd] = from.split("-").map(Number);
-  const [ey, em, ed] = end.split("-").map(Number);
-  const d = new Date(fy, fm - 1, fd), last = new Date(ey, em - 1, ed);
-  let n = 0;
-  for (; d <= last; d.setDate(d.getDate() + 1)) {
-    if (CALL_TARGET.workDays.has(d.getDay()) && !offDays.has(isoOf(d))) n++;
-  }
-  return n;
+  return eachDate(from, end).reduce((n, iso) => isWorkDay(iso, offDays) ? n + 1 - Math.min(1, leave.get(iso) || 0) : n, 0);
 }
+
+// ── Individual leave ────────────────────────────────────────────────
+// Stored as calendar events, one per day, owned by the person on leave:
+// type "Leave" (full day) or "Half-day leave". Cancelled or deleted ones
+// are ignored. Leave is never counted as work, pending or overdue.
+export const LEAVE_TYPES = { "Leave": 1, "Half-day leave": 0.5 };
+
+export function isLeaveEvent(e) {
+  return !!e && !e.isDeleted && e.status !== "Cancelled" && Object.prototype.hasOwnProperty.call(LEAVE_TYPES, e.type);
+}
+
+// events → Map(owner → Map(date → share of the day on leave, max 1)).
+export function leaveByUser(events = []) {
+  const m = new Map();
+  for (const e of events) {
+    if (!isLeaveEvent(e) || !e.date) continue;
+    if (!m.has(e.owner)) m.set(e.owner, new Map());
+    const days = m.get(e.owner);
+    days.set(e.date, Math.min(1, (days.get(e.date) || 0) + LEAVE_TYPES[e.type]));
+  }
+  return m;
+}
+
+// Leave days in [from, to] that would otherwise be working days.
+export function leaveDaysIn(from, to, leave = new Map(), offDays = new Map()) {
+  return eachDate(from, to).reduce((n, iso) => isWorkDay(iso, offDays) ? n + Math.min(1, leave.get(iso) || 0) : n, 0);
+}
+
+// Dates a new leave request should create entries for: working days in
+// [from, to] (weekends, holidays and days already on leave skipped).
+export function leaveDatesToCreate(from, to, offDays = new Map(), existing = new Map()) {
+  return eachDate(from, to).filter(iso => isWorkDay(iso, offDays) && !existing.has(iso));
+}
+
+// 22.5 → "22.5", 20 → "20"
+export const fmtDays = (n) => Number.isInteger(n) ? String(n) : n.toFixed(1);
 
 // The one rule for a call report's state, shared by the Team view and the
 // Calendar header / list so they can never disagree again. A call with an
@@ -124,6 +166,7 @@ const add = (a, b) => { for (const k of Object.keys(a)) a[k] += b[k]; };
  */
 export function buildTeamSummary({ activities = [], callReports = [], events = [], users = [], columns = [], today, holidays = [] }) {
   const offDays = offDayMap(holidays);
+  const leave = leaveByUser(events);
   const from = columns.length ? columns[0].from : "";
   const to = columns.length ? columns[columns.length - 1].to : "";
   const userIds = new Set(users.map(u => u.id));
@@ -133,7 +176,7 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
       .map(a => ({ kind: "activity", owner: a.owner, date: a.date, type: a.type, status: a.status })),
     ...callReports.filter(r => !r.isDeleted && r.callDate)
       .map(r => ({ kind: "call", owner: r.marketingPerson, date: r.callDate, outcome: r.outcome })),
-    ...events.filter(e => !e.isDeleted && e.date)
+    ...events.filter(e => !e.isDeleted && e.date && !Object.prototype.hasOwnProperty.call(LEAVE_TYPES, e.type))
       .map(e => ({ kind: "event", owner: e.owner, date: e.date, type: e.type, status: e.status === "Completed" ? "Completed" : e.status === "Cancelled" ? "Cancelled" : "Planned" })),
   ].filter(i => userIds.has(i.owner) && i.date >= from && i.date <= to);
 
@@ -158,20 +201,25 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
 
   const done = (x) => x.callsMade + x.meetings + x.otherDone;
   const pctOf = (made, target) => target > 0 ? Math.round(made / target * 100) : null;
-  let teamTarget = 0, teamTargetCalls = 0, eligible = 0, onTarget = 0;
+  let teamTarget = 0, teamTargetCalls = 0, eligible = 0, onTarget = 0, teamLeaveDays = 0;
   const rows = [...byUser.values()].map(r => {
     const targeted = hasCallTarget(r.user.role);
+    const myLeave = leave.get(r.user.id) || new Map();
     const cellTargets = Object.fromEntries(columns.map(col =>
-      [col.key, targeted ? CALL_TARGET.perDay * workingDaysElapsed(col.from, col.to, today, offDays) : 0]));
+      [col.key, targeted ? CALL_TARGET.perDay * workingDaysElapsed(col.from, col.to, today, offDays, myLeave) : 0]));
+    // Leave per column counts the whole bucket (planned leave shows too).
+    const cellLeave = Object.fromEntries(columns.map(col => [col.key, leaveDaysIn(col.from, col.to, myLeave, offDays)]));
+    const leaveDays = Object.values(cellLeave).reduce((a, b) => a + b, 0);
     const callTarget = Object.values(cellTargets).reduce((a, b) => a + b, 0);
     const callCompliancePct = targeted ? pctOf(r.total.callsMade, callTarget) : null;
+    if (targeted) teamLeaveDays += leaveDays;
     if (targeted && callTarget > 0) {
       eligible++;
       teamTarget += callTarget;
       teamTargetCalls += r.total.callsMade;
       if (r.total.callsMade >= callTarget) onTarget++;
     }
-    return { ...r, targeted, cellTargets, callTarget, callCompliancePct };
+    return { ...r, targeted, cellTargets, cellLeave, leaveDays, callTarget, callCompliancePct };
   }).map(r => ({
     ...r,
     done: done(r.total),
@@ -188,6 +236,7 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
     compliance: {
       target: teamTarget, calls: teamTargetCalls, eligible, onTarget,
       pct: pctOf(teamTargetCalls, teamTarget),
+      leaveDays: teamLeaveDays,
     },
   };
 }

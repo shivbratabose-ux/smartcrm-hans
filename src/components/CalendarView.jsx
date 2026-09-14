@@ -1,15 +1,15 @@
 import { useState, useMemo } from "react";
-import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap, X } from "lucide-react";
+import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap, X, CalendarOff } from "lucide-react";
 import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_EVENT } from '../data/seed';
 import { fmt, uid, today, toLocalISODate, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq, getScopedUserIds, isGlobalRole } from '../utils/helpers';
 import TeamSummary from './TeamSummary';
-import { teamColumns, callReportState } from '../utils/teamSummary';
+import { teamColumns, callReportState, isLeaveEvent, LEAVE_TYPES, leaveByUser, leaveDatesToCreate, offDayMap } from '../utils/teamSummary';
 import { Lock } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 
-const TYPE_COL={"Call":"var(--brand)","Meeting":"var(--purple)","Demo":"var(--orange)","Follow-up":"var(--blue)","Site Visit":"var(--amber)","Presentation":"var(--teal)","Training":"var(--green)","Review":"#8B5CF6"};
-const TYPE_ICON={"Call":<Phone size={12}/>,"Meeting":<Users size={12}/>,"Demo":<Zap size={12}/>,"Follow-up":<Clock size={12}/>,"Site Visit":<MapPin size={12}/>,"Presentation":<Video size={12}/>,"Training":<Calendar size={12}/>,"Review":<Check size={12}/>};
+const TYPE_COL={"Call":"var(--brand)","Meeting":"var(--purple)","Demo":"var(--orange)","Follow-up":"var(--blue)","Site Visit":"var(--amber)","Presentation":"var(--teal)","Training":"var(--green)","Review":"#8B5CF6","Leave":"#B45309","Half-day leave":"#D97706"};
+const TYPE_ICON={"Call":<Phone size={12}/>,"Meeting":<Users size={12}/>,"Demo":<Zap size={12}/>,"Follow-up":<Clock size={12}/>,"Site Visit":<MapPin size={12}/>,"Presentation":<Video size={12}/>,"Training":<Calendar size={12}/>,"Review":<Check size={12}/>,"Leave":<CalendarOff size={12}/>,"Half-day leave":<CalendarOff size={12}/>};
 
 const STATUS_COL={"Scheduled":"#3B82F6","Completed":"#22C55E","Cancelled":"#94A3B8","Rescheduled":"#F59E0B","No Show":"#EF4444","Planned":"#6366F1"};
 
@@ -70,7 +70,8 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   // Unified list of all calendar items from all three sources
   const allItems = useMemo(() => {
     // Own calendar events
-    const evItems = events.map(e => ({ ...e, _source: "event" }));
+    // Leave entries are events too, flagged so they never read as pending work.
+    const evItems = events.map(e => ({ ...e, _source: "event", _leave: isLeaveEvent(e) }));
 
     // Activities → appear on their date. A planned Call activity (what the
     // "Schedule Call" button creates) is tagged as a scheduled call so it
@@ -155,12 +156,40 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   };
 
   const todayStats=useMemo(()=>{
-    const t=visibleItems.filter(e=>e.date===today);
+    const t=visibleItems.filter(e=>e.date===today&&!e._leave);
     return {total:t.length,scheduled:t.filter(e=>e.status==="Scheduled").length,completed:t.filter(e=>e.status==="Completed").length};
   },[visibleItems]);
 
-  const overdue=visibleItems.filter(e=>e.date<today&&e.status==="Scheduled").length;
-  const upcoming=visibleItems.filter(e=>e.date>=today&&e.status==="Scheduled").length;
+  const overdue=visibleItems.filter(e=>e.date<today&&e.status==="Scheduled"&&!e._leave).length;
+  const upcoming=visibleItems.filter(e=>e.date>=today&&e.status==="Scheduled"&&!e._leave).length;
+
+  // ── Individual leave ──
+  // One event per working day, owned by the person on leave. Anyone can
+  // mark their own; a manager/admin can mark it for people in their scope.
+  // Weekends, holidays and days already on leave are skipped.
+  const [leaveModal,setLeaveModal]=useState(null);   // {owner,from,to,type,reason}
+  const leavePeople = useMemo(() => {
+    const me = (orgUsers||[]).find(u=>u.id===currentUser);
+    const list = canSeeTeam ? teamUsers : [];
+    return me && !list.some(u=>u.id===me.id) ? [me, ...list] : list;
+  }, [orgUsers, currentUser, canSeeTeam, teamUsers]);
+  const leavePlan = useMemo(() => {
+    if (!leaveModal?.from || !leaveModal?.to || leaveModal.to < leaveModal.from) return null;
+    const existing = leaveByUser(events).get(leaveModal.owner) || new Map();
+    return leaveDatesToCreate(leaveModal.from, leaveModal.to, offDayMap(holidays), existing);
+  }, [leaveModal, events, holidays]);
+  const openLeave=()=>setLeaveModal({owner:currentUser,from:today,to:today,type:"Leave",reason:""});
+  const saveLeave=()=>{
+    if(!leavePlan?.length) return;
+    const reason=(leaveModal.reason||"").trim();
+    const title=leaveModal.type==="Leave"?"On leave":"Half-day leave";
+    setEvents(p=>[...p, ...leavePlan.map(date=>({
+      ...BLANK_EVENT, id:`ev${uid()}`, title, type:leaveModal.type, status:"Scheduled",
+      date, time:"09:00", endTime:leaveModal.type==="Leave"?"18:00":"13:00",
+      owner:leaveModal.owner, notes:reason,
+    }))]);
+    setLeaveModal(null);
+  };
 
   const openAdd=(date)=>{
     setForm({...BLANK_EVENT,id:`ev${uid()}`,date:date||today,owner:currentUser});
@@ -297,6 +326,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             <button className={`btn btn-xs ${view==="list"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("list")}>List</button>
             {canSeeTeam&&<button className={`btn btn-xs ${view==="team"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("team")} title="Summary of calls and activities per team member">Team</button>}
           </div>
+          <button className="btn btn-sec" onClick={openLeave} title="Mark a day or a range as leave — it comes off the call target"><CalendarOff size={14}/>Mark Leave</button>
           <button className="btn btn-sec" onClick={()=>openScheduleCall()}><Phone size={14}/>Schedule Call</button>
           <button className="btn btn-primary" onClick={()=>openAdd()}><Plus size={14}/>New Event</button>
         </div>
@@ -321,7 +351,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
           </span>
         )}
         {view!=="team"&&<div style={{marginLeft:"auto",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
-          {[["Scheduled Call",SCHEDULED_CALL_COL],["Logged Call","var(--brand)"],["Activity","var(--purple)"],["Event","var(--blue)"]].map(([label,c])=>(
+          {[["Scheduled Call",SCHEDULED_CALL_COL],["Logged Call","var(--brand)"],["Activity","var(--purple)"],["Event","var(--blue)"],["Leave",TYPE_COL.Leave]].map(([label,c])=>(
             <span key={label} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,color:"var(--text3)",fontWeight:600}}>
               <span style={{width:9,height:9,borderRadius:"50%",background:c,display:"inline-block"}}/>{label}
             </span>
@@ -401,7 +431,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             <tbody>{[...visibleItems].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(ev=>{
               const col=ev._scheduledCall?SCHEDULED_CALL_COL:(SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)");
               const acc=accounts.find(a=>a.id===ev.accountId);
-              const isOverdue=ev.date<today&&ev.status==="Scheduled";
+              const isOverdue=ev.date<today&&ev.status==="Scheduled"&&!ev._leave;
               return <tr key={ev._source+ev.id}>
                 <td style={{fontSize:12,color:isOverdue?"var(--red)":"var(--text2)",fontWeight:isOverdue?700:400}}>{fmt.short(ev.date)}</td>
                 <td style={{fontSize:12}}>{ev.time}{ev.endTime?`–${ev.endTime}`:""}</td>
@@ -413,7 +443,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
                 <td><UserPill uid={ev.owner}/></td>
                 <td style={{fontSize:11,color:"var(--text3)"}}>{ev.location?.substring(0,25)}</td>
                 <td><div style={{display:"flex",gap:4,alignItems:"center"}}>
-                  {ev.status==="Scheduled"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(ev)} title="Mark complete"><Check size={12}/></button>}
+                  {ev.status==="Scheduled"&&!ev._leave&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(ev)} title="Mark complete"><Check size={12}/></button>}
                   {ev._source==="event" ? (
                     canEditEvt(ev) ? (
                       <>
@@ -442,7 +472,8 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
           onClose={()=>setSelectedEvent(null)}
           footer={<>
             <button className="btn btn-sec btn-sm" onClick={()=>setSelectedEvent(null)}>Close</button>
-            {selectedEvent.status==="Scheduled"&&<button className="btn btn-green btn-sm" onClick={()=>{markComplete(selectedEvent);setSelectedEvent(null);}}>Mark Complete</button>}
+            {selectedEvent.status==="Scheduled"&&!selectedEvent._leave&&<button className="btn btn-green btn-sm" onClick={()=>{markComplete(selectedEvent);setSelectedEvent(null);}}>Mark Complete</button>}
+            {selectedEvent._leave&&selectedEvent.status!=="Cancelled"&&canEditEvt(selectedEvent)&&<button className="btn btn-sec btn-sm" onClick={()=>{setEvents(p=>p.map(e=>e.id===selectedEvent.id?{...e,status:"Cancelled"}:e));setSelectedEvent(null);}} title="Cancel this day's leave — the call target applies again">Cancel leave</button>}
             {selectedEvent._source==="event"&&<button className="btn btn-primary btn-sm" onClick={()=>{openEdit(selectedEvent);setSelectedEvent(null);}}><Edit2 size={13}/>Edit</button>}
           </>}>
           <div className="dp-grid">
@@ -482,12 +513,51 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         </Modal>
       )}
 
+      {/* Mark Leave */}
+      {leaveModal&&(
+        <Modal title="Mark leave" onClose={()=>setLeaveModal(null)}
+          footer={<>
+            <button className="btn btn-sec" onClick={()=>setLeaveModal(null)}>Cancel</button>
+            <button className="btn btn-primary" onClick={saveLeave} disabled={!leavePlan?.length}><Check size={14}/>Save leave</button>
+          </>}>
+          <div className="form-row">
+            <div className="form-group"><label>Person</label>
+              <select value={leaveModal.owner} onChange={e=>setLeaveModal(m=>({...m,owner:e.target.value}))} disabled={leavePeople.length<=1}>
+                {leavePeople.map(u=><option key={u.id} value={u.id}>{u.name}{u.id===currentUser?" (me)":""}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label>Type</label>
+              <select value={leaveModal.type} onChange={e=>setLeaveModal(m=>({...m,type:e.target.value}))}>
+                <option value="Leave">Full day</option>
+                <option value="Half-day leave">Half day</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>From</label>
+              <input type="date" value={leaveModal.from} onChange={e=>{const v=e.target.value;setLeaveModal(m=>({...m,from:v,to:m.to&&m.to>=v?m.to:v}));}}/>
+            </div>
+            <div className="form-group"><label>To</label>
+              <input type="date" value={leaveModal.to} min={leaveModal.from} onChange={e=>{const v=e.target.value;setLeaveModal(m=>({...m,to:v}));}}/>
+            </div>
+          </div>
+          <div className="form-group"><label>Reason (optional)</label>
+            <input value={leaveModal.reason} onChange={e=>{const v=e.target.value;setLeaveModal(m=>({...m,reason:v}));}} placeholder="e.g. Sick leave, personal, travel"/>
+          </div>
+          <div style={{fontSize:12,padding:"8px 12px",borderRadius:8,background:leavePlan?.length?"#FFFBEB":"var(--s2)",color:leavePlan?.length?"#92400E":"var(--text3)"}}>
+            {!leavePlan ? "Pick a valid date range."
+              : leavePlan.length===0 ? "Nothing to add — those dates are weekends, holidays or already marked as leave."
+              : <>Adds {leavePlan.length} {leaveModal.type==="Leave"?"day":"half-day"}{leavePlan.length===1?"":"s"} of leave ({leavePlan.map(d=>fmt.short(d)).join(", ")}). Each takes {leaveModal.type==="Leave"?"5 calls":"2.5 calls"} off the call target. Weekends, holidays and existing leave are skipped.</>}
+          </div>
+        </Modal>
+      )}
+
       {/* Add/Edit Modal */}
       {modal&&(
         <Modal title={modal.mode==="add"?"New Event":"Edit Event"} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_EVENT);}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});setForm(BLANK_EVENT);}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save</button></>}>
           <div className="form-row full"><div className="form-group"><label>Title *</label><input value={form.title} onChange={e=>{setForm(f=>({...f,title:e.target.value}));setFormErrors(e=>({...e,title:undefined}));}} placeholder="e.g. Colossal Avia – GTM Presentation" style={formErrors.title?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.title}/></div></div>
           <div className="form-row three">
-            <div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{EVENT_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+            <div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{[...new Set([...EVENT_TYPES, ...Object.keys(LEAVE_TYPES)])].map(t=><option key={t}>{t}</option>)}</select></div>
             <div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{EVENT_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
             <div className="form-group"><label>Owner</label>
               <TypeaheadSelect
