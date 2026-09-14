@@ -232,16 +232,6 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
   }, [fActivities, range]);
 
   // ─── Lead conversion funnel ───
-  // Counts leads CREATED in the selected period, matching the "New Leads"
-  // KPI above it. Previously all-time, so the funnel contradicted the tile.
-  const leadFunnel = useMemo(() => {
-    if (!fLeads || fLeads.length === 0) return [];
-    const stages = ["New", "MQL", "SQL", "SAL"];
-    return stages.map(s => ({
-      name: s,
-      count: fLeads.filter(l => l.stage === s || (s === "New" && !["MQL", "SQL", "SAL", "NA"].includes(l.stage))).length
-    }));
-  }, [fLeads]);
 
   // ─── Region performance ───
   const regionData = useMemo(() => {
