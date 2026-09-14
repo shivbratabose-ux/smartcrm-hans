@@ -13,7 +13,8 @@
 //
 // Mail provider — first one configured wins:
 //   1. Microsoft 365 via Graph (sends from a company mailbox)
-//        NOTIFY_FROM_MAILBOX       e.g. crm-notifications@hansinfomatic.com
+//        NOTIFY_FROM_MAILBOX       communication@hansinfomatic.com (shared
+//                                  with the Email Agent — see NOTIFY_HEADERS)
 //        NOTIFY_GRAPH_TENANT_ID    ┐ app registration with Mail.Send
 //        NOTIFY_GRAPH_CLIENT_ID    │ (application), ideally limited to that
 //        NOTIFY_GRAPH_CLIENT_SECRET┘ mailbox by ApplicationAccessPolicy.
@@ -48,7 +49,13 @@ function htmlToText(html: string) {
     .replace(/\n{3,}/g, "\n\n").trim();
 }
 
-type Mail = { to: { name: string; email: string }[]; subject: string; html: string; replyTo?: string };
+// The From mailbox (communication@) is also the Email Agent's capture
+// inbox. Ask Exchange/Outlook not to send out-of-office replies, and tag
+// the message so em-ingest recognises SmartCRM's own mail.
+const NOTIFY_HEADERS: Record<string, string> = { "X-Auto-Response-Suppress": "All", "X-SmartCRM-Notification": "leave" };
+const GRAPH_HEADERS = Object.entries(NOTIFY_HEADERS).map(([name, value]) => ({ name, value }));
+
+type Mail ={ to: { name: string; email: string }[]; subject: string; html: string; replyTo?: string };
 
 async function sendGraph(m: Mail): Promise<void> {
   const mailbox = env("NOTIFY_FROM_MAILBOX");
@@ -71,6 +78,7 @@ async function sendGraph(m: Mail): Promise<void> {
         body: { contentType: "HTML", content: m.html },
         toRecipients: m.to.map(r => ({ emailAddress: { address: r.email, name: r.name } })),
         ...(m.replyTo ? { replyTo: [{ emailAddress: { address: m.replyTo } }] } : {}),
+        internetMessageHeaders: GRAPH_HEADERS,
       },
       saveToSentItems: false,
     }),
@@ -89,6 +97,7 @@ async function sendResend(m: Mail): Promise<void> {
       from: `${env("EMAIL_FROM_NAME") || "SmartCRM"} <${env("EMAIL_FROM_ADDRESS")}>`,
       to: m.to.map(r => r.email), subject: m.subject, html: m.html, text: htmlToText(m.html),
       ...(m.replyTo ? { reply_to: m.replyTo } : {}),
+      headers: NOTIFY_HEADERS,
     }),
   });
   if (!res.ok) {

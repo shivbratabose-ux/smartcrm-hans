@@ -35,7 +35,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
   splitEmailBody, scanIdentifiers, decideMatch,
   filterAutoUpdates, summaryViolations, fingerprintEmail, mapGraphMessage,
-  splitConditionalUpdates, highImpactFromIntent,
+  splitConditionalUpdates, highImpactFromIntent, automatedReason,
 } from "./logic.mjs";
 
 const corsHeaders = {
@@ -97,6 +97,17 @@ async function processEmail(admin: any, cfg: any, env: Env, email: any) {
     auth_results: String(email.authenticationResults || "").slice(0, 300),
     attachment_omitted: !!email.hasAttachments,
   };
+
+  // 1b ── Auto-replies, bounces and SmartCRM's own notifications are not
+  // interactions (this mailbox also sends notifications). Skip before any
+  // lookup or AI; record only the reason code.
+  const automated = automatedReason(email);
+  if (automated) {
+    row.status = "automated";
+    await admin.from("em_processed").insert(row);
+    await audit(fp, "skipped_automated", { reason: automated });
+    return { ok: true, fingerprint: fp, status: "automated" };
+  }
 
   // 2 ── Verify the sender is an active CRM user (spec §1/§2.1).
   const fromAddr = String(email.fromAddress || "").trim().toLowerCase();
@@ -407,7 +418,7 @@ async function pollMailbox(admin: any, cfg: any, env: Env) {
     // Full fetch per message: internetMessageHeaders (auth-results) is only
     // available on single-message GETs. POLL_CAP bounds the extra calls.
     const mRes = await fetch(
-      `${GRAPH}/users/${box}/messages/${gid}?$select=id,internetMessageId,receivedDateTime,from,sender,toRecipients,ccRecipients,body,hasAttachments,internetMessageHeaders`,
+      `${GRAPH}/users/${box}/messages/${gid}?$select=id,internetMessageId,receivedDateTime,subject,from,sender,toRecipients,ccRecipients,body,hasAttachments,internetMessageHeaders`,
       { headers: gh });
     const msg = await mRes.json();
     let outcome: any;
