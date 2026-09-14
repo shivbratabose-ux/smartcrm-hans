@@ -83,19 +83,108 @@ export function workingDaysElapsed(from, to, today, offDays = new Map(), leave =
 
 // ── Individual leave ────────────────────────────────────────────────
 // Stored as calendar events, one per day, owned by the person on leave:
-// type "Leave" (full day) or "Half-day leave". Cancelled or deleted ones
-// are ignored. Leave is never counted as work, pending or overdue.
+// type "Leave" (full day) or "Half-day leave". Leave is never counted as
+// work, pending or overdue.
+//
+// Approval (event.status):
+//   "Pending approval"  requested by the person, awaiting their line manager
+//   "Approved"          counts — comes off the call target
+//   "Rejected"          does not count; the person can request again
+//   "Cancelled"         withdrawn; ignored
+//   anything else       (e.g. "Scheduled" on leave marked before approvals
+//                       existed) is treated as Approved
+// Only approved leave reduces the target. Days in one request share an id
+// prefix "lv_<requestId>_<date>" so they are approved or rejected together.
 export const LEAVE_TYPES = { "Leave": 1, "Half-day leave": 0.5 };
+export const LEAVE_STATUS = { pending: "Pending approval", approved: "Approved", rejected: "Rejected", cancelled: "Cancelled" };
 
+export const isLeaveType = (e) => !!e && Object.prototype.hasOwnProperty.call(LEAVE_TYPES, e.type);
+
+export function leaveState(e) {
+  if (!isLeaveType(e) || e.isDeleted || e.status === LEAVE_STATUS.cancelled) return "cancelled";
+  if (e.status === LEAVE_STATUS.pending) return "pending";
+  if (e.status === LEAVE_STATUS.rejected) return "rejected";
+  return "approved";
+}
+
+// Approved leave — the only kind that comes off the target.
 export function isLeaveEvent(e) {
-  return !!e && !e.isDeleted && e.status !== "Cancelled" && Object.prototype.hasOwnProperty.call(LEAVE_TYPES, e.type);
+  return leaveState(e) === "approved";
+}
+
+// Mirrors GLOBAL_ROLES in utils/helpers.jsx (kept import-free for node tests).
+const APPROVER_GLOBAL_ROLES = new Set(["admin", "md", "director", "vp_sales_mkt"]);
+const roleOf = (u) => String(u?.role || "").trim().toLowerCase();
+
+// Can `approverId` approve leave for `ownerId`? Their line manager, anyone
+// further up the solid reporting line (reportsTo), or a global role — never
+// the person themselves.
+export function canApproveLeave(approverId, ownerId, users = []) {
+  if (!approverId || !ownerId || approverId === ownerId) return false;
+  const byId = new Map(users.map(u => [u.id, u]));
+  if (APPROVER_GLOBAL_ROLES.has(roleOf(byId.get(approverId)))) return true;
+  const seen = new Set([ownerId]);
+  for (let mgr = byId.get(ownerId)?.reportsTo; mgr && !seen.has(mgr); mgr = byId.get(mgr)?.reportsTo) {
+    if (mgr === approverId) return true;
+    seen.add(mgr);
+  }
+  return false;
+}
+
+export function lineManagerOf(ownerId, users = []) {
+  const mgrId = users.find(u => u.id === ownerId)?.reportsTo;
+  return mgrId ? users.find(u => u.id === mgrId) || null : null;
+}
+
+// Status for newly marked leave: approved when a manager/admin marks it
+// for someone they can approve, or when the person holds a global role
+// (nobody above them); otherwise it waits for approval.
+export function initialLeaveStatus(creatorId, ownerId, users = []) {
+  if (canApproveLeave(creatorId, ownerId, users)) return LEAVE_STATUS.approved;
+  if (creatorId === ownerId && APPROVER_GLOBAL_ROLES.has(roleOf(users.find(u => u.id === ownerId)))) return LEAVE_STATUS.approved;
+  return LEAVE_STATUS.pending;
+}
+
+export const leaveRequestIdOf = (e) => (String(e?.id || "").match(/^lv_([A-Za-z0-9]+)_/) || [])[1] || String(e?.id || "");
+
+// Leave events → requests [{id, owner, type, state, dates[], days, reason, events[]}]
+// newest first. Days of one request normally share a state; if an approver
+// acted on them separately the request takes the most common state.
+export function groupLeaveRequests(events = []) {
+  const groups = new Map();
+  for (const e of events) {
+    if (!isLeaveType(e) || e.isDeleted || !e.date) continue;
+    const key = `${e.owner}|${leaveRequestIdOf(e)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+  return [...groups.values()].map(evs => {
+    evs.sort((a, b) => a.date.localeCompare(b.date));
+    const tally = {};
+    evs.forEach(e => { const s = leaveState(e); tally[s] = (tally[s] || 0) + 1; });
+    const state = Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0];
+    return {
+      id: leaveRequestIdOf(evs[0]), owner: evs[0].owner, type: evs[0].type, state,
+      dates: evs.map(e => e.date), from: evs[0].date, to: evs[evs.length - 1].date,
+      days: evs.reduce((n, e) => n + LEAVE_TYPES[e.type], 0),
+      reason: String(evs[0].notes || "").split("\n")[0], events: evs,
+    };
+  }).sort((a, b) => b.from.localeCompare(a.from));
+}
+
+// Pending requests this user can act on.
+export function pendingLeaveFor(approverId, events = [], users = []) {
+  return groupLeaveRequests(events).filter(r => r.state === "pending" && canApproveLeave(approverId, r.owner, users));
 }
 
 // events → Map(owner → Map(date → share of the day on leave, max 1)).
-export function leaveByUser(events = []) {
+// Approved leave by default; { includePending: true } also counts pending
+// requests (used to stop the same day being requested twice).
+export function leaveByUser(events = [], { includePending = false } = {}) {
   const m = new Map();
   for (const e of events) {
-    if (!isLeaveEvent(e) || !e.date) continue;
+    const st = leaveState(e);
+    if (!(st === "approved" || (includePending && st === "pending")) || !e.date) continue;
     if (!m.has(e.owner)) m.set(e.owner, new Map());
     const days = m.get(e.owner);
     days.set(e.date, Math.min(1, (days.get(e.date) || 0) + LEAVE_TYPES[e.type]));
@@ -167,6 +256,7 @@ const add = (a, b) => { for (const k of Object.keys(a)) a[k] += b[k]; };
 export function buildTeamSummary({ activities = [], callReports = [], events = [], users = [], columns = [], today, holidays = [] }) {
   const offDays = offDayMap(holidays);
   const leave = leaveByUser(events);
+  const pendingLeave = leaveByUser(events.filter(e => leaveState(e) === "pending"), { includePending: true });
   const from = columns.length ? columns[0].from : "";
   const to = columns.length ? columns[columns.length - 1].to : "";
   const userIds = new Set(users.map(u => u.id));
@@ -210,6 +300,10 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
     // Leave per column counts the whole bucket (planned leave shows too).
     const cellLeave = Object.fromEntries(columns.map(col => [col.key, leaveDaysIn(col.from, col.to, myLeave, offDays)]));
     const leaveDays = Object.values(cellLeave).reduce((a, b) => a + b, 0);
+    // Requested but not yet approved — shown, not deducted.
+    const myPending = pendingLeave.get(r.user.id) || new Map();
+    const cellPendingLeave = Object.fromEntries(columns.map(col => [col.key, leaveDaysIn(col.from, col.to, myPending, offDays)]));
+    const pendingLeaveDays = Object.values(cellPendingLeave).reduce((a, b) => a + b, 0);
     const callTarget = Object.values(cellTargets).reduce((a, b) => a + b, 0);
     const callCompliancePct = targeted ? pctOf(r.total.callsMade, callTarget) : null;
     if (targeted) teamLeaveDays += leaveDays;
@@ -219,7 +313,7 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
       teamTargetCalls += r.total.callsMade;
       if (r.total.callsMade >= callTarget) onTarget++;
     }
-    return { ...r, targeted, cellTargets, cellLeave, leaveDays, callTarget, callCompliancePct };
+    return { ...r, targeted, cellTargets, cellLeave, leaveDays, cellPendingLeave, pendingLeaveDays, callTarget, callCompliancePct };
   }).map(r => ({
     ...r,
     done: done(r.total),

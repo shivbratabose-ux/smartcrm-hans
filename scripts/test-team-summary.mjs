@@ -1,6 +1,7 @@
 // Verifies the Calendar's Team summary logic — the same module the
 // Team view renders. Run: node scripts/test-team-summary.mjs
-import { buildTeamSummary, teamColumns, callReportState, workingDaysElapsed, hasCallTarget, offDayMap, offDaysIn, leaveByUser, isLeaveEvent, leaveDaysIn, leaveDatesToCreate, fmtDays } from "../src/utils/teamSummary.js";
+import { buildTeamSummary, teamColumns, callReportState, workingDaysElapsed, hasCallTarget, offDayMap, offDaysIn, leaveByUser, isLeaveEvent, leaveDaysIn, leaveDatesToCreate, fmtDays,
+  canApproveLeave, initialLeaveStatus, lineManagerOf, leaveState, groupLeaveRequests, pendingLeaveFor } from "../src/utils/teamSummary.js";
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -171,6 +172,51 @@ check("leave is never pending / overdue / a meeting", [LS.total.pending, LS.tota
 check("on leave all week to date → no target, no compliance", [LF.callTarget, LF.callCompliancePct], [0, null]);
 check("team leave days", L.compliance.leaveDays, 1.5 + 1 + 4);
 check("fully-away member not eligible", L.compliance.eligible, 2);
+
+console.log("— leave approval —");
+const org = [
+  { id: "ad", name: "Admin", role: "admin" },
+  { id: "vp", name: "VP", role: "vp_sales_mkt" },
+  { id: "cm", name: "Country", role: "country_mgr" },
+  { id: "lm1", name: "LineMgr", role: "line_mgr", reportsTo: "cm" },
+  { id: "rep", name: "Rep", role: "sales_exec", reportsTo: "lm1" },
+  { id: "peer", name: "Peer", role: "sales_exec", reportsTo: "lm1" },
+  { id: "orph", name: "No manager", role: "sales_exec" },
+  { id: "loopA", role: "sales_exec", reportsTo: "loopB" }, { id: "loopB", role: "sales_exec", reportsTo: "loopA" },
+];
+check("line manager can approve", canApproveLeave("lm1", "rep", org), true);
+check("manager's manager can approve", canApproveLeave("cm", "rep", org), true);
+check("global role can approve", [canApproveLeave("ad", "rep", org), canApproveLeave("vp", "orph", org)], [true, true]);
+check("peer / self / report-of cannot approve", [canApproveLeave("peer", "rep", org), canApproveLeave("rep", "rep", org), canApproveLeave("rep", "lm1", org)], [false, false, false]);
+check("reporting loop terminates", canApproveLeave("ad2", "loopA", org), false);
+check("rep marking own leave → pending", initialLeaveStatus("rep", "rep", org), "Pending approval");
+check("line manager marking for report → approved", initialLeaveStatus("lm1", "rep", org), "Approved");
+check("line manager's own leave → pending (for country mgr)", initialLeaveStatus("lm1", "lm1", org), "Pending approval");
+check("admin's own leave → approved", initialLeaveStatus("ad", "ad", org), "Approved");
+check("lineManagerOf", [lineManagerOf("rep", org)?.id, lineManagerOf("orph", org)], ["lm1", null]);
+check("legacy Scheduled leave = approved", leaveState({ type: "Leave", status: "Scheduled" }), "approved");
+check("pending / rejected / cancelled states", ["Pending approval", "Rejected", "Cancelled"].map(s => leaveState({ type: "Leave", status: s })), ["pending", "rejected", "cancelled"]);
+
+const req = (rid, owner, dates, status, type = "Leave") => dates.map(d => ({ id: `lv_${rid}_${d}`, owner, date: d, type, status, notes: "Family function" }));
+const apprEvents = [
+  ...req("r1", "rep", ["2026-09-07", "2026-09-08"], "Pending approval"),
+  ...req("r2", "peer", ["2026-09-09"], "Rejected"),
+  ...req("r3", "rep", ["2026-09-10"], "Approved", "Half-day leave"),
+  ...req("r4", "orph", ["2026-09-11"], "Pending approval"),
+];
+const groups = groupLeaveRequests(apprEvents);
+const g1 = groups.find(g => g.id === "r1");
+check("request groups by id prefix", [g1.dates, g1.days, g1.state, g1.reason], [["2026-09-07", "2026-09-08"], 2, "pending", "Family function"]);
+check("groups sorted newest first", groups.map(g => g.id), ["r4", "r3", "r2", "r1"]);
+check("line manager sees their report's pending only", pendingLeaveFor("lm1", apprEvents, org).map(g => g.id), ["r1"]);
+check("admin sees all pending incl. no-manager rep", pendingLeaveFor("ad", apprEvents, org).map(g => g.id), ["r4", "r1"]);
+check("rep sees nothing to approve", pendingLeaveFor("rep", apprEvents, org).length, 0);
+check("only approved leave counts", [...leaveByUser(apprEvents).keys()], ["rep"]);
+check("includePending blocks re-requesting pending days", [...leaveByUser(apprEvents, { includePending: true }).get("rep").keys()].sort(), ["2026-09-07", "2026-09-08", "2026-09-10"]);
+
+const P = buildTeamSummary({ today: "2026-09-10", columns: wk, users: [{ id: "rep", name: "Rep", role: "sales_exec" }], events: apprEvents });
+check("pending leave shown, target not reduced", [P.rows[0].pendingLeaveDays, P.rows[0].cellPendingLeave["2026-09-07"], P.rows[0].leaveDays, P.rows[0].callTarget], [2, 1, 0.5, 17.5]);
+check("rejected leave neither counts nor shows as pending", buildTeamSummary({ today: "2026-09-10", columns: wk, users: [{ id: "peer", name: "P", role: "sales_exec" }], events: apprEvents }).rows[0].callTarget, 20);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

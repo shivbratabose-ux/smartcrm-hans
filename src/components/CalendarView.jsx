@@ -4,7 +4,9 @@ import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES, CALL_OUTCOMES } 
 import { BLANK_EVENT } from '../data/seed';
 import { fmt, uid, today, toLocalISODate, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq, getScopedUserIds, isGlobalRole } from '../utils/helpers';
 import TeamSummary from './TeamSummary';
-import { teamColumns, callReportState, isLeaveEvent, LEAVE_TYPES, leaveByUser, leaveDatesToCreate, offDayMap } from '../utils/teamSummary';
+import { teamColumns, callReportState, LEAVE_TYPES, LEAVE_STATUS, leaveState, isLeaveType, leaveByUser, leaveDatesToCreate, offDayMap,
+  canApproveLeave, initialLeaveStatus, lineManagerOf, groupLeaveRequests, pendingLeaveFor, fmtDays } from '../utils/teamSummary';
+import { notify } from '../utils/toast';
 import { Lock } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 
@@ -15,9 +17,21 @@ const STATUS_COL={"Scheduled":"#3B82F6","Completed":"#22C55E","Cancelled":"#94A3
 
 const SOURCE_COL = { activity: "var(--purple)", call: "var(--brand)", event: undefined };
 
+// Leave approval state → label + colour (see utils/teamSummary LEAVE_STATUS).
+const LEAVE_STATE_UI = {
+  pending:  { label: "Pending approval", col: "#D97706", bg: "#FFFBEB" },
+  approved: { label: "Approved",         col: "#15803D", bg: "#F0FDF4" },
+  rejected: { label: "Rejected",         col: "#B91C1C", bg: "#FEF2F2" },
+  cancelled:{ label: "Cancelled",        col: "#64748B", bg: "var(--s2)" },
+};
+
 // Scheduled (not-yet-done) CALLS get their own colour so a planned call is
 // instantly tellable from a logged one / other activities on the calendar.
 const SCHEDULED_CALL_COL = "#DB2777";
+
+const itemCol = (ev) => ev._leave
+  ? (ev._leaveState === "approved" ? TYPE_COL[ev.type] : ev._leaveState === "pending" ? "#D97706" : "#94A3B8")
+  : ev._scheduledCall ? SCHEDULED_CALL_COL : (SOURCE_COL[ev._source] || TYPE_COL[ev.type] || "var(--brand)");
 
 function CalendarView({events,setEvents,activities=[],setActivities,callReports=[],setCallReports,leads=[],accounts,contacts,opps,currentUser,orgUsers,canDelete,commLogs=[],holidays=[],onRequestEditAccess}) {
   const canEditEvt = (e) => canEditRecord({ownerId:e?.owner,currentUser,orgUsers,recordType:"event",recordId:e?.id,commLogs});
@@ -70,8 +84,16 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   // Unified list of all calendar items from all three sources
   const allItems = useMemo(() => {
     // Own calendar events
-    // Leave entries are events too, flagged so they never read as pending work.
-    const evItems = events.map(e => ({ ...e, _source: "event", _leave: isLeaveEvent(e) }));
+    // Leave entries are events too, flagged so they never read as pending
+    // work. Cancelled leave is hidden; pending / rejected say so in the title.
+    const evItems = events
+      .filter(e => !(isLeaveType(e) && leaveState(e) === "cancelled"))
+      .map(e => {
+        if (!isLeaveType(e)) return { ...e, _source: "event" };
+        const st = leaveState(e);
+        return { ...e, _source: "event", _leave: true, _leaveState: st,
+          title: st === "approved" ? e.title : `${e.title} (${st === "pending" ? "pending approval" : "rejected"})` };
+      });
 
     // Activities → appear on their date. A planned Call activity (what the
     // "Schedule Call" button creates) is tagged as a scheduled call so it
@@ -175,21 +197,47 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   }, [orgUsers, currentUser, canSeeTeam, teamUsers]);
   const leavePlan = useMemo(() => {
     if (!leaveModal?.from || !leaveModal?.to || leaveModal.to < leaveModal.from) return null;
-    const existing = leaveByUser(events).get(leaveModal.owner) || new Map();
+    const existing = leaveByUser(events, { includePending: true }).get(leaveModal.owner) || new Map();
     return leaveDatesToCreate(leaveModal.from, leaveModal.to, offDayMap(holidays), existing);
   }, [leaveModal, events, holidays]);
   const openLeave=()=>setLeaveModal({owner:currentUser,from:today,to:today,type:"Leave",reason:""});
+  const nameOf=(id)=>(orgUsers||[]).find(u=>u.id===id)?.name||teamMap[id]?.name||"—";
+  const stamp=(verb,extra)=>`[${verb} by ${nameOf(currentUser)} · ${fmt.short(today)}${extra?` — ${extra}`:""}]`;
   const saveLeave=()=>{
     if(!leavePlan?.length) return;
     const reason=(leaveModal.reason||"").trim();
     const title=leaveModal.type==="Leave"?"On leave":"Half-day leave";
+    const status=initialLeaveStatus(currentUser, leaveModal.owner, orgUsers||[]);
+    const autoApproved=status===LEAVE_STATUS.approved&&leaveModal.owner!==currentUser;
+    const rid=uid().replace(/[^A-Za-z0-9]/g,"");
     setEvents(p=>[...p, ...leavePlan.map(date=>({
-      ...BLANK_EVENT, id:`ev${uid()}`, title, type:leaveModal.type, status:"Scheduled",
+      ...BLANK_EVENT, id:`lv_${rid}_${date}`, title, type:leaveModal.type, status,
       date, time:"09:00", endTime:leaveModal.type==="Leave"?"18:00":"13:00",
-      owner:leaveModal.owner, notes:reason,
+      owner:leaveModal.owner, notes:[reason, autoApproved?stamp("Approved"):""].filter(Boolean).join("\n"),
     }))]);
+    if(status===LEAVE_STATUS.pending){
+      const mgr=lineManagerOf(leaveModal.owner, orgUsers||[]);
+      notify.info(`Leave requested — waiting for approval from ${mgr?.name||"an admin"}. It comes off the call target once approved.`);
+    } else notify.success(autoApproved?`Leave recorded and approved for ${nameOf(leaveModal.owner)}.`:"Leave recorded.");
     setLeaveModal(null);
   };
+
+  // ── Leave approvals ──
+  // Line manager (or anyone above on the reporting line, or an admin)
+  // approves / rejects a whole request. Only approved leave counts.
+  const [leaveHub,setLeaveHub]=useState(false);
+  const [rejecting,setRejecting]=useState(null);     // {id, reason}
+  const leaveRequests = useMemo(()=>groupLeaveRequests(events),[events]);
+  const toApprove = useMemo(()=>pendingLeaveFor(currentUser, events, orgUsers||[]),[currentUser, events, orgUsers]);
+  const myRequests = useMemo(()=>leaveRequests.filter(r=>r.owner===currentUser&&r.state!=="cancelled").slice(0,12),[leaveRequests, currentUser]);
+  const decideLeave=(req, status, note)=>{
+    const ids=new Set(req.events.map(e=>e.id));
+    const verb=status===LEAVE_STATUS.approved?"Approved":status===LEAVE_STATUS.rejected?"Rejected":"Cancelled";
+    setEvents(p=>p.map(e=>ids.has(e.id)?{...e,status,notes:[e.notes,stamp(verb,note)].filter(Boolean).join("\n")}:e));
+    setRejecting(null);
+    if(status!==LEAVE_STATUS.cancelled) notify.success(`${verb} ${fmtDays(req.days)} day${req.days===1?"":"s"} of leave for ${nameOf(req.owner)}.`);
+  };
+  const rangeLabel=(r)=>r.from===r.to?fmt.short(r.from):`${fmt.short(r.from)} – ${fmt.short(r.to)}`;
 
   const openAdd=(date)=>{
     setForm({...BLANK_EVENT,id:`ev${uid()}`,date:date||today,owner:currentUser});
@@ -197,6 +245,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   };
   const openEdit=(e)=>{
     if(e._source==="activity"||e._source==="call") return; // non-event items are read-only
+    if(e._leave) return; // leave changes go through the Leave panel (approval trail)
     if(e&&e.id&&!canEditEvt(e)){requestAccessEvt(e);return;}
     setForm({...e,attendees:[...e.attendees]});setFormErrors({});setModal({mode:"edit"});
   };
@@ -326,7 +375,10 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             <button className={`btn btn-xs ${view==="list"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("list")}>List</button>
             {canSeeTeam&&<button className={`btn btn-xs ${view==="team"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("team")} title="Summary of calls and activities per team member">Team</button>}
           </div>
-          <button className="btn btn-sec" onClick={openLeave} title="Mark a day or a range as leave — it comes off the call target"><CalendarOff size={14}/>Mark Leave</button>
+          <button className="btn btn-sec" onClick={()=>setLeaveHub(true)} title="Request leave, see your requests, approve your team's leave" style={{position:"relative"}}>
+            <CalendarOff size={14}/>Leave
+            {toApprove.length>0&&<span style={{marginLeft:4,minWidth:18,height:18,padding:"0 5px",borderRadius:9,background:"#D97706",color:"#fff",fontSize:10.5,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}} aria-label={`${toApprove.length} leave requests to approve`}>{toApprove.length}</span>}
+          </button>
           <button className="btn btn-sec" onClick={()=>openScheduleCall()}><Phone size={14}/>Schedule Call</button>
           <button className="btn btn-primary" onClick={()=>openAdd()}><Plus size={14}/>New Event</button>
         </div>
@@ -387,7 +439,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
                   const dayEvents=itemsOn(d).filter(e=>{const hr=parseInt(e.time?.split(":")[0]||"0");return hr===h;});
                   return <div key={dateStr(d)+h} style={{borderRight:"1px solid var(--border)",borderBottom:"1px solid var(--border)",padding:2,minHeight:40,cursor:"pointer",position:"relative"}} onClick={()=>openAdd(dateStr(d))}>
                     {dayEvents.map(ev=>{
-                      const col=ev._scheduledCall?SCHEDULED_CALL_COL:(SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)");
+                      const col=itemCol(ev);
                       return <div key={ev.id} onClick={e=>{e.stopPropagation();setSelectedEvent(ev);}} style={{background:col+"18",borderLeft:`3px solid ${col}`,borderRadius:4,padding:"2px 4px",marginBottom:2,cursor:"pointer",fontSize:10}}>
                         <div style={{fontWeight:600,color:col}}>{ev.time} {ev.title.substring(0,20)}</div>
                       </div>;
@@ -411,7 +463,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
               return <div key={i} style={{borderRight:i%7<6?"1px solid var(--border)":"none",borderBottom:"1px solid var(--border)",padding:4,minHeight:80,background:isToday?"var(--brand-bg)":!d?"var(--s2)":"transparent",cursor:d?"pointer":"default"}} onClick={()=>d&&openAdd(dateStr(d))}>
                 {d&&<div style={{fontSize:12,fontWeight:isToday?800:400,color:isToday?"var(--brand)":"var(--text2)",marginBottom:2}}>{d.getDate()}</div>}
                 {dayEvents.slice(0,3).map(ev=>{
-                  const col=ev._scheduledCall?SCHEDULED_CALL_COL:(SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)");
+                  const col=itemCol(ev);
                   return <div key={ev.id} onClick={e=>{e.stopPropagation();setSelectedEvent(ev);}} style={{background:col+"18",borderRadius:3,padding:"1px 4px",marginBottom:1,fontSize:9,fontWeight:600,color:col,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {TYPE_ICON[ev.type]} {ev.time?.slice(0,5)} {ev.title.substring(0,15)}
                   </div>;
@@ -429,7 +481,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
           <table className="tbl">
             <thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Type</th><th>Status</th><th>Source</th><th>Account</th><th>Owner</th><th>Location</th><th></th></tr></thead>
             <tbody>{[...visibleItems].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(ev=>{
-              const col=ev._scheduledCall?SCHEDULED_CALL_COL:(SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)");
+              const col=itemCol(ev);
               const acc=accounts.find(a=>a.id===ev.accountId);
               const isOverdue=ev.date<today&&ev.status==="Scheduled"&&!ev._leave;
               return <tr key={ev._source+ev.id}>
@@ -473,11 +525,12 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
           footer={<>
             <button className="btn btn-sec btn-sm" onClick={()=>setSelectedEvent(null)}>Close</button>
             {selectedEvent.status==="Scheduled"&&!selectedEvent._leave&&<button className="btn btn-green btn-sm" onClick={()=>{markComplete(selectedEvent);setSelectedEvent(null);}}>Mark Complete</button>}
-            {selectedEvent._leave&&selectedEvent.status!=="Cancelled"&&canEditEvt(selectedEvent)&&<button className="btn btn-sec btn-sm" onClick={()=>{setEvents(p=>p.map(e=>e.id===selectedEvent.id?{...e,status:"Cancelled"}:e));setSelectedEvent(null);}} title="Cancel this day's leave — the call target applies again">Cancel leave</button>}
-            {selectedEvent._source==="event"&&<button className="btn btn-primary btn-sm" onClick={()=>{openEdit(selectedEvent);setSelectedEvent(null);}}><Edit2 size={13}/>Edit</button>}
+            {selectedEvent._leave&&<button className="btn btn-sec btn-sm" onClick={()=>{setSelectedEvent(null);setLeaveHub(true);}}>Open leave panel</button>}
+            {selectedEvent._leave&&selectedEvent._leaveState!=="rejected"&&(selectedEvent.owner===currentUser||canApproveLeave(currentUser,selectedEvent.owner,orgUsers||[]))&&<button className="btn btn-sec btn-sm" onClick={()=>{setEvents(p=>p.map(e=>e.id===selectedEvent.id?{...e,status:LEAVE_STATUS.cancelled,notes:[e.notes,stamp("Cancelled")].filter(Boolean).join("\n")}:e));setSelectedEvent(null);}} title="Cancel this day's leave — the call target applies again">Cancel this day</button>}
+            {selectedEvent._source==="event"&&!selectedEvent._leave&&<button className="btn btn-primary btn-sm" onClick={()=>{openEdit(selectedEvent);setSelectedEvent(null);}}><Edit2 size={13}/>Edit</button>}
           </>}>
           <div className="dp-grid">
-            {[["Type",selectedEvent.type],["Status",selectedEvent.status],["Date",fmt.date(selectedEvent.date)],["Time",`${selectedEvent.time}${selectedEvent.endTime?" – "+selectedEvent.endTime:""}`],["Location",selectedEvent.location||"—"],["Account",accounts.find(a=>a.id===selectedEvent.accountId)?.name||"—"],["Owner",(teamMap[selectedEvent.owner]||TEAM_MAP[selectedEvent.owner])?.name||selectedEvent.owner||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
+            {[["Type",selectedEvent.type],["Status",selectedEvent._leave?LEAVE_STATE_UI[selectedEvent._leaveState]?.label:selectedEvent.status],["Date",fmt.date(selectedEvent.date)],["Time",`${selectedEvent.time}${selectedEvent.endTime?" – "+selectedEvent.endTime:""}`],["Location",selectedEvent.location||"—"],["Account",accounts.find(a=>a.id===selectedEvent.accountId)?.name||"—"],["Owner",(teamMap[selectedEvent.owner]||TEAM_MAP[selectedEvent.owner])?.name||selectedEvent.owner||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>
           {selectedEvent.notes&&<div style={{marginTop:12,background:"var(--s2)",padding:"10px 12px",borderRadius:8,fontSize:13,color:"var(--text2)"}}>{selectedEvent.notes}</div>}
           {(selectedEvent._source==="activity"||selectedEvent._source==="call")&&(
@@ -510,6 +563,66 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             <input type="date" min={today} value={completeForm.nextCallDate} onChange={e=>setCompleteForm(f=>({...f,nextCallDate:e.target.value}))}/>
             <div style={{fontSize:10.5,color:"var(--text3)",marginTop:4}}>Picks a date → a new scheduled call is created automatically.</div>
           </div>
+        </Modal>
+      )}
+
+      {/* Leave panel — request, track, approve */}
+      {leaveHub&&(
+        <Modal title="Leave" lg onClose={()=>{setLeaveHub(false);setRejecting(null);}}
+          footer={<>
+            <button className="btn btn-sec" onClick={()=>{setLeaveHub(false);setRejecting(null);}}>Close</button>
+            <button className="btn btn-primary" onClick={()=>{setLeaveHub(false);openLeave();}}><Plus size={14}/>Mark leave</button>
+          </>}>
+          {(()=>{
+            const Row=({r,actions})=>{
+              const ui=LEAVE_STATE_UI[r.state];
+              return (
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",border:"1px solid var(--border)",borderRadius:8,marginBottom:6,flexWrap:"wrap"}}>
+                  <div style={{flex:"1 1 220px",minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:13}}>{nameOf(r.owner)} <span style={{fontWeight:500,color:"var(--text3)",fontSize:12}}>· {r.type==="Leave"?"Full day":"Half day"}</span></div>
+                    <div style={{fontSize:12,color:"var(--text2)"}}>{rangeLabel(r)} · {fmtDays(r.days)} day{r.days===1?"":"s"}{r.reason?` · ${r.reason}`:""}</div>
+                  </div>
+                  <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6,background:ui.bg,color:ui.col}}>{ui.label}</span>
+                  {actions}
+                  {rejecting?.id===r.id&&(
+                    <div style={{flexBasis:"100%",display:"flex",gap:6,marginTop:6}}>
+                      <input autoFocus value={rejecting.reason} onChange={e=>{const v=e.target.value;setRejecting(x=>({...x,reason:v}));}}
+                        placeholder="Reason for rejecting (required)" style={{flex:1,padding:"6px 8px",border:"1.5px solid var(--border)",borderRadius:6,fontSize:12.5}}/>
+                      <button className="btn btn-sm" style={{background:"#B91C1C",color:"#fff"}} disabled={!rejecting.reason.trim()} onClick={()=>decideLeave(r,LEAVE_STATUS.rejected,rejecting.reason.trim())}>Reject</button>
+                      <button className="btn btn-sec btn-sm" onClick={()=>setRejecting(null)}>Back</button>
+                    </div>
+                  )}
+                </div>
+              );
+            };
+            return (<>
+              <div style={{fontSize:12,color:"var(--text3)",marginBottom:12}}>
+                Leave you request waits for your line manager{lineManagerOf(currentUser,orgUsers||[])?` (${lineManagerOf(currentUser,orgUsers||[]).name})`:""} to approve. Only approved leave comes off the 5-calls-a-day target. Leave a manager records for their own team is approved straight away.
+              </div>
+              {(toApprove.length>0||canSeeTeam)&&(<>
+                <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",color:"var(--text3)",margin:"4px 0 8px"}}>Awaiting your approval · {toApprove.length}</div>
+                {toApprove.length===0&&<div style={{fontSize:12.5,color:"var(--text3)",padding:"6px 0 14px"}}>Nothing waiting.</div>}
+                {toApprove.map(r=>(
+                  <Row key={r.owner+r.id} r={r} actions={rejecting?.id===r.id?null:<>
+                    <button className="btn btn-green btn-sm" onClick={()=>decideLeave(r,LEAVE_STATUS.approved)}><Check size={13}/>Approve</button>
+                    <button className="btn btn-sec btn-sm" onClick={()=>setRejecting({id:r.id,reason:""})}><X size={13}/>Reject</button>
+                  </>}/>
+                ))}
+              </>)}
+              <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",color:"var(--text3)",margin:"14px 0 8px"}}>My leave requests</div>
+              {myRequests.length===0&&<div style={{fontSize:12.5,color:"var(--text3)",padding:"6px 0"}}>You haven't requested any leave.</div>}
+              {myRequests.map(r=>{
+                const note=r.events[0]?.notes?.split("\n").filter(l=>/^\[(Approved|Rejected)/.test(l)).pop();
+                return (
+                  <div key={r.owner+r.id}>
+                    <Row r={r} actions={(r.state==="pending"||(r.state==="approved"&&r.to>=today))&&
+                      <button className="btn btn-sec btn-sm" onClick={()=>decideLeave(r,LEAVE_STATUS.cancelled)} title="Withdraw this request">Cancel</button>}/>
+                    {note&&<div style={{fontSize:11,color:"var(--text3)",margin:"-4px 0 8px 12px"}}>{note}</div>}
+                  </div>
+                );
+              })}
+            </>);
+          })()}
         </Modal>
       )}
 
@@ -547,7 +660,9 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
           <div style={{fontSize:12,padding:"8px 12px",borderRadius:8,background:leavePlan?.length?"#FFFBEB":"var(--s2)",color:leavePlan?.length?"#92400E":"var(--text3)"}}>
             {!leavePlan ? "Pick a valid date range."
               : leavePlan.length===0 ? "Nothing to add — those dates are weekends, holidays or already marked as leave."
-              : <>Adds {leavePlan.length} {leaveModal.type==="Leave"?"day":"half-day"}{leavePlan.length===1?"":"s"} of leave ({leavePlan.map(d=>fmt.short(d)).join(", ")}). Each takes {leaveModal.type==="Leave"?"5 calls":"2.5 calls"} off the call target. Weekends, holidays and existing leave are skipped.</>}
+              : <>{initialLeaveStatus(currentUser, leaveModal.owner, orgUsers||[])===LEAVE_STATUS.pending
+                    ? <b>Needs approval from {lineManagerOf(leaveModal.owner, orgUsers||[])?.name||"an admin"}. </b>
+                    : leaveModal.owner!==currentUser ? <b>Approved on save (you manage {nameOf(leaveModal.owner)}). </b> : null}Adds {leavePlan.length} {leaveModal.type==="Leave"?"day":"half-day"}{leavePlan.length===1?"":"s"} of leave ({leavePlan.map(d=>fmt.short(d)).join(", ")}). Each takes {leaveModal.type==="Leave"?"5 calls":"2.5 calls"} off the call target. Weekends, holidays and existing leave are skipped.</>}
           </div>
         </Modal>
       )}

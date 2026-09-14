@@ -10,6 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_CON, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
+import { pendingLeaveFor } from "./utils/teamSummary";
 import { loadState, saveState, ErrorBoundary, today, refreshToday, uid, canWriteTargets, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert, buildNotificationUpdate } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
@@ -455,6 +456,11 @@ export default function SmartCRM() {
       return (u.readStatus || {})[currentUser] !== "read";
     }).length;
   }, [updates, currentUser, orgUsers]);
+
+  // ── Derived: leave requests waiting for this user's approval (Calendar badge) ──
+  const leaveApprovalCount = useMemo(
+    () => currentUser ? pendingLeaveFor(currentUser, events || [], orgUsers || []).length : 0,
+    [currentUser, events, orgUsers]);
 
   // ── Role-scoped data visibility ──
   // Computes the set of user IDs whose records the current user may see.
@@ -2692,7 +2698,7 @@ export default function SmartCRM() {
       <ToastContainer />
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={visibleTickets} leads={visibleLeads} collections={visibleCollections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount} canRestore={canRestore}/>
+        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={visibleTickets} leads={visibleLeads} collections={visibleCollections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount} canRestore={canRestore} leaveApprovals={leaveApprovalCount}/>
         <div className="main">
           <Header page={page} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={visibleUpdates} myUnreadCount={myUnreadCount} onSyncAll={_canSyncAll ? syncAllToCloud : undefined} syncing={syncingAll}/>
           <div className="content" id="main-content" role="main">

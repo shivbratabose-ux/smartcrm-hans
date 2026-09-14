@@ -19,7 +19,7 @@ const canAccess = (userId, module, orgUsers, customPermissions) => {
   return perm[module] && perm[module]!==false;
 };
 
-function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,currentUser,onLogout,orgUsers,customPermissions,myUnreadCount,canRestore}) {
+function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,currentUser,onLogout,orgUsers,customPermissions,myUnreadCount,canRestore,leaveApprovals=0}) {
   const openTix=tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const activeLeads=leads?.filter(l=>l.stage!=="NA").length||0;
   const overdueCollections=collections?.filter(c=>c.pendingAmount>0&&c.status==="Overdue").length||0;
@@ -39,7 +39,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
       {id:"pipeline",  label:"Pipeline",   icon:<TrendingUp size={17}/>},
       {id:"activities",label:"Activities",  icon:<Activity size={17}/>},
       {id:"callreports",label:"Call Reports",icon:<Phone size={17}/>},
-      {id:"calendar",   label:"Calendar",    icon:<Calendar size={17}/>},
+      {id:"calendar",   label:"Calendar",    icon:<Calendar size={17}/>, badge: leaveApprovals},
       {id:"communications",label:"Communications",icon:<Mail size={17}/>},
     ]},
     {section:"Post-Sales",items:[
