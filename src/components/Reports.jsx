@@ -411,7 +411,12 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
       winRate:wr, calls:userCalls.length, meetings, demos, activities:userActs.length, leads:userLeads.length,
       targetVal, achievedVal, targetPct:pct(achievedVal,targetVal), actScore
     };
-  }).filter(u=>u.activeDeals>0||u.wonDeals>0||u.calls>0||u.activities>0),[_reportTeam,filteredOpps,wActs,wCalls,wLeads,targets]);
+  }).map(u=>({ ...u, noActivity: u.activeDeals===0&&u.wonDeals===0&&u.calls===0&&u.activities===0 }))
+    // Reps with a target in the window stay visible even with nothing logged —
+    // that is the person a manager most needs to see. Reps with neither a
+    // target nor activity are still omitted. targetPeriods is a real dependency
+    // (sumTargets reads it); it was missing, masked by filteredOpps changing too.
+    .filter(u=>!u.noActivity||u.targetVal>0),[_reportTeam,filteredOpps,wActs,wCalls,wLeads,targets,targetPeriods]);
 
   // ── Lead Analytics ──
   const leadData = useMemo(()=>{
@@ -1207,7 +1212,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                 while the leaderboard below ranked properly: the best
                 performer could be missing from the cards entirely. */}
             {[...teamPerf].sort((a,b)=>
-              (b.wonVal-a.wonVal) || (b.pipelineVal-a.pipelineVal) || (b.actScore-a.actScore)
+              (a.noActivity-b.noActivity) || (b.wonVal-a.wonVal) || (b.pipelineVal-a.pipelineVal) || (b.actScore-a.actScore)
             ).slice(0,6).map(u=>(
               <div key={u.id} style={{background:"#fff",borderRadius:12,padding:"14px 16px",border:"1px solid #E2E8F0"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -1215,7 +1220,9 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
                     <div style={{width:32,height:32,borderRadius:"50%",background:"#1B6B5A",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{u.initials}</div>
                     <div><div style={{fontSize:13,fontWeight:700}}>{u.name}</div><div style={{fontSize:10,color:"#94A3B8"}}>{u.role}</div></div>
                   </div>
-                  <Badge text={`${u.winRate}% WR`} color={u.winRate>=35?"#22C55E":"#DC2626"}/>
+                  {u.noActivity
+                    ? <Badge text="0% · no activity" color="#B45309"/>
+                    : <Badge text={`${u.winRate}% WR`} color={u.winRate>=35?"#22C55E":"#DC2626"}/>}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,textAlign:"center"}}>
                   {[

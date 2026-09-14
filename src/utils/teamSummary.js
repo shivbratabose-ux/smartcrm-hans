@@ -20,20 +20,26 @@
 
 export const MEETING_TYPES = new Set(["Meeting", "Demo", "Site Visit", "Presentation"]);
 
+// The one rule for a call report's state, shared by the Team view and the
+// Calendar header / list so they can never disagree again. A call with an
+// outcome (Completed, No Answer, Voicemail, Left Message) HAPPENED — it's
+// "made", whatever the outcome. Only a Rescheduled report, or anything
+// future-dated, is still a plan: pending while due, overdue once past.
+export function callReportState(outcome, date, today) {
+  if (outcome === "Rescheduled") return date >= today ? "pending" : "overdue";
+  return date <= today ? "made" : "pending";
+}
+
 const blank = () => ({ callsMade: 0, connected: 0, meetings: 0, otherDone: 0, pending: 0, overdue: 0 });
 
 // Classify one normalised item into the counters it bumps.
 function classify(item, today) {
   const c = blank();
   if (item.kind === "call") {
-    if (item.outcome === "Rescheduled") {
-      if (item.date >= today) c.pending = 1; else c.overdue = 1;
-    } else if (item.date <= today) {
-      c.callsMade = 1;
-      if (item.outcome === "Completed") c.connected = 1;
-    } else {
-      c.pending = 1; // a future-dated report is a plan, not a call yet
-    }
+    const st = callReportState(item.outcome, item.date, today);
+    if (st === "made") { c.callsMade = 1; if (item.outcome === "Completed") c.connected = 1; }
+    else if (st === "pending") c.pending = 1;
+    else c.overdue = 1;
     return c;
   }
   const done = item.status === "Completed";

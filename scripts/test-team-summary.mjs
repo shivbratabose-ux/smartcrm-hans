@@ -1,6 +1,6 @@
 // Verifies the Calendar's Team summary logic — the same module the
 // Team view renders. Run: node scripts/test-team-summary.mjs
-import { buildTeamSummary, teamColumns } from "../src/utils/teamSummary.js";
+import { buildTeamSummary, teamColumns, callReportState } from "../src/utils/teamSummary.js";
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -61,6 +61,18 @@ check("rows sorted by done desc", s.rows.map(r => r.user.id), ["a", "b", "z"]);
 check("day cell lands on the right day", A.cells["2026-09-08"].callsMade, 2);
 check("column total sums users", s.columnTotals["2026-09-09"].meetings + s.columnTotals["2026-09-09"].callsMade, 2);
 check("grand done total", s.totalsDone, 6);
+
+console.log("— shared call-report rule (Calendar header uses this too) —");
+const T = "2026-09-14";
+check("past No Answer = made, not overdue", callReportState("No Answer", "2026-09-01", T), "made");
+check("past Voicemail = made", callReportState("Voicemail", "2026-09-01", T), "made");
+check("past Left Message = made", callReportState("Left Message", "2026-09-01", T), "made");
+check("past Completed = made", callReportState("Completed", "2026-09-01", T), "made");
+check("today No Answer = made", callReportState("No Answer", T, T), "made");
+check("past Rescheduled = overdue", callReportState("Rescheduled", "2026-09-01", T), "overdue");
+check("today Rescheduled = pending", callReportState("Rescheduled", T, T), "pending");
+check("future-dated any outcome = pending", callReportState("Completed", "2026-09-20", T), "pending");
+check("blank outcome in the past = made (a logged call)", callReportState("", "2026-09-01", T), "made");
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

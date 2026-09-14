@@ -4,7 +4,7 @@ import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES, CALL_OUTCOMES } 
 import { BLANK_EVENT } from '../data/seed';
 import { fmt, uid, today, toLocalISODate, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq, getScopedUserIds, isGlobalRole } from '../utils/helpers';
 import TeamSummary from './TeamSummary';
-import { teamColumns } from '../utils/teamSummary';
+import { teamColumns, callReportState } from '../utils/teamSummary';
 import { Lock } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 
@@ -99,19 +99,25 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
 
     // Call Reports → appear on their callDate. A pending (not-completed)
     // report dated today/future is also a scheduled call.
+    // Status follows callReportState (utils/teamSummary): a call with any
+    // outcome happened, so it's "Completed" — a No Answer is a logged call,
+    // not overdue work. Only Rescheduled / future-dated reports stay
+    // "Scheduled". Previously every past non-"Completed" outcome counted as
+    // overdue, which is what inflated the header to hundreds.
     const callItems = callReports
       .filter(c => c.callDate)
       .map(c => ({
         id:        c.id,
         _source:   "call",
-        _scheduledCall: c.outcome !== "Completed" && c.callDate >= today,
+        _scheduledCall: callReportState(c.outcome, c.callDate, today) !== "made",
         _orig:     c,
         date:      c.callDate,
         time:      "09:00",
         endTime:   "",
         title:     `Call: ${c.leadName || c.company || ""}`,
         type:      "Call",
-        status:    c.outcome === "Completed" ? "Completed" : "Scheduled",
+        status:    callReportState(c.outcome, c.callDate, today) === "made" ? "Completed" : "Scheduled",
+        outcome:   c.outcome,
         accountId: c.accountId,
         contactId: c.contactId,
         oppId:     c.oppId,
