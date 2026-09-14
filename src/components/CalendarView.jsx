@@ -7,6 +7,7 @@ import TeamSummary from './TeamSummary';
 import { teamColumns, callReportState, LEAVE_TYPES, LEAVE_STATUS, leaveState, isLeaveType, leaveByUser, leaveDatesToCreate, offDayMap,
   canApproveLeave, initialLeaveStatus, lineManagerOf, groupLeaveRequests, pendingLeaveFor, fmtDays } from '../utils/teamSummary';
 import { notify } from '../utils/toast';
+import { notifyLeave } from '../utils/leaveNotify';
 import { Lock } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 
@@ -218,6 +219,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
     if(status===LEAVE_STATUS.pending){
       const mgr=lineManagerOf(leaveModal.owner, orgUsers||[]);
       notify.info(`Leave requested — waiting for approval from ${mgr?.name||"an admin"}. It comes off the call target once approved.`);
+      emailAbout({kind:"requested", ownerId:leaveModal.owner, type:leaveModal.type, dates:leavePlan, reason}, mgr?.name||"an admin");
     } else notify.success(autoApproved?`Leave recorded and approved for ${nameOf(leaveModal.owner)}.`:"Leave recorded.");
     setLeaveModal(null);
   };
@@ -235,7 +237,19 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
     const verb=status===LEAVE_STATUS.approved?"Approved":status===LEAVE_STATUS.rejected?"Rejected":"Cancelled";
     setEvents(p=>p.map(e=>ids.has(e.id)?{...e,status,notes:[e.notes,stamp(verb,note)].filter(Boolean).join("\n")}:e));
     setRejecting(null);
-    if(status!==LEAVE_STATUS.cancelled) notify.success(`${verb} ${fmtDays(req.days)} day${req.days===1?"":"s"} of leave for ${nameOf(req.owner)}.`);
+    if(status!==LEAVE_STATUS.cancelled){
+      notify.success(`${verb} ${fmtDays(req.days)} day${req.days===1?"":"s"} of leave for ${nameOf(req.owner)}.`);
+      emailAbout({kind:"decided", ownerId:req.owner, type:req.type, dates:req.dates, decision:verb, note}, nameOf(req.owner));
+    }
+  };
+  // Email the other side (line manager on request, requester on decision).
+  // The leave is already saved; email trouble is reported, never blocking.
+  // "not_configured" stays quiet — the badge still surfaces requests.
+  const emailAbout=(payload, who)=>{
+    notifyLeave(payload).then(res=>{
+      if(res.ok) notify.info(`Email sent to ${(res.sentTo||[who]).join(", ")}.`);
+      else if(res.error) notify.error(`Leave saved, but the email to ${who} failed: ${res.error}`);
+    });
   };
   const rangeLabel=(r)=>r.from===r.to?fmt.short(r.from):`${fmt.short(r.from)} – ${fmt.short(r.to)}`;
 
