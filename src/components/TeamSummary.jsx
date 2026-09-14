@@ -32,10 +32,11 @@ function Kpi({ icon, label, value, sub, tone }) {
   );
 }
 
-export default function TeamSummary({ activities, callReports, events, users, columns, today, onPickUser }) {
+export default function TeamSummary({ activities, callReports, events, users, columns, today, holidays = [], onPickUser }) {
   const s = useMemo(
-    () => buildTeamSummary({ activities, callReports, events, users, columns, today }),
-    [activities, callReports, events, users, columns, today]);
+    () => buildTeamSummary({ activities, callReports, events, users, columns, today, holidays }),
+    [activities, callReports, events, users, columns, today, holidays]);
+  const offLabel = (n) => `${n} holiday${n === 1 ? "" : "s"}/admin day${n === 1 ? "" : "s"}`;
 
   const maxCell = useMemo(() => {
     let m = 0;
@@ -56,9 +57,10 @@ export default function TeamSummary({ activities, callReports, events, users, co
           sub={`${s.totals.connected} connected · ${connectRate}% connect rate`} />
         <Kpi icon={<Target size={12} />} label="On call target"
           value={s.compliance.eligible ? `${s.compliance.onTarget}/${s.compliance.eligible}` : "—"}
-          sub={s.compliance.eligible
+          sub={(s.compliance.eligible
             ? `${s.compliance.calls} of ${s.compliance.target} target calls · ${s.compliance.pct}%`
-            : `no working days yet · ${CALL_TARGET.perDay}/day target`}
+            : `no working days yet · ${CALL_TARGET.perDay}/day target`)
+            + (s.offDays.length ? ` · ${offLabel(s.offDays.length)} excluded` : "")}
           tone={s.compliance.eligible ? complianceTone(s.compliance.pct) : undefined} />
         <Kpi icon={<Users size={12} />} label="Meetings" value={s.totals.meetings} sub={`${s.totals.otherDone} other activities done`} />
         <Kpi icon={<Clock size={12} />} label="Pending" value={s.totals.pending} sub="planned, not yet due" />
@@ -73,9 +75,21 @@ export default function TeamSummary({ activities, callReports, events, users, co
           <thead>
             <tr>
               <th style={{ ...th, textAlign: "left", position: "sticky", left: 0, zIndex: 1 }}>Member</th>
-              {columns.map(c => (
-                <th key={c.key} style={{ ...th, textAlign: "center", background: c.from <= today && c.to >= today ? "var(--brand-bg)" : th.background }}>{c.label}</th>
-              ))}
+              {columns.map(c => {
+                const off = s.columnOffDays[c.key];
+                const isToday = c.from <= today && c.to >= today;
+                return (
+                  <th key={c.key} title={off.length ? off.map(h => `${h.date} · ${h.name} (${h.type || "Holiday"})`).join("\n") : undefined}
+                    style={{ ...th, textAlign: "center", background: isToday ? "var(--brand-bg)" : off.length && c.from === c.to ? "#FEF3C7" : th.background }}>
+                    {c.label}
+                    {off.length > 0 && (
+                      <span style={{ display: "block", fontSize: 9, fontWeight: 600, textTransform: "none", letterSpacing: 0, color: "#B45309", maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", margin: "0 auto" }}>
+                        {c.from === c.to ? off[0].name : offLabel(off.length)}
+                      </span>
+                    )}
+                  </th>
+                );
+              })}
               <th style={{ ...th, textAlign: "right", borderLeft: "2px solid var(--border)" }}><PhoneCall size={11} style={{ verticalAlign: "-1px" }} /> Calls</th>
               <th style={{ ...th, textAlign: "right" }}>Connected</th>
               <th style={{ ...th, textAlign: "right" }}>Meetings</th>
@@ -161,7 +175,7 @@ export default function TeamSummary({ activities, callReports, events, users, co
       </div>
       <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8 }}>
         Cells show completed work (calls attempted + meetings + other activities). Hover a cell for the breakdown; click a name to open that person's calendar. A no-answer call counts as a call made, not as connected.
-        {" "}Call target: {CALL_TARGET.perDay} calls per working day (Mon–Fri) for Sales Executives, BD Leads, Country Managers and Line Managers, counted up to today — compliance = calls made ÷ target to date. Holidays are not excluded.
+        {" "}Call target: {CALL_TARGET.perDay} calls per working day (Mon–Fri) for Sales Executives, BD Leads, Country Managers and Line Managers, counted up to today — compliance = calls made ÷ target to date. Holidays and admin days set in Masters → Activity carry no target; calls made on them still count.
       </div>
     </div>
   );

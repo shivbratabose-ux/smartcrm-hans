@@ -19,7 +19,7 @@ const SOURCE_COL = { activity: "var(--purple)", call: "var(--brand)", event: und
 // instantly tellable from a logged one / other activities on the calendar.
 const SCHEDULED_CALL_COL = "#DB2777";
 
-function CalendarView({events,setEvents,activities=[],setActivities,callReports=[],setCallReports,leads=[],accounts,contacts,opps,currentUser,orgUsers,canDelete,commLogs=[],onRequestEditAccess}) {
+function CalendarView({events,setEvents,activities=[],setActivities,callReports=[],setCallReports,leads=[],accounts,contacts,opps,currentUser,orgUsers,canDelete,commLogs=[],holidays=[],onRequestEditAccess}) {
   const canEditEvt = (e) => canEditRecord({ownerId:e?.owner,currentUser,orgUsers,recordType:"event",recordId:e?.id,commLogs});
   const requestAccessEvt = (e) => onRequestEditAccess && onRequestEditAccess("event", e.id, e.title||"Event", e.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
@@ -333,7 +333,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
       {view==="team"&&canSeeTeam&&(
         <TeamSummary
           activities={activities} callReports={callReports} events={events}
-          users={teamUsers} columns={teamCols} today={today}
+          users={teamUsers} columns={teamCols} today={today} holidays={holidays}
           onPickUser={(id)=>{ setOwnerFilter(id); setView("week"); }}
         />
       )}

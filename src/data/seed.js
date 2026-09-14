@@ -291,6 +291,11 @@ export const INIT_MASTERS = {
 
   // ── System / Bulk Upload ─────────────────────────────
   uploadTypes:      mk("upt", UPLOAD_TYPES),
+
+  // ── Holidays & Admin days ────────────────────────────
+  // [{id, date:"YYYY-MM-DD", name, type:"Holiday"|"Admin day"}]. Non-working
+  // weekdays org-wide; excluded from the daily call target (Calendar → Team).
+  holidays:         [],
 };
 
 // ── Blank form templates ──

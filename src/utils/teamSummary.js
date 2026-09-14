@@ -26,7 +26,9 @@ export const MEETING_TYPES = new Set(["Meeting", "Demo", "Site Visit", "Presenta
 // target for any period = perDay × working days elapsed in it, counting
 // today (so "to date"); future days never count against anyone. Other
 // roles (support, tech, finance, product, leadership) carry no target.
-// Public holidays are not modelled yet — a holiday counts as a working day.
+// Holidays and Admin days (Masters → Activity → Holidays & Admin Days,
+// org-wide) are not working days: they carry no target, but calls made
+// on them still count.
 export const CALL_TARGET = {
   perDay: 5,
   workDays: new Set([1, 2, 3, 4, 5]),           // Date#getDay(): Mon..Fri
@@ -37,15 +39,39 @@ export function hasCallTarget(role) {
   return CALL_TARGET.roles.has(String(role || "").trim().toLowerCase());
 }
 
-// Working days in [from, to] that have started (<= today), inclusive.
-export function workingDaysElapsed(from, to, today) {
+export const OFF_DAY_TYPES = ["Holiday", "Admin day"];
+
+// Masters holiday list → Map(date → {date,name,type}). Ignores rows with
+// no valid date; the first entry wins if a date is listed twice.
+export function offDayMap(holidays = []) {
+  const m = new Map();
+  for (const h of holidays || []) {
+    if (h && /^\d{4}-\d{2}-\d{2}$/.test(h.date || "") && !m.has(h.date)) m.set(h.date, h);
+  }
+  return m;
+}
+
+const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Weekday off-days (holiday / admin day) falling in [from, to].
+export function offDaysIn(from, to, offDays = new Map()) {
+  return [...offDays.values()]
+    .filter(h => h.date >= from && h.date <= to && CALL_TARGET.workDays.has(new Date(h.date + "T00:00:00").getDay()))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Working days in [from, to] that have started (<= today), inclusive,
+// skipping weekends and any date in offDays (a Map or Set of ISO dates).
+export function workingDaysElapsed(from, to, today, offDays = new Map()) {
   const end = to < today ? to : today;
   if (!from || !end || from > end) return 0;
   const [fy, fm, fd] = from.split("-").map(Number);
   const [ey, em, ed] = end.split("-").map(Number);
   const d = new Date(fy, fm - 1, fd), last = new Date(ey, em - 1, ed);
   let n = 0;
-  for (; d <= last; d.setDate(d.getDate() + 1)) if (CALL_TARGET.workDays.has(d.getDay())) n++;
+  for (; d <= last; d.setDate(d.getDate() + 1)) {
+    if (CALL_TARGET.workDays.has(d.getDay()) && !offDays.has(isoOf(d))) n++;
+  }
   return n;
 }
 
@@ -93,9 +119,11 @@ const add = (a, b) => { for (const k of Object.keys(a)) a[k] += b[k]; };
  * @param {Array}    p.users        [{id,name,initials,role}] — rows to show, in scope
  * @param {Array}    p.columns      [{key,label,from,to}] ISO-date buckets
  * @param {string}   p.today        "YYYY-MM-DD"
+ * @param {Array}    p.holidays     masters.holidays [{date,name,type}]
  * @returns {{rows, totals, columnTotals}}
  */
-export function buildTeamSummary({ activities = [], callReports = [], events = [], users = [], columns = [], today }) {
+export function buildTeamSummary({ activities = [], callReports = [], events = [], users = [], columns = [], today, holidays = [] }) {
+  const offDays = offDayMap(holidays);
   const from = columns.length ? columns[0].from : "";
   const to = columns.length ? columns[columns.length - 1].to : "";
   const userIds = new Set(users.map(u => u.id));
@@ -134,7 +162,7 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
   const rows = [...byUser.values()].map(r => {
     const targeted = hasCallTarget(r.user.role);
     const cellTargets = Object.fromEntries(columns.map(col =>
-      [col.key, targeted ? CALL_TARGET.perDay * workingDaysElapsed(col.from, col.to, today) : 0]));
+      [col.key, targeted ? CALL_TARGET.perDay * workingDaysElapsed(col.from, col.to, today, offDays) : 0]));
     const callTarget = Object.values(cellTargets).reduce((a, b) => a + b, 0);
     const callCompliancePct = targeted ? pctOf(r.total.callsMade, callTarget) : null;
     if (targeted && callTarget > 0) {
@@ -154,6 +182,9 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
 
   return {
     rows, totals, totalsDone: done(totals), columnTotals, doneOf: done,
+    // Weekday holidays / admin days per column, for headers and the KPI.
+    columnOffDays: Object.fromEntries(columns.map(col => [col.key, offDaysIn(col.from, col.to, offDays)])),
+    offDays: offDaysIn(from, to, offDays),
     compliance: {
       target: teamTarget, calls: teamTargetCalls, eligible, onTarget,
       pct: pctOf(teamTargetCalls, teamTarget),

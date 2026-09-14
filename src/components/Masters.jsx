@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Edit2, Trash2, Check, X, ChevronDown, Search, ArrowUp, ArrowDown, GitBranch, Upload } from "lucide-react";
+import { Plus, Edit2, Trash2, Check, X, ChevronDown, Search, ArrowUp, ArrowDown, GitBranch, Upload, CalendarOff } from "lucide-react";
 import { PROD_MAP } from '../data/constants';
 import { uid } from '../utils/helpers';
 import { Modal, Confirm, HelpTooltip, PageTip } from './shared';
@@ -7,6 +7,7 @@ import { saveSettings } from '../lib/db';
 import LeadFieldsEditor from './LeadFieldsEditor';
 import QuotationMasters from './QuotationMasters';
 import { notify } from '../utils/toast';
+import { OFF_DAY_TYPES } from '../utils/teamSummary';
 
 // ═══════════════════════════════════════════════════════════════════
 // MASTERS PAGE — compact, chip-style, grouped into category tabs
@@ -473,6 +474,137 @@ function PipelineStagesEditor({ stages, setStages, opps }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// HOLIDAYS & ADMIN DAYS
+// ───────────────────────────────────────────────────────────────────
+// Org-wide non-working weekdays, stored in masters.holidays and synced
+// with the rest of Masters. The Calendar Team view drops these dates from
+// the 5-calls-a-day target so compliance reflects days people could work.
+//   Holiday    public / festival holiday the office observes
+//   Admin day  a day the company takes off the field — office closure,
+//              offsite, all-hands training, audit day
+// ═══════════════════════════════════════════════════════════════════
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const weekdayOf = (iso) => WEEKDAYS[new Date(iso + "T00:00:00").getDay()];
+// Fixed-date national holidays. Festival dates move every year, so those
+// are added by hand.
+const FIXED_NATIONAL = [
+  ["01-26", "Republic Day"], ["08-15", "Independence Day"], ["10-02", "Gandhi Jayanti"], ["12-25", "Christmas"],
+];
+
+function HolidayCalendarEditor({ holidays, setHolidays }) {
+  const thisYear = new Date().getFullYear();
+  const [year, setYear] = useState(thisYear);
+  const [draft, setDraft] = useState({ date: "", name: "", type: "Holiday" });
+  const [err, setErr] = useState("");
+
+  const years = useMemo(() => {
+    const ys = new Set([thisYear, thisYear + 1, ...holidays.map(h => +String(h.date).slice(0, 4)).filter(Boolean)]);
+    return [...ys].sort();
+  }, [holidays, thisYear]);
+
+  const rows = holidays.filter(h => String(h.date).startsWith(String(year))).sort((a, b) => a.date.localeCompare(b.date));
+  const weekdayCount = rows.filter(h => !["Sat", "Sun"].includes(weekdayOf(h.date))).length;
+
+  const add = () => {
+    const name = draft.name.trim();
+    if (!draft.date || !name) { setErr("Pick a date and enter a name."); return; }
+    if (holidays.some(h => h.date === draft.date)) { setErr(`${draft.date} is already on the list.`); return; }
+    setHolidays([...holidays, { id: `hol${uid()}`, date: draft.date, name, type: draft.type }]);
+    setYear(+draft.date.slice(0, 4));
+    setDraft({ date: "", name: "", type: draft.type });
+    setErr("");
+  };
+  const update = (id, patch) => setHolidays(holidays.map(h => h.id === id ? { ...h, ...patch } : h));
+  const remove = (id) => setHolidays(holidays.filter(h => h.id !== id));
+  const addNational = () => {
+    const have = new Set(holidays.map(h => h.date));
+    const extra = FIXED_NATIONAL.map(([md, name]) => ({ id: `hol${uid()}`, date: `${year}-${md}`, name, type: "Holiday" }))
+      .filter(h => !have.has(h.date));
+    if (!extra.length) { notify.info(`National holidays for ${year} are already listed.`); return; }
+    setHolidays([...holidays, ...extra]);
+    notify.success(`Added ${extra.length} national holiday${extra.length === 1 ? "" : "s"} for ${year}.`);
+  };
+
+  const inp = { padding: "6px 8px", border: "1.5px solid var(--border)", borderRadius: 6, fontSize: 12.5, outline: "none", background: "#fff" };
+
+  return (
+    <div className="ps-card">
+      <div className="ps-head" style={{ flexWrap: "wrap", gap: 8 }}>
+        <div className="ps-title">
+          <CalendarOff size={16} style={{ color: "var(--brand)" }} />
+          Holidays &amp; Admin Days
+          <HelpTooltip width={280} text="Non-working weekdays for the whole organisation. These dates carry no call target in Calendar → Team, so compliance is measured only against days people could actually work. Calls made on these days still count. Weekend dates have no effect — weekends are already off." />
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select value={year} onChange={e => setYear(+e.target.value)} style={inp} aria-label="Year">
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button className="btn btn-sec btn-sm" onClick={addNational} title="Republic Day, Independence Day, Gandhi Jayanti, Christmas">
+            <Plus size={13} />National holidays {year}
+          </button>
+        </div>
+      </div>
+      <div className="ps-sub">
+        {rows.length} listed for {year} · {weekdayCount} on a weekday, taking {weekdayCount * 5} calls off each person's yearly target.
+        {" "}Festival holidays (Holi, Diwali, Eid…) change date every year — add them here.
+      </div>
+
+      <table className="ps-table">
+        <thead>
+          <tr style={{ fontSize: 10.5, color: "var(--text3)", letterSpacing: "0.4px", textTransform: "uppercase", fontWeight: 700 }}>
+            <th style={{ width: 160, padding: "6px 10px", textAlign: "left" }}>Date</th>
+            <th style={{ width: 70, padding: "6px 10px", textAlign: "left" }}>Day</th>
+            <th style={{ padding: "6px 10px", textAlign: "left" }}>Name</th>
+            <th style={{ width: 130, padding: "6px 10px", textAlign: "left" }}>Type</th>
+            <th style={{ width: 50, padding: "6px 10px" }} />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr><td colSpan={5} style={{ padding: 14, textAlign: "center", fontSize: 12, color: "var(--text3)" }}>No holidays or admin days for {year} yet.</td></tr>
+          )}
+          {rows.map(h => {
+            const wd = weekdayOf(h.date);
+            const weekend = wd === "Sat" || wd === "Sun";
+            return (
+              <tr key={h.id} className="ps-row">
+                <td>
+                  <input type="date" value={h.date} style={inp}
+                    onChange={e => e.target.value && !holidays.some(x => x.id !== h.id && x.date === e.target.value) && update(h.id, { date: e.target.value })} />
+                </td>
+                <td style={{ fontSize: 12, color: weekend ? "var(--text3)" : "var(--text)" }}>
+                  {wd}{weekend && <span style={{ display: "block", fontSize: 10 }}>no effect</span>}
+                </td>
+                <td><input className="ps-name-input" value={h.name} onChange={e => update(h.id, { name: e.target.value })} /></td>
+                <td>
+                  <select value={h.type || "Holiday"} onChange={e => update(h.id, { type: e.target.value })} style={inp}>
+                    {OFF_DAY_TYPES.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </td>
+                <td style={{ textAlign: "right" }}>
+                  <button className="ps-icon-btn ps-del" onClick={() => remove(h.id)} title="Remove"><Trash2 size={13} /></button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <div className="ps-add-row" style={{ flexWrap: "wrap" }}>
+        <input type="date" value={draft.date} onChange={e => setDraft(d => ({ ...d, date: e.target.value }))} style={inp} aria-label="Date" />
+        <input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} onKeyDown={e => e.key === "Enter" && add()}
+          placeholder="Name (e.g. Diwali, Annual offsite)" style={{ ...inp, flex: 1, minWidth: 180 }} />
+        <select value={draft.type} onChange={e => setDraft(d => ({ ...d, type: e.target.value }))} style={inp} aria-label="Type">
+          {OFF_DAY_TYPES.map(t => <option key={t}>{t}</option>)}
+        </select>
+        <button className="btn btn-sec btn-sm" onClick={add}><Plus size={13} />Add</button>
+      </div>
+      {err && <div style={{ fontSize: 11.5, color: "var(--red)", marginTop: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
 
 function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],currentUser=null}) {
   const [tab,setTab]=useState("reference");
@@ -576,6 +708,13 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
               stages={masters.stages || []}
               setStages={(next) => mk("stages", next)}
               opps={opps}
+            />
+          )}
+
+          {group === "activity" && (
+            <HolidayCalendarEditor
+              holidays={masters.holidays || []}
+              setHolidays={(next) => mk("holidays", next)}
             />
           )}
 
