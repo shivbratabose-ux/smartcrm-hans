@@ -20,6 +20,35 @@
 
 export const MEETING_TYPES = new Set(["Meeting", "Demo", "Site Visit", "Presentation"]);
 
+// ── Daily call target (compliance) ──────────────────────────────────
+// Business rule: every Sales Executive, BDM, Sales/Country Manager and
+// Line Manager makes 5 calls per working day, Monday to Friday. The
+// target for any period = perDay × working days elapsed in it, counting
+// today (so "to date"); future days never count against anyone. Other
+// roles (support, tech, finance, product, leadership) carry no target.
+// Public holidays are not modelled yet — a holiday counts as a working day.
+export const CALL_TARGET = {
+  perDay: 5,
+  workDays: new Set([1, 2, 3, 4, 5]),           // Date#getDay(): Mon..Fri
+  roles: new Set(["sales_exec", "bd_lead", "country_mgr", "line_mgr"]),
+};
+
+export function hasCallTarget(role) {
+  return CALL_TARGET.roles.has(String(role || "").trim().toLowerCase());
+}
+
+// Working days in [from, to] that have started (<= today), inclusive.
+export function workingDaysElapsed(from, to, today) {
+  const end = to < today ? to : today;
+  if (!from || !end || from > end) return 0;
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const d = new Date(fy, fm - 1, fd), last = new Date(ey, em - 1, ed);
+  let n = 0;
+  for (; d <= last; d.setDate(d.getDate() + 1)) if (CALL_TARGET.workDays.has(d.getDay())) n++;
+  return n;
+}
+
 // The one rule for a call report's state, shared by the Team view and the
 // Calendar header / list so they can never disagree again. A call with an
 // outcome (Completed, No Answer, Voicemail, Left Message) HAPPENED — it's
@@ -100,7 +129,22 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
   }
 
   const done = (x) => x.callsMade + x.meetings + x.otherDone;
-  const rows = [...byUser.values()].map(r => ({
+  const pctOf = (made, target) => target > 0 ? Math.round(made / target * 100) : null;
+  let teamTarget = 0, teamTargetCalls = 0, eligible = 0, onTarget = 0;
+  const rows = [...byUser.values()].map(r => {
+    const targeted = hasCallTarget(r.user.role);
+    const cellTargets = Object.fromEntries(columns.map(col =>
+      [col.key, targeted ? CALL_TARGET.perDay * workingDaysElapsed(col.from, col.to, today) : 0]));
+    const callTarget = Object.values(cellTargets).reduce((a, b) => a + b, 0);
+    const callCompliancePct = targeted ? pctOf(r.total.callsMade, callTarget) : null;
+    if (targeted && callTarget > 0) {
+      eligible++;
+      teamTarget += callTarget;
+      teamTargetCalls += r.total.callsMade;
+      if (r.total.callsMade >= callTarget) onTarget++;
+    }
+    return { ...r, targeted, cellTargets, callTarget, callCompliancePct };
+  }).map(r => ({
     ...r,
     done: done(r.total),
     // Completion = done ÷ (done + still-open planned work that fell due).
@@ -108,7 +152,13 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
       ? Math.round(done(r.total) / (done(r.total) + r.total.overdue) * 100) : null,
   })).sort((a, b) => b.done - a.done || b.total.connected - a.total.connected || (a.user.name || "").localeCompare(b.user.name || ""));
 
-  return { rows, totals, totalsDone: done(totals), columnTotals, doneOf: done };
+  return {
+    rows, totals, totalsDone: done(totals), columnTotals, doneOf: done,
+    compliance: {
+      target: teamTarget, calls: teamTargetCalls, eligible, onTarget,
+      pct: pctOf(teamTargetCalls, teamTarget),
+    },
+  };
 }
 
 // Period buckets for the Team view. "week" → 7 day columns (Mon–Sun);
