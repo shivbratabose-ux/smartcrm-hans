@@ -33,8 +33,9 @@ const STATUS_META = {
   unverified_sender: { label: "Unverified sender",color: "#B91C1C", bg: "#FEE2E2" },
   failed:            { label: "Failed",           color: "#B91C1C", bg: "#FEE2E2" },
   ignored:           { label: "Ignored",          color: "#64748B", bg: "#F1F5F9" },
+  automated:         { label: "Auto-reply / bounce", color: "#64748B", bg: "#F1F5F9" },
 };
-const QUEUES = ["All", "processed", "needs_match", "unmatched", "high_impact", "unverified_sender", "failed", "ignored"];
+const QUEUES = ["All", "processed", "needs_match", "unmatched", "high_impact", "unverified_sender", "failed", "ignored", "automated"];
 
 function EmailAgent({ accounts = [], contacts = [], opps = [], leads = [], activities = [], orgUsers = [], currentUser }) {
   const [rows, setRows] = useState([]);

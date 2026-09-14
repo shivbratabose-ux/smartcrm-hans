@@ -6,7 +6,7 @@
 import {
   splitEmailBody, scanIdentifiers, decideMatch,
   filterAutoUpdates, summaryViolations, fingerprintEmail, INTENTS,
-  htmlToText, mapGraphMessage,
+  htmlToText, mapGraphMessage, automatedReason,
   splitConditionalUpdates, highImpactFromIntent, CONDITIONAL_FIELDS,
 } from "../supabase/functions/em-ingest/logic.mjs";
 
@@ -146,6 +146,22 @@ check("no opp match → no intent suggestion", highImpactFromIntent(["Opportunit
 check("neutral intent → null", highImpactFromIntent(["General follow-up"], "opp", "o1"), null);
 check("conditional map has no owner/value/consent entries",
   Object.keys(CONDITIONAL_FIELDS).some(k => /owner|value|consent|doNotContact/i.test(k)), false);
+
+console.log("— auto-replies / bounces / own notifications (shared mailbox) —");
+const g = (headers, extra = {}) => mapGraphMessage({ internetMessageId: "m1", from: { emailAddress: { address: "rep@hansinfomatic.com" } },
+  body: { contentType: "text", content: "hi" }, internetMessageHeaders: headers, ...extra });
+check("normal email → null", automatedReason(g([{ name: "Authentication-Results", value: "spf=pass" }], { subject: "Re: quote for Acme" })), null);
+check("Auto-Submitted: auto-replied", automatedReason(g([{ name: "Auto-Submitted", value: "auto-replied" }])), "auto_reply");
+check("Auto-Submitted: no is a person", automatedReason(g([{ name: "Auto-Submitted", value: "no" }])), null);
+check("Automatic reply subject", automatedReason(g([], { subject: "Automatic reply: Leave request: Ravi" })), "auto_reply");
+check("Out of Office subject", automatedReason(g([], { subject: "Out of Office: back Monday" })), "auto_reply");
+check("Precedence: bulk", automatedReason(g([{ name: "Precedence", value: "bulk" }])), "auto_reply");
+check("NDR from postmaster", automatedReason({ fromAddress: "postmaster@hansinfomatic.com", subject: "x" }), "bounce");
+check("NDR multipart/report", automatedReason(g([{ name: "Content-Type", value: "multipart/report; report-type=delivery-status" }])), "bounce");
+check("Undeliverable subject", automatedReason(g([], { subject: "Undeliverable: Leave approved" })), "bounce");
+check("SmartCRM's own notification", automatedReason(g([{ name: "X-SmartCRM-Notification", value: "leave" }])), "smartcrm_notification");
+check("only marker headers kept in memory", Object.keys(g([{ name: "Received", value: "x" }, { name: "Auto-Submitted", value: "auto-replied" }]).autoHeaders), ["auto-submitted"]);
+check("subject containing 'reply' mid-line is not automated", automatedReason(g([], { subject: "Please reply with the PO" })), null);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

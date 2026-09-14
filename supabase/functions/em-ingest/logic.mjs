@@ -247,9 +247,19 @@ export function htmlToText(html) {
 export function mapGraphMessage(msg) {
   const m = msg || {};
   const isHtml = (m.body?.contentType || "").toLowerCase() === "html";
-  const authHeader = (m.internetMessageHeaders || [])
+  const allHeaders = m.internetMessageHeaders || [];
+  const authHeader = allHeaders
     .find(h => (h?.name || "").toLowerCase() === "authentication-results");
+  // Only the headers that mark machine-generated mail — kept in memory for
+  // automatedReason(), never persisted.
+  const autoHeaders = {};
+  for (const h of allHeaders) {
+    const n = String(h?.name || "").toLowerCase();
+    if (AUTOMATED_HEADER_NAMES.has(n)) autoHeaders[n] = String(h?.value || "");
+  }
   return {
+    subject: String(m.subject || ""),
+    autoHeaders,
     messageId: m.internetMessageId || m.id || "",
     receivedAt: m.receivedDateTime || "",
     fromAddress: m.from?.emailAddress?.address || m.sender?.emailAddress?.address || "",
@@ -260,6 +270,32 @@ export function mapGraphMessage(msg) {
     hasAttachments: !!m.hasAttachments,
     authenticationResults: authHeader?.value || "",
   };
+}
+
+// ── Machine-generated mail (shared mailbox hygiene) ─────────────────
+// communication@ is also the From address for SmartCRM notifications
+// (notify-leave), so out-of-office replies, bounces and our own
+// notifications can land here. None of them is a customer interaction:
+// skip before sender verification so they never reach the model.
+// Returns a short reason code, or null for a normal email.
+export const AUTOMATED_HEADER_NAMES = new Set([
+  "auto-submitted", "precedence", "x-auto-response-suppress", "x-smartcrm-notification",
+  "content-type", "x-ms-exchange-generated-message-source", "x-autoreply", "x-autorespond",
+]);
+const BOUNCE_SENDERS = /^(mailer-daemon|postmaster|microsoftexchange[0-9a-f]*)@/i;
+const AUTO_SUBJECT = /^\s*(automatic reply|auto(matic)?[- ]?reply|autoreply|out of (the )?office|ooo\b)/i;
+const BOUNCE_SUBJECT = /^\s*(undeliverable|undelivered mail|delivery status notification|mail delivery (failed|failure|subsystem)|returned mail|delivery has failed)/i;
+
+export function automatedReason(email) {
+  const h = email?.autoHeaders || {};
+  const from = String(email?.fromAddress || "").trim();
+  const subject = String(email?.subject || "");
+  if (h["x-smartcrm-notification"]) return "smartcrm_notification";
+  if (BOUNCE_SENDERS.test(from) || /multipart\/report/i.test(h["content-type"] || "") || BOUNCE_SUBJECT.test(subject)) return "bounce";
+  const autoSubmitted = String(h["auto-submitted"] || "").trim().toLowerCase();
+  if ((autoSubmitted && autoSubmitted !== "no") || h["x-autoreply"] || h["x-autorespond"]
+    || /^(auto_reply|bulk|junk|list)$/i.test(String(h["precedence"] || "").trim()) || AUTO_SUBJECT.test(subject)) return "auto_reply";
+  return null;
 }
 
 // ── Fingerprint (spec §4 dedupe, content-free) ──────────────────────
