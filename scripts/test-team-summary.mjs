@@ -1,6 +1,6 @@
 // Verifies the Calendar's Team summary logic — the same module the
 // Team view renders. Run: node scripts/test-team-summary.mjs
-import { buildTeamSummary, teamColumns, callReportState, workingDaysElapsed, hasCallTarget, offDayMap, offDaysIn } from "../src/utils/teamSummary.js";
+import { buildTeamSummary, teamColumns, callReportState, workingDaysElapsed, hasCallTarget, offDayMap, offDaysIn, leaveByUser, isLeaveEvent, leaveDaysIn, leaveDatesToCreate, fmtDays } from "../src/utils/teamSummary.js";
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -105,7 +105,7 @@ check("Saturday cell carries no target", SE.cellTargets["2026-09-12"], 0);
 check("future Friday cell carries no target", SE.cellTargets["2026-09-11"], 0);
 check("line manager 8 / 20 → 40%", [LM.callTarget, LM.callCompliancePct], [20, 40]);
 check("support has no target, no compliance", [SP.targeted, SP.callTarget, SP.callCompliancePct], [false, 0, null]);
-check("team compliance excludes non-target roles", c.compliance, { target: 40, calls: 28, eligible: 2, onTarget: 1, pct: 70 });
+check("team compliance excludes non-target roles", c.compliance, { target: 40, calls: 28, eligible: 2, onTarget: 1, pct: 70, leaveDays: 0 });
 
 console.log("— holidays & admin days —");
 const hol = [
@@ -133,6 +133,44 @@ check("column off-days exposed for headers", h.columnOffDays["2026-09-10"].map(x
 check("period off-day list", h.offDays.length, 2);
 const mh = buildTeamSummary({ today: "2026-09-30", columns: teamColumns("month", "2026-09-14"), holidays: hol, users: [{ id: "se", name: "Exec", role: "sales_exec" }] });
 check("month target Sept 2026 = 5 × (22 − 2)", mh.rows[0].callTarget, 100);
+
+console.log("— individual leave —");
+const lv = (owner, date, type = "Leave", extra = {}) => ({ id: `lv${date}${type}`, owner, date, type, title: "On leave", status: "Scheduled", ...extra });
+const leaveEvents = [
+  lv("se", "2026-09-07"),                                   // Mon full day
+  lv("se", "2026-09-09", "Half-day leave"),                 // Wed half
+  lv("se", "2026-09-12"),                                   // Sat → no effect
+  lv("se", "2026-09-08", "Leave", { status: "Cancelled" }), // ignored
+  lv("se", "2026-09-10", "Leave", { isDeleted: true }),     // ignored
+  lv("lm", "2026-09-11"),                                   // future (today Thu) → planned
+];
+const lmap = leaveByUser(leaveEvents);
+check("cancelled / deleted leave ignored", [...lmap.get("se").keys()].sort(), ["2026-09-07", "2026-09-09", "2026-09-12"]);
+check("half day = 0.5", lmap.get("se").get("2026-09-09"), 0.5);
+check("full + half on same day caps at 1", leaveByUser([lv("x", "2026-09-07"), lv("x", "2026-09-07", "Half-day leave")]).get("x").get("2026-09-07"), 1);
+check("isLeaveEvent", [isLeaveEvent(lv("a", "2026-09-07")), isLeaveEvent({ type: "Meeting" })], [true, false]);
+check("working days minus 1.5 leave → 2.5", workingDaysElapsed("2026-09-07", "2026-09-13", "2026-09-10", new Map(), lmap.get("se")), 2.5);
+check("holiday on a leave day not double-counted", leaveDaysIn("2026-09-07", "2026-09-07", lmap.get("se"), offDayMap([{ date: "2026-09-07", name: "H" }])), 0);
+check("create dates skip weekend, holiday and existing leave",
+  leaveDatesToCreate("2026-09-04", "2026-09-09", offDayMap([{ date: "2026-09-08", name: "H" }]), lmap.get("se")), ["2026-09-04"]);
+check("fmtDays", [fmtDays(20), fmtDays(12.5)], ["20", "12.5"]);
+
+const L = buildTeamSummary({
+  today: "2026-09-10", columns: wk,
+  users: [{ id: "se", name: "Exec", role: "sales_exec" }, { id: "lm", name: "Line", role: "line_mgr" }, { id: "fl", name: "Away", role: "bd_lead" }],
+  events: [...leaveEvents, ...["2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10"].map(d => lv("fl", d))],
+  callReports: [...calls("se", "2026-09-08", 5), ...calls("se", "2026-09-09", 3), ...calls("se", "2026-09-10", 5)],
+});
+const LS = L.rows.find(r => r.user.id === "se"), LL = L.rows.find(r => r.user.id === "lm"), LF = L.rows.find(r => r.user.id === "fl");
+check("exec target 5 × 2.5 = 12.5", LS.callTarget, 12.5);
+check("exec 13 / 12.5 → 104%", LS.callCompliancePct, 104);
+check("full leave cell target 0, half day 2.5", [LS.cellTargets["2026-09-07"], LS.cellTargets["2026-09-09"]], [0, 2.5]);
+check("exec leave days in week = 1.5 (Sat ignored)", LS.leaveDays, 1.5);
+check("future leave shows in cell but target untouched so far", [LL.cellLeave["2026-09-11"], LL.callTarget], [1, 20]);
+check("leave is never pending / overdue / a meeting", [LS.total.pending, LS.total.overdue, LS.total.meetings, LL.total.pending], [0, 0, 0, 0]);
+check("on leave all week to date → no target, no compliance", [LF.callTarget, LF.callCompliancePct], [0, null]);
+check("team leave days", L.compliance.leaveDays, 1.5 + 1 + 4);
+check("fully-away member not eligible", L.compliance.eligible, 2);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
