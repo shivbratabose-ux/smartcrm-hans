@@ -83,7 +83,10 @@ export function workingDaysElapsed(from, to, today, offDays = new Map(), leave =
 
 // ── Individual leave ────────────────────────────────────────────────
 // Stored as calendar events, one per day, owned by the person on leave:
-// type "Leave" (full day) or "Half-day leave". Leave is never counted as
+// type "Leave" (full day), "Half-day leave", or "Admin day" (a full day
+// the person spends on internal/admin work — office duties, audit, training
+// — instead of the field). All follow the same approval flow and, once
+// approved, take the day off the call target. Leave is never counted as
 // work, pending or overdue.
 //
 // Approval (event.status):
@@ -95,7 +98,11 @@ export function workingDaysElapsed(from, to, today, offDays = new Map(), leave =
 //                       existed) is treated as Approved
 // Only approved leave reduces the target. Days in one request share an id
 // prefix "lv_<requestId>_<date>" so they are approved or rejected together.
-export const LEAVE_TYPES = { "Leave": 1, "Half-day leave": 0.5 };
+export const LEAVE_TYPES = { "Leave": 1, "Half-day leave": 0.5, "Admin day": 1 };
+export const ADMIN_DAY_TYPE = "Admin day";
+// What people see for each type (form, panel, emails).
+export const LEAVE_TYPE_LABEL = { "Leave": "Full day leave", "Half-day leave": "Half day leave", "Admin day": "Admin day" };
+export const leaveTitleFor = (type) => type === "Leave" ? "On leave" : type;
 export const LEAVE_STATUS = { pending: "Pending approval", approved: "Approved", rejected: "Rejected", cancelled: "Cancelled" };
 
 export const isLeaveType = (e) => !!e && Object.prototype.hasOwnProperty.call(LEAVE_TYPES, e.type);
@@ -257,6 +264,7 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
   const offDays = offDayMap(holidays);
   const leave = leaveByUser(events);
   const pendingLeave = leaveByUser(events.filter(e => leaveState(e) === "pending"), { includePending: true });
+  const adminDays = leaveByUser(events.filter(e => e.type === ADMIN_DAY_TYPE));
   const from = columns.length ? columns[0].from : "";
   const to = columns.length ? columns[columns.length - 1].to : "";
   const userIds = new Set(users.map(u => u.id));
@@ -304,6 +312,10 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
     const myPending = pendingLeave.get(r.user.id) || new Map();
     const cellPendingLeave = Object.fromEntries(columns.map(col => [col.key, leaveDaysIn(col.from, col.to, myPending, offDays)]));
     const pendingLeaveDays = Object.values(cellPendingLeave).reduce((a, b) => a + b, 0);
+    // Approved admin days (a subset of leave) — so cells can say which it was.
+    const myAdmin = adminDays.get(r.user.id) || new Map();
+    const cellAdminDays = Object.fromEntries(columns.map(col => [col.key, leaveDaysIn(col.from, col.to, myAdmin, offDays)]));
+    const adminDayCount = Object.values(cellAdminDays).reduce((a, b) => a + b, 0);
     const callTarget = Object.values(cellTargets).reduce((a, b) => a + b, 0);
     const callCompliancePct = targeted ? pctOf(r.total.callsMade, callTarget) : null;
     if (targeted) teamLeaveDays += leaveDays;
@@ -313,7 +325,7 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
       teamTargetCalls += r.total.callsMade;
       if (r.total.callsMade >= callTarget) onTarget++;
     }
-    return { ...r, targeted, cellTargets, cellLeave, leaveDays, cellPendingLeave, pendingLeaveDays, callTarget, callCompliancePct };
+    return { ...r, targeted, cellTargets, cellLeave, leaveDays, cellPendingLeave, pendingLeaveDays, cellAdminDays, adminDayCount, callTarget, callCompliancePct };
   }).map(r => ({
     ...r,
     done: done(r.total),

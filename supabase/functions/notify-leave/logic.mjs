@@ -32,11 +32,15 @@ export function canApprove(approverId, ownerId, users) {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Same types as LEAVE_TYPES in src/utils/teamSummary.js.
+export const TYPE_LABEL = { "Leave": "Full day leave", "Half-day leave": "Half day leave", "Admin day": "Admin day" };
+const noun = (type) => type === "Admin day" ? "an admin day" : "leave";
+
 export function validatePayload(p) {
   if (!p || typeof p !== "object") return "body must be a JSON object";
   if (!["requested", "decided"].includes(p.kind)) return "kind must be requested | decided";
   if (!p.ownerId || typeof p.ownerId !== "string") return "ownerId is required";
-  if (!["Leave", "Half-day leave"].includes(p.type)) return "type must be Leave | Half-day leave";
+  if (!TYPE_LABEL[p.type]) return "type must be Leave | Half-day leave | Admin day";
   if (!Array.isArray(p.dates) || p.dates.length === 0 || p.dates.length > 60 || !p.dates.every(d => DATE_RE.test(d))) return "dates must be 1–60 YYYY-MM-DD strings";
   if (p.kind === "decided" && !["Approved", "Rejected"].includes(p.decision)) return "decision must be Approved | Rejected";
   return null;
@@ -101,27 +105,28 @@ export function buildEmail({ kind, owner, actor, recipient, type, dates, reason,
     <table style="font-size:14px;border-collapse:collapse;margin-bottom:18px">${rows}</table>
     ${cta ? `<a href="${esc(link)}" style="display:inline-block;background:#1B6B5A;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:8px">${cta}</a>` : ""}
   </div>
-  <p style="font-size:11.5px;color:#94a3b8;margin:12px 4px 0">Automatic message from SmartCRM. Only approved leave comes off the 5-calls-a-day target.</p>
+  <p style="font-size:11.5px;color:#94a3b8;margin:12px 4px 0">Automatic message from SmartCRM. Only approved leave and admin days come off the 5-calls-a-day target.</p>
 </div></body></html>`;
 
+  const what = type === "Admin day" ? "Admin day" : "Leave";
   if (kind === "requested") {
     return {
-      subject: `Leave request: ${owner.name} · ${d.span}`,
+      subject: `${what} request: ${owner.name} · ${d.span}`,
       html: wrap(
-        `${esc(owner.name)} has requested leave`,
+        `${esc(owner.name)} has requested ${noun(type)}`,
         `Hi ${esc(String(recipient?.name || "").split(" ")[0] || "there")}, ${esc(owner.name)} is waiting for your approval.`,
-        row("Dates", esc(d.text)) + row("Type", type === "Leave" ? "Full day" : "Half day") + (reason ? row("Reason", esc(reason)) : ""),
+        row("Dates", esc(d.text)) + row("Type", esc(TYPE_LABEL[type])) + (reason ? row("Reason", esc(reason)) : ""),
         "Review in SmartCRM → Calendar → Leave",
       ),
     };
   }
   const ok = decision === "Approved";
   return {
-    subject: `Leave ${ok ? "approved" : "rejected"}: ${d.span}`,
+    subject: `${what} ${ok ? "approved" : "rejected"}: ${d.span}`,
     html: wrap(
-      `Your leave was ${ok ? "approved" : "rejected"}`,
-      `${esc(actor?.name || "Your manager")} ${ok ? "approved" : "rejected"} your leave request.${ok ? " These days now carry no call target." : ""}`,
-      row("Dates", esc(d.text)) + row("Type", type === "Leave" ? "Full day" : "Half day") + (note ? row(ok ? "Note" : "Reason", esc(note)) : ""),
+      `Your ${what === "Leave" ? "leave was" : "admin day was"} ${ok ? "approved" : "rejected"}`,
+      `${esc(actor?.name || "Your manager")} ${ok ? "approved" : "rejected"} your ${what === "Leave" ? "leave" : "admin day"} request.${ok ? " These days now carry no call target." : ""}`,
+      row("Dates", esc(d.text)) + row("Type", esc(TYPE_LABEL[type])) + (note ? row(ok ? "Note" : "Reason", esc(note)) : ""),
       "Open SmartCRM",
     ),
   };

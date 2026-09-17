@@ -51,6 +51,11 @@ check("request links to the app", req.html.includes('href="https://smartcrm-hans
 const dec = buildEmail({ kind: "decided", owner: users[4], actor: users[3], type: "Leave", dates: ["2026-09-21"], decision: "Rejected", note: "Quarter-end week" });
 check("decision subject", dec.subject, "Leave rejected: Mon 21 Sep 2026");
 check("rejection shows reason", dec.html.includes("Reason") && dec.html.includes("Quarter-end week"), true);
+check("admin day is a valid type", validatePayload({ ...base, type: "Admin day" }), null);
+const adm = buildEmail({ kind: "requested", owner: users[4], recipient: users[3], type: "Admin day", dates: ["2026-09-21"], appUrl: "https://x" });
+check("admin day request subject + wording", [adm.subject, adm.html.includes("has requested an admin day"), adm.html.includes(">Admin day<")],
+  ["Admin day request: Ravi Rep · Mon 21 Sep 2026", true, true]);
+check("admin day decision subject", buildEmail({ kind: "decided", owner: users[4], actor: users[3], type: "Admin day", dates: ["2026-09-21"], decision: "Approved" }).subject, "Admin day approved: Mon 21 Sep 2026");
 check("escapeHtml", escapeHtml(`a&b"<'`), "a&amp;b&quot;&lt;&#39;");
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
