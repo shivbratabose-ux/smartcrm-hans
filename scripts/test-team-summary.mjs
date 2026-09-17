@@ -1,7 +1,8 @@
 // Verifies the Calendar's Team summary logic — the same module the
 // Team view renders. Run: node scripts/test-team-summary.mjs
 import { buildTeamSummary, teamColumns, callReportState, workingDaysElapsed, hasCallTarget, offDayMap, offDaysIn, leaveByUser, isLeaveEvent, leaveDaysIn, leaveDatesToCreate, fmtDays,
-  canApproveLeave, initialLeaveStatus, lineManagerOf, leaveState, groupLeaveRequests, pendingLeaveFor } from "../src/utils/teamSummary.js";
+  canApproveLeave, initialLeaveStatus, lineManagerOf, leaveState, groupLeaveRequests, pendingLeaveFor,
+  hoursBetween, leaveShare, leaveTitleFor, fmtHours, adminOverlap } from "../src/utils/teamSummary.js";
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -226,10 +227,42 @@ const adEvents = [
 ];
 const AD = buildTeamSummary({ today: "2026-09-10", columns: wk, users: [{ id: "se", name: "Exec", role: "sales_exec" }], events: adEvents }).rows[0];
 check("approved admin day + leave off target: 5 × (4 − 2)", AD.callTarget, 10);
-check("admin day counted separately from leave", [AD.leaveDays, AD.adminDayCount, AD.cellAdminDays["2026-09-08"], AD.cellAdminDays["2026-09-07"]], [2, 1, 1, 0]);
+check("admin day counted separately from leave (in hours)", [AD.leaveDays, AD.adminHours, AD.cellAdminHours["2026-09-08"], AD.cellAdminHours["2026-09-07"]], [2, 8, 8, 0]);
 check("pending admin day shown, not deducted", [AD.pendingLeaveDays, AD.cellTargets["2026-09-09"]], [1, 5]);
 check("admin day is a leave type (approval flow, never pending work)", [isLeaveEvent({ type: "Admin day", status: "Approved" }), AD.total.pending, AD.total.overdue], [true, 0, 0]);
 check("admin day grouped as its own request", groupLeaveRequests(adEvents).find(g => g.id === "a1").type, "Admin day");
+
+console.log("— admin work (timed blocks) —");
+check("hoursBetween", [hoursBetween("10:00", "11:30"), hoursBetween("09:30", "09:00"), hoursBetween("bad", "11:00")], [1.5, 0, 0]);
+check("share: 2h of an 8h day = 0.25", leaveShare({ type: "Admin work", time: "10:00", endTime: "12:00" }), 0.25);
+check("share capped at a full day", leaveShare({ type: "Admin work", time: "07:00", endTime: "20:00" }), 1);
+check("share of leave types unchanged", ["Leave", "Half-day leave", "Admin day"].map(t => leaveShare({ type: t })), [1, 0.5, 1]);
+check("title carries the purpose", leaveTitleFor("Admin work", "Preparing quotation"), "Admin: Preparing quotation");
+check("fmtHours", [fmtHours(0.5), fmtHours(2), fmtHours(1.5)], ["30m", "2h", "1.5h"]);
+
+const aw = (id, date, time, endTime, status = "Approved", purpose = "Preparing quotation") =>
+  ({ id: `lv_${id}_${date}`, owner: "se", date, type: "Admin work", time, endTime, status, title: `Admin: ${purpose}`, notes: "Quote for Acme – 12 sites" });
+const awEvents = [
+  aw("w1", "2026-09-08", "10:00", "11:00"),                               // 1h
+  aw("w2", "2026-09-08", "14:00", "17:00", "Approved", "Internal meeting"), // 3h, same day
+  aw("w3", "2026-09-09", "09:00", "13:00", "Pending approval"),           // pending → not deducted
+  aw("w4", "2026-09-10", "10:00", "12:00", "Rejected"),                   // rejected → ignored
+];
+const AW = buildTeamSummary({ today: "2026-09-10", columns: wk, users: [{ id: "se", name: "Exec", role: "sales_exec" }], events: awEvents }).rows[0];
+check("two blocks on one day add up: 4h → half the day's target", AW.cellTargets["2026-09-08"], 2.5);
+check("pending block not deducted, rejected ignored", [AW.cellTargets["2026-09-09"], AW.cellTargets["2026-09-10"]], [5, 5]);
+check("week target 5 × (4 − 0.5) = 17.5", AW.callTarget, 17.5);
+check("admin hours reported per cell and row", [AW.cellAdminHours["2026-09-08"], AW.adminHours, AW.pendingLeaveDays], [4, 4, 0.5]);
+check("admin work is never pending / overdue work", [AW.total.pending, AW.total.overdue, AW.total.meetings], [0, 0, 0]);
+const g1w = groupLeaveRequests(awEvents).find(g => g.id === "w1");
+check("request exposes time, hours, purpose, details", [g1w.time, g1w.endTime, g1w.hours, g1w.purpose, g1w.reason], ["10:00", "11:00", 1, "Preparing quotation", "Quote for Acme – 12 sites"]);
+check("overlap with an existing block is found", adminOverlap(awEvents, "se", "2026-09-08", "10:30", "11:30")?.id, "lv_w1_2026-09-08");
+check("adjacent block is not an overlap", adminOverlap(awEvents, "se", "2026-09-08", "11:00", "12:00"), null);
+check("rejected block doesn't block the slot", adminOverlap(awEvents, "se", "2026-09-10", "10:00", "11:00"), null);
+const existingShares = leaveByUser(awEvents, { includePending: true }).get("se");
+check("room left on a day: 4h used, 4h more fits, 5h doesn't",
+  [leaveDatesToCreate("2026-09-08", "2026-09-08", new Map(), existingShares, 0.5).length, leaveDatesToCreate("2026-09-08", "2026-09-08", new Map(), existingShares, 5 / 8).length], [1, 0]);
+check("stamp-only notes don't show as the reason", groupLeaveRequests([{ ...aw("w9", "2026-09-11", "10:00", "11:00"), notes: "[Approved by X · 1 Sept]" }])[0].reason, "");
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

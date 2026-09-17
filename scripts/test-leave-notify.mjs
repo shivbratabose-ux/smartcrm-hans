@@ -56,6 +56,15 @@ const adm = buildEmail({ kind: "requested", owner: users[4], recipient: users[3]
 check("admin day request subject + wording", [adm.subject, adm.html.includes("has requested an admin day"), adm.html.includes(">Admin day<")],
   ["Admin day request: Ravi Rep · Mon 21 Sep 2026", true, true]);
 check("admin day decision subject", buildEmail({ kind: "decided", owner: users[4], actor: users[3], type: "Admin day", dates: ["2026-09-21"], decision: "Approved" }).subject, "Admin day approved: Mon 21 Sep 2026");
+check("admin work needs valid times", [
+  validatePayload({ ...base, type: "Admin work", time: "10:00", endTime: "11:00", purpose: "Internal meeting" }),
+  validatePayload({ ...base, type: "Admin work", time: "11:00", endTime: "10:00", purpose: "x" }) !== null,
+  validatePayload({ ...base, type: "Admin work", time: "10:00", endTime: "11:00" }) !== null], [null, true, true]);
+const awm = buildEmail({ kind: "requested", owner: users[4], recipient: users[3], type: "Admin work", dates: ["2026-09-17"],
+  time: "10:00", endTime: "11:30", purpose: "Preparing quotation <b>", reason: "Quote for Acme", appUrl: "https://x" });
+check("admin work subject has the time", awm.subject, "Admin work request: Ravi Rep · Thu 17 Sep 2026 · 10:00–11:30");
+check("admin work body: when, purpose (escaped), details", [awm.html.includes("Thu 17 Sep 2026 · 10:00–11:30 (1.5 h)"), awm.html.includes("Preparing quotation &lt;b&gt;"), awm.html.includes(">Details<")], [true, true, true]);
+check("admin work decision wording", buildEmail({ kind: "decided", owner: users[4], actor: users[3], type: "Admin work", dates: ["2026-09-17"], time: "10:00", endTime: "10:30", purpose: "Training", decision: "Approved" }).html.includes("Your admin work was approved"), true);
 check("escapeHtml", escapeHtml(`a&b"<'`), "a&amp;b&quot;&lt;&#39;");
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);

@@ -296,6 +296,10 @@ export const INIT_MASTERS = {
   // [{id, date:"YYYY-MM-DD", name, type:"Holiday"|"Admin day"}]. Non-working
   // weekdays org-wide; excluded from the daily call target (Calendar → Team).
   holidays:         [],
+
+  // Purposes offered for timed "Admin work" in Calendar → Mark leave.
+  adminWorkTypes:   mk("awt", ["Preparing quotation / proposal", "Internal meeting", "Training", "Tender / RFP documentation",
+                              "Customer documentation (PO, invoice, KYC)", "CRM data update / reporting", "Other"]),
 };
 
 // ── Blank form templates ──
