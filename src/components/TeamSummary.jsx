@@ -117,7 +117,8 @@ export default function TeamSummary({ activities, callReports, events, users, co
                       <span className="tbl-link" style={{ fontWeight: 600 }}>{r.user.name}</span>
                       <span style={{ display: "block", fontSize: 10, color: r.done === 0 ? "#B45309" : "var(--text3)", fontWeight: r.done === 0 ? 700 : 400 }}>
                         {r.done === 0 ? "no activity logged" : r.user.role}
-                        {r.leaveDays > 0 && <span style={{ color: "#B45309", fontWeight: 600 }}> · {fmtDays(r.leaveDays)}d leave</span>}
+                        {r.leaveDays - r.adminDayCount > 0 && <span style={{ color: "#B45309", fontWeight: 600 }}> · {fmtDays(r.leaveDays - r.adminDayCount)}d leave</span>}
+                        {r.adminDayCount > 0 && <span style={{ color: "#6D28D9", fontWeight: 600 }}> · {fmtDays(r.adminDayCount)} admin day{r.adminDayCount === 1 ? "" : "s"}</span>}
                         {r.pendingLeaveDays > 0 && <span style={{ color: "var(--text3)", fontWeight: 600 }} title="Requested, not yet approved — still counted in the target"> · {fmtDays(r.pendingLeaveDays)}d pending</span>}
                       </span>
                     </span>
@@ -135,11 +136,14 @@ export default function TeamSummary({ activities, callReports, events, users, co
                       <span style={{ ...num, fontWeight: 700 }}>{done || <span style={{ color: "var(--text3)", fontWeight: 400 }}>—</span>}</span>
                       {r.cellLeave[c.key] > 0 && (
                         <span style={{ display: "block", fontSize: 9.5, fontWeight: 700, color: "#B45309" }}>
-                          {c.from === c.to ? (r.cellLeave[c.key] >= 1 ? "On leave" : "½ day leave") : `${fmtDays(r.cellLeave[c.key])}d leave`}
+                          {c.from === c.to
+                            ? (r.cellAdminDays[c.key] > 0 ? "Admin day" : r.cellLeave[c.key] >= 1 ? "On leave" : "½ day leave")
+                            : [r.cellLeave[c.key] - r.cellAdminDays[c.key] > 0 ? `${fmtDays(r.cellLeave[c.key] - r.cellAdminDays[c.key])}d leave` : "",
+                               r.cellAdminDays[c.key] > 0 ? `${fmtDays(r.cellAdminDays[c.key])} admin` : ""].filter(Boolean).join(" · ")}
                         </span>
                       )}
                       {r.cellPendingLeave[c.key] > 0 && (
-                        <span style={{ display: "block", fontSize: 9.5, fontWeight: 600, color: "var(--text3)", fontStyle: "italic" }} title="Leave requested, awaiting approval — target still applies">
+                        <span style={{ display: "block", fontSize: 9.5, fontWeight: 600, color: "var(--text3)", fontStyle: "italic" }} title="Leave / admin day requested, awaiting approval — target still applies">
                           {c.from === c.to ? "leave pending" : `${fmtDays(r.cellPendingLeave[c.key])}d pending`}
                         </span>
                       )}
@@ -188,7 +192,7 @@ export default function TeamSummary({ activities, callReports, events, users, co
       </div>
       <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8 }}>
         Cells show completed work (calls attempted + meetings + other activities). Hover a cell for the breakdown; click a name to open that person's calendar. A no-answer call counts as a call made, not as connected.
-        {" "}Call target: {CALL_TARGET.perDay} calls per working day (Mon–Fri) for Sales Executives, BD Leads, Country Managers and Line Managers, counted up to today — compliance = calls made ÷ target to date. Holidays and admin days set in Masters → Activity, and a person's approved leave carry no target (leave awaiting approval still counts); calls made on them still count.
+        {" "}Call target: {CALL_TARGET.perDay} calls per working day (Mon–Fri) for Sales Executives, BD Leads, Country Managers and Line Managers, counted up to today — compliance = calls made ÷ target to date. Holidays and admin days set in Masters → Activity, and a person's approved leave or admin day carry no target (leave awaiting approval still counts); calls made on them still count.
       </div>
     </div>
   );

@@ -218,5 +218,18 @@ const P = buildTeamSummary({ today: "2026-09-10", columns: wk, users: [{ id: "re
 check("pending leave shown, target not reduced", [P.rows[0].pendingLeaveDays, P.rows[0].cellPendingLeave["2026-09-07"], P.rows[0].leaveDays, P.rows[0].callTarget], [2, 1, 0.5, 17.5]);
 check("rejected leave neither counts nor shows as pending", buildTeamSummary({ today: "2026-09-10", columns: wk, users: [{ id: "peer", name: "P", role: "sales_exec" }], events: apprEvents }).rows[0].callTarget, 20);
 
+console.log("— admin day (individual) —");
+const adEvents = [
+  { id: "lv_a1_2026-09-08", owner: "se", date: "2026-09-08", type: "Admin day", status: "Approved" },
+  { id: "lv_a2_2026-09-09", owner: "se", date: "2026-09-09", type: "Admin day", status: "Pending approval" },
+  { id: "lv_a3_2026-09-07", owner: "se", date: "2026-09-07", type: "Leave", status: "Approved" },
+];
+const AD = buildTeamSummary({ today: "2026-09-10", columns: wk, users: [{ id: "se", name: "Exec", role: "sales_exec" }], events: adEvents }).rows[0];
+check("approved admin day + leave off target: 5 × (4 − 2)", AD.callTarget, 10);
+check("admin day counted separately from leave", [AD.leaveDays, AD.adminDayCount, AD.cellAdminDays["2026-09-08"], AD.cellAdminDays["2026-09-07"]], [2, 1, 1, 0]);
+check("pending admin day shown, not deducted", [AD.pendingLeaveDays, AD.cellTargets["2026-09-09"]], [1, 5]);
+check("admin day is a leave type (approval flow, never pending work)", [isLeaveEvent({ type: "Admin day", status: "Approved" }), AD.total.pending, AD.total.overdue], [true, 0, 0]);
+check("admin day grouped as its own request", groupLeaveRequests(adEvents).find(g => g.id === "a1").type, "Admin day");
+
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

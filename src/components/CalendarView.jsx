@@ -4,15 +4,15 @@ import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES, CALL_OUTCOMES } 
 import { BLANK_EVENT } from '../data/seed';
 import { fmt, uid, today, toLocalISODate, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq, getScopedUserIds, isGlobalRole } from '../utils/helpers';
 import TeamSummary from './TeamSummary';
-import { teamColumns, callReportState, LEAVE_TYPES, LEAVE_STATUS, leaveState, isLeaveType, leaveByUser, leaveDatesToCreate, offDayMap,
+import { teamColumns, callReportState, LEAVE_TYPES, LEAVE_STATUS, LEAVE_TYPE_LABEL, leaveTitleFor, leaveState, isLeaveType, leaveByUser, leaveDatesToCreate, offDayMap,
   canApproveLeave, initialLeaveStatus, lineManagerOf, groupLeaveRequests, pendingLeaveFor, fmtDays } from '../utils/teamSummary';
 import { notify } from '../utils/toast';
 import { notifyLeave } from '../utils/leaveNotify';
 import { Lock } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 
-const TYPE_COL={"Call":"var(--brand)","Meeting":"var(--purple)","Demo":"var(--orange)","Follow-up":"var(--blue)","Site Visit":"var(--amber)","Presentation":"var(--teal)","Training":"var(--green)","Review":"#8B5CF6","Leave":"#B45309","Half-day leave":"#D97706"};
-const TYPE_ICON={"Call":<Phone size={12}/>,"Meeting":<Users size={12}/>,"Demo":<Zap size={12}/>,"Follow-up":<Clock size={12}/>,"Site Visit":<MapPin size={12}/>,"Presentation":<Video size={12}/>,"Training":<Calendar size={12}/>,"Review":<Check size={12}/>,"Leave":<CalendarOff size={12}/>,"Half-day leave":<CalendarOff size={12}/>};
+const TYPE_COL={"Call":"var(--brand)","Meeting":"var(--purple)","Demo":"var(--orange)","Follow-up":"var(--blue)","Site Visit":"var(--amber)","Presentation":"var(--teal)","Training":"var(--green)","Review":"#8B5CF6","Leave":"#B45309","Half-day leave":"#D97706","Admin day":"#6D28D9"};
+const TYPE_ICON={"Call":<Phone size={12}/>,"Meeting":<Users size={12}/>,"Demo":<Zap size={12}/>,"Follow-up":<Clock size={12}/>,"Site Visit":<MapPin size={12}/>,"Presentation":<Video size={12}/>,"Training":<Calendar size={12}/>,"Review":<Check size={12}/>,"Leave":<CalendarOff size={12}/>,"Half-day leave":<CalendarOff size={12}/>,"Admin day":<CalendarOff size={12}/>};
 
 const STATUS_COL={"Scheduled":"#3B82F6","Completed":"#22C55E","Cancelled":"#94A3B8","Rescheduled":"#F59E0B","No Show":"#EF4444","Planned":"#6366F1"};
 
@@ -207,18 +207,18 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   const saveLeave=()=>{
     if(!leavePlan?.length) return;
     const reason=(leaveModal.reason||"").trim();
-    const title=leaveModal.type==="Leave"?"On leave":"Half-day leave";
+    const title=leaveTitleFor(leaveModal.type);
     const status=initialLeaveStatus(currentUser, leaveModal.owner, orgUsers||[]);
     const autoApproved=status===LEAVE_STATUS.approved&&leaveModal.owner!==currentUser;
     const rid=uid().replace(/[^A-Za-z0-9]/g,"");
     setEvents(p=>[...p, ...leavePlan.map(date=>({
       ...BLANK_EVENT, id:`lv_${rid}_${date}`, title, type:leaveModal.type, status,
-      date, time:"09:00", endTime:leaveModal.type==="Leave"?"18:00":"13:00",
+      date, time:"09:00", endTime:leaveModal.type==="Half-day leave"?"13:00":"18:00",
       owner:leaveModal.owner, notes:[reason, autoApproved?stamp("Approved"):""].filter(Boolean).join("\n"),
     }))]);
     if(status===LEAVE_STATUS.pending){
       const mgr=lineManagerOf(leaveModal.owner, orgUsers||[]);
-      notify.info(`Leave requested — waiting for approval from ${mgr?.name||"an admin"}. It comes off the call target once approved.`);
+      notify.info(`${LEAVE_TYPE_LABEL[leaveModal.type]} requested — waiting for approval from ${mgr?.name||"an admin"}. It comes off the call target once approved.`);
       emailAbout({kind:"requested", ownerId:leaveModal.owner, type:leaveModal.type, dates:leavePlan, reason}, mgr?.name||"an admin");
     } else notify.success(autoApproved?`Leave recorded and approved for ${nameOf(leaveModal.owner)}.`:"Leave recorded.");
     setLeaveModal(null);
@@ -238,7 +238,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
     setEvents(p=>p.map(e=>ids.has(e.id)?{...e,status,notes:[e.notes,stamp(verb,note)].filter(Boolean).join("\n")}:e));
     setRejecting(null);
     if(status!==LEAVE_STATUS.cancelled){
-      notify.success(`${verb} ${fmtDays(req.days)} day${req.days===1?"":"s"} of leave for ${nameOf(req.owner)}.`);
+      notify.success(`${verb} ${fmtDays(req.days)} day${req.days===1?"":"s"} of ${req.type==="Admin day"?"admin days":"leave"} for ${nameOf(req.owner)}.`);
       emailAbout({kind:"decided", ownerId:req.owner, type:req.type, dates:req.dates, decision:verb, note}, nameOf(req.owner));
     }
   };
@@ -593,7 +593,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
               return (
                 <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",border:"1px solid var(--border)",borderRadius:8,marginBottom:6,flexWrap:"wrap"}}>
                   <div style={{flex:"1 1 220px",minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:13}}>{nameOf(r.owner)} <span style={{fontWeight:500,color:"var(--text3)",fontSize:12}}>· {r.type==="Leave"?"Full day":"Half day"}</span></div>
+                    <div style={{fontWeight:700,fontSize:13}}>{nameOf(r.owner)} <span style={{fontWeight:500,color:"var(--text3)",fontSize:12}}>· {LEAVE_TYPE_LABEL[r.type]||r.type}</span></div>
                     <div style={{fontSize:12,color:"var(--text2)"}}>{rangeLabel(r)} · {fmtDays(r.days)} day{r.days===1?"":"s"}{r.reason?` · ${r.reason}`:""}</div>
                   </div>
                   <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6,background:ui.bg,color:ui.col}}>{ui.label}</span>
@@ -611,7 +611,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             };
             return (<>
               <div style={{fontSize:12,color:"var(--text3)",marginBottom:12}}>
-                Leave you request waits for your line manager{lineManagerOf(currentUser,orgUsers||[])?` (${lineManagerOf(currentUser,orgUsers||[]).name})`:""} to approve. Only approved leave comes off the 5-calls-a-day target. Leave a manager records for their own team is approved straight away.
+                Leave or an admin day you request waits for your line manager{lineManagerOf(currentUser,orgUsers||[])?` (${lineManagerOf(currentUser,orgUsers||[]).name})`:""} to approve. Only approved leave comes off the 5-calls-a-day target. Leave a manager records for their own team is approved straight away.
               </div>
               {(toApprove.length>0||canSeeTeam)&&(<>
                 <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",color:"var(--text3)",margin:"4px 0 8px"}}>Awaiting your approval · {toApprove.length}</div>
@@ -657,6 +657,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
               <select value={leaveModal.type} onChange={e=>setLeaveModal(m=>({...m,type:e.target.value}))}>
                 <option value="Leave">Full day</option>
                 <option value="Half-day leave">Half day</option>
+                <option value="Admin day">Admin day</option>
               </select>
             </div>
           </div>
@@ -676,7 +677,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
               : leavePlan.length===0 ? "Nothing to add — those dates are weekends, holidays or already marked as leave."
               : <>{initialLeaveStatus(currentUser, leaveModal.owner, orgUsers||[])===LEAVE_STATUS.pending
                     ? <b>Needs approval from {lineManagerOf(leaveModal.owner, orgUsers||[])?.name||"an admin"}. </b>
-                    : leaveModal.owner!==currentUser ? <b>Approved on save (you manage {nameOf(leaveModal.owner)}). </b> : null}Adds {leavePlan.length} {leaveModal.type==="Leave"?"day":"half-day"}{leavePlan.length===1?"":"s"} of leave ({leavePlan.map(d=>fmt.short(d)).join(", ")}). Each takes {leaveModal.type==="Leave"?"5 calls":"2.5 calls"} off the call target. Weekends, holidays and existing leave are skipped.</>}
+                    : leaveModal.owner!==currentUser ? <b>Approved on save (you manage {nameOf(leaveModal.owner)}). </b> : null}Adds {leavePlan.length} {leaveModal.type==="Admin day"?"admin day":leaveModal.type==="Leave"?"day":"half-day"}{leavePlan.length===1?"":"s"}{leaveModal.type==="Admin day"?"":" of leave"} ({leavePlan.map(d=>fmt.short(d)).join(", ")}). Each takes {leaveModal.type==="Half-day leave"?"2.5 calls":"5 calls"} off the call target. Weekends, holidays and days already marked are skipped.</>}
           </div>
         </Modal>
       )}
