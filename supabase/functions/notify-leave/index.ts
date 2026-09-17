@@ -146,6 +146,7 @@ serve(async (req) => {
     const mail = buildEmail({
       kind: body.kind, owner, actor: caller, recipient: r.to[0], type: body.type, dates: body.dates,
       reason: String(body.reason || "").slice(0, 500), decision: body.decision, note: String(body.note || "").slice(0, 500),
+      time: body.time, endTime: body.endTime, purpose: String(body.purpose || "").slice(0, 120),
       appUrl: env("APP_URL") || "https://smartcrm-hans.vercel.app",
     });
     // Replies go to the other party (manager ↔ requester), not a no-reply box.

@@ -32,6 +32,7 @@ export const MEETING_TYPES = new Set(["Meeting", "Demo", "Site Visit", "Presenta
 // day — or half of it — off their target the same way.
 export const CALL_TARGET = {
   perDay: 5,
+  workHours: 8,                                  // a full working day, for timed admin work
   workDays: new Set([1, 2, 3, 4, 5]),           // Date#getDay(): Mon..Fri
   roles: new Set(["sales_exec", "bd_lead", "country_mgr", "line_mgr"]),
 };
@@ -98,11 +99,54 @@ export function workingDaysElapsed(from, to, today, offDays = new Map(), leave =
 //                       existed) is treated as Approved
 // Only approved leave reduces the target. Days in one request share an id
 // prefix "lv_<requestId>_<date>" so they are approved or rejected together.
-export const LEAVE_TYPES = { "Leave": 1, "Half-day leave": 0.5, "Admin day": 1 };
+//
+// "Admin work" is a timed block (event.time → event.endTime) spent on
+// internal work — preparing a quote, an internal meeting, training. It
+// takes its share of the day off the target: hours ÷ CALL_TARGET.workHours
+// (1 h of an 8 h day = 5 × 1/8 = 0.625 calls). A person can log several
+// blocks a day; the day's total leave + admin is capped at a full day.
+// Its purpose is in the title ("Admin: Preparing quotation"), details in
+// notes. "Admin day" (full day, no times) is the older form, still read.
+export const LEAVE_TYPES = { "Leave": 1, "Half-day leave": 0.5, "Admin day": 1, "Admin work": 1 };
 export const ADMIN_DAY_TYPE = "Admin day";
+export const ADMIN_WORK_TYPE = "Admin work";
+export const ADMIN_TITLE_PREFIX = "Admin: ";
 // What people see for each type (form, panel, emails).
-export const LEAVE_TYPE_LABEL = { "Leave": "Full day leave", "Half-day leave": "Half day leave", "Admin day": "Admin day" };
-export const leaveTitleFor = (type) => type === "Leave" ? "On leave" : type;
+export const LEAVE_TYPE_LABEL = { "Leave": "Full day leave", "Half-day leave": "Half day leave", "Admin day": "Admin day", "Admin work": "Admin work" };
+export const leaveTitleFor = (type, purpose = "") =>
+  type === "Leave" ? "On leave" : type === ADMIN_WORK_TYPE ? `${ADMIN_TITLE_PREFIX}${purpose || "Admin work"}` : type;
+export const isAdminType = (e) => e?.type === ADMIN_DAY_TYPE || e?.type === ADMIN_WORK_TYPE;
+
+// "10:00" → 600; invalid → null
+const minutesOf = (t) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || "").trim());
+  return m && +m[1] < 24 && +m[2] < 60 ? +m[1] * 60 + +m[2] : null;
+};
+// Hours between two "HH:MM" times; 0 if invalid or not increasing.
+export function hoursBetween(start, end) {
+  const a = minutesOf(start), b = minutesOf(end);
+  return a == null || b == null || b <= a ? 0 : (b - a) / 60;
+}
+
+// Share of a working day this leave / admin entry takes (0..1).
+export function leaveShare(e) {
+  if (!isLeaveType(e)) return 0;
+  if (e.type === ADMIN_WORK_TYPE) return Math.min(1, hoursBetween(e.time, e.endTime) / CALL_TARGET.workHours);
+  return LEAVE_TYPES[e.type];
+}
+
+// Does [start, end) overlap an existing admin block for this person/date?
+// Pending and approved blocks count; rejected / cancelled don't.
+export function adminOverlap(events = [], owner, date, start, end) {
+  const a = minutesOf(start), b = minutesOf(end);
+  if (a == null || b == null) return null;
+  return events.find(e => e.type === ADMIN_WORK_TYPE && e.owner === owner && e.date === date
+    && ["approved", "pending"].includes(leaveState(e))
+    && minutesOf(e.time) < b && minutesOf(e.endTime) > a) || null;
+}
+
+// 1.5 → "1.5h", 0.5 → "30m", 2 → "2h"
+export const fmtHours = (h) => h < 1 ? `${Math.round(h * 60)}m` : `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
 export const LEAVE_STATUS = { pending: "Pending approval", approved: "Approved", rejected: "Rejected", cancelled: "Cancelled" };
 
 export const isLeaveType = (e) => !!e && Object.prototype.hasOwnProperty.call(LEAVE_TYPES, e.type);
@@ -170,11 +214,18 @@ export function groupLeaveRequests(events = []) {
     const tally = {};
     evs.forEach(e => { const s = leaveState(e); tally[s] = (tally[s] || 0) + 1; });
     const state = Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0];
+    const first = evs[0];
+    const timed = first.type === ADMIN_WORK_TYPE;
     return {
-      id: leaveRequestIdOf(evs[0]), owner: evs[0].owner, type: evs[0].type, state,
-      dates: evs.map(e => e.date), from: evs[0].date, to: evs[evs.length - 1].date,
-      days: evs.reduce((n, e) => n + LEAVE_TYPES[e.type], 0),
-      reason: String(evs[0].notes || "").split("\n")[0], events: evs,
+      id: leaveRequestIdOf(first), owner: first.owner, type: first.type, state,
+      dates: evs.map(e => e.date), from: first.date, to: evs[evs.length - 1].date,
+      days: evs.reduce((n, e) => n + leaveShare(e), 0),
+      hours: timed ? evs.reduce((n, e) => n + hoursBetween(e.time, e.endTime), 0) : null,
+      time: timed ? first.time : null, endTime: timed ? first.endTime : null,
+      purpose: timed ? String(first.title || "").replace(ADMIN_TITLE_PREFIX, "") : null,
+      // First notes line, unless it's an approval stamp.
+      reason: (String(first.notes || "").split("\n")[0] || "").startsWith("[") ? "" : String(first.notes || "").split("\n")[0],
+      events: evs,
     };
   }).sort((a, b) => b.from.localeCompare(a.from));
 }
@@ -194,7 +245,7 @@ export function leaveByUser(events = [], { includePending = false } = {}) {
     if (!(st === "approved" || (includePending && st === "pending")) || !e.date) continue;
     if (!m.has(e.owner)) m.set(e.owner, new Map());
     const days = m.get(e.owner);
-    days.set(e.date, Math.min(1, (days.get(e.date) || 0) + LEAVE_TYPES[e.type]));
+    days.set(e.date, Math.min(1, (days.get(e.date) || 0) + leaveShare(e)));
   }
   return m;
 }
@@ -204,10 +255,11 @@ export function leaveDaysIn(from, to, leave = new Map(), offDays = new Map()) {
   return eachDate(from, to).reduce((n, iso) => isWorkDay(iso, offDays) ? n + Math.min(1, leave.get(iso) || 0) : n, 0);
 }
 
-// Dates a new leave request should create entries for: working days in
-// [from, to] (weekends, holidays and days already on leave skipped).
-export function leaveDatesToCreate(from, to, offDays = new Map(), existing = new Map()) {
-  return eachDate(from, to).filter(iso => isWorkDay(iso, offDays) && !existing.has(iso));
+// Dates a new request should create entries for: working days in [from,
+// to] with room for `share` more of the day (weekends, holidays and days
+// already fully taken by leave / admin work are skipped).
+export function leaveDatesToCreate(from, to, offDays = new Map(), existing = new Map(), share = 1) {
+  return eachDate(from, to).filter(iso => isWorkDay(iso, offDays) && (existing.get(iso) || 0) + share <= 1 + 1e-9);
 }
 
 // 22.5 → "22.5", 20 → "20"
@@ -264,7 +316,7 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
   const offDays = offDayMap(holidays);
   const leave = leaveByUser(events);
   const pendingLeave = leaveByUser(events.filter(e => leaveState(e) === "pending"), { includePending: true });
-  const adminDays = leaveByUser(events.filter(e => e.type === ADMIN_DAY_TYPE));
+  const adminDays = leaveByUser(events.filter(isAdminType));
   const from = columns.length ? columns[0].from : "";
   const to = columns.length ? columns[columns.length - 1].to : "";
   const userIds = new Set(users.map(u => u.id));
@@ -312,10 +364,12 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
     const myPending = pendingLeave.get(r.user.id) || new Map();
     const cellPendingLeave = Object.fromEntries(columns.map(col => [col.key, leaveDaysIn(col.from, col.to, myPending, offDays)]));
     const pendingLeaveDays = Object.values(cellPendingLeave).reduce((a, b) => a + b, 0);
-    // Approved admin days (a subset of leave) — so cells can say which it was.
+    // Approved admin time (a subset of leave), in hours, so cells can say
+    // which it was: "Admin 1.5h" rather than a fraction of a day.
     const myAdmin = adminDays.get(r.user.id) || new Map();
-    const cellAdminDays = Object.fromEntries(columns.map(col => [col.key, leaveDaysIn(col.from, col.to, myAdmin, offDays)]));
-    const adminDayCount = Object.values(cellAdminDays).reduce((a, b) => a + b, 0);
+    const cellAdminHours = Object.fromEntries(columns.map(col =>
+      [col.key, leaveDaysIn(col.from, col.to, myAdmin, offDays) * CALL_TARGET.workHours]));
+    const adminHours = Object.values(cellAdminHours).reduce((a, b) => a + b, 0);
     const callTarget = Object.values(cellTargets).reduce((a, b) => a + b, 0);
     const callCompliancePct = targeted ? pctOf(r.total.callsMade, callTarget) : null;
     if (targeted) teamLeaveDays += leaveDays;
@@ -325,7 +379,7 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
       teamTargetCalls += r.total.callsMade;
       if (r.total.callsMade >= callTarget) onTarget++;
     }
-    return { ...r, targeted, cellTargets, cellLeave, leaveDays, cellPendingLeave, pendingLeaveDays, cellAdminDays, adminDayCount, callTarget, callCompliancePct };
+    return { ...r, targeted, cellTargets, cellLeave, leaveDays, cellPendingLeave, pendingLeaveDays, cellAdminHours, adminHours, callTarget, callCompliancePct };
   }).map(r => ({
     ...r,
     done: done(r.total),

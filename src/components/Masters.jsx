@@ -78,6 +78,7 @@ const SECTIONS = {
     { key:"callOutcomes",    title:"Call Outcomes" },
     { key:"eventTypes",      title:"Calendar Event Types" },
     { key:"eventStatuses",   title:"Calendar Event Statuses" },
+    { key:"adminWorkTypes",  title:"Admin Work Purposes", help:"Offered when someone logs timed admin work in Calendar → Mark leave. Approved admin time comes off the daily call target in proportion to the hours." },
     { key:"commTypes",       title:"Communication Types" },
     { key:"commStatuses",    title:"Communication Statuses" },
     { key:"updateCategories",title:"Internal Update Categories" },
