@@ -168,8 +168,13 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   const gateResult = validateStageGate(lead, "Converted", STAGE_GATES);
   const [showGateDetails, setShowGateDetails] = useState(false);
   const [showInlineContact, setShowInlineContact] = useState(false);
+  // Newer leads keep products in productSelection and may leave `product`
+  // blank, which used to name the deal "undefined – COMPANY".
+  const leadProductIds = [lead.product, ...(lead.productSelection || []).map(ps => ps?.productId)]
+    .filter(Boolean).filter((id, i, arr) => arr.indexOf(id) === i);
+  const firstProduct = leadProductIds[0] || "";
   const [form, setForm] = useState({
-    title: `${PROD_MAP[lead.product]?.name || lead.product} – ${lead.company}`,
+    title: firstProduct ? `${PROD_MAP[firstProduct]?.name || firstProduct} – ${lead.company}` : (lead.company || ""),
     accountId: lead.accountId || "",
     primaryContactId: "",
     // Carry the lead's Est. Value through to the opportunity by default.
@@ -184,13 +189,17 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
     notes: lead.notes || "",
     forecastCategory: "Likely-Case",
     dealSize: "Medium",
-    createNewAccount: !lead.accountId,
-    selectedProducts: lead.product ? [lead.product] : [],
+    // No account is needed to convert: Finance creates and links the account
+    // when the deal is Won. Only a lead already tied to a customer carries one.
+    createNewAccount: false,
+    selectedProducts: leadProductIds,
     keepLeadOpen: false,
     contactRoles: {},
     lob: "",
   });
   const [errors, setErrors] = useState({});
+  // The account picker stays tucked away unless the lead already has one.
+  const [showAccount, setShowAccount] = useState(!!lead.accountId);
 
   const validate = () => {
     const errs = {};
@@ -291,22 +300,32 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
           </div></div>
 
           <div className="form-row">
-            <div className="form-group"><label>Customer / Account (optional)</label>
-              <select
-                value={form.createNewAccount ? "__CREATE__" : (form.accountId || "")}
-                onChange={e => {
-                  const v = e.target.value;
-                  if (v === "__CREATE__") {
-                    setForm(f => ({ ...f, accountId: "", createNewAccount: true }));
-                  } else {
-                    setForm(f => ({ ...f, accountId: v, createNewAccount: false }));
-                  }
-                }}
-              >
-                <option value="">— Skip — Finance links account at Won —</option>
-                <option value="__CREATE__">— Create new Prospect account for "{lead.company}" —</option>
-                {(accounts || []).map(a => <option key={a.id} value={a.id}>{a.accountNo ? `[${a.accountNo}] ` : ""}{a.name}</option>)}
-              </select>
+            <div className="form-group"><label>Customer / Account</label>
+              {showAccount ? (
+                <select
+                  value={form.createNewAccount ? "__CREATE__" : (form.accountId || "")}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (v === "__CREATE__") {
+                      setForm(f => ({ ...f, accountId: "", createNewAccount: true }));
+                    } else {
+                      setForm(f => ({ ...f, accountId: v, createNewAccount: false }));
+                    }
+                  }}
+                >
+                  <option value="">Not needed now (Finance links it when the deal is Won)</option>
+                  <option value="__CREATE__">Create a Prospect account for "{lead.company}"</option>
+                  {(accounts || []).map(a => <option key={a.id} value={a.id}>{a.accountNo ? `[${a.accountNo}] ` : ""}{a.name}</option>)}
+                </select>
+              ) : (
+                <div style={{fontSize:12,color:"var(--text3)",padding:"8px 0",lineHeight:1.5}}>
+                  Not needed. Finance links the account when the deal is Won.{" "}
+                  <button type="button" onClick={() => setShowAccount(true)}
+                    style={{background:"none",border:"none",padding:0,color:"var(--brand)",fontWeight:600,cursor:"pointer",fontSize:12}}>
+                    Link an existing customer
+                  </button>
+                </div>
+              )}
             </div>
             <div className="form-group"><label>Contact Person</label>
               <select value={form.primaryContactId} onChange={e => setForm(f => ({...f, primaryContactId: e.target.value}))}>
@@ -461,6 +480,13 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
   const startFieldEdit = (field) => { setEditingField(field); setFieldVal(lead[field] ?? ""); };
   const saveFieldEdit = (field, val) => {
     const v = val !== undefined ? val : fieldVal;
+    // Picking "Converted to Opportunity" must create the deal, not just
+    // relabel the lead — hand over to the Convert window instead.
+    if (field === "stage" && v === "Converted" && lead.stage !== "Converted") {
+      setEditingField(null); setFieldVal("");
+      setShowConvertModal(true);
+      return;
+    }
     updateLead({ [field]: v });
     setEditingField(null); setFieldVal("");
   };
@@ -2166,6 +2192,8 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_LEAD);
   const [confirm, setConfirm] = useState(null);
+  // Lead waiting in the Convert window (opened from the grid or Edit Lead).
+  const [convertLead, setConvertLead] = useState(null);
   const [formErrors, setFormErrors] = useState({});
   const [detailId, setDetailId] = useState(null);
   const detail = detailId ? leads.find(l => l.id === detailId) || null : null;
@@ -2191,6 +2219,12 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
   //   email         → lowercase
   // Other fields pass through as-is so dropdowns / dates / numbers are untouched.
   const updateLeadField = (id, field, value) => {
+    // Setting the stage to Converted opens the Convert window so a deal is
+    // actually created; the lead keeps its stage until that finishes.
+    if (field === "stage" && value === "Converted") {
+      const target = leads.find(l => l.id === id);
+      if (target && target.stage !== "Converted") { setConvertLead(target); return; }
+    }
     let v = value;
     if (field === "company") v = upper(value);
     else if (field === "contact" || field === "name") v = title(value);
@@ -2378,7 +2412,13 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
     // Don't block — create the lead, but tag it so the list flags it
     // (highlighted row + DUPLICATE badge) and the rep can act. Re-evaluated
     // on every save, so editing away the overlap clears the flag.
-    const clean = sanitizeObj({ ...normalisedForm, duplicateOf: dup ? dup.id : "" });
+    // Choosing "Converted to Opportunity" here used to relabel the lead
+    // without creating any deal. Save the other edits at the lead's current
+    // stage, then open the Convert window to create the opportunity.
+    const priorStage = modal.mode === "add" ? (BLANK_LEAD.stage || "MQL") : (leads.find(l => l.id === normalisedForm.id)?.stage || "MQL");
+    const wantsConvert = normalisedForm.stage === "Converted" && priorStage !== "Converted";
+    const clean = sanitizeObj({ ...normalisedForm, stage: wantsConvert ? priorStage : normalisedForm.stage, duplicateOf: dup ? dup.id : "" });
+    if (wantsConvert) setConvertLead(clean);
     if (modal.mode === "add") {
       // Creation is the first assignment — seed the audit trail, and notify
       // the owner if the lead was created straight onto someone else's plate.
@@ -3315,7 +3355,7 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
             <div className="form-group"><label>Next Step</label><select value={form.nextStep||""} onChange={e => setForm(f => ({...f, nextStep:e.target.value}))}><option value="">Select</option>{NEXT_STEPS.map(s => <option key={s}>{s}</option>)}</select></div>
           </div>
           <div className="form-row">
-            <div className="form-group"><label>Link to Account</label>
+            <div className="form-group"><label>Link to Account <span style={{fontWeight:400,color:"var(--text3)"}}>(optional)</span></label>
               <TypeaheadSelect
                 value={form.accountId||""}
                 onChange={(id) => setForm(f => ({...f, accountId: id || ""}))}
@@ -3326,7 +3366,9 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
                 }))}
                 placeholder="Search accounts…"
               />
-              {form.accountId && (() => { const acct = accounts.find(a => a.id === form.accountId); return acct?.hierarchyPath ? <div style={{fontSize:11, color:"var(--text3)", marginTop:2}}>{acct.hierarchyPath}</div> : null; })()}
+              {form.accountId
+                ? (() => { const acct = accounts.find(a => a.id === form.accountId); return acct?.hierarchyPath ? <div style={{fontSize:11, color:"var(--text3)", marginTop:2}}>{acct.hierarchyPath}</div> : null; })()
+                : <div style={{fontSize:11, color:"var(--text3)", marginTop:2}}>Only for an existing customer. Not needed to convert.</div>}
             </div>
             <div className="form-group"><label>Lead Stage</label><select value={form.stage} onChange={e => setForm(f => ({...f, stage:e.target.value}))}>{LEAD_STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
           </div>
@@ -3376,6 +3418,18 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
           recordLabel={leads.find(l => l.id === confirm)?.company || "this lead"}
           onConfirm={(meta) => del(confirm, meta)}
           onCancel={() => setConfirm(null)}
+        />
+      )}
+
+      {convertLead && (
+        <ConvertToOppModal
+          lead={convertLead}
+          accounts={accounts}
+          contacts={allContacts || []}
+          onConvert={(ld, data) => handleConvert(ld, data)}
+          onClose={() => setConvertLead(null)}
+          orgUsers={orgUsers}
+          setContacts={setContacts}
         />
       )}
 
