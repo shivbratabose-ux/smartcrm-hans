@@ -2257,7 +2257,20 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     // (product picked, no module ticked, no explicit "None") don't block save.
     const normalisedForm = { ...form, productSelection: normaliseProductSelection(form.productSelection) };
     const errs = validateLead(normalisedForm);
-    if (hasErrors(errs)) { setFormErrors(errs); return; }
+    if (hasErrors(errs)) {
+      setFormErrors(errs);
+      // The form is long: say what's missing and scroll to the first
+      // problem, otherwise Save looks broken when the error is off-screen.
+      const labels = { company: "Company Name", contact: "Contact Name", email: "Email", nextCall: "Next Call Date", source: "Source", score: "Score", productSelection: "Product" };
+      const missing = Object.keys(errs).filter(k => errs[k]);
+      notify.error(`Can't save yet — check ${missing.map(k => labels[k] || k).join(", ")}.`);
+      setTimeout(() => {
+        const first = missing[0];
+        const el = document.querySelector(`[data-field="${first}"]`);
+        if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); if (typeof el.focus === "function") el.focus({ preventScroll: true }); }
+      }, 50);
+      return;
+    }
     // Duplicate check — a lead is a likely duplicate when ALL THREE hold:
     //   1. same Company name, AND
     //   2. same Contact name OR same email, AND
@@ -2979,8 +2992,8 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           {/* ── A. PROSPECT DETAILS ── */}
           <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:4}}>A. Prospect Details</div>
           <div className="form-row">
-            <div className="form-group"><label>Company Name * <span style={{fontSize:10.5,color:"var(--text3)",fontWeight:400,letterSpacing:"0.3px",marginLeft:6}}>(ALL CAPS)</span></label><input value={form.company} onChange={e => { setForm(f => ({...f, company:upper(e.target.value)})); setFormErrors(e => ({...e, company:undefined})); }} placeholder="COMPANY NAME" style={{textTransform:"uppercase",...(formErrors.company ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.company}/></div>
-            <div className="form-group"><label>Contact Name *</label><input value={form.contact} onChange={e => { setForm(f => ({...f, contact:title(e.target.value)})); setFormErrors(e => ({...e, contact:undefined})); }} placeholder="Contact Person" style={{textTransform:"capitalize",...(formErrors.contact ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.contact}/></div>
+            <div className="form-group"><label>Company Name * <span style={{fontSize:10.5,color:"var(--text3)",fontWeight:400,letterSpacing:"0.3px",marginLeft:6}}>(ALL CAPS)</span></label><input value={form.company} onChange={e => { setForm(f => ({...f, company:upper(e.target.value)})); setFormErrors(e => ({...e, company:undefined})); }} placeholder="COMPANY NAME" data-field="company" style={{textTransform:"uppercase",...(formErrors.company ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.company}/></div>
+            <div className="form-group"><label>Contact Name *</label><input value={form.contact} onChange={e => { setForm(f => ({...f, contact:title(e.target.value)})); setFormErrors(e => ({...e, contact:undefined})); }} placeholder="Contact Person" data-field="contact" style={{textTransform:"capitalize",...(formErrors.contact ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.contact}/></div>
           </div>
 
           {/* Company Hierarchy */}
@@ -3119,7 +3132,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             <div className="form-group"><label>Branches</label><input type="number" min="0" value={form.branches||0} onChange={e => setForm(f => ({...f, branches:+e.target.value}))}/></div>
             <div className="form-group"></div>
           </div>
-          <div className="form-group">
+          <div className="form-group" data-field="productSelection">
             <label>Products & Modules <span style={{color:"#DC2626"}}>*</span></label>
             <ProductModulePicker
               catalog={catalog || []}
@@ -3204,7 +3217,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           {/* ── F. NEXT STEPS & QUALIFICATION ── */}
           <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:16,paddingTop:12,borderTop:"1px solid var(--border)"}}>F. Next Steps & Qualification</div>
           <div className="form-row">
-            <div className="form-group"><label>Source <span style={{color:"#EF4444"}}>*</span></label><select value={form.source} onChange={e => setForm(f => ({...f, source:e.target.value}))}><option value="">Select Source</option>{LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}</select><FormError msg={formErrors.source}/></div>
+            <div className="form-group"><label>Source <span style={{color:"#EF4444"}}>*</span></label><select value={form.source} onChange={e => { setForm(f => ({...f, source:e.target.value})); setFormErrors(e => ({...e, source:undefined})); }} style={formErrors.source ? {borderColor:"#DC2626"} : {}} data-field="source"><option value="">Select Source</option>{LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}</select><FormError error={formErrors.source}/></div>
             <div className="form-group"><label>Next Step</label><select value={form.nextStep||""} onChange={e => setForm(f => ({...f, nextStep:e.target.value}))}><option value="">Select</option>{NEXT_STEPS.map(s => <option key={s}>{s}</option>)}</select></div>
           </div>
           <div className="form-row">
@@ -3236,7 +3249,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           <div className="form-row">
             <div className="form-group">
               <label>Next Call Date {form.stage !== "NA" ? "*" : ""}</label>
-              <input type="date" value={form.nextCall} onChange={e => { setForm(f => ({...f, nextCall:e.target.value})); setFormErrors(e => ({...e, nextCall:undefined})); }} style={formErrors.nextCall ? {borderColor:"#DC2626"} : {}}/>
+              <input type="date" value={form.nextCall} data-field="nextCall" onChange={e => { setForm(f => ({...f, nextCall:e.target.value})); setFormErrors(e => ({...e, nextCall:undefined})); }} style={formErrors.nextCall ? {borderColor:"#DC2626"} : {}}/>
               <FormError error={formErrors.nextCall}/>
             </div>
             <div className="form-group">
