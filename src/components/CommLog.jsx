@@ -12,6 +12,7 @@ import { exportCSV } from '../utils/csv';
 import ResourceLibrary from './ResourceLibrary';
 import EmailAiPanel from './EmailAiPanel';
 import { isAiFeatureOn } from '../utils/ai';
+import useIsMobile from '../hooks/useIsMobile';
 
 const TYPE_ICON={"Email Sent":<ArrowUpRight size={13}/>,"Email Received":<ArrowDownLeft size={13}/>,"WhatsApp Sent":<Send size={13}/>,"WhatsApp Received":<ArrowDownLeft size={13}/>,"SMS Sent":<Send size={13}/>,"SMS Received":<ArrowDownLeft size={13}/>,"Letter Sent":<Mail size={13}/>};
 const TYPE_COL={"Email Sent":"var(--blue)","Email Received":"var(--green)","WhatsApp Sent":"#25D366","WhatsApp Received":"#128C7E","SMS Sent":"var(--amber)","SMS Received":"var(--orange)","Letter Sent":"var(--purple)"};
@@ -49,6 +50,20 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
   },[enriched,typeF,sourceF,search]);
 
   const pg=usePagination(filtered);
+  const isMobile=useIsMobile();
+  // Row buttons, shared by the table and the phone cards: access requests
+  // get Approve / Deny (or Revoke once approved); everything else Edit / Delete.
+  const rowActionsFor=(c)=>{
+    const ar=parseAccessReq(c);
+    if(!ar) return <><button className="icon-btn" aria-label="Edit" onClick={()=>openEdit(c)}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(c.id)}><Trash2 size={14}/></button>}</>;
+    const isOwnerOrAdmin=ar.ownerId===currentUser||isGlobalRole(currentUser,orgUsers);
+    if(ar.requestStatus==="pending"&&isOwnerOrAdmin) return <>
+      <button className="icon-btn" aria-label="Approve" title="Grant edit access" style={{color:"#16A34A"}} onClick={()=>onRespondEditAccess&&onRespondEditAccess(c.id,true)}><CheckIcon size={15}/></button>
+      <button className="icon-btn" aria-label="Deny" title="Deny request" style={{color:"#DC2626"}} onClick={()=>onRespondEditAccess&&onRespondEditAccess(c.id,false)}><XIcon size={15}/></button>
+    </>;
+    if(ar.requestStatus==="approved"&&isOwnerOrAdmin) return <button className="icon-btn" aria-label="Revoke" title="Revoke edit access" style={{color:"#DC2626"}} onClick={()=>onRespondEditAccess&&onRespondEditAccess(c.id,false)}><XIcon size={15}/></button>;
+    return null;
+  };
   const emailCount=commLogs.filter(c=>c.type.includes("Email")).length;
   const waCount=commLogs.filter(c=>c.type.includes("WhatsApp")).length;
 
@@ -130,14 +145,43 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
       </div>
 
       <div className="card" style={{padding:0}}>
-        {filtered.length===0?<Empty icon={<Mail size={22}/>} title="No communications" sub="Log your first email or WhatsApp message."/>:(
+        {filtered.length===0?<Empty icon={<Mail size={22}/>} title="No communications" sub="Log your first email or WhatsApp message."/>:isMobile?(
+          /* Phones: one card per message instead of a 10-column table. */
+          <div className="m-cards">
+            {pg.paged.map(c=>{
+              const col=TYPE_COL[c.type]||(c.type===ACCESS_REQ_TYPE?"#B45309":"var(--text3)");
+              const isInbound=c.type.includes("Received");
+              const ar=parseAccessReq(c);
+              return <div key={c.id} className="m-card">
+                <div className="m-card-top" role="button" tabIndex={0} onClick={()=>setDetail(c)}>
+                  <div style={{minWidth:0}}>
+                    <div className="m-card-title">{c.subject||"(no subject)"}</div>
+                    {c._accName&&<div className="m-card-sub">{c._accName}</div>}
+                  </div>
+                  {ar
+                    ? <span className={`badge ${ar.requestStatus==="approved"?"bs-active":ar.requestStatus==="denied"?"bs-lost":"bs-planned"}`}>{ar.requestStatus==="pending"?"Pending":ar.requestStatus==="approved"?"Approved":"Denied"}</span>
+                    : c.status&&<span className={`badge ${c.status==="Delivered"||c.status==="Read"?"bs-active":c.status==="Bounced"||c.status==="Failed"?"bs-lost":"bs-planned"}`}>{c.status}</span>}
+                </div>
+                <div className="m-card-row">
+                  <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11.5,fontWeight:600,padding:"2px 8px",borderRadius:5,background:col+"18",color:col}}>{TYPE_ICON[c.type]}{c.type}</span>
+                  <span className="m-card-when">{c.date}</span>
+                  {c.quoteId&&<span style={{fontSize:11,fontWeight:700,color:"#1D4ED8"}}>📄 {c.quoteRef||c.quoteId}</span>}
+                </div>
+                {(isInbound?c.from:c.to)&&<div className="m-card-row" style={{marginTop:6}}>{isInbound?"From":"To"}: <strong style={{overflowWrap:"anywhere"}}>{isInbound?c.from:c.to}</strong></div>}
+                <div className="m-card-foot">
+                  <UserPill uid={c.owner}/>
+                  <div className="m-card-actions">{rowActionsFor(c)}</div>
+                </div>
+              </div>;
+            })}
+          </div>
+        ):(
           <table className="tbl">
             <thead><tr><th style={{width:32}}></th><th>Type</th><th>Subject</th><th>From / To</th><th>Account</th><th>Source</th><th>Date</th><th>Status</th><th>Owner</th><th></th></tr></thead>
             <tbody>{pg.paged.map(c=>{
               const col=TYPE_COL[c.type]||(c.type===ACCESS_REQ_TYPE?"#B45309":"var(--text3)");
               const isInbound=c.type.includes("Received");
               const ar=parseAccessReq(c);
-              const canRespond=ar&&ar.requestStatus==="pending"&&(ar.ownerId===currentUser||isGlobalRole(currentUser,orgUsers));
               return <tr key={c.id}>
                 <td style={{color:col}}>{TYPE_ICON[c.type]}</td>
                 <td><span style={{fontSize:11,fontWeight:600,padding:"2px 7px",borderRadius:5,background:col+"18",color:col}}>{c.type}</span></td>
@@ -157,18 +201,7 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
                   ? <span className={`badge ${ar.requestStatus==="approved"?"bs-active":ar.requestStatus==="denied"?"bs-lost":"bs-planned"}`}>{ar.requestStatus==="pending"?"Pending":ar.requestStatus==="approved"?"Approved":"Denied"}</span>
                   : <span className={`badge ${c.status==="Delivered"||c.status==="Read"?"bs-active":c.status==="Bounced"||c.status==="Failed"?"bs-lost":"bs-planned"}`}>{c.status}</span>}</td>
                 <td><UserPill uid={c.owner}/></td>
-                <td><div style={{display:"flex",gap:4}}>
-                  {ar
-                    ? (canRespond
-                        ? <>
-                            <button className="icon-btn" aria-label="Approve" title="Grant edit access" style={{color:"#16A34A"}} onClick={()=>onRespondEditAccess&&onRespondEditAccess(c.id,true)}><CheckIcon size={15}/></button>
-                            <button className="icon-btn" aria-label="Deny" title="Deny request" style={{color:"#DC2626"}} onClick={()=>onRespondEditAccess&&onRespondEditAccess(c.id,false)}><XIcon size={15}/></button>
-                          </>
-                        : (ar.requestStatus==="approved"&&(ar.ownerId===currentUser||isGlobalRole(currentUser,orgUsers))
-                            ? <button className="icon-btn" aria-label="Revoke" title="Revoke edit access" style={{color:"#DC2626"}} onClick={()=>onRespondEditAccess&&onRespondEditAccess(c.id,false)}><XIcon size={15}/></button>
-                            : null))
-                    : <><button className="icon-btn" aria-label="Edit" onClick={()=>openEdit(c)}><Edit2 size={14}/></button>{canDelete&&<button className="icon-btn" aria-label="Delete" onClick={()=>setConfirm(c.id)}><Trash2 size={14}/></button>}</>}
-                </div></td>
+                <td><div style={{display:"flex",gap:4}}>{rowActionsFor(c)}</div></td>
               </tr>;
             })}</tbody>
           </table>

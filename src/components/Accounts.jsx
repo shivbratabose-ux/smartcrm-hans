@@ -547,7 +547,7 @@ function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, 
         <span className="tbl-link" onClick={() => setDetail(a)}>{a.name}</span>
         <div style={{fontSize:11,color:"var(--text3)"}}>
           {a.accountNo && <span style={{fontFamily:"'Courier New',monospace",marginRight:4}}>{a.accountNo}</span>}
-          {a.city}{a.hierarchyLevel !== "Parent Company" ? ` · ${a.hierarchyLevel}` : ""}
+          {a.city}{a.hierarchyLevel && a.hierarchyLevel !== "Parent Company" ? ` · ${a.hierarchyLevel}` : ""}
         </div>
       </>
     )},
@@ -878,7 +878,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   // Type distribution
   const typeDistribution = useMemo(() => {
     const byType = {};
-    accounts.forEach(a => { byType[a.type] = (byType[a.type] || 0) + 1; });
+    accounts.forEach(a => { const k = a.type || "Not set"; byType[k] = (byType[k] || 0) + 1; });
     const COLORS = ["#1B6B5A","#3B82F6","#F59E0B","#8B5CF6","#EF4444","#0D9488","#D97706"];
     return Object.entries(byType).map(([name, value], i) => ({ name, value, color: COLORS[i % COLORS.length] })).sort((a, b) => b.value - a.value);
   }, [accounts]);
@@ -1192,7 +1192,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
                       <span className="tbl-link" onClick={() => setDetail(a)}>{a.name}</span>
                       <div style={{fontSize:11,color:"var(--text3)"}}>
                         {a.accountNo && <span style={{fontFamily:"'Courier New',monospace",marginRight:4}}>{a.accountNo}</span>}
-                        {a.city}{a.hierarchyLevel !== "Parent Company" ? ` · ${a.hierarchyLevel}` : ""}
+                        {a.city}{a.hierarchyLevel && a.hierarchyLevel !== "Parent Company" ? ` · ${a.hierarchyLevel}` : ""}
                       </div>
                     </td>
                     <td style={{fontSize:12}}>{a.type}</td>

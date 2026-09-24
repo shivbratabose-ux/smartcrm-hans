@@ -31,6 +31,79 @@ import {
   loadUserTableViews, saveUserTableView,
   setDefaultUserTableView, deleteUserTableView,
 } from "../lib/db";
+import useIsMobile from "../hooks/useIsMobile";
+
+// ── Phone card layout ────────────────────────────────────────────────
+// On phones (useIsMobile) every DataGrid list renders one card per row
+// instead of a wide table: a title, a subtitle, a status badge, then the
+// next few of the user's visible columns as label / value pairs, and the
+// row's actions along the bottom. Which column plays which part is set
+// per module here; unknown modules fall back to the first visible column
+// as the title. Title / subtitle / badge show even if hidden in the
+// user's desktop view — a card without its name is useless.
+const MOBILE_CARD = {
+  accounts_list:       { title: "name",     sub: "",              badge: "status" },   // name already shows account no. + city
+  contacts_list:       { title: "name",     sub: "designation",   badge: "_stage" },
+  pipeline_list:       { title: "title",    sub: "account",       badge: "stage" },
+  activities_list:     { title: "title",    sub: "schedule",      badge: "status" },
+  quotations_list:     { title: "_accName", sub: "title",         badge: "status" },
+  contracts_list:      { title: "_accName", sub: "",              badge: "status" },   // _accName already shows the contract title
+  collections_list:    { title: "_accName", sub: "invoiceNo",     badge: "status" },
+  tickets_list:        { title: "title",    sub: "ticketNo",      badge: "status" },
+  email_agent_queue:   { title: "entity",   sub: "processedAt",   badge: "status" },
+  re_engagement_queue: { title: "account",  sub: "lastContactAt", badge: "status" },
+};
+const MOBILE_DETAIL_FIELDS = 6;
+const isBlank = (v) => v == null || v === "" || (Array.isArray(v) && v.length === 0);
+
+function MobileCards({ module, columns, visible, rows, rowKey, rowStyle, rowActions, onRowClick }) {
+  const map = MOBILE_CARD[module] || {};
+  const byKey = new Map(columns.map(c => [c.key, c]));
+  const pick = (k) => (k && byKey.get(k)) || null;
+  const titleCol = pick(map.title) || visible[0] || columns[0];
+  const subCol = pick(map.sub);
+  const badgeCol = pick(map.badge);
+  const used = new Set([titleCol?.key, subCol?.key, badgeCol?.key]);
+  const detailCols = visible.filter(c => !used.has(c.key) && c.mobile !== "hide").slice(0, MOBILE_DETAIL_FIELDS);
+  const cell = (c, r) => (c.render ? c.render(r) : r[c.key]);
+  const hasValue = (c, r) => c.render ? true : !isBlank(r[c.key]);
+
+  return (
+    <div className="m-cards">
+      {rows.map(r => {
+        const style = rowStyle ? rowStyle(r) : undefined;
+        return (
+          <div key={rowKey(r)} className="m-card" style={style}
+            onClick={onRowClick ? () => onRowClick(r) : undefined}
+            role={onRowClick ? "button" : undefined}>
+            <div className="m-card-top" style={{ cursor: onRowClick ? "pointer" : "default" }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="m-card-title">{titleCol ? cell(titleCol, r) : null}</div>
+                {subCol && hasValue(subCol, r) && <div className="m-card-sub">{cell(subCol, r)}</div>}
+              </div>
+              {badgeCol && hasValue(badgeCol, r) && <div style={{ flexShrink: 0 }}>{cell(badgeCol, r)}</div>}
+            </div>
+            {detailCols.length > 0 && (
+              <div className="m-card-fields">
+                {detailCols.filter(c => hasValue(c, r)).map(c => (
+                  <div key={c.key} className="m-card-field">
+                    <span className="m-card-label">{c.label}</span>
+                    <span className="m-card-value">{cell(c, r)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {rowActions && (
+              <div className="m-card-foot" style={{ justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
+                <div className="m-card-actions">{rowActions(r)}</div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -345,6 +418,7 @@ export default function DataGrid({
   rowStyle, selection, rowActions, emptyState, SortIcon,
   onRowClick, dense,
 }) {
+  const isMobile = useIsMobile();
   const [views, setViews] = useState([]);
   const [activeViewId, setActiveViewId] = useState(null);
   // Local working copy of column config — not persisted until "Save".
@@ -491,6 +565,14 @@ export default function DataGrid({
     resizingRef.current = { key, startX: e.clientX, startWidth: currentWidth || 140 };
     document.body.style.cursor = "col-resize";
   };
+
+  if (isMobile) {
+    // Phones: cards, no saved-view / column toolbar (desktop tools). The
+    // user's saved column choice still decides which details appear.
+    if (rows.length === 0) return emptyState || null;
+    return <MobileCards module={module} columns={merged} visible={visible} rows={rows} rowKey={rowKey}
+      rowStyle={rowStyle} rowActions={rowActions} onRowClick={onRowClick}/>;
+  }
 
   return (
     <div>

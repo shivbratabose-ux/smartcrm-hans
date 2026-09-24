@@ -5,6 +5,7 @@ import { BLANK_PROJECT } from "../data/seed";
 import { uid, fmt, today, sanitizeObj, hasErrors, softDeleteById } from "../utils/helpers";
 import { Modal, Confirm, Empty, FormError, UserPill, StatusBadge, TypeaheadSelect, PageTip } from "./shared";
 import Pagination, { usePagination } from "./Pagination";
+import useIsMobile from "../hooks/useIsMobile";
 
 const PHASE_COL = {
   "Requirement Gathering":"#3B82F6","Gap Analysis":"#6366F1","Design":"#8B5CF6",
@@ -56,6 +57,7 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
   }).sort((a, b) => (b.createdDate || "").localeCompare(a.createdDate || "")), [enriched, statusF, ownerF, search]);
 
   const pg = usePagination(filtered);
+  const isMobile = useIsMobile();
 
   // KPIs
   const active = enriched.filter(p => !["Closed"].includes(p.status));
@@ -127,6 +129,39 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
 
       <div className="card" style={{ padding: 0 }}>
         {filtered.length === 0 ? <Empty icon={<Briefcase size={22}/>} title="No projects yet" sub="Projects are created automatically when a deal is Won, or add one manually."/> : (
+          isMobile ? (
+          /* Phones: one card per project. */
+          <div className="m-cards">
+            {pg.paged.map(p => (
+              <div key={p.id} className="m-card" style={p._health.label === "Delayed" ? { borderLeft: "4px solid #DC2626" } : undefined}>
+                <div className="m-card-top" role="button" tabIndex={0} onClick={() => openEdit(p)}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="m-card-title">{p.name}</div>
+                    <div className="m-card-sub">{[p.projectNo, p._accName].filter(Boolean).join(" · ")}</div>
+                  </div>
+                  <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, background: (PHASE_COL[p.status] || "#64748B") + "18", color: PHASE_COL[p.status] || "#64748B" }}>{p.status}</span>
+                </div>
+                <div className="m-card-row">
+                  <div style={{ flex: 1, height: 6, background: "var(--s3)", borderRadius: 3, overflow: "hidden", minWidth: 80 }}>
+                    <div style={{ width: `${Math.min(100, +p.progress || 0)}%`, height: "100%", background: (+p.progress || 0) >= 100 ? "#22C55E" : "#1B6B5A" }}/>
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>{+p.progress || 0}%</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: p._health.color }}>{p._health.label}</span>
+                </div>
+                <div className="m-card-foot">
+                  <span className="m-card-when" style={p._health.label === "Delayed" ? { color: "#DC2626", fontWeight: 700 } : undefined}>
+                    <Calendar size={12}/>{p.goLiveTarget ? `Go-live ${fmt.short(p.goLiveTarget)}` : "No go-live date"}
+                  </span>
+                  <UserPill uid={p.owner}/>
+                  <div className="m-card-actions">
+                    <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(p)}><Edit2 size={16}/></button>
+                    {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(p.id)}><Trash2 size={16}/></button>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          ) : (
           <table className="tbl tbl-dense">
             <thead><tr><th>Project</th><th>Account</th><th>Phase</th><th>Progress</th><th>Health</th><th>Go-Live Target</th><th>Owner</th><th></th></tr></thead>
             <tbody>{pg.paged.map(p => (
@@ -155,6 +190,7 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
               </tr>
             ))}</tbody>
           </table>
+          )
         )}
         <Pagination {...pg}/>
       </div>

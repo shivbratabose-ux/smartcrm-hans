@@ -893,6 +893,12 @@ export const CSS = `
   .m-card-when { font-size:12px; color:var(--text3); display:inline-flex; align-items:center; gap:4px; }
   .m-card-when.late { color:var(--red); font-weight:700; }
   .m-card-actions { display:flex; gap:2px; margin-left:auto; }
+  /* Generic cards (DataGrid on phones): label / value pairs, two per row. */
+  .m-card-fields { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px 12px; margin-top:10px; }
+  .m-card-field { min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .m-card-label { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text3); }
+  .m-card-value { font-size:13px; color:var(--text); min-width:0; overflow:hidden; text-overflow:ellipsis; overflow-wrap:anywhere; }
+  .m-card-value .u-pill { max-width:100%; }
 
   @media (max-width: 768px) {
     html, body { overscroll-behavior-y:none; }
