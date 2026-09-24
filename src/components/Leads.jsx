@@ -15,6 +15,7 @@ import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
 import { batchUpsert } from '../lib/db';
 import { notify } from '../utils/toast';
+import useIsMobile from '../hooks/useIsMobile';
 
 /* ── Date range helpers ── */
 const RANGE_PRESETS = [
@@ -2036,6 +2037,68 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
   );
 }
 
+// ─── Phone layout: one card per lead instead of a 1400px table ───
+// Same data, actions and edit-permission rules as LeadsDataGrid's rows.
+// Tap the company to open the lead; phone / email are tap-to-call / mail.
+const telHref = (p) => `tel:${String(p || "").replace(/[^\d+]/g, "")}`;
+function LeadsCardList({ rows, setDetail, openEdit, openCallLog, setConfirm, handleConvert, canDelete, currentUser, canEditLead, onRequestAccess, commLogs = [] }) {
+  return (
+    <div className="m-cards">
+      {rows.map(l => {
+        const isOverdue = l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage);
+        const age = daysSince(l.createdDate);
+        const editable = canEditLead ? canEditLead(l) : true;
+        return (
+          <div key={l.id} className={`m-card${l.duplicateOf ? " m-card-dup" : isOverdue ? " m-card-overdue" : ""}`}>
+            <div className="m-card-top" role="button" tabIndex={0} onClick={() => setDetail(l)}
+              onKeyDown={e => { if (e.key === "Enter") setDetail(l); }}>
+              <div className="m-card-title">
+                {l.company || "—"}
+                {l.duplicateOf && <span style={{display:"inline-block",whiteSpace:"nowrap",marginLeft:6,fontSize:9,fontWeight:700,color:"#B45309",background:"#FFF7ED",border:"1px solid #FED7AA",padding:"1px 6px",borderRadius:4,verticalAlign:"middle"}}>DUPLICATE</span>}
+              </div>
+              <div style={{flexShrink:0}}><LeadStageBadge stage={l.stage}/></div>
+            </div>
+            <div className="m-card-sub">{[l.leadId, l.source, l.region].filter(Boolean).join(" · ")}</div>
+            <div className="m-card-row">
+              <span style={{fontWeight:600,color:"var(--text)"}}>{l.contact || "—"}</span>
+              {l.phone && <a className="m-card-link" href={telHref(l.phone)}><Phone size={13}/>{l.phone}</a>}
+              {l.email && <a className="m-card-link" href={`mailto:${l.email}`} style={{maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis"}}><Mail size={13}/>{l.email}</a>}
+            </div>
+            <div className="m-card-row">
+              {l.product && <ProdTag pid={l.product}/>}
+              <LeadScore score={l.score}/>
+              <UserPill uid={l.assignedTo}/>
+            </div>
+            <div className="m-card-foot">
+              <span className={`m-card-when${isOverdue ? " late" : ""}`}>
+                {isOverdue ? <AlertTriangle size={12}/> : <Clock size={12}/>}
+                {l.nextCall ? `Next call ${fmt.short(l.nextCall)}` : "No next call"}
+                {age != null && <span style={{fontWeight:600,color: age > 30 ? "#DC2626" : age > 14 ? "#F59E0B" : "#22C55E"}}>· {age}d old</span>}
+              </span>
+              <div className="m-card-actions">
+                <button className="icon-btn" aria-label="Log Call" title="Log Call" style={{ color: "#3B82F6" }} onClick={() => openCallLog(l)}>
+                  <PhoneCall size={17}/>
+                </button>
+                <EditLockActions
+                  editable={editable}
+                  pending={hasPendingAccessReq(commLogs, "lead", l.id, currentUser)}
+                  onEdit={() => openEdit(l)} onDelete={() => setConfirm(l.id)}
+                  onRequest={() => onRequestAccess && onRequestAccess(l)} canDelete={canDelete}>
+                  {editable && l.stage !== "Converted" && l.stage !== "NA" && (
+                    <button className="icon-btn" aria-label="Convert to Opportunity" title="Convert to Opportunity" style={{ color: "var(--brand)" }} onClick={() => handleConvert(l)}>
+                      <ArrowRightCircle size={17}/>
+                    </button>
+                  )}
+                </EditLockActions>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess, opps=[], setUpdates }) {
   const canEditLead = (l) => canEditRecord({ownerId:l?.assignedTo,currentUser,orgUsers,recordType:"lead",recordId:l?.id,commLogs,catalog,recordProductIds:l?.product?[l.product]:[]});
   const requestAccessLead = (l) => onRequestEditAccess && onRequestEditAccess("lead", l.id, l.company||l.leadId||"Lead", l.assignedTo);
@@ -2117,6 +2180,9 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [callLogModal, setCallLogModal] = useState(null); // prefill object when open
   const [showFormInlineContact, setShowFormInlineContact] = useState(null); // null=hidden, false=show existing dropdown, true=show new form
   const [viewMode, setViewMode] = useState("table"); // "table" | "grid" (Excel-like editable)
+  // Phones get cards regardless of viewMode — neither the 1400px table nor
+  // the editable sheet is usable at 375px.
+  const isMobile = useIsMobile();
 
   // Inline field updater for the editable grid. Saves immediately to leads state.
   // Per company-wide text-format policy:
@@ -2663,7 +2729,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             </select>
 
             {/* View toggle: Table (read-only) vs. Grid (Excel-like editable) */}
-            <div style={{display:"flex",gap:0,marginLeft:"auto",border:"1.5px solid #CBD5E1",borderRadius:6,overflow:"hidden"}}>
+            {!isMobile && <div style={{display:"flex",gap:0,marginLeft:"auto",border:"1.5px solid #CBD5E1",borderRadius:6,overflow:"hidden"}}>
               <button
                 onClick={() => setViewMode("table")}
                 style={{fontSize:11,padding:"5px 12px",fontWeight:600,cursor:"pointer",border:"none",background:viewMode==="table"?"#1B6B5A":"#fff",color:viewMode==="table"?"#fff":"#334155"}}
@@ -2676,7 +2742,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 title="Excel-like editable grid">
                 Grid
               </button>
-            </div>
+            </div>}
           </div>
 
           {/* Bulk Actions */}
@@ -2738,6 +2804,20 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           <div className="card" style={{ padding: 0 }}>
             {filtered.length === 0 ? (
               <Empty icon={<Users size={22}/>} title="No leads found" sub="Try adjusting filters or add a new lead."/>
+            ) : isMobile ? (
+              <LeadsCardList
+                rows={pg.paged}
+                setDetail={setDetail}
+                openEdit={openEdit}
+                openCallLog={openCallLog}
+                setConfirm={setConfirm}
+                handleConvert={handleConvert}
+                canDelete={canDelete}
+                currentUser={currentUser}
+                canEditLead={canEditLead}
+                onRequestAccess={requestAccessLead}
+                commLogs={commLogs}
+              />
             ) : viewMode === "grid" ? (
               <EditableLeadsGrid
                 rows={pg.paged}

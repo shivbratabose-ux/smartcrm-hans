@@ -5,7 +5,8 @@ import { withDemoCallType, isCallPerson, callPeople } from '../utils/teamSummary
 import { BLANK_CALL_REPORT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, getScopedUserIds, softDeleteById, upper, title } from '../utils/helpers';
 import { notify } from '../utils/toast';
-import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
+import useIsMobile from '../hooks/useIsMobile';
+import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect, userName } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
@@ -33,8 +34,8 @@ const validateCallReport = (f) => {
 const CSV_COLS = [
   { label: "Lead Name", accessor: r => r.leadName },
   { label: "Company", accessor: r => r.company },
-  { label: "Person", accessor: r => TEAM_MAP[r.marketingPerson]?.name || r.marketingPerson },
-  { label: "Participants", accessor: r => callPeople(r).filter(id => id !== r.marketingPerson).map(id => TEAM_MAP[id]?.name || id).join("; ") },
+  { label: "Person", accessor: r => userName(r.marketingPerson) },
+  { label: "Participants", accessor: r => callPeople(r).filter(id => id !== r.marketingPerson).map(id => userName(id)).join("; ") },
   { label: "Stage", accessor: r => LEAD_STAGE_MAP[r.leadStage]?.name || r.leadStage },
   { label: "Call Type", accessor: r => r.callType },
   { label: "Product", accessor: r => PROD_MAP[r.product]?.name || r.product },
@@ -116,6 +117,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
 
   const bulk = useBulkSelect(filtered);
   const pg = usePagination(filtered);
+  const isMobile = useIsMobile();
 
   const openAdd = () => {
     setForm({ ...BLANK_CALL_REPORT, id: `cr${uid()}`, callDate: today, marketingPerson: currentUser });
@@ -210,6 +212,53 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
       <div className="card" style={{padding:0}}>
         {filtered.length === 0 ? (
           <Empty icon={<Phone size={22}/>} title="No call reports" sub="Log your first call to start tracking interactions."/>
+        ) : isMobile ? (
+          /* Phones: one card per call instead of a 10-column table. */
+          <div className="m-cards">
+            {pg.paged.map(r => {
+              const col = TYPE_COL[r.callType] || "var(--text3)";
+              const overdue = r.nextCallDate && r.nextCallDate < today;
+              const others = callPeople(r).filter(id => id !== r.marketingPerson);
+              return (
+                <div key={r.id} className={`m-card${overdue ? " m-card-overdue" : ""}`}>
+                  <div className="m-card-top" role="button" tabIndex={0} onClick={() => openEdit(r)}
+                    onKeyDown={e => { if (e.key === "Enter") openEdit(r); }}>
+                    <div style={{minWidth:0}}>
+                      <div className="m-card-title">{resolveCallName(r)}</div>
+                      {r.company && r.leadName && <div className="m-card-sub">{r.company}</div>}
+                    </div>
+                    <span className={`badge ${r.outcome==="Completed"?"bs-completed":r.outcome==="No Answer"?"bs-cancelled":"bs-planned"}`}>{r.outcome}</span>
+                  </div>
+                  <div className="m-card-row">
+                    <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11.5,fontWeight:600,padding:"2px 8px",borderRadius:5,background:col+"18",color:col}}>
+                      {TYPE_ICON[r.callType]}{r.callType}
+                    </span>
+                    <span className="m-card-when"><Calendar size={12}/>{fmt.short(r.callDate)}{r.callTime ? ` · ${r.callTime}` : ""}</span>
+                    {r.product && <ProdTag pid={r.product}/>}
+                  </div>
+                  {r.notes && <div className="m-card-notes">{r.notes}</div>}
+                  <div className="m-card-row">
+                    <UserPill uid={r.marketingPerson}/>
+                    {others.length > 0 && (
+                      <span style={{fontSize:11.5,color:"var(--text3)"}}>
+                        with {others.map(id => userName(id)).join(", ")}
+                      </span>
+                    )}
+                  </div>
+                  <div className="m-card-foot">
+                    <span className={`m-card-when${overdue ? " late" : ""}`}>
+                      {overdue ? <AlertCircle size={12}/> : <Clock size={12}/>}
+                      {r.nextCallDate ? `Next call ${fmt.short(r.nextCallDate)}` : "No next call"}
+                    </span>
+                    <div className="m-card-actions">
+                      <button className="icon-btn" aria-label="Edit" onClick={() => openEdit(r)}><Edit2 size={17}/></button>
+                      {canDelete && <button className="icon-btn" aria-label="Delete" onClick={() => setConfirm(r.id)}><Trash2 size={17}/></button>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <table className="tbl tbl-dense">
             <thead>
@@ -246,7 +295,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
                     <td>
                       <UserPill uid={r.marketingPerson}/>
                       {callPeople(r).length > 1 && (
-                        <span title={"Also on this call: " + callPeople(r).filter(id => id !== r.marketingPerson).map(id => TEAM_MAP[id]?.name || id).join(", ")}
+                        <span title={"Also on this call: " + callPeople(r).filter(id => id !== r.marketingPerson).map(id => userName(id)).join(", ")}
                           style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 700, color: "var(--brand)", background: "var(--brand-bg)", padding: "1px 6px", borderRadius: 8 }}>
                           +{callPeople(r).length - 1}
                         </span>

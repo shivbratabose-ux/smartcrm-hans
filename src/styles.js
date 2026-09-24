@@ -875,6 +875,25 @@ export const CSS = `
      • 16px form text: iOS zooms the page into any smaller input on focus.
      ════════════════════════════════════════════════════════════════════ */
   .sb-backdrop { display:none; }
+
+  /* ── Mobile record cards ──
+     Phones render Leads / Call Reports as cards instead of a wide table
+     (see LeadsCardList, CallReportCards). Only rendered when useIsMobile(). */
+  .m-cards { display:flex; flex-direction:column; gap:8px; padding:8px; background:var(--s2); }
+  .m-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 12px 10px; box-shadow:var(--sh-xs); }
+  .m-card.m-card-overdue { border-left:4px solid var(--red); }
+  .m-card.m-card-dup { border-left:4px solid #F59E0B; background:#FFFBF5; }
+  .m-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; cursor:pointer; }
+  .m-card-title { font-family:'Outfit',sans-serif; font-weight:700; font-size:15px; color:var(--brand); line-height:1.3; min-width:0; overflow-wrap:anywhere; }
+  .m-card-sub { font-size:11.5px; color:var(--text3); margin-top:2px; }
+  .m-card-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; font-size:13px; color:var(--text2); }
+  .m-card-notes { margin-top:8px; font-size:13px; color:var(--text2); line-height:1.45; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .m-card-link { display:inline-flex; align-items:center; gap:4px; color:var(--blue); font-weight:600; font-size:13px; text-decoration:none; padding:4px 0; }
+  .m-card-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; padding-top:8px; border-top:1px solid var(--border); flex-wrap:wrap; }
+  .m-card-when { font-size:12px; color:var(--text3); display:inline-flex; align-items:center; gap:4px; }
+  .m-card-when.late { color:var(--red); font-weight:700; }
+  .m-card-actions { display:flex; gap:2px; margin-left:auto; }
+
   @media (max-width: 768px) {
     html, body { overscroll-behavior-y:none; }
     body { min-height:100dvh; }

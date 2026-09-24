@@ -13,6 +13,9 @@ function resolveUser(id) {
   if (!id) return null;
   return _liveUsers.find(u => u.id === id) || TEAM_MAP[id] || null;
 }
+// Display name for a user id, from the live Supabase users (TEAM_MAP is
+// empty in production, so `TEAM_MAP[id]?.name` shows raw ids).
+export function userName(id) { return resolveUser(id)?.name || id || ""; }
 
 export function StatusBadge({status}) {
   const s = (status||"").toLowerCase().replace(/\s+/g,"-");
