@@ -16,6 +16,9 @@ function resolveUser(id) {
 // Display name for a user id, from the live Supabase users (TEAM_MAP is
 // empty in production, so `TEAM_MAP[id]?.name` shows raw ids).
 export function userName(id) { return resolveUser(id)?.name || id || ""; }
+// The full live user record ({ name, initials, email, role… }) or null.
+export function lookupUser(id) { return resolveUser(id); }
+const initialsOf = (u) => u?.initials || String(u?.name || "").split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 
 export function StatusBadge({status}) {
   const s = (status||"").toLowerCase().replace(/\s+/g,"-");
@@ -574,10 +577,10 @@ export function NotesThread({notes,onAdd,currentUser}) {
       {notes.length===0 && <div style={{color:"var(--text3)",fontSize:13,padding:"12px 0"}}>No notes yet. Add the first note below.</div>}
       <div className="notes-thread">
         {[...notes].sort((a,b)=>b.date.localeCompare(a.date)).map(n=>{
-          const u=TEAM_MAP[n.author];
+          const u=lookupUser(n.author);
           return (
             <div key={n.id} className="note-item">
-              <div className="note-av">{u?.initials||"?"}</div>
+              <div className="note-av">{initialsOf(u)}</div>
               <div className="note-bubble">
                 <div className="note-head">
                   <span className="note-author">{u?.name||"Unknown"}</span>
@@ -590,7 +593,7 @@ export function NotesThread({notes,onAdd,currentUser}) {
         })}
       </div>
       <div className="note-compose">
-        <div className="note-av" style={{marginTop:4}}>{TEAM_MAP[currentUser]?.initials||"?"}</div>
+        <div className="note-av" style={{marginTop:4}}>{initialsOf(lookupUser(currentUser))}</div>
         <div className="note-input-wrap">
           <textarea className="note-input" rows={2} placeholder="Add a note, update, or internal comment…"
             value={text} onChange={e=>setText(e.target.value)}
@@ -889,7 +892,7 @@ export function FilesList({files,onAdd,currentUser}) {
               <div className="file-name">{f.name}</div>
               <div className="file-meta">
                 <span>{f.type}</span><span>{f.size}</span>
-                <span>{TEAM_MAP[f.uploadedBy]?.name}</span><span>{fmt.date(f.date)}</span>
+                <span>{userName(f.uploadedBy)}</span><span>{fmt.date(f.date)}</span>
               </div>
             </div>
           </div>
