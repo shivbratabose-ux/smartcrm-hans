@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Plus, X, Phone, CheckSquare, FileText, Check, Search, Clock, Calendar, ScanLine } from "lucide-react";
 import CardScanner from "./CardScanner";
+import { relatedContacts } from "../utils/relatedContacts";
 import { CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, ACT_TYPES, ACT_STATUS, TEAM } from "../data/constants";
 import { withDemoCallType } from "../utils/teamSummary";
 import { uid, today, sanitizeObj, hasErrors } from "../utils/helpers";
@@ -113,9 +114,22 @@ function CallForm({ form, setForm, errors, setErrors, accounts, contacts, opps, 
   const callTypes = withDemoCallType(masters?.callTypes?.length ? masters.callTypes : CALL_TYPES);
   const callSubjects = masters?.callSubjects?.length ? masters.callSubjects : CALL_OBJECTIVES;
 
-  const filteredContacts = useMemo(() =>
-    form.accountId ? contacts.filter(c => c.accountId === form.accountId) : contacts,
-  [contacts, form.accountId]);
+  // Contacts follow the picked account / lead / deal (utils/relatedContacts).
+  // Ticked contacts stay visible even if they fall outside the new scope,
+  // and "Show all" is one tap away when the right person isn't linked yet.
+  const pickedLead = leads.find(l => l.id === form.leadId) || null;
+  const scope = useMemo(() => relatedContacts(contacts, {
+    account: accounts.find(a => a.id === form.accountId) || null,
+    lead: pickedLead,
+    opp: opps.find(o => o.id === form.oppId) || null,
+  }), [contacts, accounts, opps, form.accountId, pickedLead, form.oppId]);
+  const [showAllContacts, setShowAllContacts] = useState(false);
+  useEffect(() => { setShowAllContacts(false); }, [form.accountId, form.leadId, form.oppId]);
+  const filteredContacts = useMemo(() => {
+    if (!scope.scoped || showAllContacts) return scope.scoped ? contacts.filter(c => !c.isDeleted) : scope.contacts;
+    const inScope = new Set(scope.contacts.map(c => c.id));
+    return [...scope.contacts, ...contacts.filter(c => !c.isDeleted && form.contactIds.includes(c.id) && !inScope.has(c.id))];
+  }, [scope, showAllContacts, contacts, form.contactIds]);
   const filteredLeads = useMemo(() =>
     form.accountId ? leads.filter(l => l.accountId === form.accountId) : leads,
   [leads, form.accountId]);
@@ -191,6 +205,19 @@ function CallForm({ form, setForm, errors, setErrors, accounts, contacts, opps, 
       {/* Multi-select contacts */}
       <div className="form-group" style={{ marginBottom:12 }}>
         <label>Contacts</label>
+        <div style={{ fontSize:11.5, color:"var(--text3)", margin:"-2px 0 6px", display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
+          {!scope.scoped
+            ? "Pick an account, lead or deal above to see only its contacts."
+            : showAllContacts
+              ? <>Showing all contacts. <button type="button" onClick={() => setShowAllContacts(false)} style={{ background:"none", border:0, padding:0, color:"var(--brand)", fontWeight:600, cursor:"pointer", fontSize:11.5 }}>Only this {scope.reason}</button></>
+              : <>{scope.contacts.length} contact{scope.contacts.length === 1 ? "" : "s"} for this {scope.reason}. <button type="button" onClick={() => setShowAllContacts(true)} style={{ background:"none", border:0, padding:0, color:"var(--brand)", fontWeight:600, cursor:"pointer", fontSize:11.5 }}>Show all contacts</button></>}
+        </div>
+        {scope.scoped && !showAllContacts && scope.contacts.length === 0 && (
+          <div style={{ fontSize:12.5, color:"var(--text2)", background:"var(--s2)", border:"1px dashed var(--border)", borderRadius:8, padding:"8px 10px", marginBottom:6 }}>
+            No contacts saved for this {scope.reason} yet.
+            {pickedLead?.contact ? <> The lead's contact on record is <b>{pickedLead.contact}</b>{pickedLead.phone ? ` · ${pickedLead.phone}` : ""}.</> : null}
+          </div>
+        )}
         <CheckboxList
           items={filteredContacts}
           selected={form.contactIds}
@@ -337,7 +364,7 @@ function TaskForm({ form, setForm, errors, setErrors, accounts, contacts, opps, 
       <div className="form-group"><label>Related Contact</label>
         <select value={form.contactId} onChange={e => set("contactId", e.target.value)}>
           <option value="">-- None --</option>
-          {(form.accountId ? contacts.filter(c => c.accountId === form.accountId) : contacts).map(c =>
+          {relatedContacts(contacts, { account: accounts.find(a => a.id === form.accountId) || null, opp: opps.find(o => o.id === form.oppId) || null }).contacts.map(c =>
             <option key={c.id} value={c.id}>{c.name}</option>
           )}
         </select>
@@ -398,7 +425,7 @@ function ActivityForm({ form, setForm, errors, setErrors, accounts, contacts, op
           <TypeaheadSelect
             value={form.contactId}
             onChange={(id) => set("contactId", id)}
-            options={(form.accountId ? contacts.filter(c => c.accountId === form.accountId) : contacts).map(c => ({ value: c.id, label: c.name, sub: c.designation || c.role || "" }))}
+            options={relatedContacts(contacts, { account: accounts.find(a => a.id === form.accountId) || null, opp: opps.find(o => o.id === form.oppId) || null }).contacts.map(c => ({ value: c.id, label: c.name, sub: c.designation || c.role || "" }))}
             placeholder="Search contacts…"
           />
         </div>

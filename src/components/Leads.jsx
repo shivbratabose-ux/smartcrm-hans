@@ -3413,6 +3413,7 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
           orgUsers={orgUsers}
           masters={masters}
           prefill={callLogModal}
+          leads={leads}
         />
       )}
     </div>

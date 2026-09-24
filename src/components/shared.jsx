@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight, AlertTriangle, RotateCcw, Edit2, Trash2, Lock, Star, Users, TrendingUp, Phone, MessageSquare, Calendar, ArrowRightCircle, Clock, Plus } from "lucide-react";
 import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
 import { withDemoCallType, isDemoCall } from "../utils/teamSummary";
+import { relatedContacts } from "../utils/relatedContacts";
 import { fmt, uid, today, hasErrors } from "../utils/helpers";
 import { notify } from "../utils/toast";
 
@@ -1352,7 +1353,7 @@ const nowTime = () => {
   return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
 };
 
-export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUsers, masters, prefill = {} }) {
+export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUsers, masters, prefill = {}, leads = [] }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== "Inactive") : TEAM;
   const callTypes = withDemoCallType(masters?.callTypes?.length ? masters.callTypes : CALL_TYPES);
   const callSubjects = masters?.callSubjects?.length ? masters.callSubjects : CALL_OBJECTIVES;
@@ -1377,29 +1378,20 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
   // We deliberately do NOT fall through to "show every contact in the system"
   // — that's noise and was confusing users (#bugfix).
   const filteredContacts = useMemo(() => {
-    const all = contacts || [];
-    // Lead context — caller passed the lead's contactIds[] in prefill
-    if (form.leadId && Array.isArray(form.leadContactIds) && form.leadContactIds.length > 0) {
-      const idSet = new Set(form.leadContactIds);
-      return all.filter(c => idSet.has(c.id));
-    }
-    // Opp context — pull primary + secondary + any contact that has this opp in linkedOpps[]
-    if (form.oppId) {
-      const opp = (opps || []).find(o => o.id === form.oppId);
-      if (opp) {
-        const direct = new Set([opp.primaryContactId, ...(opp.secondaryContactIds || [])].filter(Boolean));
-        return all.filter(c => direct.has(c.id) || (c.linkedOpps || []).includes(form.oppId));
-      }
-    }
-    // Account context — every contact tagged to this account
-    if (form.accountId) {
-      return all.filter(c => c.accountId === form.accountId);
-    }
-    // No record context selected — show nothing rather than the entire org
-    // address book. Once the user picks an Account from the dropdown, this
-    // recomputes to that account's contacts.
-    return [];
-  }, [contacts, opps, form.leadId, form.leadContactIds, form.oppId, form.accountId]);
+    // Same rule as Quick Log (utils/relatedContacts): the picked account,
+    // lead and deal together decide the list. The lead is the full record
+    // when the caller passed `leads`, else a stub from the prefill ids.
+    const lead = form.leadId
+      ? ((leads || []).find(l => l.id === form.leadId) || { id: form.leadId, contactIds: form.leadContactIds || [] })
+      : null;
+    const scope = relatedContacts(contacts || [], {
+      account: (accounts || []).find(a => a.id === form.accountId) || null,
+      lead,
+      opp: (opps || []).find(o => o.id === form.oppId) || null,
+    });
+    // No record picked — show nothing rather than the whole address book.
+    return scope.scoped ? scope.contacts : [];
+  }, [contacts, accounts, opps, leads, form.leadId, form.leadContactIds, form.oppId, form.accountId]);
 
   const filteredOpps = useMemo(() =>
     form.accountId ? (opps || []).filter(o => o.accountId === form.accountId) : (opps || []),

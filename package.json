@@ -20,7 +20,8 @@
     "test:reagent": "node scripts/test-re-agent.mjs",
     "test:team": "node scripts/test-team-summary.mjs",
     "test:leavenotify": "node scripts/test-leave-notify.mjs",
-    "test:card": "node scripts/test-card-match.mjs"
+    "test:card": "node scripts/test-card-match.mjs",
+    "test:related": "node scripts/test-related-contacts.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
