@@ -275,14 +275,46 @@ export function callReportState(outcome, date, today) {
   return date <= today ? "made" : "pending";
 }
 
-const blank = () => ({ callsMade: 0, connected: 0, meetings: 0, otherDone: 0, pending: 0, overdue: 0 });
+// ── Who took part in a call / demo ──────────────────────────────────
+// A call report belongs to the person who logged it (marketingPerson) AND
+// everyone ticked under "Our Participants" (participantIds). Demos are
+// usually joined by several people — a sales exec, a BDM, a presales/tech
+// lead — and each of them gets the call on their calendar and the credit
+// in their individual numbers (call target, Team view, My Performance,
+// Reports score, Targets). One shared rule so every screen agrees.
+export function callPeople(r) {
+  const out = [];
+  for (const id of [r?.marketingPerson, ...(Array.isArray(r?.participantIds) ? r.participantIds : [])]) {
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+export const isCallPerson = (r, userId) => !!userId && callPeople(r).includes(userId);
 
-// Classify one normalised item into the counters it bumps.
+// "Demo" is a call type (Log Call); older rows may say "demo" / "Product Demo".
+export const DEMO_CALL_TYPE = "Demo";
+export const isDemoCall = (r) => /\bdemo\b/i.test(String(r?.callType || ""));
+
+// Call-type options for any picker: the Masters list (strings or {name})
+// with "Demo" always present — it's built in, like the Won/Lost stages, so
+// a Masters edit can't remove the only way to log a demo.
+export function withDemoCallType(list = []) {
+  const names = (list || []).map(t => (typeof t === "object" ? t?.name : t)).filter(Boolean);
+  if (names.some(n => isDemoCall({ callType: n }))) return names;
+  return names.length ? [names[0], DEMO_CALL_TYPE, ...names.slice(1)] : [DEMO_CALL_TYPE];
+}
+
+const blank = () => ({ callsMade: 0, connected: 0, meetings: 0, otherDone: 0, pending: 0, overdue: 0, demos: 0 });
+
+// Classify one normalised item into the counters it bumps. `demos` is a
+// tally alongside the others: a demo logged via Log Call is still a call
+// made (it counts toward the call target) and also a demo; a completed
+// Demo activity / event is a meeting and also a demo.
 function classify(item, today) {
   const c = blank();
   if (item.kind === "call") {
     const st = callReportState(item.outcome, item.date, today);
-    if (st === "made") { c.callsMade = 1; if (item.outcome === "Completed") c.connected = 1; }
+    if (st === "made") { c.callsMade = 1; if (item.outcome === "Completed") c.connected = 1; if (item.demo) c.demos = 1; }
     else if (st === "pending") c.pending = 1;
     else c.overdue = 1;
     return c;
@@ -290,6 +322,7 @@ function classify(item, today) {
   const done = item.status === "Completed";
   const open = !done && item.status !== "Cancelled";
   if (done) {
+    if (item.type === "Demo") c.demos = 1;
     if (item.kind === "activity" && item.type === "Call") { c.callsMade = 1; c.connected = 1; }
     else if (item.kind === "event" || MEETING_TYPES.has(item.type)) c.meetings = 1;
     else c.otherDone = 1;
@@ -304,7 +337,7 @@ const add = (a, b) => { for (const k of Object.keys(a)) a[k] += b[k]; };
 /**
  * @param {object}   p
  * @param {Array}    p.activities   CRM activities ({owner,date,type,status,isDeleted})
- * @param {Array}    p.callReports  ({marketingPerson,callDate,outcome,isDeleted})
+ * @param {Array}    p.callReports  ({marketingPerson,participantIds,callType,callDate,outcome,isDeleted})
  * @param {Array}    p.events       calendar events ({owner,date,status,isDeleted})
  * @param {Array}    p.users        [{id,name,initials,role}] — rows to show, in scope
  * @param {Array}    p.columns      [{key,label,from,to}] ISO-date buckets
@@ -324,8 +357,9 @@ export function buildTeamSummary({ activities = [], callReports = [], events = [
   const items = [
     ...activities.filter(a => !a.isDeleted && a.date)
       .map(a => ({ kind: "activity", owner: a.owner, date: a.date, type: a.type, status: a.status })),
+    // One item per person on the call — logger and every participant.
     ...callReports.filter(r => !r.isDeleted && r.callDate)
-      .map(r => ({ kind: "call", owner: r.marketingPerson, date: r.callDate, outcome: r.outcome })),
+      .flatMap(r => callPeople(r).map(owner => ({ kind: "call", owner, date: r.callDate, outcome: r.outcome, demo: isDemoCall(r) }))),
     ...events.filter(e => !e.isDeleted && e.date && !Object.prototype.hasOwnProperty.call(LEAVE_TYPES, e.type))
       .map(e => ({ kind: "event", owner: e.owner, date: e.date, type: e.type, status: e.status === "Completed" ? "Completed" : e.status === "Cancelled" ? "Cancelled" : "Planned" })),
   ].filter(i => userIds.has(i.owner) && i.date >= from && i.date <= to);

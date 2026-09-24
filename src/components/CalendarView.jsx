@@ -4,7 +4,7 @@ import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES, CALL_OUTCOMES } 
 import { BLANK_EVENT } from '../data/seed';
 import { fmt, uid, today, toLocalISODate, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq, getScopedUserIds, isGlobalRole } from '../utils/helpers';
 import TeamSummary from './TeamSummary';
-import { teamColumns, callReportState, LEAVE_TYPES, LEAVE_STATUS, LEAVE_TYPE_LABEL, leaveTitleFor, ADMIN_WORK_TYPE, leaveShare, hoursBetween, adminOverlap, fmtHours, CALL_TARGET, leaveState, isLeaveType, leaveByUser, leaveDatesToCreate, offDayMap,
+import { teamColumns, callReportState, callPeople, isDemoCall, LEAVE_TYPES, LEAVE_STATUS, LEAVE_TYPE_LABEL, leaveTitleFor, ADMIN_WORK_TYPE, leaveShare, hoursBetween, adminOverlap, fmtHours, CALL_TARGET, leaveState, isLeaveType, leaveByUser, leaveDatesToCreate, offDayMap,
   canApproveLeave, initialLeaveStatus, lineManagerOf, groupLeaveRequests, pendingLeaveFor, fmtDays } from '../utils/teamSummary';
 import { notify } from '../utils/toast';
 import { notifyLeave } from '../utils/leaveNotify';
@@ -136,10 +136,12 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         _scheduledCall: callReportState(c.outcome, c.callDate, today) !== "made",
         _orig:     c,
         date:      c.callDate,
-        time:      "09:00",
+        time:      c.callTime || "09:00",
         endTime:   "",
-        title:     `Call: ${c.leadName || c.company || ""}`,
-        type:      "Call",
+        // A demo reads as a demo, and says how many of us were on it.
+        title:     `${isDemoCall(c) ? "Demo" : "Call"}: ${c.leadName || c.company || ""}${callPeople(c).length > 1 ? ` (+${callPeople(c).length - 1})` : ""}`,
+        type:      isDemoCall(c) ? "Demo" : "Call",
+        _people:   callPeople(c),
         status:    callReportState(c.outcome, c.callDate, today) === "made" ? "Completed" : "Scheduled",
         outcome:   c.outcome,
         accountId: c.accountId,
@@ -161,7 +163,8 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
     const bySource = sourceFilter === "all" ? allItems
       : sourceFilter === "scheduledCall" ? allItems.filter(e => e._scheduledCall)
       : allItems.filter(e => e._source === sourceFilter);
-    return ownerFilter ? bySource.filter(e => e.owner === ownerFilter) : bySource;
+    // A person's calendar includes calls/demos they joined, not only ones they logged.
+    return ownerFilter ? bySource.filter(e => e.owner === ownerFilter || (e._people || []).includes(ownerFilter)) : bySource;
   }, [allItems, sourceFilter, ownerFilter]);
 
   const teamUsers = useMemo(() => (orgUsers || [])
@@ -560,7 +563,8 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             {selectedEvent._source==="event"&&!selectedEvent._leave&&<button className="btn btn-primary btn-sm" onClick={()=>{openEdit(selectedEvent);setSelectedEvent(null);}}><Edit2 size={13}/>Edit</button>}
           </>}>
           <div className="dp-grid">
-            {[["Type",selectedEvent.type],["Status",selectedEvent._leave?LEAVE_STATE_UI[selectedEvent._leaveState]?.label:selectedEvent.status],["Date",fmt.date(selectedEvent.date)],["Time",`${selectedEvent.time}${selectedEvent.endTime?" – "+selectedEvent.endTime:""}`],["Location",selectedEvent.location||"—"],["Account",accounts.find(a=>a.id===selectedEvent.accountId)?.name||"—"],["Owner",(teamMap[selectedEvent.owner]||TEAM_MAP[selectedEvent.owner])?.name||selectedEvent.owner||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
+            {[["Type",selectedEvent.type],["Status",selectedEvent._leave?LEAVE_STATE_UI[selectedEvent._leaveState]?.label:selectedEvent.status],["Date",fmt.date(selectedEvent.date)],["Time",`${selectedEvent.time}${selectedEvent.endTime?" – "+selectedEvent.endTime:""}`],["Location",selectedEvent.location||"—"],["Account",accounts.find(a=>a.id===selectedEvent.accountId)?.name||"—"],["Owner",(teamMap[selectedEvent.owner]||TEAM_MAP[selectedEvent.owner])?.name||selectedEvent.owner||"—"],
+              ...((selectedEvent._people||[]).length>1?[["Also on this "+(selectedEvent.type==="Demo"?"demo":"call"),selectedEvent._people.filter(id=>id!==selectedEvent.owner).map(id=>(teamMap[id]||TEAM_MAP[id])?.name||id).join(", ")]]:[])].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>
           {selectedEvent.notes&&<div style={{marginTop:12,background:"var(--s2)",padding:"10px 12px",borderRadius:8,fontSize:13,color:"var(--text2)"}}>{selectedEvent.notes}</div>}
           {(selectedEvent._source==="activity"||selectedEvent._source==="call")&&(

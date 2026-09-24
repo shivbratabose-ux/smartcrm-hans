@@ -12,6 +12,7 @@ import {
 } from "../data/constants";
 import { today, fmt, isOverdue, getScopedUserIds, isGlobalRole } from "../utils/helpers";
 import { periodOf } from "../utils/fiscal";
+import { callPeople, isCallPerson, isDemoCall } from "../utils/teamSummary";
 import { PageTip } from "./shared";
 import {
   TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle, Clock,
@@ -201,16 +202,19 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   //    dotted lines, via getScopedUserIds). That answers "how is <manager>'s
   //    business doing?" rather than one individual's numbers. Team and Owner
   //    stack: pick a team, then optionally one person inside it.
+  // `field` is a property name, or a function returning every person a
+  // row belongs to (calls: the logger AND each participant — callPeople).
   const byOwner = (arr, field) => {
+    const peopleOf = typeof field === "function" ? field : (r => [r[field]]);
     let out = arr;
-    if (teamFilter !== "all" && teamIds) out = out.filter(r => teamIds.has(r[field]));
-    if (ownerFilter !== "all") out = out.filter(r => r[field] === ownerFilter);
+    if (teamFilter !== "all" && teamIds) out = out.filter(r => peopleOf(r).some(id => teamIds.has(id)));
+    if (ownerFilter !== "all") out = out.filter(r => peopleOf(r).includes(ownerFilter));
     return out;
   };
   const filteredOpps = useMemo(()=> byOwner((opps||[]).filter(o=>inWindow(o.closeDate)), "owner"),                 [opps,periodWindow,ownerFilter,teamFilter,teamIds]);
   const wLeads   = useMemo(()=> byOwner((leads||[]).filter(l=>inWindow(l.createdDate)), "assignedTo"),             [leads,periodWindow,ownerFilter,teamFilter,teamIds]);
   const wActs    = useMemo(()=> byOwner((activities||[]).filter(a=>inWindow(a.date)), "owner"),                    [activities,periodWindow,ownerFilter,teamFilter,teamIds]);
-  const wCalls   = useMemo(()=> byOwner((callReports||[]).filter(r=>inWindow(r.callDate)), "marketingPerson"),     [callReports,periodWindow,ownerFilter,teamFilter,teamIds]);
+  const wCalls   = useMemo(()=> byOwner((callReports||[]).filter(r=>inWindow(r.callDate)), callPeople),     [callReports,periodWindow,ownerFilter,teamFilter,teamIds]);
   const wColls   = useMemo(()=> byOwner((collections||[]).filter(c=>inWindow(c.invoiceDate)), "owner"),            [collections,periodWindow,ownerFilter,teamFilter,teamIds]);
   const wTickets = useMemo(()=> byOwner((tickets||[]).filter(t=>inWindow(t.reportedDate||t.created)), "assigned"), [tickets,periodWindow,ownerFilter,teamFilter,teamIds]);
 
@@ -394,7 +398,9 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     const won = userOpps.filter(o=>o.stage==="Won");
     const lost = userOpps.filter(o=>o.stage==="Lost");
     const userActs = wActs.filter(a=>a.owner===u.id);
-    const userCalls = wCalls.filter(r=>r.marketingPerson===u.id);
+    // Calls/demos this person was on — logged or joined as a participant.
+    const userCalls = wCalls.filter(r=>isCallPerson(r,u.id));
+    const demoCalls = userCalls.filter(isDemoCall).length;
     // leads use assignedTo, not owner
     const userLeads = wLeads.filter(l=>l.assignedTo===u.id);
     const { targetVal, achievedVal } = sumTargets(u.id);
@@ -403,8 +409,10 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     const wr = pct(won.length, won.length+lost.length);
     // Activity score (calls+meetings+demos weighted)
     const meetings = userActs.filter(a=>a.type==="Meeting").length;
-    const demos = userActs.filter(a=>a.type==="Demo").length;
-    const actScore = userCalls.length*1 + meetings*3 + demos*5;
+    // Demos = Demo activities + demo calls (Log Call, type Demo). A demo
+    // call scores as a demo (5), not also as a plain call (1).
+    const demos = userActs.filter(a=>a.type==="Demo").length + demoCalls;
+    const actScore = (userCalls.length - demoCalls)*1 + meetings*3 + demos*5;
     return {
       id:u.id, name:u.name, firstName:u.name.split(" ")[0], role:u.role, initials:u.initials,
       activeDeals:active.length, pipelineVal, wonDeals:won.length, wonVal, lostDeals:lost.length,
@@ -437,7 +445,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   const callData = useMemo(()=>{
     if(!wCalls.length) return {byType:[],byPerson:[],byOutcome:[],byObjective:[],trend:[]};
     const byType = CALL_TYPES.map(t=>({type:t,count:wCalls.filter(r=>r.callType===t).length})).filter(c=>c.count>0);
-    const byPerson = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],calls:wCalls.filter(r=>r.marketingPerson===u.id).length})).filter(c=>c.calls>0).sort((a,b)=>b.calls-a.calls);
+    const byPerson = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],calls:wCalls.filter(r=>isCallPerson(r,u.id)).length})).filter(c=>c.calls>0).sort((a,b)=>b.calls-a.calls);
     const byOutcome = [...new Set(wCalls.map(r=>r.outcome))].map(o=>({outcome:o||"N/A",count:wCalls.filter(r=>(r.outcome||"N/A")===o).length})).sort((a,b)=>b.count-a.count);
     const byObjective = [...new Set(wCalls.map(r=>r.objective))].filter(Boolean).map(o=>({objective:o.length>20?o.slice(0,20)+"...":o,full:o,count:wCalls.filter(r=>r.objective===o).length})).sort((a,b)=>b.count-a.count).slice(0,8);
     return {byType,byPerson,byOutcome,byObjective};
@@ -978,7 +986,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
             <K label="Total Calls" value={metrics.totalCalls} color="#1B6B5A" icon={Phone}/>
             <K label="Visits" value={wCalls.filter(r=>r.callType==="Visit").length} color="#2563EB" icon={MapPin}/>
             <K label="Web Calls" value={wCalls.filter(r=>r.callType==="Web Call").length} color="#7C3AED" icon={Globe}/>
-            <K label="Avg/Person" value={_scopedTeamSrc.length?(metrics.totalCalls/_scopedTeamSrc.filter(u=>wCalls.some(r=>r.marketingPerson===u.id)).length||0).toFixed(1):"0"} color="#D97706" icon={Users}/>
+            <K label="Avg/Person" value={_scopedTeamSrc.length?(metrics.totalCalls/_scopedTeamSrc.filter(u=>wCalls.some(r=>isCallPerson(r,u.id))).length||0).toFixed(1):"0"} color="#D97706" icon={Users}/>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>

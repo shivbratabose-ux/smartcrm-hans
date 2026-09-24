@@ -10,7 +10,7 @@ import {
   INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_CON, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
-import { pendingLeaveFor } from "./utils/teamSummary";
+import { pendingLeaveFor, callPeople } from "./utils/teamSummary";
 import { loadState, saveState, ErrorBoundary, today, refreshToday, uid, canWriteTargets, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert, buildNotificationUpdate } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
@@ -858,7 +858,10 @@ export default function SmartCRM() {
   const visibleCallReports = useMemo(() => {
     const live = callReports.filter(cr => !cr.isDeleted);
     if (_globalRole) return live;
-    return live.filter(cr => cr.marketingPerson && _scopedIds.has(cr.marketingPerson));
+    // Anyone on the call counts — the logger or a participant. A tech lead
+    // who joined a sales exec's demo sees it on their own calendar even
+    // though the exec isn't in their reporting line.
+    return live.filter(cr => callPeople(cr).some(id => _scopedIds.has(id)));
   }, [callReports, _scopedIds, _globalRole]);
 
   const visibleAccounts    = useMemo(() => {

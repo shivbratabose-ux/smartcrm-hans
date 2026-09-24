@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Phone, Mail, Video, MessageSquare, Globe, MapPin, Calendar, Clock, AlertCircle } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, LEAD_STAGES, LEAD_STAGE_MAP } from '../data/constants';
+import { withDemoCallType, isCallPerson, callPeople } from '../utils/teamSummary';
 import { BLANK_CALL_REPORT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, getScopedUserIds, softDeleteById, upper, title } from '../utils/helpers';
 import { notify } from '../utils/toast';
@@ -33,6 +34,7 @@ const CSV_COLS = [
   { label: "Lead Name", accessor: r => r.leadName },
   { label: "Company", accessor: r => r.company },
   { label: "Person", accessor: r => TEAM_MAP[r.marketingPerson]?.name || r.marketingPerson },
+  { label: "Participants", accessor: r => callPeople(r).filter(id => id !== r.marketingPerson).map(id => TEAM_MAP[id]?.name || id).join("; ") },
   { label: "Stage", accessor: r => LEAD_STAGE_MAP[r.leadStage]?.name || r.leadStage },
   { label: "Call Type", accessor: r => r.callType },
   { label: "Product", accessor: r => PROD_MAP[r.product]?.name || r.product },
@@ -106,7 +108,8 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
     else if (tabS === "Overdue") list = list.filter(r => r.nextCallDate && r.nextCallDate < today);
     else if (tabS === "Upcoming") list = list.filter(r => r.nextCallDate && r.nextCallDate > today);
     if (typeF !== "All") list = list.filter(r => r.callType === typeF);
-    if (personF !== "All") list = list.filter(r => (r.marketingPerson || "") === personF);
+    // Logged it OR joined it — a demo shows under every participant.
+    if (personF !== "All") list = list.filter(r => isCallPerson(r, personF));
     if (search) list = list.filter(r => (r.leadName + r.company + r.notes).toLowerCase().includes(search.toLowerCase()));
     return list.sort((a, b) => b.callDate.localeCompare(a.callDate));
   }, [callReports, tabS, typeF, personF, search]);
@@ -182,7 +185,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
         </div>
         <select className="filter-select" value={typeF} onChange={e => setTypeF(e.target.value)}>
           <option value="All">All Types</option>
-          {CALL_TYPES.map(t => <option key={t}>{t}</option>)}
+          {withDemoCallType(CALL_TYPES).map(t => <option key={t}>{t}</option>)}
         </select>
         {/* Salesperson — scoped to the viewer's hierarchy, so leadership can
             drill into any team member's calls. Hidden for a rep with no
@@ -240,7 +243,15 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
                       </span>
                     </td>
                     <td><ProdTag pid={r.product}/></td>
-                    <td><UserPill uid={r.marketingPerson}/></td>
+                    <td>
+                      <UserPill uid={r.marketingPerson}/>
+                      {callPeople(r).length > 1 && (
+                        <span title={"Also on this call: " + callPeople(r).filter(id => id !== r.marketingPerson).map(id => TEAM_MAP[id]?.name || id).join(", ")}
+                          style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 700, color: "var(--brand)", background: "var(--brand-bg)", padding: "1px 6px", borderRadius: 8 }}>
+                          +{callPeople(r).length - 1}
+                        </span>
+                      )}
+                    </td>
                     <td style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(r.callDate)}</td>
                     <td style={{fontSize:12,color:"var(--text2)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.notes}</td>
                     <td>
@@ -303,7 +314,7 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
           <div className="form-row">
             <div className="form-group"><label>Call Type</label>
               <select value={form.callType} onChange={e => setForm(f => ({...f, callType: e.target.value}))}>
-                {CALL_TYPES.map(t => <option key={t}>{t}</option>)}
+                {withDemoCallType(CALL_TYPES).map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
             <div className="form-group"><label>Objective</label>

@@ -21,6 +21,7 @@ import { PROD_MAP } from '../data/constants';
 import { fmt, today, isOverdue, getScopedUserIds } from '../utils/helpers';
 import { periodOf, fiscalRanges, fiscalWindows, wonStageNames, lostStageNames } from '../utils/fiscal';
 import { buildSalesGraph, allocationFor } from '../utils/salesOrg';
+import { isCallPerson, isDemoCall } from '../utils/teamSummary';
 import { UserPill, StatusBadge, Empty, PageTip } from './shared';
 
 // Attention thresholds — days without activity before a deal counts as
@@ -201,9 +202,12 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
   // ── Calls in the selected window vs target ──
   // Call goals aren't allocation-carved (same as before): a user's own
   // target rows carry targetCalls; the window prorates quarters by month.
-  const winCalls = useMemo(() =>
-    (callReports || []).filter(r => r.marketingPerson === me && r.callDate >= win.start && r.callDate <= win.end).length,
+  // Calls and demos I was on — logged by me or with me as a participant.
+  const winCallList = useMemo(() =>
+    (callReports || []).filter(r => !r.isDeleted && isCallPerson(r, me) && r.callDate >= win.start && r.callDate <= win.end),
     [callReports, me, win]);
+  const winCalls = winCallList.length;
+  const winDemos = winCallList.filter(isDemoCall).length;
   const winCallGoal = Math.round(win.months.reduce((s, ym) => {
     const per = periodOf(`${ym}-15`);
     return s + (targets || [])
@@ -314,7 +318,7 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
         <div className="kpi">
           <div className="kpi-label">Calls · {win.short}</div>
           <div className="kpi-val">{winCalls}{winCallGoal > 0 ? `/${winCallGoal}` : ""}</div>
-          <div className="kpi-sub">{crossSell === null ? "cross-sell needs product-scoped targets" : `cross-sell ${fmt.inr(crossSell)} FYTD`}</div>
+          <div className="kpi-sub">{winDemos > 0 ? `incl. ${winDemos} demo${winDemos === 1 ? "" : "s"} · ` : ""}{crossSell === null ? "cross-sell needs product-scoped targets" : `cross-sell ${fmt.inr(crossSell)} FYTD`}</div>
         </div>
       </div>
 

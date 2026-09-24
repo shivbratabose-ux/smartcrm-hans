@@ -2,7 +2,7 @@
 // Team view renders. Run: node scripts/test-team-summary.mjs
 import { buildTeamSummary, teamColumns, callReportState, workingDaysElapsed, hasCallTarget, offDayMap, offDaysIn, leaveByUser, isLeaveEvent, leaveDaysIn, leaveDatesToCreate, fmtDays,
   canApproveLeave, initialLeaveStatus, lineManagerOf, leaveState, groupLeaveRequests, pendingLeaveFor,
-  hoursBetween, leaveShare, leaveTitleFor, fmtHours, adminOverlap } from "../src/utils/teamSummary.js";
+  hoursBetween, leaveShare, leaveTitleFor, fmtHours, adminOverlap, callPeople, isCallPerson, isDemoCall } from "../src/utils/teamSummary.js";
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -263,6 +263,29 @@ const existingShares = leaveByUser(awEvents, { includePending: true }).get("se")
 check("room left on a day: 4h used, 4h more fits, 5h doesn't",
   [leaveDatesToCreate("2026-09-08", "2026-09-08", new Map(), existingShares, 0.5).length, leaveDatesToCreate("2026-09-08", "2026-09-08", new Map(), existingShares, 5 / 8).length], [1, 0]);
 check("stamp-only notes don't show as the reason", groupLeaveRequests([{ ...aw("w9", "2026-09-11", "10:00", "11:00"), notes: "[Approved by X · 1 Sept]" }])[0].reason, "");
+
+console.log("— demos with several participants —");
+check("callPeople: logger + participants, deduped", callPeople({ marketingPerson: "a", participantIds: ["b", "a", "c", ""] }), ["a", "b", "c"]);
+check("callPeople: no participants field", callPeople({ marketingPerson: "a" }), ["a"]);
+check("isCallPerson", [isCallPerson({ marketingPerson: "a", participantIds: ["b"] }, "b"), isCallPerson({ marketingPerson: "a" }, "b")], [true, false]);
+check("isDemoCall", ["Demo", "Product Demo", "demo", "Telephone Call", ""].map(t => isDemoCall({ callType: t })), [true, true, true, false, false]);
+const D = buildTeamSummary({
+  today: "2026-09-10", columns: wk,
+  users: [{ id: "se", name: "Exec", role: "sales_exec" }, { id: "bd", name: "BDM", role: "bd_lead" }, { id: "tl", name: "Tech", role: "tech_lead" }, { id: "out", name: "Not on it", role: "sales_exec" }],
+  callReports: [
+    { marketingPerson: "se", participantIds: ["se", "bd", "tl"], callType: "Demo", callDate: "2026-09-08", outcome: "Completed" },
+    { marketingPerson: "se", participantIds: ["bd"], callType: "Telephone Call", callDate: "2026-09-09", outcome: "No Answer" },
+    { marketingPerson: "bd", participantIds: ["se"], callType: "Demo", callDate: "2026-09-11", outcome: "Completed" }, // future (Fri) → pending for both
+  ],
+  activities: [{ owner: "tl", date: "2026-09-09", type: "Demo", status: "Completed" }],
+});
+const drow = (id) => D.rows.find(r => r.user.id === id);
+check("each person on the demo gets the call", ["se", "bd", "tl", "out"].map(id => drow(id).total.callsMade), [2, 2, 1, 0]);
+check("demo tallied per person (call demo + demo activity)", ["se", "bd", "tl", "out"].map(id => drow(id).total.demos), [1, 1, 2, 0]);
+check("demo activity is still a meeting", drow("tl").total.meetings, 1);
+check("participant's calls count toward their call target", [drow("bd").total.callsMade, drow("bd").callTarget], [2, 20]);
+check("future demo pending for logger and participant", [drow("se").total.pending, drow("bd").total.pending], [1, 1]);
+check("demo lands on the right day for a participant", drow("tl").cells["2026-09-08"].demos, 1);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
