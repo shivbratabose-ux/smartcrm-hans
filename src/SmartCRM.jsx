@@ -362,8 +362,11 @@ export default function SmartCRM() {
   const [org,setOrg]                 = useState(saved?.org || INIT_ORG);
   const [teams,setTeams]             = useState(saved?.teams || INIT_TEAMS);
   const [orgUsers,setOrgUsers]       = useState(saved?.orgUsers || INIT_USERS);
-  // Keep UserPill (shared.jsx) in sync with real Supabase users
-  useEffect(() => { registerOrgUsers(orgUsers); }, [orgUsers]);
+  // Keep UserPill (shared.jsx) in sync with real Supabase users. Registered
+  // during render (like registerMasters below), not in an effect — an effect
+  // runs after the first paint, so every UserPill / userName() on the first
+  // render showed raw ids ("u_se") until something else re-rendered.
+  useMemo(() => { registerOrgUsers(orgUsers); }, [orgUsers]);
   // Keep PRODUCTS / PROD_MAP (constants.js) in sync with the live Masters catalog
   // so dropdowns app-wide reflect newly added/edited/deleted Product Lines.
   // NOTE: must run DURING render (useMemo), not in a post-commit useEffect.
