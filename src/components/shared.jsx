@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight, AlertTriangle, RotateCcw, Edit2, Trash2, Lock, Star, Users, TrendingUp, Phone, MessageSquare, Calendar, ArrowRightCircle, Clock, Plus } from "lucide-react";
 import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
+import { withDemoCallType, isDemoCall } from "../utils/teamSummary";
 import { fmt, uid, today, hasErrors } from "../utils/helpers";
 import { notify } from "../utils/toast";
 
@@ -1347,7 +1348,7 @@ const nowTime = () => {
 
 export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUsers, masters, prefill = {} }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== "Inactive") : TEAM;
-  const callTypes = masters?.callTypes?.length ? masters.callTypes : CALL_TYPES;
+  const callTypes = withDemoCallType(masters?.callTypes?.length ? masters.callTypes : CALL_TYPES);
   const callSubjects = masters?.callSubjects?.length ? masters.callSubjects : CALL_OBJECTIVES;
   const [form, setForm] = useState({
     callType: "Telephone Call", objective: "General Followup", callDate: today, callTime: nowTime(),
@@ -1425,7 +1426,7 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
       <div className="form-row">
         <div className="form-group"><label>Call Type</label>
           <select value={form.callType} onChange={e => set("callType", e.target.value)}>
-            {callTypes.map(t => { const v = typeof t==="object"?t.name:t; return <option key={v} value={v}>{v}</option>; })}
+            {callTypes.map(v => <option key={v} value={v}>{v}</option>)}
           </select>
         </div>
         <div className="form-group"><label>Call Subject</label>
@@ -1498,7 +1499,12 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
 
       {/* Multi-select our participants */}
       <div className="form-group" style={{ marginBottom: 12 }}>
-        <label>Our Participants</label>
+        <label>{isDemoCall(form) ? "Who joined the demo?" : "Our Participants"}
+          {form.participantIds.length > 0 && <span style={{ fontSize: 10.5, color: "var(--text3)", fontWeight: 400, marginLeft: 6 }}>{form.participantIds.length} selected</span>}
+        </label>
+        <div style={{ fontSize: 10.5, color: "var(--text3)", margin: "-2px 0 4px" }}>
+          Everyone ticked gets this {isDemoCall(form) ? "demo" : "call"} on their calendar and in their own performance numbers.
+        </div>
         <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 4, background: "white" }}>
           {team.map(u => (
             <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>

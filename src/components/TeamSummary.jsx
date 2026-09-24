@@ -20,7 +20,7 @@ const heat = (n, max) => {
 const complianceTone = (pct) => pct == null ? "var(--text3)" : pct >= 100 ? "#15803D" : pct >= 80 ? "#B45309" : "var(--red)";
 
 const cellTitle = (c) =>
-  `${c.callsMade} call${c.callsMade === 1 ? "" : "s"} (${c.connected} connected) · ${c.meetings} meeting${c.meetings === 1 ? "" : "s"} · ${c.otherDone} other · ${c.pending} pending · ${c.overdue} overdue`;
+  `${c.callsMade} call${c.callsMade === 1 ? "" : "s"} (${c.connected} connected${c.demos ? `, ${c.demos} demo${c.demos === 1 ? "" : "s"}` : ""}) · ${c.meetings} meeting${c.meetings === 1 ? "" : "s"} · ${c.otherDone} other · ${c.pending} pending · ${c.overdue} overdue`;
 
 function Kpi({ icon, label, value, sub, tone }) {
   return (
@@ -63,7 +63,7 @@ export default function TeamSummary({ activities, callReports, events, users, co
             + (s.offDays.length ? ` · ${offLabel(s.offDays.length)} excluded` : "")
             + (s.compliance.leaveDays ? ` · ${fmtDays(s.compliance.leaveDays)} leave day${s.compliance.leaveDays === 1 ? "" : "s"}` : "")}
           tone={s.compliance.eligible ? complianceTone(s.compliance.pct) : undefined} />
-        <Kpi icon={<Users size={12} />} label="Meetings" value={s.totals.meetings} sub={`${s.totals.otherDone} other activities done`} />
+        <Kpi icon={<Users size={12} />} label="Meetings" value={s.totals.meetings} sub={`${s.totals.demos} demo${s.totals.demos === 1 ? "" : "s"} · ${s.totals.otherDone} other activities done`} />
         <Kpi icon={<Clock size={12} />} label="Pending" value={s.totals.pending} sub="planned, not yet due" />
         <Kpi icon={<AlertTriangle size={12} />} label="Overdue" value={s.totals.overdue}
           sub="planned work that slipped" tone={s.totals.overdue ? "var(--red)" : undefined} />
@@ -93,6 +93,7 @@ export default function TeamSummary({ activities, callReports, events, users, co
               })}
               <th style={{ ...th, textAlign: "right", borderLeft: "2px solid var(--border)" }}><PhoneCall size={11} style={{ verticalAlign: "-1px" }} /> Calls</th>
               <th style={{ ...th, textAlign: "right" }}>Connected</th>
+              <th style={{ ...th, textAlign: "right" }} title="Demos each person took part in — logged by them or with them as a participant">Demos</th>
               <th style={{ ...th, textAlign: "right" }}>Meetings</th>
               <th style={{ ...th, textAlign: "right" }}>Other</th>
               <th style={{ ...th, textAlign: "right" }}>Pending</th>
@@ -103,7 +104,7 @@ export default function TeamSummary({ activities, callReports, events, users, co
           </thead>
           <tbody>
             {s.rows.length === 0 && (
-              <tr><td colSpan={columns.length + 9} style={{ ...td, textAlign: "center", color: "var(--text3)", padding: 24 }}>No team members in your scope.</td></tr>
+              <tr><td colSpan={columns.length + 10} style={{ ...td, textAlign: "center", color: "var(--text3)", padding: 24 }}>No team members in your scope.</td></tr>
             )}
             {s.rows.map(r => (
               <tr key={r.user.id}>
@@ -160,6 +161,7 @@ export default function TeamSummary({ activities, callReports, events, users, co
                 })}
                 <td style={{ ...td, ...num, textAlign: "right", fontWeight: 700, borderLeft: "2px solid var(--border)" }}>{r.total.callsMade}</td>
                 <td style={{ ...td, ...num, textAlign: "right" }}>{r.total.connected}</td>
+                <td style={{ ...td, ...num, textAlign: "right", fontWeight: r.total.demos ? 700 : 400, color: r.total.demos ? "var(--orange, #EA580C)" : "var(--text3)" }}>{r.total.demos}</td>
                 <td style={{ ...td, ...num, textAlign: "right" }}>{r.total.meetings}</td>
                 <td style={{ ...td, ...num, textAlign: "right" }}>{r.total.otherDone}</td>
                 <td style={{ ...td, ...num, textAlign: "right", color: "var(--text3)" }}>{r.total.pending}</td>
@@ -181,6 +183,7 @@ export default function TeamSummary({ activities, callReports, events, users, co
                 {columns.map(c => <td key={c.key} style={{ ...td, ...num, textAlign: "center" }}>{s.doneOf(s.columnTotals[c.key]) || "—"}</td>)}
                 <td style={{ ...td, ...num, textAlign: "right", borderLeft: "2px solid var(--border)" }}>{s.totals.callsMade}</td>
                 <td style={{ ...td, ...num, textAlign: "right" }}>{s.totals.connected}</td>
+                <td style={{ ...td, ...num, textAlign: "right" }}>{s.totals.demos}</td>
                 <td style={{ ...td, ...num, textAlign: "right" }}>{s.totals.meetings}</td>
                 <td style={{ ...td, ...num, textAlign: "right" }}>{s.totals.otherDone}</td>
                 <td style={{ ...td, ...num, textAlign: "right" }}>{s.totals.pending}</td>
@@ -193,7 +196,7 @@ export default function TeamSummary({ activities, callReports, events, users, co
         </table>
       </div>
       <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8 }}>
-        Cells show completed work (calls attempted + meetings + other activities). Hover a cell for the breakdown; click a name to open that person's calendar. A no-answer call counts as a call made, not as connected.
+        Cells show completed work (calls attempted + meetings + other activities). Hover a cell for the breakdown; click a name to open that person's calendar. A no-answer call counts as a call made, not as connected. A call or demo counts for everyone on it — the person who logged it and each participant ticked.
         {" "}Call target: {CALL_TARGET.perDay} calls per working day (Mon–Fri) for Sales Executives, BD Leads, Country Managers and Line Managers, counted up to today — compliance = calls made ÷ target to date. Holidays and admin days set in Masters → Activity, and a person's approved leave carry no target, and approved admin work takes its share of the day (hours ÷ 8) (leave awaiting approval still counts); calls made on them still count.
       </div>
     </div>

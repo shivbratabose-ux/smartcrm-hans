@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Plus, X, Phone, CheckSquare, FileText, Check, Search, Clock, Calendar } from "lucide-react";
 import { CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, ACT_TYPES, ACT_STATUS, TEAM } from "../data/constants";
+import { withDemoCallType } from "../utils/teamSummary";
 import { uid, today, sanitizeObj, hasErrors } from "../utils/helpers";
 import { Modal, FormError, TypeaheadSelect } from "./shared";
 
@@ -108,7 +109,7 @@ function CheckboxList({ items, selected, onChange, labelFn, searchPlaceholder, m
 // ── Call Form Tab ────────────────────────────────────────────────
 function CallForm({ form, setForm, errors, setErrors, accounts, contacts, opps, leads, orgUsers, masters }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== "Inactive") : TEAM;
-  const callTypes = masters?.callTypes?.length ? masters.callTypes : CALL_TYPES;
+  const callTypes = withDemoCallType(masters?.callTypes?.length ? masters.callTypes : CALL_TYPES);
   const callSubjects = masters?.callSubjects?.length ? masters.callSubjects : CALL_OBJECTIVES;
 
   const filteredContacts = useMemo(() =>
@@ -129,7 +130,7 @@ function CallForm({ form, setForm, errors, setErrors, accounts, contacts, opps, 
       <div className="form-row">
         <div className="form-group"><label>Call Type</label>
           <select value={form.callType} onChange={e => set("callType", e.target.value)}>
-            {callTypes.map(t => { const v = typeof t === "object" ? t.name : t; return <option key={v} value={v}>{v}</option>; })}
+            {callTypes.map(v => <option key={v} value={v}>{v}</option>)}
           </select>
         </div>
         <div className="form-group"><label>Call Subject</label>
@@ -200,7 +201,8 @@ function CallForm({ form, setForm, errors, setErrors, accounts, contacts, opps, 
 
       {/* Multi-select our participants */}
       <div className="form-group" style={{ marginBottom:12 }}>
-        <label>Our Participants</label>
+        <label>{/demo/i.test(form.callType || "") ? "Who joined the demo?" : "Our Participants"}</label>
+        <div style={{ fontSize:10.5, color:"var(--text3)", margin:"-2px 0 4px" }}>Everyone ticked gets this on their calendar and in their own performance numbers.</div>
         <CheckboxList
           items={team}
           selected={form.participantIds}

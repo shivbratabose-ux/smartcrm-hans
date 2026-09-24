@@ -76,6 +76,8 @@ const TEXT_ARRAY_COLUMNS = new Set([
   "terms", "cc_contact_ids",
   // events
   "attendees",
+  // call_reports (add_call_report_participants_v1.sql)
+  "participant_ids",
 ]);
 
 // Normalise any value into a TEXT[]-safe string array. Postgres rejects a
