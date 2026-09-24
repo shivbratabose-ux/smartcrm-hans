@@ -727,8 +727,12 @@ export default function QuickLogFAB({
   // we honour the saved position; otherwise we fall back to the default
   // bottom-right dock via `bottom`/`right` shorthand. The transition is
   // disabled while dragging so the FAB tracks the cursor 1:1.
+  // The CONTAINER is the fixed element (bottom/right or dragged top/left);
+  // the button sits inside it. It used to be `fixed` itself, which left the
+  // container 0×0 and put the button's top-left on the dock corner — so
+  // three-quarters of it hung off the right/bottom edge of the screen.
   const fabStyle = {
-    position:"fixed", zIndex:9999,
+    position:"relative", zIndex:1,
     width:56, height:56, borderRadius:"50%", border:"none",
     cursor: dragStateRef.current?.dragging ? "grabbing" : "grab",
     background:"var(--brand,#1B4D3E)", color:"white", display:"flex", alignItems:"center", justifyContent:"center",
@@ -777,6 +781,7 @@ export default function QuickLogFAB({
           it, otherwise the default bottom-right dock anchor. */}
       {!mode && <div
         ref={fabRef}
+        className="qlog-fab"
         style={pos
           ? { position:"fixed", top: pos.top, left: pos.left, zIndex:9999 }
           : { position:"fixed", bottom:24, right:24, zIndex:9999 }}
