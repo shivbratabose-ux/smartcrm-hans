@@ -4,7 +4,7 @@ import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATE
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { getQuoteTemplate, STANDARD_TERMS_SECTIONS, STANDARD_PAYMENT_MILESTONES, STANDARD_EXTRA_NOTES } from '../data/quoteTemplates';
 import { fmt, uid, today, toLocalISODate, parseLocalDate, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
-import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip, TypeaheadSelect, SendEmailModal } from './shared';
+import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip, TypeaheadSelect, SendEmailModal, userName } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
@@ -874,7 +874,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       // immediately.
       _quoteId:`#QT-${yr}-${seqStr.padStart(3,"0")}`,
       _prob:opp?.probability||({"Draft":20,"Sent":50,"Under Review":65,"Accepted":100,"Rejected":0,"Expired":0,"Revised":30}[q.status]||0),
-      _ownerName:TEAM_MAP[q.owner]?.name||"—",
+      _ownerName:userName(q.owner)||"—",
     };
   }),[quotes,accounts,opps,leads]);
 
@@ -1605,7 +1605,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     </p>
     <p style="text-align:justify;font-size:10pt;line-height:1.6;margin:0 0 14px">${tmpl.opening}</p>
 
-    ${isInternal?`<div class="internal-banner">⚠ Internal Copy — DO NOT SHARE · Total Cost: ${sym}${totalCost.toLocaleString()} · Margin: ${sym}${margin.toLocaleString()} (${marginPct}%) · Owner: ${TEAM_MAP[q.owner]?.name||q.owner}</div>`:""}
+    ${isInternal?`<div class="internal-banner">⚠ Internal Copy — DO NOT SHARE · Total Cost: ${sym}${totalCost.toLocaleString()} · Margin: ${sym}${margin.toLocaleString()} (${marginPct}%) · Owner: ${userName(q.owner)||q.owner}</div>`:""}
 
     <!-- ═══ SECTION 1: PRODUCT OVERVIEW ═══ -->
     <h2>1. Product Overview — ${tmpl.productName}</h2>
@@ -1824,7 +1824,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   /* ── Unique managers for filter ── */
   const uniqueManagers=useMemo(()=>{
     const ids=[...new Set(quotes.map(q=>q.owner))];
-    return ids.map(id=>({id,name:TEAM_MAP[id]?.name||id}));
+    return ids.map(id=>({id,name:userName(id)||id}));
   },[quotes]);
 
   /* ── Conversion analytics (manager-only) ── */
@@ -1849,7 +1849,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       if(["Sent","Under Review","Accepted","Rejected","Expired"].includes(q.status)) byOwner[q.owner].sent++;
       if(q.status==="Accepted") byOwner[q.owner].won++;
     });
-    const ownerRows=Object.entries(byOwner).map(([id,s])=>({id,name:TEAM_MAP[id]?.name||id,...s,winRate:s.sent>0?+((s.won/s.sent)*100).toFixed(1):0})).sort((a,b)=>b.winRate-a.winRate);
+    const ownerRows=Object.entries(byOwner).map(([id,s])=>({id,name:userName(id)||id,...s,winRate:s.sent>0?+((s.won/s.sent)*100).toFixed(1):0})).sort((a,b)=>b.winRate-a.winRate);
     // By product
     const byProduct={};
     quotes.forEach(q=>{
@@ -2160,7 +2160,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           {/* ── Top band: meta (left 60%) + Products (right 40%) ── */}
           <div style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:20,marginBottom:16}}>
             <div className="dp-grid">
-              {[["Quote ID",detail._quoteId],["Account",detail._accName],["Sector",detail._sector],["Status",detail.status],["Probability",`${detail._prob}%`],["Version",`v${detail.version}`],["Created",fmt.date(detail.createdDate)],["Sent",detail.sentDate?fmt.date(detail.sentDate):"—"],["Expiry",detail.expiryDate?fmt.date(detail.expiryDate):"—"],["Validity",detail.validity],["Owner",TEAM_MAP[detail.owner]?.name||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
+              {[["Quote ID",detail._quoteId],["Account",detail._accName],["Sector",detail._sector],["Status",detail.status],["Probability",`${detail._prob}%`],["Version",`v${detail.version}`],["Created",fmt.date(detail.createdDate)],["Sent",detail.sentDate?fmt.date(detail.sentDate):"—"],["Expiry",detail.expiryDate?fmt.date(detail.expiryDate):"—"],["Validity",detail.validity],["Owner",userName(detail.owner)||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
             </div>
             <div>
               <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:8}}>PRODUCTS & MODULES</div>
@@ -2302,7 +2302,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                     <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0,flex:1}}>
                       <FileText size={11} style={{color:"var(--text3)",flexShrink:0}}/>
                       <a href={a.url} target="_blank" rel="noreferrer" style={{color:"#1D4ED8",fontSize:11.5,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</a>
-                      <span style={{fontSize:10,color:"var(--text3)"}}>· {a.addedAt?fmt.date(a.addedAt.slice(0,10)):"—"} · {TEAM_MAP[a.addedBy]?.name||a.addedBy}</span>
+                      <span style={{fontSize:10,color:"var(--text3)"}}>· {a.addedAt?fmt.date(a.addedAt.slice(0,10)):"—"} · {userName(a.addedBy)||a.addedBy}</span>
                     </div>
                     <button className="icon-btn" title="Remove" onClick={()=>removeAttachment(detail.id,a.id)}><X size={12}/></button>
                   </div>
@@ -2321,7 +2321,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                   {detail.changeLog.slice().reverse().map(e=>(
                     <tr key={e.id}>
                       <td style={{padding:"2px 4px",whiteSpace:"nowrap"}}>{e.at?fmt.date(e.at.slice(0,10)):"—"}</td>
-                      <td style={{padding:"2px 4px"}}>{TEAM_MAP[e.by]?.name||e.by||"—"}</td>
+                      <td style={{padding:"2px 4px"}}>{userName(e.by)||e.by||"—"}</td>
                       <td style={{padding:"2px 4px",fontWeight:600}}>{e.field||"—"}</td>
                       <td style={{padding:"2px 4px"}}>{e.from?<><span style={{color:"#94A3B8",textDecoration:"line-through"}}>{String(e.from).slice(0,40)}</span> → </>:""}<span style={{color:"#0F172A"}}>{String(e.to).slice(0,60)}</span></td>
                     </tr>
@@ -2340,7 +2340,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                   {detail.emailLog.slice().reverse().map(e=>(
                     <tr key={e.id}>
                       <td style={{padding:"2px 4px"}}>{e.sentAt?fmt.date(e.sentAt.slice(0,10)):"—"}</td>
-                      <td style={{padding:"2px 4px"}}>{TEAM_MAP[e.sentBy]?.name||e.sentBy||"—"}</td>
+                      <td style={{padding:"2px 4px"}}>{userName(e.sentBy)||e.sentBy||"—"}</td>
                       <td style={{padding:"2px 4px"}}>{e.to||"—"}</td>
                       <td style={{padding:"2px 4px"}}><span style={{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:3,background:e.kind==="initial"?"#3B82F618":e.kind==="reminder"?"#F59E0B18":"#94A3B818",color:e.kind==="initial"?"#3B82F6":e.kind==="reminder"?"#F59E0B":"#64748B"}}>{e.kind.toUpperCase()}</span></td>
                     </tr>
@@ -2354,7 +2354,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               <div style={{fontSize:11,fontWeight:700,color:detail.approvalStatus==="Approved"?"#047857":detail.approvalStatus==="Rejected"?"#B91C1C":"#92400E",marginBottom:6,letterSpacing:"0.5px",display:"flex",alignItems:"center",gap:6}}><ShieldCheck size={12}/>APPROVAL · {detail.approvalStatus.toUpperCase()}</div>
               <div>Reason needed: <strong>{approvalReason(detail)||"—"}</strong></div>
               {detail.approvalRequestedAt&&<div>Requested: {fmt.date(detail.approvalRequestedAt.slice(0,10))}</div>}
-              {detail.approvedAt&&<div>{detail.approvalStatus==="Rejected"?"Rejected":"Approved"} by: {TEAM_MAP[detail.approvedBy]?.name||detail.approvedBy} on {fmt.date(detail.approvedAt.slice(0,10))}</div>}
+              {detail.approvedAt&&<div>{detail.approvalStatus==="Rejected"?"Rejected":"Approved"} by: {userName(detail.approvedBy)||detail.approvedBy} on {fmt.date(detail.approvedAt.slice(0,10))}</div>}
               {detail.rejectedReason&&<div style={{marginTop:4}}>Reason: <em>{detail.rejectedReason}</em></div>}
             </div>
           )}

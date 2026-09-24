@@ -6,7 +6,7 @@ import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, parseAccessReq
 import { Check as CheckIcon, X as XIcon } from 'lucide-react';
 import { Library } from 'lucide-react';
 import { Sparkles } from 'lucide-react';
-import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect, SendEmailModal } from './shared';
+import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect, SendEmailModal, userName, lookupUser } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
 import ResourceLibrary from './ResourceLibrary';
@@ -19,7 +19,7 @@ const TYPE_COL={"Email Sent":"var(--blue)","Email Received":"var(--green)","What
 const CSV_COLS = [
   {label:"Type",accessor:c=>c.type},{label:"Subject",accessor:c=>c.subject},{label:"From",accessor:c=>c.from},
   {label:"To",accessor:c=>c.to},{label:"Date",accessor:c=>c.date},{label:"Status",accessor:c=>c.status},
-  {label:"Account",accessor:c=>c._accName||""},{label:"Owner",accessor:c=>TEAM_MAP[c.owner]?.name||""},
+  {label:"Account",accessor:c=>c._accName||""},{label:"Owner",accessor:c=>userName(c.owner)||""},
 ];
 
 function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDelete,orgUsers,catalog=[],onRespondEditAccess,aiConfig,setActivities}) {
@@ -53,7 +53,7 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
   const waCount=commLogs.filter(c=>c.type.includes("WhatsApp")).length;
 
   const openAdd=(type)=>{
-    const user=TEAM_MAP[currentUser];
+    const user=lookupUser(currentUser);
     setForm({...BLANK_COMM_LOG,id:`cm${uid()}`,type:type||"Email Sent",from:user?.email||"",date:today+" "+new Date().toTimeString().slice(0,5),owner:currentUser});
     setFormErrors({});setModal({mode:"add"});
   };
@@ -182,7 +182,7 @@ function CommLog({commLogs,setCommLogs,accounts,contacts,opps,currentUser,canDel
             {[
               ["Type",detail.type],["From",detail.from],["To",detail.to],
               ["Date",detail.date],["Status",detail.status],["Account",detail._accName],
-              ["Owner",TEAM_MAP[detail.owner]?.name||"—"],
+              ["Owner",userName(detail.owner)||"—"],
               ...(detail.quoteRef||detail.quoteId?[["Quote",detail.quoteRef||detail.quoteId]]:[] ),
             ].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>

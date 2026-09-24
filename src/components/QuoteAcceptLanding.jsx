@@ -3,6 +3,7 @@ import { Check, MessageCircle, FileText, Building2, User, Calendar, Receipt } fr
 import { fmt, today, uid, resolveAddress, formatAddress } from "../utils/helpers";
 import { TEAM_MAP, PROD_MAP } from "../data/constants";
 import { BLANK_CONTRACT } from "../data/seed";
+import { userName } from "./shared";
 
 /* ──────────────────────────────────────────────────────────────────
    Customer-facing landing page reached via QR scan from the printed
@@ -21,7 +22,7 @@ export default function QuoteAcceptLanding({ quoteId, quotes, setQuotes, account
   const quote = useMemo(() => quotes.find(q => q.id === quoteId), [quotes, quoteId]);
   const account = useMemo(() => accounts.find(a => a.id === quote?.accountId), [accounts, quote]);
   const contact = useMemo(() => contacts.find(c => c.id === quote?.contactId), [contacts, quote]);
-  const owner = quote ? (TEAM_MAP[quote.owner]?.name || quote.owner) : "—";
+  const owner = quote ? (userName(quote.owner) || quote.owner) : "—";
   const billingAddr = useMemo(() => {
     const fromContact = resolveAddress(contact, accounts);
     const fromAccount = (account?.addresses || []).find(a => a.isBilling) || (account?.addresses || [])[0];
