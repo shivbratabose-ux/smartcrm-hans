@@ -96,6 +96,7 @@ const FEATURE_FLAG: Record<string, string> = {
   emailAnalysis: "emailAnalysis",
   emailToActivity: "emailToActivity",
   reEngageDraft: "reEngageDraft",
+  businessCard: "businessCard",
 };
 
 // ── Static, cacheable company context ──────────────────────────────
@@ -200,12 +201,72 @@ Return:
 - shipmentRefs: logistics references found — type is one of HAWB, MAWB, BL, Container, JobNo, BookingNo, InvoiceNo, PONo, Other; value is the reference.
 - people: names (and role/company if given) of people involved.
 - suggestedNextAction: the single best next step for the CRM owner. Keep bullets under ~25 words.`,
+
+  // Visiting / business card photo → contact fields. Deliberately NOT given
+  // COMPANY_CONTEXT: the card is someone else's, and the Hans Infomatic
+  // product names must never leak into the extracted company.
+  businessCard: `You read photographs of business (visiting) cards for a sales CRM in India and return the contact details as structured JSON.
+
+Rules:
+- Transcribe exactly what is printed. Never guess or invent a value; use "" (or []) when a field is not on the card.
+- name: the person's full name as printed (not the company). firstName / lastName split it where obvious, else firstName = full name, lastName = "".
+- designation: job title (e.g. "Sr. Manager – Operations"). department only if printed separately or clearly part of the title.
+- company: the organisation name as printed, including suffixes like "Pvt. Ltd." / "LLP". If several brand names appear, use the legal/company name.
+- emails: every email address, lowercase, primary first.
+- phones: every number, keeping the country code if printed (e.g. "+91 98765 43210"). type is "mobile", "office", "fax" or "other" — use the label on the card (M:, Mob, T:, Tel, Ph, F:, Fax) and treat Indian 10-digit numbers starting 6–9 as mobile when unlabelled.
+- website: the site as printed, without "http(s)://".
+- address: split into line (street / building), city, state, pincode (postal code) and country. If the country is not printed but the pincode / state / +91 number shows India, use "India".
+- linkedin: a LinkedIn URL or handle if printed.
+- otherText: anything else useful that did not fit (GSTIN, second office, tagline) — short, "" if none.
+- If the image has two sides or two people, extract the main person on the card.
+- confidence: "high" if the text is clearly legible, "medium" if some fields were hard to read, "low" if the photo is blurry, cut off or not a business card.
+- notes: one short sentence on anything the user should double-check (e.g. "Phone digits partly obscured"), "" if nothing.`,
 };
 
 // JSON schemas constrain the model output so the client can render reliably.
 // (Strict JSON-schema structured outputs; no min/max constraints — those are
 // validated client-side if needed.)
 const SCHEMAS: Record<string, any> = {
+  businessCard: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      name: { type: "string" },
+      firstName: { type: "string" },
+      lastName: { type: "string" },
+      designation: { type: "string" },
+      department: { type: "string" },
+      company: { type: "string" },
+      emails: { type: "array", items: { type: "string" } },
+      phones: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            type: { type: "string", enum: ["mobile", "office", "fax", "other"] },
+            number: { type: "string" },
+          },
+          required: ["type", "number"],
+        },
+      },
+      website: { type: "string" },
+      address: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          line: { type: "string" }, city: { type: "string" }, state: { type: "string" },
+          pincode: { type: "string" }, country: { type: "string" },
+        },
+        required: ["line", "city", "state", "pincode", "country"],
+      },
+      linkedin: { type: "string" },
+      otherText: { type: "string" },
+      confidence: { type: "string", enum: ["high", "medium", "low"] },
+      notes: { type: "string" },
+    },
+    required: ["name", "firstName", "lastName", "designation", "department", "company", "emails", "phones", "website", "address", "linkedin", "otherText", "confidence", "notes"],
+  },
   tenderQualification: {
     type: "object",
     additionalProperties: false,
@@ -464,7 +525,13 @@ const FEATURE_TUNING: Record<string, { maxTokens: number; thinking: boolean; eff
   emailAnalysis: { maxTokens: 4000, thinking: false, effort: "low" },
   emailToActivity: { maxTokens: 4000, thinking: false, effort: "low" },
   reEngageDraft: { maxTokens: 3000, thinking: false, effort: "medium" },
+  businessCard: { maxTokens: 1500, thinking: false, effort: "low" },
 };
+
+// Card photos: the client downsizes to ≤ 1600px JPEG (~150–400 KB), so
+// anything much bigger is a misuse; cap it before it reaches Anthropic.
+const IMAGE_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const MAX_IMAGE_BASE64 = 6_000_000; // ≈ 4.5 MB decoded
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -560,8 +627,17 @@ serve(async (req) => {
       : configuredModel;
     const tuning = FEATURE_TUNING[feature];
 
-    // Build the dynamic user content. complianceMatrix may carry a PDF.
+    // Build the dynamic user content. complianceMatrix may carry a PDF;
+    // businessCard carries one photo (never stored — passed through only).
     const userBlocks: any[] = [];
+    if (feature === "businessCard") {
+      const img = String(body.imageBase64 || "");
+      const mediaType = String(body.imageMediaType || "image/jpeg");
+      if (!img) return json({ error: "No card image was sent." }, 400);
+      if (!IMAGE_MEDIA_TYPES.has(mediaType)) return json({ error: `Unsupported image type ${mediaType}. Use JPEG or PNG.` }, 400);
+      if (img.length > MAX_IMAGE_BASE64) return json({ error: "The photo is too large. Please retake it." }, 413);
+      userBlocks.push({ type: "image", source: { type: "base64", media_type: mediaType, data: img } });
+    }
     if (feature === "complianceMatrix" && body.pdfBase64) {
       userBlocks.push({
         type: "document",
@@ -577,6 +653,8 @@ serve(async (req) => {
       type: "text",
       text: feature === "complianceMatrix"
         ? `Extract the compliance matrix from the document above.${body.pdfBase64 ? "" : "\n\nDocument text:\n" + payloadText}`
+        : feature === "businessCard"
+        ? "Extract the contact details from the business card in this photo."
         : `Here is the data to analyse (JSON):\n\n${payloadText}`,
     });
 

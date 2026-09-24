@@ -348,6 +348,9 @@ export default function SmartCRM() {
   const [collapsed,setCollapsed]     = useState(false);
   // Phone-width sidebar drawer (see useIsMobile). Closed on every navigation.
   const [mobileNavOpen,setMobileNavOpen] = useState(false);
+  // Visiting-card scanner → "Create a new lead": details wait here while we
+  // switch to Leads, which opens Add Lead with them (then clears this).
+  const [leadPrefill,setLeadPrefill] = useState(null);
   useEffect(() => { setMobileNavOpen(false); }, [page]);
   const [accounts,setAccounts]       = useState(saved?.accounts || INIT_ACCOUNTS);
   const [contacts,setContacts]       = useState(saved?.contacts || INIT_CONTACTS);
@@ -2729,7 +2732,7 @@ export default function SmartCRM() {
               );
             })()}
             {page==="dashboard"  && <Dashboard accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} setPage={setPage} orgUsers={orgUsers} currentUser={currentUser}/>}
-            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} opps={visibleOpps} setUpdates={setUpdates}/>}
+            {page==="leads"      && <Leads leadPrefill={leadPrefill} onLeadPrefillUsed={()=>setLeadPrefill(null)} leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} opps={visibleOpps} setUpdates={setUpdates}/>}
             {page==="accounts"   && <Accounts accounts={visibleAccounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={visibleContacts} setContacts={setContacts} tickets={visibleTickets} contracts={visibleContracts} collections={visibleCollections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="contacts"   && <Contacts contacts={visibleContacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={visibleAccounts} opps={visibleOpps} leads={visibleLeads} contracts={visibleContracts} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} canDelete={canDelete} currentUser={currentUser} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} setLeads={setLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} catalog={catalog} onDealWon={handleDealWon} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} aiConfig={aiConfig}/>}
@@ -2778,7 +2781,7 @@ export default function SmartCRM() {
             ]}/>}
           </div>
         </div>
-        <QuickLogFAB accounts={accounts} contacts={contacts} opps={visibleOpps} leads={visibleLeads} orgUsers={orgUsers} currentUser={currentUser} callReports={visibleCallReports} setCallReports={setCallReports} activities={visibleActivities} setActivities={setActivities} masters={masters}/>
+        <QuickLogFAB accounts={accounts} contacts={contacts} opps={visibleOpps} leads={visibleLeads} orgUsers={orgUsers} currentUser={currentUser} callReports={visibleCallReports} setCallReports={setCallReports} activities={visibleActivities} setActivities={setActivities} masters={masters} setContacts={setContacts} setLeads={setLeads} setOpps={setOpps} aiConfig={aiConfig} onCreateLead={(prefill)=>{setLeadPrefill(prefill);setPage("leads");}}/>
         {/* Floating Help Button — always visible, bottom-left */}
         {page !== "help" && (
           <button className="help-fab" onClick={() => setPage("help")} title="Open Help & User Guide">

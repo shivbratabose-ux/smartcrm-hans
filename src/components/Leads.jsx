@@ -2099,7 +2099,7 @@ function LeadsCardList({ rows, setDetail, openEdit, openCallLog, setConfirm, han
   );
 }
 
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess, opps=[], setUpdates }) {
+function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess, opps=[], setUpdates }) {
   const canEditLead = (l) => canEditRecord({ownerId:l?.assignedTo,currentUser,orgUsers,recordType:"lead",recordId:l?.id,commLogs,catalog,recordProductIds:l?.product?[l.product]:[]});
   const requestAccessLead = (l) => onRequestEditAccess && onRequestEditAccess("lead", l.id, l.company||l.leadId||"Lead", l.assignedTo);
   // Scope the team list to only users this logged-in user has visibility over.
@@ -2272,7 +2272,12 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     return `#FL-${year}-${String(next).padStart(3, '0')}`;
   };
 
-  const openAdd = async () => {
+  // `prefill` (optional) seeds the form, e.g. from a scanned visiting card.
+  // Ignored when openAdd is used directly as a click handler (event object).
+  const openAdd = async (prefill) => {
+    const seed = prefill && !prefill.nativeEvent && typeof prefill === "object"
+      ? Object.fromEntries(Object.entries(prefill).filter(([k, v]) => k in BLANK_LEAD && v !== "" && v != null))
+      : {};
     // Reserve the number atomically from the DB sequence — SECURITY DEFINER,
     // so it sees the global max regardless of who's asking. Falls back to
     // the local computation when offline / RPC unavailable.
@@ -2296,10 +2301,19 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       assignedTo: currentUser || BLANK_LEAD.assignedTo,
       assignedBy: currentUser || "",
       assignedAt: today,
+      ...seed,
     });
     setFormErrors({});
     setModal({ mode: "add" });
   };
+  // A scanned visiting card chose "Create a new lead": open Add Lead with
+  // its details once, then clear the hand-off so a re-render won't reopen it.
+  useEffect(() => {
+    if (!leadPrefill) return;
+    openAdd(leadPrefill);
+    onLeadPrefillUsed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadPrefill]);
 
   const openEdit = (l) => {
     if (l && l.id && !canEditLead(l)) { requestAccessLead(l); return; }
