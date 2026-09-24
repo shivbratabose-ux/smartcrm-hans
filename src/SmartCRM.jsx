@@ -346,6 +346,9 @@ export default function SmartCRM() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
   const [collapsed,setCollapsed]     = useState(false);
+  // Phone-width sidebar drawer (see useIsMobile). Closed on every navigation.
+  const [mobileNavOpen,setMobileNavOpen] = useState(false);
+  useEffect(() => { setMobileNavOpen(false); }, [page]);
   const [accounts,setAccounts]       = useState(saved?.accounts || INIT_ACCOUNTS);
   const [contacts,setContacts]       = useState(saved?.contacts || INIT_CONTACTS);
   const [opps,setOpps]               = useState(saved?.opps || INIT_OPPS);
@@ -2701,9 +2704,9 @@ export default function SmartCRM() {
       <ToastContainer />
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={visibleTickets} leads={visibleLeads} collections={visibleCollections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount} canRestore={canRestore} leaveApprovals={leaveApprovalCount}/>
+        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={visibleTickets} leads={visibleLeads} collections={visibleCollections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount} canRestore={canRestore} leaveApprovals={leaveApprovalCount} mobileOpen={mobileNavOpen} onMobileClose={()=>setMobileNavOpen(false)}/>
         <div className="main">
-          <Header page={page} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={visibleUpdates} myUnreadCount={myUnreadCount} onSyncAll={_canSyncAll ? syncAllToCloud : undefined} syncing={syncingAll}/>
+          <Header page={page} onMenu={()=>setMobileNavOpen(true)} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={visibleUpdates} myUnreadCount={myUnreadCount} onSyncAll={_canSyncAll ? syncAllToCloud : undefined} syncing={syncingAll}/>
           <div className="content" id="main-content" role="main">
             {(() => {
               // Read-only / insufficient-role banner. Mirrors the Supabase RLS

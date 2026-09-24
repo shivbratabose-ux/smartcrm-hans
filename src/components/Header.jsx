@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { Search, Bell, BarChart3, User, Settings, LogOut, Key, ChevronDown, HelpCircle, UploadCloud, RefreshCw } from "lucide-react";
+import { Search, Bell, BarChart3, User, Settings, LogOut, Key, ChevronDown, HelpCircle, UploadCloud, RefreshCw, Menu, X } from "lucide-react";
+import useIsMobile from '../hooks/useIsMobile';
 import { TEAM_MAP, ROLE_MAP, INIT_USERS } from '../data/constants';
 
 export const PAGE_LABELS={
@@ -35,7 +36,11 @@ function timeAgoShort(iso) {
   return `${Math.floor(hrs/24)}d ago`;
 }
 
-function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,currentUser,onLogout,orgUsers,updates,myUnreadCount,onSyncAll,syncing}) {
+function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,currentUser,onLogout,orgUsers,updates,myUnreadCount,onSyncAll,syncing,onMenu}) {
+  // Phones: ☰ opens the sidebar drawer; search collapses to an icon that
+  // opens a full-width search bar over the header.
+  const isMobile = useIsMobile();
+  const [mobileSearch,setMobileSearch]=useState(false);
   const [searchQ,setSearchQ]=useState("");
   const [results,setResults]=useState([]);
   const [showMenu,setShowMenu]=useState(false);
@@ -92,16 +97,25 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
 
   return (
     <div className="header">
+      {isMobile&&(
+        <button className="icon-btn hdr-menu" onClick={onMenu} aria-label="Open menu"><Menu size={20}/></button>
+      )}
       <div className="hdr-bread">
         <div className="hdr-page">{PAGE_LABELS[page]||page}</div>
       </div>
-      <div className="hdr-search">
+      {isMobile&&!mobileSearch&&(
+        <button className="icon-btn" onClick={()=>setMobileSearch(true)} aria-label="Search"><Search size={18}/></button>
+      )}
+      <div className={`hdr-search${isMobile?(mobileSearch?" hdr-search-open":" hdr-search-hidden"):""}`}>
         <Search size={14} style={{color:"var(--text3)",flexShrink:0}}/>
-        <input placeholder="Search accounts, contacts, deals…" value={searchQ} onChange={e=>doSearch(e.target.value)}/>
+        <input placeholder="Search accounts, contacts, deals…" value={searchQ} onChange={e=>doSearch(e.target.value)} autoFocus={isMobile&&mobileSearch}/>
+        {isMobile&&mobileSearch&&(
+          <button className="icon-btn" style={{width:30,height:30}} onClick={()=>{setMobileSearch(false);setSearchQ("");setResults([]);}} aria-label="Close search"><X size={16}/></button>
+        )}
         {results.length>0&&(
           <div className="search-dropdown">
             {results.map((r,i)=>(
-              <div key={i} className="search-item" onClick={()=>{setPage(r.go);setSearchQ("");setResults([]);}}>
+              <div key={i} className="search-item" onClick={()=>{setPage(r.go);setSearchQ("");setResults([]);setMobileSearch(false);}}>
                 <span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"var(--brand-bg)",color:"var(--brand)"}}>{r.type}</span>
                 <div><div style={{fontSize:13,fontWeight:500}}>{r.label}</div><div style={{fontSize:11,color:"var(--text3)"}}>{r.sub}</div></div>
               </div>
@@ -154,8 +168,8 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
             {syncing ? <RefreshCw size={18} className="spin"/> : <UploadCloud size={18}/>}
           </button>
         )}
-        <button className="icon-btn" onClick={()=>setPage("reports")} title="Reports" aria-label="Reports"><BarChart3 size={18}/></button>
-        <button className="icon-btn help-btn" onClick={()=>setPage("help")}
+        <button className="icon-btn hdr-desktop-only" onClick={()=>setPage("reports")} title="Reports" aria-label="Reports"><BarChart3 size={18}/></button>
+        <button className="icon-btn help-btn hdr-desktop-only" onClick={()=>setPage("help")}
           title={`Help: ${PAGE_LABELS[page]||page}`}
           aria-label={`Help for ${PAGE_LABELS[page]||page}`}
           style={{position:"relative"}}>

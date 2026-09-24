@@ -863,4 +863,157 @@ export const CSS = `
   .bell-item:last-of-type { border-bottom:none; }
   .bell-panel-foot { padding:10px 16px; text-align:center; font-size:12px; color:var(--brand); font-weight:700; cursor:pointer; border-top:1px solid var(--border); transition:background 0.1s; }
   .bell-panel-foot:hover { background:var(--brand-bg); }
+
+  /* ════════════════════════════════════════════════════════════════════
+     PHONES — iOS Safari / Android Chrome (≤ 768px)
+     ────────────────────────────────────────────────────────────────────
+     Keep 768 in step with MOBILE_MAX in src/hooks/useIsMobile.js, which
+     switches the few behaviours CSS can't (sidebar drawer, header search).
+     • 100dvh, not 100vh: iOS Safari's 100vh includes the collapsing
+       address bar, which cut off the bottom of every screen.
+     • env(safe-area-inset-*): notch / home indicator (viewport-fit=cover).
+     • 16px form text: iOS zooms the page into any smaller input on focus.
+     ════════════════════════════════════════════════════════════════════ */
+  .sb-backdrop { display:none; }
+  @media (max-width: 768px) {
+    html, body { overscroll-behavior-y:none; }
+    body { min-height:100dvh; }
+    .app { height:100vh; height:100dvh; }
+
+    /* Sidebar → slide-out drawer */
+    .sb.sb-mobile {
+      position:fixed; top:0; bottom:0; left:0; z-index:1000;
+      width:min(86vw, 300px); height:100%;
+      transform:translateX(-102%); transition:transform 0.24s cubic-bezier(0.4,0,0.2,1);
+      box-shadow:0 0 40px rgba(0,0,0,0.35);
+      padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);
+    }
+    .sb.sb-mobile.sb-mobile-open { transform:none; }
+    .sb-backdrop { display:block; position:fixed; inset:0; background:rgba(13,31,45,0.45); z-index:999; animation:fadeIn 0.15s ease; }
+    .sb.sb-mobile .nav-item { padding:11px 12px; font-size:14.5px; }
+    .sb-close { width:34px; height:34px; }
+
+    /* Header */
+    .header { padding:0 8px; gap:4px; padding-top:env(safe-area-inset-top); height:calc(var(--header-h) + env(safe-area-inset-top)); position:relative; }
+    .hdr-page { font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hdr-actions { gap:2px; }
+    .hdr-search.hdr-search-hidden { display:none; }
+    .hdr-search.hdr-search-open {
+      position:absolute; left:8px; right:8px; bottom:8px; width:auto; z-index:5;
+      background:white; border-color:var(--brand); padding:6px 6px 6px 12px;
+    }
+    .search-dropdown { max-height:60vh; }
+    .bell-panel { position:fixed; left:8px; right:8px; width:auto; top:calc(var(--header-h) + env(safe-area-inset-top) + 4px); max-height:70vh; overflow-y:auto; }
+
+    /* Content */
+    .content { padding:12px 12px calc(88px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling:touch; }
+    .pg-head { flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+    .pg-title { font-size:18px; }
+    .pg-actions { flex-wrap:wrap; width:100%; gap:6px; }
+    .pg-actions > * { flex:1 1 auto; justify-content:center; }
+    .filter-bar { gap:6px; }
+    .filter-bar > * { flex:1 1 140px; min-width:0; }
+    .filter-bar > .ts-wrap.ts-filter { width:auto; }
+    .card { padding:14px; }
+
+    /* Grids collapse */
+    .kpi-grid { grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; }
+    .kpi { padding:12px; }
+    .kpi-val { font-size:21px; }
+    .dash-2col, .dash-3col { grid-template-columns:1fr; }
+    .form-row, .form-row.three { grid-template-columns:1fr; gap:10px; margin-bottom:10px; }
+
+    /* Inline grids. ~120 pages set gridTemplateColumns in JSX, which no class
+       can reach, so match the rendered style text. React writes each
+       declaration as "name: value;", so the trailing ";" makes these exact
+       (e.g. "1fr 1fr;" won't match "1fr 1fr 1fr;"). Deliberately NOT
+       touched: auto-fit/auto-fill (already responsive), "1fr auto…"
+       (label + button rows), px-width rows (table-like, they scroll) and the
+       7-column calendar grids.
+       1. Side-by-side page layouts → one column. */
+    :is(.content, .modal-body) :is(
+      [style*="grid-template-columns: 1fr 1fr;"], [style*="grid-template-columns: 2fr 1fr;"],
+      [style*="grid-template-columns: 1fr 2fr;"], [style*="grid-template-columns: 3fr 2fr;"],
+      [style*="grid-template-columns: 2fr 3fr;"], [style*="grid-template-columns: 1.5fr 1fr;"],
+      [style*="grid-template-columns: 1.2fr 0.8fr;"], [style*="grid-template-columns: 1fr 1fr 1fr;"],
+      [style*="grid-template-columns: 1fr 1.4fr 1fr;"], [style*="grid-template-columns: 1.4fr 1fr 1fr;"],
+      [style*="grid-template-columns: repeat(3,1fr);"], [style*="grid-template-columns: repeat(3, 1fr);"],
+      [style*="grid-template-columns: repeat(2,minmax(0,1fr));"]
+    ) { grid-template-columns:minmax(0,1fr) !important; }
+    /* 2. Stat-card rows (4–6 equal columns) → two columns. */
+    :is(.content, .modal-body) :is(
+      [style*="grid-template-columns: repeat(4,1fr);"], [style*="grid-template-columns: repeat(4, 1fr);"],
+      [style*="grid-template-columns: repeat(5,1fr);"], [style*="grid-template-columns: repeat(5, 1fr);"],
+      [style*="grid-template-columns: repeat(6,1fr);"], [style*="grid-template-columns: repeat(2,1fr);"],
+      [style*="grid-template-columns: 1fr 1fr 1fr 1fr;"], [style*="grid-template-columns: 1fr 1fr 1fr 1fr 1fr;"]
+    ) { grid-template-columns:repeat(2, minmax(0,1fr)) !important; }
+    /* Fixed-width side columns ("1fr 300px", "220px 1fr") stack too. */
+    :is(.content, .modal-body) :is(
+      [style*="grid-template-columns: 1fr 300px;"], [style*="grid-template-columns: 1fr 340px;"],
+      [style*="grid-template-columns: 220px 1fr;"]
+    ) { grid-template-columns:minmax(0,1fr) !important; }
+    /* Horizontal flex rows wrap instead of running off the screen. Items
+       only wrap when they don't fit, so short rows are unchanged. */
+    .content [style^="display: flex"]:not([style*="flex-direction: column"]):not([style*="nowrap"]) { flex-wrap:wrap; row-gap:6px; }
+    .pg-head > * { max-width:100%; min-width:0; }
+    .pg-head select, .filter-bar select { max-width:100%; }
+
+    /* Tab bars scroll sideways rather than wrap into a jumble. */
+    .act-tabs, .m-tabs, .m-group-tabs { flex-wrap:nowrap !important; overflow-x:auto; max-width:100%; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .act-tabs > *, .m-tabs > *, .m-group-tabs > * { flex-shrink:0; }
+
+    /* Two-pane pages stack. */
+    .help-layout, .upd-layout { flex-direction:column; min-height:0; }
+    .help-sidebar { width:100%; position:static; }
+    .upd-feed { width:100%; }
+    .list-with-aside > .lwa-main, .list-with-aside > .lwa-aside { flex:1 1 100%; }
+
+    /* Wide trees / editors scroll inside their box. */
+    .ht-tree, .ps-card { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    /* Grid children must be allowed to shrink below their content width. */
+    .content [style*="grid-template-columns"] > * { min-width:0; }
+
+    /* Header: Reports and Help are in the menu; keep the bar uncluttered. */
+    .hdr-desktop-only { display:none !important; }
+
+    /* Tables scroll sideways inside their card instead of squashing */
+    .card:has(> table), .card:has(> .tbl), .card:has(> div > table) { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .tbl th, .tbl td { white-space:nowrap; }
+    .tbl td { padding:10px 12px; }
+
+    /* Forms: 16px stops iOS zooming into the field on focus */
+    input, select, textarea, .ts-input { font-size:16px !important; }
+    .filter-select { font-size:16px; padding:8px 10px; }
+
+    /* Touch targets ≥ 40px */
+    .icon-btn { width:40px; height:40px; }
+    .btn { padding:10px 14px; }
+    .btn-sm { padding:8px 12px; }
+    .btn-xs { padding:6px 10px; }
+
+    /* Modals → full-screen sheets */
+    .overlay { padding:0; align-items:stretch; }
+    .modal, .modal-lg, .modal-xl, .modal.modal-floating {
+      max-width:100% !important; width:100% !important; max-height:none; height:100%;
+      border-radius:0; position:static !important; top:auto !important; left:auto !important;
+    }
+    .modal-head { padding:calc(12px + env(safe-area-inset-top)) 14px 0; }
+    .modal-title { font-size:15.5px; }
+    .modal-body { padding:14px; -webkit-overflow-scrolling:touch; }
+    .modal-foot { padding:10px 14px calc(10px + env(safe-area-inset-bottom)); flex-wrap:wrap; }
+    .modal-foot > .btn { flex:1 1 auto; justify-content:center; }
+    .modal-draggable .modal-head { cursor:default; }
+    .modal-draggable .modal-head .modal-title::before { display:none; }
+    .modal-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .modal-tab { white-space:nowrap; }
+
+    /* Floating buttons: Quick Log docks above the home indicator and steps
+       aside while a form is open; the help bubble goes (Help is in the menu). */
+    .qlog-fab { top:auto !important; left:auto !important; right:14px !important; bottom:calc(14px + env(safe-area-inset-bottom)) !important; }
+    body:has(.overlay) .qlog-fab { display:none; }
+    .help-fab { display:none !important; }
+
+    /* Login */
+    .login-wrap { min-height:100dvh; padding:16px; }
+  }
 `;

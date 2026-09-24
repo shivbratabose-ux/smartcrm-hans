@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, Building2, Users, TrendingUp, Activity,
   BarChart3, Ticket, Layers, SlidersHorizontal, ChevronLeft, LogOut,
-  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge, Sparkles, UserCheck, Inbox, HeartHandshake
+  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge, Sparkles, UserCheck, Inbox, HeartHandshake, X
 } from "lucide-react";
+import useIsMobile from '../hooks/useIsMobile';
 import { TEAM_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
 import { canManageUsers, canSeeLeadAssignment } from '../utils/helpers';
 
@@ -19,7 +20,11 @@ const canAccess = (userId, module, orgUsers, customPermissions) => {
   return perm[module] && perm[module]!==false;
 };
 
-function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,currentUser,onLogout,orgUsers,customPermissions,myUnreadCount,canRestore,leaveApprovals=0}) {
+function Sidebar({page,setPage,collapsed:collapsedPref,setCollapsed,tickets,leads,collections,currentUser,onLogout,orgUsers,customPermissions,myUnreadCount,canRestore,leaveApprovals=0,mobileOpen=false,onMobileClose}) {
+  // On a phone the sidebar is a slide-out drawer: always full-width labels,
+  // and the collapse arrow becomes a close button.
+  const isMobile = useIsMobile();
+  const collapsed = collapsedPref && !isMobile;
   const openTix=tickets.filter(t=>!["Resolved","Closed"].includes(t.status)).length;
   const activeLeads=leads?.filter(l=>l.stage!=="NA").length||0;
   const overdueCollections=collections?.filter(c=>c.pendingAmount>0&&c.status==="Overdue").length||0;
@@ -100,12 +105,14 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
       el?.focus();
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      setPage(itemId);
+      setPage(itemId); onMobileClose?.();
     }
   };
 
   return (
-    <div className={`sb${collapsed?" collapsed":""}`}>
+    <>
+    {isMobile && mobileOpen && <div className="sb-backdrop" onClick={onMobileClose} aria-hidden="true"/>}
+    <div className={`sb${collapsed?" collapsed":""}${isMobile?" sb-mobile":""}${isMobile&&mobileOpen?" sb-mobile-open":""}`} aria-hidden={isMobile && !mobileOpen ? true : undefined}>
       <div className="sb-logo">
         <div className="sb-logo-left">
           <div className="logo-icon">
@@ -119,7 +126,9 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
             <div className="logo-tag">HANS INFOMATIC</div>
           </div>
         </div>
-        <button className="collapse-btn" onClick={()=>setCollapsed(c=>!c)} aria-label={collapsed?"Expand sidebar":"Collapse sidebar"}><ChevronLeft size={15}/></button>
+        {isMobile
+          ? <button className="collapse-btn sb-close" onClick={onMobileClose} aria-label="Close menu"><X size={17}/></button>
+          : <button className="collapse-btn" onClick={()=>setCollapsed(c=>!c)} aria-label={collapsed?"Expand sidebar":"Collapse sidebar"}><ChevronLeft size={15}/></button>}
       </div>
       <nav className="sb-scroll" ref={navRef} role="navigation" aria-label="Main navigation">
         {NAV.map(sec=>(
@@ -128,7 +137,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
             {sec.items.map(it=>(
               <div key={it.id} data-nav={it.id} role="button" tabIndex={0} aria-current={page===it.id?"page":undefined}
                 className={`nav-item${page===it.id?" active":""}`}
-                onClick={()=>setPage(it.id)}
+                onClick={()=>{setPage(it.id); onMobileClose?.();}}
                 onKeyDown={e=>handleNavKeyDown(e,it.id)}>
                 <span className="nav-icon" aria-hidden="true">{it.icon}</span>
                 <span className="nav-label">{it.label}</span>
@@ -147,6 +156,7 @@ function Sidebar({page,setPage,collapsed,setCollapsed,tickets,leads,collections,
         <button className="sb-logout" title="Sign out" onClick={onLogout}><LogOut size={15}/></button>
       </div>
     </div>
+    </>
   );
 }
 

@@ -40,7 +40,8 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u=>[u.id,u]));
   const [viewDate,setViewDate]=useState(new Date(today));
-  const [view,setView]=useState("week");
+  // Phones open on the List view — a 7-day hour grid is unreadable at 375px.
+  const [view,setView]=useState(()=>typeof window!=="undefined"&&window.matchMedia?.("(max-width: 768px)").matches?"list":"week");
   const [modal,setModal]=useState(null);
   const [form,setForm]=useState(BLANK_EVENT);
   const [confirm,setConfirm]=useState(null);
