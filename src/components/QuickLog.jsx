@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { Plus, X, Phone, CheckSquare, FileText, Check, Search, Clock, Calendar } from "lucide-react";
+import { Plus, X, Phone, CheckSquare, FileText, Check, Search, Clock, Calendar, ScanLine } from "lucide-react";
+import CardScanner from "./CardScanner";
 import { CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, ACT_TYPES, ACT_STATUS, TEAM } from "../data/constants";
 import { withDemoCallType } from "../utils/teamSummary";
 import { uid, today, sanitizeObj, hasErrors } from "../utils/helpers";
@@ -461,6 +462,7 @@ const validateActivityForm = (f) => {
 // SPEED DIAL OPTIONS
 // ═══════════════════════════════════════════════════════════════════
 const DIAL_OPTIONS = [
+  { key:"card",     icon:<ScanLine size={16}/>,    label:"Scan visiting card",      emoji:"🪪" },
   { key:"call",     icon:<Phone size={16}/>,       label:"Log Call",                emoji:"\uD83D\uDCDE" },
   { key:"task",     icon:<CheckSquare size={16}/>,  label:"Log Task",                emoji:"\u2705" },
   { key:"activity", icon:<FileText size={16}/>,     label:"Log Activity/Interaction", emoji:"\uD83D\uDCDD" },
@@ -478,6 +480,7 @@ const TABS = [
 export default function QuickLogFAB({
   accounts = [], contacts = [], opps = [], leads = [], orgUsers = [], currentUser,
   callReports, setCallReports, activities, setActivities, masters, onClose,
+  setContacts, setLeads, setOpps, aiConfig, onCreateLead,
 }) {
   const [open, setOpen] = useState(false);        // speed-dial open
   const [mode, setMode] = useState(null);          // 'call' | 'task' | 'activity'
@@ -838,7 +841,12 @@ export default function QuickLogFAB({
       </div>}
 
       {/* Modal */}
-      {mode && (
+      {mode === "card" && (
+        <CardScanner onClose={closeModal} accounts={accounts} contacts={contacts} leads={leads} opps={opps}
+          setContacts={setContacts} setLeads={setLeads} setOpps={setOpps} currentUser={currentUser} orgUsers={orgUsers}
+          aiConfig={aiConfig} onCreateLead={onCreateLead}/>
+      )}
+      {mode && mode !== "card" && (
         <Modal title="Quick Log" onClose={closeModal} lg
           footer={<>
             <button className="btn btn-sec" onClick={closeModal}>Cancel</button>

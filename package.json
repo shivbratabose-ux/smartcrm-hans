@@ -19,7 +19,8 @@
     "smoke:email": "node scripts/smoke-email-agent.mjs",
     "test:reagent": "node scripts/test-re-agent.mjs",
     "test:team": "node scripts/test-team-summary.mjs",
-    "test:leavenotify": "node scripts/test-leave-notify.mjs"
+    "test:leavenotify": "node scripts/test-leave-notify.mjs",
+    "test:card": "node scripts/test-card-match.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",

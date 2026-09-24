@@ -35,6 +35,8 @@ export const DEFAULT_AI_CONFIG = {
     emailToActivity: true,
     // Customer Re-engagement Agent (Module A) — the daily draft run.
     reEngageDraft: true,
+    // Scan a visiting card photo into a contact (+ button → Scan visiting card).
+    businessCard: true,
   },
 };
 
@@ -49,6 +51,7 @@ export const AI_FEATURES = [
   { key: "bidRecommendation", label: "Bid / No-Bid Recommendation", desc: "A Bid / Conditional / No-Bid call with rationale, conditions and next steps." },
   { key: "callSummary", label: "Meeting / Call Summaries", desc: "Turn a raw call note into a structured brief: decisions, action items, sentiment." },
   { key: "complianceMatrix", label: "Compliance Matrix from RFP", desc: "Extract a requirement→compliance matrix from an uploaded RFP / tender PDF." },
+  { key: "businessCard", label: "Visiting Card Scanner", desc: "Photograph a business card and turn it into a contact — checks for existing accounts, contacts and leads first. The photo is read, not stored." },
   { key: "emailAnalysis", label: "Email Analysis", desc: "Summarise a customer email/thread and extract intent, action items, commitments, shipment refs, priority & sentiment." },
 ];
 
@@ -104,8 +107,41 @@ export async function getAiStatus() {
 }
 
 /** Generic feature runner. `feature` must match an edge-function feature. */
-export async function runAiFeature(feature, { payload, pdfBase64, model } = {}) {
-  return invokeAi({ action: "run", feature, payload, pdfBase64, model });
+export async function runAiFeature(feature, { payload, pdfBase64, imageBase64, imageMediaType, model } = {}) {
+  return invokeAi({ action: "run", feature, payload, pdfBase64, imageBase64, imageMediaType, model });
+}
+
+/** Read a visiting-card photo. Resolves { ok, result: {name, company, emails, phones, …} }. */
+export function aiBusinessCard({ base64, mediaType }, model) {
+  return runAiFeature("businessCard", { imageBase64: base64, imageMediaType: mediaType, model });
+}
+
+/**
+ * Shrink a camera photo for upload: ≤ maxSide px on the long edge, JPEG.
+ * A 12 MP phone photo (3–5 MB) becomes ~150–400 KB — plenty to read a card,
+ * and fast on mobile data. Uses <img> decoding, so iOS HEIC works in Safari.
+ * Resolves { base64 (no data: prefix), mediaType, previewUrl, width, height }.
+ */
+export function compressImage(file, { maxSide = 1600, quality = 0.85 } = {}) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        URL.revokeObjectURL(url);
+        resolve({ base64: dataUrl.split(",")[1], mediaType: "image/jpeg", previewUrl: dataUrl, width: w, height: h });
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("That file isn't an image this browser can open. Try a JPEG or PNG photo.")); };
+    img.src = url;
+  });
 }
 
 // ── Convenience wrappers, one per feature ──────────────────────────────────
