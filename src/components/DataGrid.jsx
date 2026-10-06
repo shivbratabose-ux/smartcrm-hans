@@ -22,7 +22,7 @@
 //     it. Existing column order is never touched.
 // ═══════════════════════════════════════════════════════════════════
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   GripVertical, Eye, EyeOff, Columns3, Save, ChevronDown,
   Star, StarOff, Trash2, Plus, X, RotateCcw, Check,
@@ -426,6 +426,75 @@ export default function DataGrid({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
+  // ── Keep a horizontal scrollbar on screen ──
+  // The table scrolls inside its own box, so its horizontal scrollbar sits at
+  // the box's bottom edge. A fixed `calc(100vh - 280px)` assumed ~280px of
+  // page above the table; Leads has ~430px (KPI cards, filters, bulk bar), so
+  // the box ran past the bottom of the screen and took the scrollbar with it.
+  // Zoomed in, there was no way to reach the right-hand columns at all.
+  //
+  // Two parts:
+  //   1. Size the box from where it actually starts, so at normal zoom it
+  //      ends above the fold with room for the pagination bar.
+  //   2. When the box's own scrollbar is still below the fold (zoomed in,
+  //      short screen), show a mirror scrollbar pinned to the bottom of the
+  //      visible area, kept in sync with the table both ways.
+  // Re-measured on resize (browser zoom fires resize), page scroll, and
+  // whenever content above changes height (e.g. the selection bar).
+  const scrollRef = useRef(null);
+  const hbarRef = useRef(null);
+  const [box, setBox] = useState({ maxH: null, showBar: false, scrollW: 0, clientW: 0 });
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const scroller = el.closest(".modal-body, .content") || document.scrollingElement;
+    const isDoc = scroller === document.scrollingElement;
+    const scrollTarget = isDoc ? window : scroller;
+    const RESERVE = 84;   // pagination bar + page bottom padding
+    const MIN_H = 260;    // never collapse the table to a sliver
+    let raf = 0;
+    const measure = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (!scrollRef.current) return;
+        const viewTop = isDoc ? 0 : scroller.getBoundingClientRect().top;
+        const viewH = scroller.clientHeight;
+        const r = el.getBoundingClientRect();
+        const offset = r.top - viewTop + scroller.scrollTop;
+        const maxH = Math.round(Math.min(viewH - RESERVE, Math.max(MIN_H, viewH - offset - RESERVE)));
+        const overflowX = el.scrollWidth > el.clientWidth + 1;
+        const viewBottom = viewTop + viewH;
+        // Mirror bar only while the box is on screen but its bottom edge isn't.
+        const showBar = overflowX && r.top < viewBottom - 40 && r.bottom > viewBottom;
+        setBox(prev => (prev.maxH === maxH && prev.showBar === showBar &&
+          prev.scrollW === el.scrollWidth && prev.clientW === el.clientWidth)
+          ? prev : { maxH, showBar, scrollW: el.scrollWidth, clientW: el.clientWidth });
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    scrollTarget.addEventListener("scroll", measure, { passive: true });
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro) { ro.observe(scroller.firstElementChild || scroller); ro.observe(el); }
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+      scrollTarget.removeEventListener("scroll", measure);
+      if (ro) ro.disconnect();
+    };
+    // Phones render cards (no table); re-attach when the layout switches.
+  }, [isMobile]);
+  // Two-way scroll sync between the table and the pinned mirror bar.
+  const syncFromTable = () => {
+    if (hbarRef.current && hbarRef.current.scrollLeft !== scrollRef.current.scrollLeft)
+      hbarRef.current.scrollLeft = scrollRef.current.scrollLeft;
+  };
+  const syncFromBar = () => {
+    if (scrollRef.current && scrollRef.current.scrollLeft !== hbarRef.current.scrollLeft)
+      scrollRef.current.scrollLeft = hbarRef.current.scrollLeft;
+  };
+  useEffect(() => { if (box.showBar) syncFromTable(); }, [box.showBar]);
+
   // Initial load of saved views.
   useEffect(() => {
     let cancelled = false;
@@ -594,7 +663,7 @@ export default function DataGrid({
       </div>
 
       {/* Table */}
-      <div className="tbl-scroll" style={{ maxHeight: "calc(100vh - 280px)", overflow: "auto" }}>
+      <div ref={scrollRef} onScroll={syncFromTable} className="tbl-scroll" style={{ maxHeight: box.maxH ? `${box.maxH}px` : "calc(100vh - 280px)", overflow: "auto" }}>
         <table className={`tbl${dense ? " tbl-dense" : ""}`} style={{ tableLayout: "fixed", width: "max-content", minWidth: "100%" }}>
           <thead style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--surface)" }}>
             <tr>
@@ -694,6 +763,12 @@ export default function DataGrid({
           </div>
         )}
       </div>
+      {box.showBar && (
+        <div ref={hbarRef} onScroll={syncFromBar} className="tbl-hbar" style={{ width: box.clientW }}
+             title="Scroll sideways to see more columns">
+          <div style={{ width: box.scrollW, height: 1 }} />
+        </div>
+      )}
 
       {pickerOpen && (
         <ColumnManager

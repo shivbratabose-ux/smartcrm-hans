@@ -221,6 +221,13 @@ export const CSS = `
     .list-with-aside > .lwa-aside { flex:1 1 100%; }
   }
   .tbl-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  /* Mirror of a DataGrid's horizontal scrollbar, pinned to the bottom of the
+     visible area while the table's own scrollbar is below the fold. */
+  .tbl-hbar { position:sticky; bottom:0; z-index:3; overflow-x:auto; overflow-y:hidden; height:16px;
+    background:var(--surface); border-top:1px solid var(--border); box-shadow:0 -2px 6px rgba(15,23,42,0.06); }
+  .tbl-hbar::-webkit-scrollbar { height:12px; }
+  .tbl-hbar::-webkit-scrollbar-thumb { background:#94A3B8; border-radius:6px; border:2px solid var(--surface); }
+  .tbl-hbar::-webkit-scrollbar-thumb:hover { background:#64748B; }
 
   /* ── TYPEAHEAD SELECT ──
      Drop-in replacement for static <select> + <option> filters and
