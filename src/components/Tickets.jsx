@@ -4,7 +4,7 @@ import { PRODUCTS, PROD_MAP, TICKET_TYPES, TICKET_STATUSES, PRIORITIES, TEAM, TE
 import { BLANK_TKT } from '../data/seed';
 import { uid, fmt, today, isOverdue, sanitizeObj, validateTicket, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { notify } from '../utils/toast';
-import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError, TypeaheadSelect, EditLockActions } from './shared';
+import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError, TypeaheadSelect, EditLockActions, userName } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
@@ -226,7 +226,7 @@ function Tickets({tickets,setTickets,accounts,orgUsers,currentUser,canDelete,cat
       {detail&&(
         <Modal title={`${detail.id} – ${detail.title}`} onClose={()=>setDetail(null)} lg footer={<><button className="btn btn-sec btn-sm" onClick={()=>setDetail(null)}>Close</button><button className="btn btn-primary btn-sm" onClick={()=>{openEdit(detail);setDetail(null);}}><Edit2 size={13}/>Edit</button></>}>
           <div className="dp-grid">
-            {[["Product",<ProdTag pid={detail.product}/>],["Priority",<PriorityBadge priority={detail.priority}/>],["Status",<StatusBadge status={detail.status}/>],["Type",detail.type],["Assigned",TEAM_MAP[detail.assigned]?.name||"—"],["SLA",fmt.date(detail.sla)],["Created",fmt.date(detail.created)],["Account",accounts.find(a=>a.id===detail.accountId)?.name||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
+            {[["Product",<ProdTag pid={detail.product}/>],["Priority",<PriorityBadge priority={detail.priority}/>],["Status",<StatusBadge status={detail.status}/>],["Type",detail.type],["Assigned",userName(detail.assigned)||"—"],["SLA",fmt.date(detail.sla)],["Created",fmt.date(detail.created)],["Account",accounts.find(a=>a.id===detail.accountId)?.name||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>
           {((detail.productSelection&&detail.productSelection.length>0)||detail.product)&&(
             <div style={{marginTop:14}}>

@@ -13,7 +13,15 @@
     "test:pagination": "node scripts/test-pagination.mjs",
     "test:pricing": "node scripts/test-pricing-engine.mjs",
     "test:alloc": "node scripts/test-target-allocation.mjs",
-    "test:targets": "node scripts/test-targets-attainment.mjs"
+    "test:targets": "node scripts/test-targets-attainment.mjs",
+    "test:windows": "node scripts/test-fiscal-windows.mjs",
+    "test:email": "node scripts/test-email-agent.mjs",
+    "smoke:email": "node scripts/smoke-email-agent.mjs",
+    "test:reagent": "node scripts/test-re-agent.mjs",
+    "test:team": "node scripts/test-team-summary.mjs",
+    "test:leavenotify": "node scripts/test-leave-notify.mjs",
+    "test:card": "node scripts/test-card-match.mjs",
+    "test:related": "node scripts/test-related-contacts.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",

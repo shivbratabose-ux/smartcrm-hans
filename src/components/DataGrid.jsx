@@ -22,7 +22,7 @@
 //     it. Existing column order is never touched.
 // ═══════════════════════════════════════════════════════════════════
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   GripVertical, Eye, EyeOff, Columns3, Save, ChevronDown,
   Star, StarOff, Trash2, Plus, X, RotateCcw, Check,
@@ -31,6 +31,79 @@ import {
   loadUserTableViews, saveUserTableView,
   setDefaultUserTableView, deleteUserTableView,
 } from "../lib/db";
+import useIsMobile from "../hooks/useIsMobile";
+
+// ── Phone card layout ────────────────────────────────────────────────
+// On phones (useIsMobile) every DataGrid list renders one card per row
+// instead of a wide table: a title, a subtitle, a status badge, then the
+// next few of the user's visible columns as label / value pairs, and the
+// row's actions along the bottom. Which column plays which part is set
+// per module here; unknown modules fall back to the first visible column
+// as the title. Title / subtitle / badge show even if hidden in the
+// user's desktop view — a card without its name is useless.
+const MOBILE_CARD = {
+  accounts_list:       { title: "name",     sub: "",              badge: "status" },   // name already shows account no. + city
+  contacts_list:       { title: "name",     sub: "designation",   badge: "_stage" },
+  pipeline_list:       { title: "title",    sub: "account",       badge: "stage" },
+  activities_list:     { title: "title",    sub: "schedule",      badge: "status" },
+  quotations_list:     { title: "_accName", sub: "title",         badge: "status" },
+  contracts_list:      { title: "_accName", sub: "",              badge: "status" },   // _accName already shows the contract title
+  collections_list:    { title: "_accName", sub: "invoiceNo",     badge: "status" },
+  tickets_list:        { title: "title",    sub: "ticketNo",      badge: "status" },
+  email_agent_queue:   { title: "entity",   sub: "processedAt",   badge: "status" },
+  re_engagement_queue: { title: "account",  sub: "lastContactAt", badge: "status" },
+};
+const MOBILE_DETAIL_FIELDS = 6;
+const isBlank = (v) => v == null || v === "" || (Array.isArray(v) && v.length === 0);
+
+function MobileCards({ module, columns, visible, rows, rowKey, rowStyle, rowActions, onRowClick }) {
+  const map = MOBILE_CARD[module] || {};
+  const byKey = new Map(columns.map(c => [c.key, c]));
+  const pick = (k) => (k && byKey.get(k)) || null;
+  const titleCol = pick(map.title) || visible[0] || columns[0];
+  const subCol = pick(map.sub);
+  const badgeCol = pick(map.badge);
+  const used = new Set([titleCol?.key, subCol?.key, badgeCol?.key]);
+  const detailCols = visible.filter(c => !used.has(c.key) && c.mobile !== "hide").slice(0, MOBILE_DETAIL_FIELDS);
+  const cell = (c, r) => (c.render ? c.render(r) : r[c.key]);
+  const hasValue = (c, r) => c.render ? true : !isBlank(r[c.key]);
+
+  return (
+    <div className="m-cards">
+      {rows.map(r => {
+        const style = rowStyle ? rowStyle(r) : undefined;
+        return (
+          <div key={rowKey(r)} className="m-card" style={style}
+            onClick={onRowClick ? () => onRowClick(r) : undefined}
+            role={onRowClick ? "button" : undefined}>
+            <div className="m-card-top" style={{ cursor: onRowClick ? "pointer" : "default" }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="m-card-title">{titleCol ? cell(titleCol, r) : null}</div>
+                {subCol && hasValue(subCol, r) && <div className="m-card-sub">{cell(subCol, r)}</div>}
+              </div>
+              {badgeCol && hasValue(badgeCol, r) && <div style={{ flexShrink: 0 }}>{cell(badgeCol, r)}</div>}
+            </div>
+            {detailCols.length > 0 && (
+              <div className="m-card-fields">
+                {detailCols.filter(c => hasValue(c, r)).map(c => (
+                  <div key={c.key} className="m-card-field">
+                    <span className="m-card-label">{c.label}</span>
+                    <span className="m-card-value">{cell(c, r)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {rowActions && (
+              <div className="m-card-foot" style={{ justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
+                <div className="m-card-actions">{rowActions(r)}</div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -345,12 +418,82 @@ export default function DataGrid({
   rowStyle, selection, rowActions, emptyState, SortIcon,
   onRowClick, dense,
 }) {
+  const isMobile = useIsMobile();
   const [views, setViews] = useState([]);
   const [activeViewId, setActiveViewId] = useState(null);
   // Local working copy of column config — not persisted until "Save".
   const [workingConfig, setWorkingConfig] = useState(defaultColumnConfig || []);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
+
+  // ── Keep a horizontal scrollbar on screen ──
+  // The table scrolls inside its own box, so its horizontal scrollbar sits at
+  // the box's bottom edge. A fixed `calc(100vh - 280px)` assumed ~280px of
+  // page above the table; Leads has ~430px (KPI cards, filters, bulk bar), so
+  // the box ran past the bottom of the screen and took the scrollbar with it.
+  // Zoomed in, there was no way to reach the right-hand columns at all.
+  //
+  // Two parts:
+  //   1. Size the box from where it actually starts, so at normal zoom it
+  //      ends above the fold with room for the pagination bar.
+  //   2. When the box's own scrollbar is still below the fold (zoomed in,
+  //      short screen), show a mirror scrollbar pinned to the bottom of the
+  //      visible area, kept in sync with the table both ways.
+  // Re-measured on resize (browser zoom fires resize), page scroll, and
+  // whenever content above changes height (e.g. the selection bar).
+  const scrollRef = useRef(null);
+  const hbarRef = useRef(null);
+  const [box, setBox] = useState({ maxH: null, showBar: false, scrollW: 0, clientW: 0 });
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const scroller = el.closest(".modal-body, .content") || document.scrollingElement;
+    const isDoc = scroller === document.scrollingElement;
+    const scrollTarget = isDoc ? window : scroller;
+    const RESERVE = 84;   // pagination bar + page bottom padding
+    const MIN_H = 260;    // never collapse the table to a sliver
+    let raf = 0;
+    const measure = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (!scrollRef.current) return;
+        const viewTop = isDoc ? 0 : scroller.getBoundingClientRect().top;
+        const viewH = scroller.clientHeight;
+        const r = el.getBoundingClientRect();
+        const offset = r.top - viewTop + scroller.scrollTop;
+        const maxH = Math.round(Math.min(viewH - RESERVE, Math.max(MIN_H, viewH - offset - RESERVE)));
+        const overflowX = el.scrollWidth > el.clientWidth + 1;
+        const viewBottom = viewTop + viewH;
+        // Mirror bar only while the box is on screen but its bottom edge isn't.
+        const showBar = overflowX && r.top < viewBottom - 40 && r.bottom > viewBottom;
+        setBox(prev => (prev.maxH === maxH && prev.showBar === showBar &&
+          prev.scrollW === el.scrollWidth && prev.clientW === el.clientWidth)
+          ? prev : { maxH, showBar, scrollW: el.scrollWidth, clientW: el.clientWidth });
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    scrollTarget.addEventListener("scroll", measure, { passive: true });
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro) { ro.observe(scroller.firstElementChild || scroller); ro.observe(el); }
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+      scrollTarget.removeEventListener("scroll", measure);
+      if (ro) ro.disconnect();
+    };
+    // Phones render cards (no table); re-attach when the layout switches.
+  }, [isMobile]);
+  // Two-way scroll sync between the table and the pinned mirror bar.
+  const syncFromTable = () => {
+    if (hbarRef.current && hbarRef.current.scrollLeft !== scrollRef.current.scrollLeft)
+      hbarRef.current.scrollLeft = scrollRef.current.scrollLeft;
+  };
+  const syncFromBar = () => {
+    if (scrollRef.current && scrollRef.current.scrollLeft !== hbarRef.current.scrollLeft)
+      scrollRef.current.scrollLeft = hbarRef.current.scrollLeft;
+  };
+  useEffect(() => { if (box.showBar) syncFromTable(); }, [box.showBar]);
 
   // Initial load of saved views.
   useEffect(() => {
@@ -492,6 +635,14 @@ export default function DataGrid({
     document.body.style.cursor = "col-resize";
   };
 
+  if (isMobile) {
+    // Phones: cards, no saved-view / column toolbar (desktop tools). The
+    // user's saved column choice still decides which details appear.
+    if (rows.length === 0) return emptyState || null;
+    return <MobileCards module={module} columns={merged} visible={visible} rows={rows} rowKey={rowKey}
+      rowStyle={rowStyle} rowActions={rowActions} onRowClick={onRowClick}/>;
+  }
+
   return (
     <div>
       {/* Toolbar — saved views, columns, save controls */}
@@ -512,7 +663,7 @@ export default function DataGrid({
       </div>
 
       {/* Table */}
-      <div className="tbl-scroll" style={{ maxHeight: "calc(100vh - 280px)", overflow: "auto" }}>
+      <div ref={scrollRef} onScroll={syncFromTable} className="tbl-scroll" style={{ maxHeight: box.maxH ? `${box.maxH}px` : "calc(100vh - 280px)", overflow: "auto" }}>
         <table className={`tbl${dense ? " tbl-dense" : ""}`} style={{ tableLayout: "fixed", width: "max-content", minWidth: "100%" }}>
           <thead style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--surface)" }}>
             <tr>
@@ -587,6 +738,23 @@ export default function DataGrid({
               </tr>
             ))}
           </tbody>
+          {/* Σ summary footer — renders only when a visible column defines
+              foot(). Each foot receives the rows prop; callers wanting
+              totals over the FULL filtered set (not just the current page)
+              close over their own list instead of using the argument. */}
+          {rows.length > 0 && visible.some(c => typeof c.foot === "function") && (
+            <tfoot style={{ position: "sticky", bottom: 0, zIndex: 2 }}>
+              <tr style={{ background: "var(--s2)", borderTop: "2px solid var(--border2)", fontWeight: 700 }}>
+                {selection && <td style={{ position: "sticky", left: 0, background: "var(--s2)" }} />}
+                {visible.map(c => (
+                  <td key={c.key} style={{ width: c.width, minWidth: c.width, maxWidth: c.width, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", background: "var(--s2)" }}>
+                    {typeof c.foot === "function" ? c.foot(rows) : null}
+                  </td>
+                ))}
+                {rowActions && <td style={{ background: "var(--s2)" }} />}
+              </tr>
+            </tfoot>
+          )}
         </table>
         {rows.length === 0 && emptyState}
         {!loaded && rows.length > 0 && (
@@ -595,6 +763,12 @@ export default function DataGrid({
           </div>
         )}
       </div>
+      {box.showBar && (
+        <div ref={hbarRef} onScroll={syncFromBar} className="tbl-hbar" style={{ width: box.clientW }}
+             title="Scroll sideways to see more columns">
+          <div style={{ width: box.scrollW, height: 1 }} />
+        </div>
+      )}
 
       {pickerOpen && (
         <ColumnManager

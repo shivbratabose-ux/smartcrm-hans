@@ -9,15 +9,16 @@ import { fmt, uid, sanitizeObj, hasErrors, softDeleteById } from '../utils/helpe
 // what "won" means.
 import { periodOf, fyOf, wonStageNames, lostStageNames, prodMatches } from '../utils/fiscal';
 import { buildSalesGraph, allocationFor } from '../utils/salesOrg';
-import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
+import { UserPill, Modal, Confirm, FormError, Empty, lookupUser } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import { exportCSV } from '../utils/csv';
+import { isCallPerson } from '../utils/teamSummary';
 
 // Column 0 (Salesperson) is supplied by the Export button instead, which
 // resolves names from LIVE users — this static TEAM_MAP left every real
 // Supabase user blank. Kept as the shared tail via CSV_COLS.slice(1).
 const CSV_COLS = [
-  { label: "Salesperson", accessor: t => TEAM_MAP[t.userId]?.name || "" },
+  { label: "Salesperson", accessor: t => lookupUser(t.userId)?.name || t.userId || "" },
   { label: "Period", accessor: t => t.period },
   { label: "Product", accessor: t => t.product === "All" ? "All Products" : (PROD_MAP[t.product]?.name || t.product) },
   { label: "Target (L)", accessor: t => t.targetValue },
@@ -129,7 +130,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       rev += Number(o.value) || 0; deals += 1;
     });
     (callReports || []).forEach(r => {
-      if (r.marketingPerson !== t.userId) return;
+      if (r.isDeleted || !isCallPerson(r, t.userId)) return;   // logged it or joined it
       if (periodOf(r.callDate) !== t.period) return;
       if (!prodMatches(t.product, r.productSelection, r.product)) return;
       calls += 1;

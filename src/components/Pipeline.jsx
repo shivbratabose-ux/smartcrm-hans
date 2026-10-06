@@ -30,7 +30,7 @@ import {
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, toLocalISODate, parseLocalDate, isOverdue, getScopedUserIds, canEditRecord, hasPendingAccessReq } from "../utils/helpers";
 import { exportCSV } from "../utils/csv";
-import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect, EditLockActions, RecordJourney } from "./shared";
+import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect, EditLockActions, RecordJourney, lookupUser } from "./shared";
 import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from "./ProductModulePicker";
 import DataGrid from "./DataGrid";
 import { TenderAiPanel } from "./AiActions";
@@ -2330,7 +2330,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
                                 color: s.status === "Pending" && !isCurrent ? "var(--text3)" : "#fff" }}>{i + 1}</span>
                               <span style={{ fontWeight: 600, minWidth: 110 }}>{s.label}</span>
                               <span style={{ color: s.status === "Approved" ? "#15803D" : s.status === "Rejected" ? "#991B1B" : "var(--text3)" }}>
-                                {s.status}{s.by ? ` · ${TEAM_MAP[s.by]?.name || s.by}` : ""}
+                                {s.status}{s.by ? ` · ${lookupUser(s.by)?.name || s.by}` : ""}
                               </span>
                             </div>
                           );

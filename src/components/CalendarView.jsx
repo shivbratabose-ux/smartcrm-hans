@@ -1,29 +1,47 @@
 import { useState, useMemo } from "react";
-import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap } from "lucide-react";
+import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap, X, CalendarOff } from "lucide-react";
 import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES, CALL_OUTCOMES } from '../data/constants';
 import { BLANK_EVENT } from '../data/seed';
-import { fmt, uid, today, toLocalISODate, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { fmt, uid, today, toLocalISODate, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq, getScopedUserIds, isGlobalRole } from '../utils/helpers';
+import TeamSummary from './TeamSummary';
+import { teamColumns, callReportState, callPeople, isDemoCall, LEAVE_TYPES, LEAVE_STATUS, LEAVE_TYPE_LABEL, leaveTitleFor, ADMIN_WORK_TYPE, leaveShare, hoursBetween, adminOverlap, fmtHours, CALL_TARGET, leaveState, isLeaveType, leaveByUser, leaveDatesToCreate, offDayMap,
+  canApproveLeave, initialLeaveStatus, lineManagerOf, groupLeaveRequests, pendingLeaveFor, fmtDays } from '../utils/teamSummary';
+import { notify } from '../utils/toast';
+import { notifyLeave } from '../utils/leaveNotify';
 import { Lock } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
 
-const TYPE_COL={"Call":"var(--brand)","Meeting":"var(--purple)","Demo":"var(--orange)","Follow-up":"var(--blue)","Site Visit":"var(--amber)","Presentation":"var(--teal)","Training":"var(--green)","Review":"#8B5CF6"};
-const TYPE_ICON={"Call":<Phone size={12}/>,"Meeting":<Users size={12}/>,"Demo":<Zap size={12}/>,"Follow-up":<Clock size={12}/>,"Site Visit":<MapPin size={12}/>,"Presentation":<Video size={12}/>,"Training":<Calendar size={12}/>,"Review":<Check size={12}/>};
+const TYPE_COL={"Call":"var(--brand)","Meeting":"var(--purple)","Demo":"var(--orange)","Follow-up":"var(--blue)","Site Visit":"var(--amber)","Presentation":"var(--teal)","Training":"var(--green)","Review":"#8B5CF6","Leave":"#B45309","Half-day leave":"#D97706","Admin day":"#6D28D9","Admin work":"#6D28D9"};
+const TYPE_ICON={"Call":<Phone size={12}/>,"Meeting":<Users size={12}/>,"Demo":<Zap size={12}/>,"Follow-up":<Clock size={12}/>,"Site Visit":<MapPin size={12}/>,"Presentation":<Video size={12}/>,"Training":<Calendar size={12}/>,"Review":<Check size={12}/>,"Leave":<CalendarOff size={12}/>,"Half-day leave":<CalendarOff size={12}/>,"Admin day":<CalendarOff size={12}/>,"Admin work":<Clock size={12}/>};
 
 const STATUS_COL={"Scheduled":"#3B82F6","Completed":"#22C55E","Cancelled":"#94A3B8","Rescheduled":"#F59E0B","No Show":"#EF4444","Planned":"#6366F1"};
 
 const SOURCE_COL = { activity: "var(--purple)", call: "var(--brand)", event: undefined };
 
+// Leave approval state → label + colour (see utils/teamSummary LEAVE_STATUS).
+const LEAVE_STATE_UI = {
+  pending:  { label: "Pending approval", col: "#D97706", bg: "#FFFBEB" },
+  approved: { label: "Approved",         col: "#15803D", bg: "#F0FDF4" },
+  rejected: { label: "Rejected",         col: "#B91C1C", bg: "#FEF2F2" },
+  cancelled:{ label: "Cancelled",        col: "#64748B", bg: "var(--s2)" },
+};
+
 // Scheduled (not-yet-done) CALLS get their own colour so a planned call is
 // instantly tellable from a logged one / other activities on the calendar.
 const SCHEDULED_CALL_COL = "#DB2777";
 
-function CalendarView({events,setEvents,activities=[],setActivities,callReports=[],setCallReports,leads=[],accounts,contacts,opps,currentUser,orgUsers,canDelete,commLogs=[],onRequestEditAccess}) {
+const itemCol = (ev) => ev._leave
+  ? (ev._leaveState === "approved" ? TYPE_COL[ev.type] : ev._leaveState === "pending" ? "#D97706" : "#94A3B8")
+  : ev._scheduledCall ? SCHEDULED_CALL_COL : (SOURCE_COL[ev._source] || TYPE_COL[ev.type] || "var(--brand)");
+
+function CalendarView({events,setEvents,activities=[],setActivities,callReports=[],setCallReports,leads=[],accounts,contacts,opps,currentUser,orgUsers,canDelete,commLogs=[],holidays=[],adminWorkTypes=[],onRequestEditAccess}) {
   const canEditEvt = (e) => canEditRecord({ownerId:e?.owner,currentUser,orgUsers,recordType:"event",recordId:e?.id,commLogs});
   const requestAccessEvt = (e) => onRequestEditAccess && onRequestEditAccess("event", e.id, e.title||"Event", e.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const teamMap = Object.fromEntries(team.map(u=>[u.id,u]));
   const [viewDate,setViewDate]=useState(new Date(today));
-  const [view,setView]=useState("week");
+  // Phones open on the List view — a 7-day hour grid is unreadable at 375px.
+  const [view,setView]=useState(()=>typeof window!=="undefined"&&window.matchMedia?.("(max-width: 768px)").matches?"list":"week");
   const [modal,setModal]=useState(null);
   const [form,setForm]=useState(BLANK_EVENT);
   const [confirm,setConfirm]=useState(null);
@@ -33,6 +51,14 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   const [scheduleForm,setScheduleForm]=useState({});
   // Source filter: show calls, activities, events, or everything together.
   const [sourceFilter,setSourceFilter]=useState("all");
+  // ── Team layer (admins + managers) ──
+  // Shown to anyone who actually has a team: global roles, or a manager
+  // whose scope includes people reporting to them. A rep with no reports
+  // never sees the toggle. Rows are the viewer's scope, nothing wider.
+  const scopeIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
+  const canSeeTeam = isGlobalRole(currentUser, orgUsers) || scopeIds.size > 1;
+  const [teamMode,setTeamMode]=useState("week");      // "week" | "month" buckets
+  const [ownerFilter,setOwnerFilter]=useState("");    // set by clicking a name in Team view
 
   const year=viewDate.getFullYear(), month=viewDate.getMonth();
   const monthName=viewDate.toLocaleString("default",{month:"long",year:"numeric"});
@@ -60,7 +86,16 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   // Unified list of all calendar items from all three sources
   const allItems = useMemo(() => {
     // Own calendar events
-    const evItems = events.map(e => ({ ...e, _source: "event" }));
+    // Leave entries are events too, flagged so they never read as pending
+    // work. Cancelled leave is hidden; pending / rejected say so in the title.
+    const evItems = events
+      .filter(e => !(isLeaveType(e) && leaveState(e) === "cancelled"))
+      .map(e => {
+        if (!isLeaveType(e)) return { ...e, _source: "event" };
+        const st = leaveState(e);
+        return { ...e, _source: "event", _leave: true, _leaveState: st,
+          title: st === "approved" ? e.title : `${e.title} (${st === "pending" ? "pending approval" : "rejected"})` };
+      });
 
     // Activities → appear on their date. A planned Call activity (what the
     // "Schedule Call" button creates) is tagged as a scheduled call so it
@@ -89,19 +124,27 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
 
     // Call Reports → appear on their callDate. A pending (not-completed)
     // report dated today/future is also a scheduled call.
+    // Status follows callReportState (utils/teamSummary): a call with any
+    // outcome happened, so it's "Completed" — a No Answer is a logged call,
+    // not overdue work. Only Rescheduled / future-dated reports stay
+    // "Scheduled". Previously every past non-"Completed" outcome counted as
+    // overdue, which is what inflated the header to hundreds.
     const callItems = callReports
       .filter(c => c.callDate)
       .map(c => ({
         id:        c.id,
         _source:   "call",
-        _scheduledCall: c.outcome !== "Completed" && c.callDate >= today,
+        _scheduledCall: callReportState(c.outcome, c.callDate, today) !== "made",
         _orig:     c,
         date:      c.callDate,
-        time:      "09:00",
+        time:      c.callTime || "09:00",
         endTime:   "",
-        title:     `Call: ${c.leadName || c.company || ""}`,
-        type:      "Call",
-        status:    c.outcome === "Completed" ? "Completed" : "Scheduled",
+        // A demo reads as a demo, and says how many of us were on it.
+        title:     `${isDemoCall(c) ? "Demo" : "Call"}: ${c.leadName || c.company || ""}${callPeople(c).length > 1 ? ` (+${callPeople(c).length - 1})` : ""}`,
+        type:      isDemoCall(c) ? "Demo" : "Call",
+        _people:   callPeople(c),
+        status:    callReportState(c.outcome, c.callDate, today) === "made" ? "Completed" : "Scheduled",
+        outcome:   c.outcome,
         accountId: c.accountId,
         contactId: c.contactId,
         oppId:     c.oppId,
@@ -117,29 +160,118 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   // Apply the Calls / Activities / Events source filter. "all" = everything;
   // "scheduledCall" = pending call items only (planned call activities +
   // pending future call reports), regardless of source.
-  const visibleItems = useMemo(
-    () => sourceFilter === "all" ? allItems
+  const visibleItems = useMemo(() => {
+    const bySource = sourceFilter === "all" ? allItems
       : sourceFilter === "scheduledCall" ? allItems.filter(e => e._scheduledCall)
-      : allItems.filter(e => e._source === sourceFilter),
-    [allItems, sourceFilter]
-  );
+      : allItems.filter(e => e._source === sourceFilter);
+    // A person's calendar includes calls/demos they joined, not only ones they logged.
+    return ownerFilter ? bySource.filter(e => e.owner === ownerFilter || (e._people || []).includes(ownerFilter)) : bySource;
+  }, [allItems, sourceFilter, ownerFilter]);
+
+  const teamUsers = useMemo(() => (orgUsers || [])
+    .filter(u => u.active !== false && u.status !== "Inactive" && u.role !== "viewer" && scopeIds.has(u.id)),
+    [orgUsers, scopeIds]);
+  const teamCols = useMemo(() => teamColumns(teamMode, toLocalISODate(viewDate)), [teamMode, viewDate]);
 
   const itemsOn=(d)=>visibleItems.filter(e=>e.date===dateStr(d));
 
   const nav=(dir)=>{
     const d=new Date(viewDate);
-    if(view==="month") d.setMonth(d.getMonth()+dir);
+    if(view==="month"||(view==="team"&&teamMode==="month")) d.setMonth(d.getMonth()+dir);
     else d.setDate(d.getDate()+dir*7);
     setViewDate(d);
   };
 
   const todayStats=useMemo(()=>{
-    const t=visibleItems.filter(e=>e.date===today);
+    const t=visibleItems.filter(e=>e.date===today&&!e._leave);
     return {total:t.length,scheduled:t.filter(e=>e.status==="Scheduled").length,completed:t.filter(e=>e.status==="Completed").length};
   },[visibleItems]);
 
-  const overdue=visibleItems.filter(e=>e.date<today&&e.status==="Scheduled").length;
-  const upcoming=visibleItems.filter(e=>e.date>=today&&e.status==="Scheduled").length;
+  const overdue=visibleItems.filter(e=>e.date<today&&e.status==="Scheduled"&&!e._leave).length;
+  const upcoming=visibleItems.filter(e=>e.date>=today&&e.status==="Scheduled"&&!e._leave).length;
+
+  // ── Individual leave ──
+  // One event per working day, owned by the person on leave. Anyone can
+  // mark their own; a manager/admin can mark it for people in their scope.
+  // Weekends, holidays and days already on leave are skipped.
+  const [leaveModal,setLeaveModal]=useState(null);   // {owner,from,to,type,reason}
+  const leavePeople = useMemo(() => {
+    const me = (orgUsers||[]).find(u=>u.id===currentUser);
+    const list = canSeeTeam ? teamUsers : [];
+    return me && !list.some(u=>u.id===me.id) ? [me, ...list] : list;
+  }, [orgUsers, currentUser, canSeeTeam, teamUsers]);
+  const leavePlan = useMemo(() => {
+    if (!leaveModal?.from || !leaveModal?.to || leaveModal.to < leaveModal.from) return null;
+    const existing = leaveByUser(events, { includePending: true }).get(leaveModal.owner) || new Map();
+    const isAdmin = leaveModal.type===ADMIN_WORK_TYPE;
+    const share = leaveShare({ type: leaveModal.type, time: leaveModal.time, endTime: leaveModal.endTime });
+    if (isAdmin && share<=0) return null;
+    return leaveDatesToCreate(leaveModal.from, leaveModal.to, offDayMap(holidays), existing, share)
+      .filter(d => !isAdmin || !adminOverlap(events, leaveModal.owner, d, leaveModal.time, leaveModal.endTime));
+  }, [leaveModal, events, holidays]);
+  const adminPurposes = (adminWorkTypes||[]).map(x=>x?.name||x).filter(Boolean);
+  const openLeave=(type="Leave")=>setLeaveModal({owner:currentUser,from:today,to:today,type,reason:"",time:"10:00",endTime:"11:00",purpose:""});
+  const isAdminModal = leaveModal?.type===ADMIN_WORK_TYPE;
+  const adminHours = isAdminModal ? hoursBetween(leaveModal.time, leaveModal.endTime) : 0;
+  const leaveFormError = !leaveModal ? null
+    : isAdminModal && adminHours<=0 ? "End time must be after start time."
+    : isAdminModal && adminHours>CALL_TARGET.workHours ? `Admin work is capped at a ${CALL_TARGET.workHours}-hour day — use Full day leave instead.`
+    : isAdminModal && !leaveModal.purpose ? "Pick what the admin work is for."
+    : null;
+  const nameOf=(id)=>(orgUsers||[]).find(u=>u.id===id)?.name||teamMap[id]?.name||"—";
+  const stamp=(verb,extra)=>`[${verb} by ${nameOf(currentUser)} · ${fmt.short(today)}${extra?` — ${extra}`:""}]`;
+  const saveLeave=()=>{
+    if(!leavePlan?.length||leaveFormError) return;
+    const reason=(leaveModal.reason||"").trim();
+    const title=leaveTitleFor(leaveModal.type, leaveModal.purpose);
+    const status=initialLeaveStatus(currentUser, leaveModal.owner, orgUsers||[]);
+    const autoApproved=status===LEAVE_STATUS.approved&&leaveModal.owner!==currentUser;
+    const rid=uid().replace(/[^A-Za-z0-9]/g,"");
+    setEvents(p=>[...p, ...leavePlan.map(date=>({
+      ...BLANK_EVENT, id:`lv_${rid}_${date}`, title, type:leaveModal.type, status,
+      date, time:isAdminModal?leaveModal.time:"09:00", endTime:isAdminModal?leaveModal.endTime:leaveModal.type==="Half-day leave"?"13:00":"18:00",
+      owner:leaveModal.owner, notes:[reason, autoApproved?stamp("Approved"):""].filter(Boolean).join("\n"),
+    }))]);
+    if(status===LEAVE_STATUS.pending){
+      const mgr=lineManagerOf(leaveModal.owner, orgUsers||[]);
+      notify.info(`${LEAVE_TYPE_LABEL[leaveModal.type]} requested — waiting for approval from ${mgr?.name||"an admin"}. It comes off the call target once approved.`);
+      emailAbout({kind:"requested", ownerId:leaveModal.owner, type:leaveModal.type, dates:leavePlan, reason,
+        ...(isAdminModal?{time:leaveModal.time,endTime:leaveModal.endTime,purpose:leaveModal.purpose}:{})}, mgr?.name||"an admin");
+    } else notify.success(`${isAdminModal?"Admin work":"Leave"} recorded${autoApproved?` and approved for ${nameOf(leaveModal.owner)}`:""}.`);
+    setLeaveModal(null);
+  };
+
+  // ── Leave approvals ──
+  // Line manager (or anyone above on the reporting line, or an admin)
+  // approves / rejects a whole request. Only approved leave counts.
+  const [leaveHub,setLeaveHub]=useState(false);
+  const [rejecting,setRejecting]=useState(null);     // {id, reason}
+  const leaveRequests = useMemo(()=>groupLeaveRequests(events),[events]);
+  const toApprove = useMemo(()=>pendingLeaveFor(currentUser, events, orgUsers||[]),[currentUser, events, orgUsers]);
+  const myRequests = useMemo(()=>leaveRequests.filter(r=>r.owner===currentUser&&r.state!=="cancelled").slice(0,12),[leaveRequests, currentUser]);
+  const decideLeave=(req, status, note)=>{
+    const ids=new Set(req.events.map(e=>e.id));
+    const verb=status===LEAVE_STATUS.approved?"Approved":status===LEAVE_STATUS.rejected?"Rejected":"Cancelled";
+    setEvents(p=>p.map(e=>ids.has(e.id)?{...e,status,notes:[e.notes,stamp(verb,note)].filter(Boolean).join("\n")}:e));
+    setRejecting(null);
+    if(status!==LEAVE_STATUS.cancelled){
+      notify.success(req.type===ADMIN_WORK_TYPE
+        ? `${verb} ${fmtHours(req.hours)} of admin work for ${nameOf(req.owner)}.`
+        : `${verb} ${fmtDays(req.days)} day${req.days===1?"":"s"} of ${req.type==="Admin day"?"admin days":"leave"} for ${nameOf(req.owner)}.`);
+      emailAbout({kind:"decided", ownerId:req.owner, type:req.type, dates:req.dates, decision:verb, note,
+        ...(req.type===ADMIN_WORK_TYPE?{time:req.time,endTime:req.endTime,purpose:req.purpose}:{})}, nameOf(req.owner));
+    }
+  };
+  // Email the other side (line manager on request, requester on decision).
+  // The leave is already saved; email trouble is reported, never blocking.
+  // "not_configured" stays quiet — the badge still surfaces requests.
+  const emailAbout=(payload, who)=>{
+    notifyLeave(payload).then(res=>{
+      if(res.ok) notify.info(`Email sent to ${(res.sentTo||[who]).join(", ")}.`);
+      else if(res.error) notify.error(`Leave saved, but the email to ${who} failed: ${res.error}`);
+    });
+  };
+  const rangeLabel=(r)=>r.from===r.to?fmt.short(r.from):`${fmt.short(r.from)} – ${fmt.short(r.to)}`;
 
   const openAdd=(date)=>{
     setForm({...BLANK_EVENT,id:`ev${uid()}`,date:date||today,owner:currentUser});
@@ -147,6 +279,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   };
   const openEdit=(e)=>{
     if(e._source==="activity"||e._source==="call") return; // non-event items are read-only
+    if(e._leave) return; // leave changes go through the Leave panel (approval trail)
     if(e&&e.id&&!canEditEvt(e)){requestAccessEvt(e);return;}
     setForm({...e,attendees:[...e.attendees]});setFormErrors({});setModal({mode:"edit"});
   };
@@ -261,7 +394,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         </div>
         <div className="pg-actions">
           {/* Source filter — show calls, activities, scheduled events, or all */}
-          <select value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)}
+          {view!=="team"&&<select value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)}
             title="Choose which items appear on the calendar"
             style={{fontSize:12,fontWeight:600,padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"var(--surface)",color:"var(--text2)",cursor:"pointer"}}>
             <option value="all">Both — Calls + Activities</option>
@@ -269,12 +402,17 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             <option value="call">Calls only</option>
             <option value="activity">Activities only</option>
             <option value="event">Events only</option>
-          </select>
+          </select>}
           <div style={{display:"flex",gap:4,background:"var(--s2)",border:"1px solid var(--border)",borderRadius:8,padding:3}}>
             <button className={`btn btn-xs ${view==="week"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("week")}>Week</button>
             <button className={`btn btn-xs ${view==="month"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("month")}>Month</button>
             <button className={`btn btn-xs ${view==="list"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("list")}>List</button>
+            {canSeeTeam&&<button className={`btn btn-xs ${view==="team"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setView("team")} title="Summary of calls and activities per team member">Team</button>}
           </div>
+          <button className="btn btn-sec" onClick={()=>setLeaveHub(true)} title="Request leave, see your requests, approve your team's leave" style={{position:"relative"}}>
+            <CalendarOff size={14}/>Leave
+            {toApprove.length>0&&<span style={{marginLeft:4,minWidth:18,height:18,padding:"0 5px",borderRadius:9,background:"#D97706",color:"#fff",fontSize:10.5,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center"}} aria-label={`${toApprove.length} leave requests to approve`}>{toApprove.length}</span>}
+          </button>
           <button className="btn btn-sec" onClick={()=>openScheduleCall()}><Phone size={14}/>Schedule Call</button>
           <button className="btn btn-primary" onClick={()=>openAdd()}><Plus size={14}/>New Event</button>
         </div>
@@ -283,17 +421,38 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
       {/* Nav bar + colour legend */}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
         <button className="icon-btn" onClick={()=>nav(-1)}><ChevronLeft size={18}/></button>
-        <div style={{fontSize:16,fontWeight:700,minWidth:220,textAlign:"center"}}>{view==="month"?monthName:weekLabel}</div>
+        <div style={{fontSize:16,fontWeight:700,minWidth:220,textAlign:"center"}}>{view==="month"||(view==="team"&&teamMode==="month")?monthName:weekLabel}</div>
         <button className="icon-btn" onClick={()=>nav(1)}><ChevronRight size={18}/></button>
         <button className="btn btn-sec btn-sm" onClick={()=>setViewDate(new Date(today))}>Today</button>
-        <div style={{marginLeft:"auto",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
-          {[["Scheduled Call",SCHEDULED_CALL_COL],["Logged Call","var(--brand)"],["Activity","var(--purple)"],["Event","var(--blue)"]].map(([label,c])=>(
+        {view==="team"&&(
+          <div style={{display:"flex",gap:4,background:"var(--s2)",border:"1px solid var(--border)",borderRadius:8,padding:3}}>
+            <button className={`btn btn-xs ${teamMode==="week"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setTeamMode("week")}>By day</button>
+            <button className={`btn btn-xs ${teamMode==="month"?"btn-primary":"btn-sec"}`} style={{border:"none"}} onClick={()=>setTeamMode("month")}>By week</button>
+          </div>
+        )}
+        {ownerFilter&&view!=="team"&&(
+          <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,padding:"4px 6px 4px 10px",borderRadius:14,background:"var(--brand-bg)",color:"var(--brand)"}}>
+            Showing: {teamMap[ownerFilter]?.name||"member"}
+            <button type="button" onClick={()=>setOwnerFilter("")} aria-label="Show everyone" style={{display:"inline-flex",background:"none",border:0,cursor:"pointer",color:"var(--brand)",padding:0}}><X size={13}/></button>
+          </span>
+        )}
+        {view!=="team"&&<div style={{marginLeft:"auto",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+          {[["Scheduled Call",SCHEDULED_CALL_COL],["Logged Call","var(--brand)"],["Activity","var(--purple)"],["Event","var(--blue)"],["Leave",TYPE_COL.Leave],["Admin work",TYPE_COL["Admin work"]]].map(([label,c])=>(
             <span key={label} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,color:"var(--text3)",fontWeight:600}}>
               <span style={{width:9,height:9,borderRadius:"50%",background:c,display:"inline-block"}}/>{label}
             </span>
           ))}
-        </div>
+        </div>}
       </div>
+
+      {/* TEAM VIEW — manager summary layer */}
+      {view==="team"&&canSeeTeam&&(
+        <TeamSummary
+          activities={activities} callReports={callReports} events={events}
+          users={teamUsers} columns={teamCols} today={today} holidays={holidays}
+          onPickUser={(id)=>{ setOwnerFilter(id); setView("week"); }}
+        />
+      )}
 
       {/* WEEK VIEW */}
       {view==="week"&&(
@@ -314,7 +473,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
                   const dayEvents=itemsOn(d).filter(e=>{const hr=parseInt(e.time?.split(":")[0]||"0");return hr===h;});
                   return <div key={dateStr(d)+h} style={{borderRight:"1px solid var(--border)",borderBottom:"1px solid var(--border)",padding:2,minHeight:40,cursor:"pointer",position:"relative"}} onClick={()=>openAdd(dateStr(d))}>
                     {dayEvents.map(ev=>{
-                      const col=ev._scheduledCall?SCHEDULED_CALL_COL:(SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)");
+                      const col=itemCol(ev);
                       return <div key={ev.id} onClick={e=>{e.stopPropagation();setSelectedEvent(ev);}} style={{background:col+"18",borderLeft:`3px solid ${col}`,borderRadius:4,padding:"2px 4px",marginBottom:2,cursor:"pointer",fontSize:10}}>
                         <div style={{fontWeight:600,color:col}}>{ev.time} {ev.title.substring(0,20)}</div>
                       </div>;
@@ -338,7 +497,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
               return <div key={i} style={{borderRight:i%7<6?"1px solid var(--border)":"none",borderBottom:"1px solid var(--border)",padding:4,minHeight:80,background:isToday?"var(--brand-bg)":!d?"var(--s2)":"transparent",cursor:d?"pointer":"default"}} onClick={()=>d&&openAdd(dateStr(d))}>
                 {d&&<div style={{fontSize:12,fontWeight:isToday?800:400,color:isToday?"var(--brand)":"var(--text2)",marginBottom:2}}>{d.getDate()}</div>}
                 {dayEvents.slice(0,3).map(ev=>{
-                  const col=ev._scheduledCall?SCHEDULED_CALL_COL:(SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)");
+                  const col=itemCol(ev);
                   return <div key={ev.id} onClick={e=>{e.stopPropagation();setSelectedEvent(ev);}} style={{background:col+"18",borderRadius:3,padding:"1px 4px",marginBottom:1,fontSize:9,fontWeight:600,color:col,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {TYPE_ICON[ev.type]} {ev.time?.slice(0,5)} {ev.title.substring(0,15)}
                   </div>;
@@ -356,9 +515,9 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
           <table className="tbl">
             <thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Type</th><th>Status</th><th>Source</th><th>Account</th><th>Owner</th><th>Location</th><th></th></tr></thead>
             <tbody>{[...visibleItems].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(ev=>{
-              const col=ev._scheduledCall?SCHEDULED_CALL_COL:(SOURCE_COL[ev._source]||TYPE_COL[ev.type]||"var(--brand)");
+              const col=itemCol(ev);
               const acc=accounts.find(a=>a.id===ev.accountId);
-              const isOverdue=ev.date<today&&ev.status==="Scheduled";
+              const isOverdue=ev.date<today&&ev.status==="Scheduled"&&!ev._leave;
               return <tr key={ev._source+ev.id}>
                 <td style={{fontSize:12,color:isOverdue?"var(--red)":"var(--text2)",fontWeight:isOverdue?700:400}}>{fmt.short(ev.date)}</td>
                 <td style={{fontSize:12}}>{ev.time}{ev.endTime?`–${ev.endTime}`:""}</td>
@@ -370,7 +529,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
                 <td><UserPill uid={ev.owner}/></td>
                 <td style={{fontSize:11,color:"var(--text3)"}}>{ev.location?.substring(0,25)}</td>
                 <td><div style={{display:"flex",gap:4,alignItems:"center"}}>
-                  {ev.status==="Scheduled"&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(ev)} title="Mark complete"><Check size={12}/></button>}
+                  {ev.status==="Scheduled"&&!ev._leave&&<button className="btn btn-green btn-xs" onClick={()=>markComplete(ev)} title="Mark complete"><Check size={12}/></button>}
                   {ev._source==="event" ? (
                     canEditEvt(ev) ? (
                       <>
@@ -399,11 +558,14 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
           onClose={()=>setSelectedEvent(null)}
           footer={<>
             <button className="btn btn-sec btn-sm" onClick={()=>setSelectedEvent(null)}>Close</button>
-            {selectedEvent.status==="Scheduled"&&<button className="btn btn-green btn-sm" onClick={()=>{markComplete(selectedEvent);setSelectedEvent(null);}}>Mark Complete</button>}
-            {selectedEvent._source==="event"&&<button className="btn btn-primary btn-sm" onClick={()=>{openEdit(selectedEvent);setSelectedEvent(null);}}><Edit2 size={13}/>Edit</button>}
+            {selectedEvent.status==="Scheduled"&&!selectedEvent._leave&&<button className="btn btn-green btn-sm" onClick={()=>{markComplete(selectedEvent);setSelectedEvent(null);}}>Mark Complete</button>}
+            {selectedEvent._leave&&<button className="btn btn-sec btn-sm" onClick={()=>{setSelectedEvent(null);setLeaveHub(true);}}>Open leave panel</button>}
+            {selectedEvent._leave&&selectedEvent._leaveState!=="rejected"&&(selectedEvent.owner===currentUser||canApproveLeave(currentUser,selectedEvent.owner,orgUsers||[]))&&<button className="btn btn-sec btn-sm" onClick={()=>{setEvents(p=>p.map(e=>e.id===selectedEvent.id?{...e,status:LEAVE_STATUS.cancelled,notes:[e.notes,stamp("Cancelled")].filter(Boolean).join("\n")}:e));setSelectedEvent(null);}} title="Cancel this day's leave — the call target applies again">Cancel this day</button>}
+            {selectedEvent._source==="event"&&!selectedEvent._leave&&<button className="btn btn-primary btn-sm" onClick={()=>{openEdit(selectedEvent);setSelectedEvent(null);}}><Edit2 size={13}/>Edit</button>}
           </>}>
           <div className="dp-grid">
-            {[["Type",selectedEvent.type],["Status",selectedEvent.status],["Date",fmt.date(selectedEvent.date)],["Time",`${selectedEvent.time}${selectedEvent.endTime?" – "+selectedEvent.endTime:""}`],["Location",selectedEvent.location||"—"],["Account",accounts.find(a=>a.id===selectedEvent.accountId)?.name||"—"],["Owner",(teamMap[selectedEvent.owner]||TEAM_MAP[selectedEvent.owner])?.name||selectedEvent.owner||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
+            {[["Type",selectedEvent.type],["Status",selectedEvent._leave?LEAVE_STATE_UI[selectedEvent._leaveState]?.label:selectedEvent.status],["Date",fmt.date(selectedEvent.date)],["Time",`${selectedEvent.time}${selectedEvent.endTime?" – "+selectedEvent.endTime:""}`],["Location",selectedEvent.location||"—"],["Account",accounts.find(a=>a.id===selectedEvent.accountId)?.name||"—"],["Owner",(teamMap[selectedEvent.owner]||TEAM_MAP[selectedEvent.owner])?.name||selectedEvent.owner||"—"],
+              ...((selectedEvent._people||[]).length>1?[["Also on this "+(selectedEvent.type==="Demo"?"demo":"call"),selectedEvent._people.filter(id=>id!==selectedEvent.owner).map(id=>(teamMap[id]||TEAM_MAP[id])?.name||id).join(", ")]]:[])].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>
           {selectedEvent.notes&&<div style={{marginTop:12,background:"var(--s2)",padding:"10px 12px",borderRadius:8,fontSize:13,color:"var(--text2)"}}>{selectedEvent.notes}</div>}
           {(selectedEvent._source==="activity"||selectedEvent._source==="call")&&(
@@ -439,12 +601,147 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         </Modal>
       )}
 
+      {/* Leave panel — request, track, approve */}
+      {leaveHub&&(
+        <Modal title="Leave" lg onClose={()=>{setLeaveHub(false);setRejecting(null);}}
+          footer={<>
+            <button className="btn btn-sec" onClick={()=>{setLeaveHub(false);setRejecting(null);}}>Close</button>
+            <button className="btn btn-sec" onClick={()=>{setLeaveHub(false);openLeave(ADMIN_WORK_TYPE);}}><Clock size={14}/>Log admin work</button>
+            <button className="btn btn-primary" onClick={()=>{setLeaveHub(false);openLeave();}}><Plus size={14}/>Mark leave</button>
+          </>}>
+          {(()=>{
+            const Row=({r,actions})=>{
+              const ui=LEAVE_STATE_UI[r.state];
+              return (
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",border:"1px solid var(--border)",borderRadius:8,marginBottom:6,flexWrap:"wrap"}}>
+                  <div style={{flex:"1 1 220px",minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:13}}>{nameOf(r.owner)} <span style={{fontWeight:500,color:"var(--text3)",fontSize:12}}>· {LEAVE_TYPE_LABEL[r.type]||r.type}</span></div>
+                    <div style={{fontSize:12,color:"var(--text2)"}}>{r.type===ADMIN_WORK_TYPE
+                      ? <>{rangeLabel(r)} · {r.time}–{r.endTime} ({fmtHours(r.hours)}{r.dates.length>1?" total":""}) · <b>{r.purpose}</b>{r.reason?` — ${r.reason}`:""}</>
+                      : <>{rangeLabel(r)} · {fmtDays(r.days)} day{r.days===1?"":"s"}{r.reason?` · ${r.reason}`:""}</>}</div>
+                  </div>
+                  <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6,background:ui.bg,color:ui.col}}>{ui.label}</span>
+                  {actions}
+                  {rejecting?.id===r.id&&(
+                    <div style={{flexBasis:"100%",display:"flex",gap:6,marginTop:6}}>
+                      <input autoFocus value={rejecting.reason} onChange={e=>{const v=e.target.value;setRejecting(x=>({...x,reason:v}));}}
+                        placeholder="Reason for rejecting (required)" style={{flex:1,padding:"6px 8px",border:"1.5px solid var(--border)",borderRadius:6,fontSize:12.5}}/>
+                      <button className="btn btn-sm" style={{background:"#B91C1C",color:"#fff"}} disabled={!rejecting.reason.trim()} onClick={()=>decideLeave(r,LEAVE_STATUS.rejected,rejecting.reason.trim())}>Reject</button>
+                      <button className="btn btn-sec btn-sm" onClick={()=>setRejecting(null)}>Back</button>
+                    </div>
+                  )}
+                </div>
+              );
+            };
+            return (<>
+              <div style={{fontSize:12,color:"var(--text3)",marginBottom:12}}>
+                Leave or admin work you request waits for your line manager{lineManagerOf(currentUser,orgUsers||[])?` (${lineManagerOf(currentUser,orgUsers||[]).name})`:""} to approve. Only approved leave and admin time come off the 5-calls-a-day target (admin time in proportion to its hours). Leave a manager records for their own team is approved straight away.
+              </div>
+              {(toApprove.length>0||canSeeTeam)&&(<>
+                <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",color:"var(--text3)",margin:"4px 0 8px"}}>Awaiting your approval · {toApprove.length}</div>
+                {toApprove.length===0&&<div style={{fontSize:12.5,color:"var(--text3)",padding:"6px 0 14px"}}>Nothing waiting.</div>}
+                {toApprove.map(r=>(
+                  <Row key={r.owner+r.id} r={r} actions={rejecting?.id===r.id?null:<>
+                    <button className="btn btn-green btn-sm" onClick={()=>decideLeave(r,LEAVE_STATUS.approved)}><Check size={13}/>Approve</button>
+                    <button className="btn btn-sec btn-sm" onClick={()=>setRejecting({id:r.id,reason:""})}><X size={13}/>Reject</button>
+                  </>}/>
+                ))}
+              </>)}
+              <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",color:"var(--text3)",margin:"14px 0 8px"}}>My leave requests</div>
+              {myRequests.length===0&&<div style={{fontSize:12.5,color:"var(--text3)",padding:"6px 0"}}>You haven't requested any leave.</div>}
+              {myRequests.map(r=>{
+                const note=r.events[0]?.notes?.split("\n").filter(l=>/^\[(Approved|Rejected)/.test(l)).pop();
+                return (
+                  <div key={r.owner+r.id}>
+                    <Row r={r} actions={(r.state==="pending"||(r.state==="approved"&&r.to>=today))&&
+                      <button className="btn btn-sec btn-sm" onClick={()=>decideLeave(r,LEAVE_STATUS.cancelled)} title="Withdraw this request">Cancel</button>}/>
+                    {note&&<div style={{fontSize:11,color:"var(--text3)",margin:"-4px 0 8px 12px"}}>{note}</div>}
+                  </div>
+                );
+              })}
+            </>);
+          })()}
+        </Modal>
+      )}
+
+      {/* Mark Leave */}
+      {leaveModal&&(
+        <Modal title={isAdminModal?"Log admin work":"Mark leave"} onClose={()=>setLeaveModal(null)}
+          footer={<>
+            <button className="btn btn-sec" onClick={()=>setLeaveModal(null)}>Cancel</button>
+            <button className="btn btn-primary" onClick={saveLeave} disabled={!leavePlan?.length||!!leaveFormError}><Check size={14}/>{isAdminModal?"Save admin work":"Save leave"}</button>
+          </>}>
+          <div className="form-row">
+            <div className="form-group"><label>Person</label>
+              <select value={leaveModal.owner} onChange={e=>setLeaveModal(m=>({...m,owner:e.target.value}))} disabled={leavePeople.length<=1}>
+                {leavePeople.map(u=><option key={u.id} value={u.id}>{u.name}{u.id===currentUser?" (me)":""}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label>Type</label>
+              <select value={leaveModal.type} onChange={e=>setLeaveModal(m=>({...m,type:e.target.value}))}>
+                <option value="Leave">Full day leave</option>
+                <option value="Half-day leave">Half day leave</option>
+                <option value={ADMIN_WORK_TYPE}>Admin work (set hours)</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>From</label>
+              <input type="date" value={leaveModal.from} onChange={e=>{const v=e.target.value;setLeaveModal(m=>({...m,from:v,to:m.to&&m.to>=v?m.to:v}));}}/>
+            </div>
+            <div className="form-group"><label>To</label>
+              <input type="date" value={leaveModal.to} min={leaveModal.from} onChange={e=>{const v=e.target.value;setLeaveModal(m=>({...m,to:v}));}}/>
+            </div>
+          </div>
+          {isAdminModal&&(
+            <div className="form-row three">
+              <div className="form-group"><label>Start time</label>
+                <input type="time" step={900} value={leaveModal.time} onChange={e=>{const v=e.target.value;setLeaveModal(m=>({...m,time:v}));}}/>
+              </div>
+              <div className="form-group"><label>End time</label>
+                <input type="time" step={900} value={leaveModal.endTime} onChange={e=>{const v=e.target.value;setLeaveModal(m=>({...m,endTime:v}));}}/>
+              </div>
+              <div className="form-group"><label>Duration</label>
+                <div style={{padding:"8px 0",fontSize:13,fontWeight:700,color:adminHours>0?"var(--text1)":"var(--red)"}}>{adminHours>0?fmtHours(adminHours):"—"}</div>
+              </div>
+            </div>
+          )}
+          {isAdminModal&&(
+            <div className="form-group"><label>Admin work for *</label>
+              <select value={leaveModal.purpose} onChange={e=>{const v=e.target.value;setLeaveModal(m=>({...m,purpose:v}));}}>
+                <option value="">Select…</option>
+                {adminPurposes.map(p=><option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="form-group"><label>{isAdminModal?"Details":"Reason (optional)"}</label>
+            <input value={leaveModal.reason} onChange={e=>{const v=e.target.value;setLeaveModal(m=>({...m,reason:v}));}}
+              placeholder={isAdminModal?"e.g. Quote for Acme Logistics – 12 sites":"e.g. Sick leave, personal, travel"}/>
+          </div>
+          <div style={{fontSize:12,padding:"8px 12px",borderRadius:8,background:leavePlan?.length?"#FFFBEB":"var(--s2)",color:leavePlan?.length?"#92400E":"var(--text3)"}}>
+            {leaveFormError ? leaveFormError
+              : !leavePlan ? "Pick a valid date range."
+              : leavePlan.length===0 ? (isAdminModal
+                  ? "Nothing to add — those dates are weekends, holidays, already full, or overlap admin work already logged at that time."
+                  : "Nothing to add — those dates are weekends, holidays or already marked as leave.")
+              : isAdminModal ? <>{initialLeaveStatus(currentUser, leaveModal.owner, orgUsers||[])===LEAVE_STATUS.pending
+                    ? <b>Needs approval from {lineManagerOf(leaveModal.owner, orgUsers||[])?.name||"an admin"}. </b>
+                    : leaveModal.owner!==currentUser ? <b>Approved on save (you manage {nameOf(leaveModal.owner)}). </b> : null}
+                  Adds {fmtHours(adminHours)} of admin work ({leaveModal.time}–{leaveModal.endTime}) on {leavePlan.map(d=>fmt.short(d)).join(", ")}.
+                  Takes {fmtDays(Math.round(CALL_TARGET.perDay*adminHours/CALL_TARGET.workHours*100)/100)} call{adminHours===CALL_TARGET.workHours/CALL_TARGET.perDay?"":"s"} off each day's target ({CALL_TARGET.perDay} calls per {CALL_TARGET.workHours}-hour day). You can log several blocks a day.</>
+              : <>{initialLeaveStatus(currentUser, leaveModal.owner, orgUsers||[])===LEAVE_STATUS.pending
+                    ? <b>Needs approval from {lineManagerOf(leaveModal.owner, orgUsers||[])?.name||"an admin"}. </b>
+                    : leaveModal.owner!==currentUser ? <b>Approved on save (you manage {nameOf(leaveModal.owner)}). </b> : null}Adds {leavePlan.length} {leaveModal.type==="Admin day"?"admin day":leaveModal.type==="Leave"?"day":"half-day"}{leavePlan.length===1?"":"s"}{leaveModal.type==="Admin day"?"":" of leave"} ({leavePlan.map(d=>fmt.short(d)).join(", ")}). Each takes {leaveModal.type==="Half-day leave"?"2.5 calls":"5 calls"} off the call target. Weekends, holidays and days already marked are skipped.</>}
+          </div>
+        </Modal>
+      )}
+
       {/* Add/Edit Modal */}
       {modal&&(
         <Modal title={modal.mode==="add"?"New Event":"Edit Event"} onClose={()=>{setModal(null);setFormErrors({});setForm(BLANK_EVENT);}} lg footer={<><button className="btn btn-sec" onClick={()=>{setModal(null);setFormErrors({});setForm(BLANK_EVENT);}}>Cancel</button><button className="btn btn-primary" onClick={save}><Check size={14}/>Save</button></>}>
           <div className="form-row full"><div className="form-group"><label>Title *</label><input value={form.title} onChange={e=>{setForm(f=>({...f,title:e.target.value}));setFormErrors(e=>({...e,title:undefined}));}} placeholder="e.g. Colossal Avia – GTM Presentation" style={formErrors.title?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.title}/></div></div>
           <div className="form-row three">
-            <div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{EVENT_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+            <div className="form-group"><label>Type</label><select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{[...new Set([...EVENT_TYPES, ...Object.keys(LEAVE_TYPES)])].map(t=><option key={t}>{t}</option>)}</select></div>
             <div className="form-group"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{EVENT_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
             <div className="form-group"><label>Owner</label>
               <TypeaheadSelect

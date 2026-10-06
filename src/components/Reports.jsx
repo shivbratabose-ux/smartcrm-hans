@@ -11,6 +11,8 @@ import {
   SLA_HOURS, TICKET_TYPES
 } from "../data/constants";
 import { today, fmt, isOverdue, getScopedUserIds, isGlobalRole } from "../utils/helpers";
+import { periodOf } from "../utils/fiscal";
+import { callPeople, isCallPerson, isDemoCall } from "../utils/teamSummary";
 import { PageTip } from "./shared";
 import {
   TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle, Clock,
@@ -200,16 +202,19 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   //    dotted lines, via getScopedUserIds). That answers "how is <manager>'s
   //    business doing?" rather than one individual's numbers. Team and Owner
   //    stack: pick a team, then optionally one person inside it.
+  // `field` is a property name, or a function returning every person a
+  // row belongs to (calls: the logger AND each participant — callPeople).
   const byOwner = (arr, field) => {
+    const peopleOf = typeof field === "function" ? field : (r => [r[field]]);
     let out = arr;
-    if (teamFilter !== "all" && teamIds) out = out.filter(r => teamIds.has(r[field]));
-    if (ownerFilter !== "all") out = out.filter(r => r[field] === ownerFilter);
+    if (teamFilter !== "all" && teamIds) out = out.filter(r => peopleOf(r).some(id => teamIds.has(id)));
+    if (ownerFilter !== "all") out = out.filter(r => peopleOf(r).includes(ownerFilter));
     return out;
   };
   const filteredOpps = useMemo(()=> byOwner((opps||[]).filter(o=>inWindow(o.closeDate)), "owner"),                 [opps,periodWindow,ownerFilter,teamFilter,teamIds]);
   const wLeads   = useMemo(()=> byOwner((leads||[]).filter(l=>inWindow(l.createdDate)), "assignedTo"),             [leads,periodWindow,ownerFilter,teamFilter,teamIds]);
   const wActs    = useMemo(()=> byOwner((activities||[]).filter(a=>inWindow(a.date)), "owner"),                    [activities,periodWindow,ownerFilter,teamFilter,teamIds]);
-  const wCalls   = useMemo(()=> byOwner((callReports||[]).filter(r=>inWindow(r.callDate)), "marketingPerson"),     [callReports,periodWindow,ownerFilter,teamFilter,teamIds]);
+  const wCalls   = useMemo(()=> byOwner((callReports||[]).filter(r=>inWindow(r.callDate)), callPeople),     [callReports,periodWindow,ownerFilter,teamFilter,teamIds]);
   const wColls   = useMemo(()=> byOwner((collections||[]).filter(c=>inWindow(c.invoiceDate)), "owner"),            [collections,periodWindow,ownerFilter,teamFilter,teamIds]);
   const wTickets = useMemo(()=> byOwner((tickets||[]).filter(t=>inWindow(t.reportedDate||t.created)), "assigned"), [tickets,periodWindow,ownerFilter,teamFilter,teamIds]);
 
@@ -356,6 +361,32 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     accounts:new Set(accounts.filter(a=>a.products?.includes(p.id)).map(a=>a.id)).size
   })).filter(p=>p.arr+p.pipeline+p.won+p.target>0),[accounts,ownerOpps,targetsInScope]);
 
+  // Fiscal target periods covered by the selected window (spec: targets are
+  // quarterly). Was hardcoded to "2026-Q1", so every target number and
+  // Target% on this page was frozen to one quarter and never moved when the
+  // period filter changed — the same class of bug as the dashboard charts.
+  // Null window ("All Time") means every period the org has targets for.
+  const targetPeriods = useMemo(()=>{
+    const all = [...new Set((targets||[]).map(t=>t.period).filter(Boolean))];
+    if(!periodWindow) return new Set(all);
+    const keys = new Set();
+    const d = new Date(periodWindow.start);
+    const end = new Date(periodWindow.end);
+    // Walk month by month so a window spanning quarters collects them all.
+    while(d <= end){
+      keys.add(periodOf(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-15`));
+      d.setMonth(d.getMonth()+1);
+    }
+    return keys;
+  },[periodWindow,targets]);
+  const sumTargets = (userId)=>{
+    const rows = (targets||[]).filter(t=>t.userId===userId && targetPeriods.has(t.period));
+    return {
+      targetVal: rows.reduce((s,t)=>s+(Number(t.targetValue)||0),0),
+      achievedVal: rows.reduce((s,t)=>s+(Number(t.achievedValue)||0),0),
+    };
+  };
+
   // ── Team Performance ──
   // Use orgUsers (live) instead of the static TEAM constant so dynamically added users appear.
   // Team Performance rows follow the team filter too, so picking a manager
@@ -367,26 +398,33 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     const won = userOpps.filter(o=>o.stage==="Won");
     const lost = userOpps.filter(o=>o.stage==="Lost");
     const userActs = wActs.filter(a=>a.owner===u.id);
-    const userCalls = wCalls.filter(r=>r.marketingPerson===u.id);
+    // Calls/demos this person was on — logged or joined as a participant.
+    const userCalls = wCalls.filter(r=>isCallPerson(r,u.id));
+    const demoCalls = userCalls.filter(isDemoCall).length;
     // leads use assignedTo, not owner
     const userLeads = wLeads.filter(l=>l.assignedTo===u.id);
-    const userTargets = (targets||[]).filter(t=>t.userId===u.id&&t.period==="2026-Q1");
-    const targetVal = userTargets.reduce((s,t)=>s+t.targetValue,0);
-    const achievedVal = userTargets.reduce((s,t)=>s+t.achievedValue,0);
+    const { targetVal, achievedVal } = sumTargets(u.id);
     const pipelineVal = active.reduce((s,o)=>s+o.value,0);
     const wonVal = won.reduce((s,o)=>s+o.value,0);
     const wr = pct(won.length, won.length+lost.length);
     // Activity score (calls+meetings+demos weighted)
     const meetings = userActs.filter(a=>a.type==="Meeting").length;
-    const demos = userActs.filter(a=>a.type==="Demo").length;
-    const actScore = userCalls.length*1 + meetings*3 + demos*5;
+    // Demos = Demo activities + demo calls (Log Call, type Demo). A demo
+    // call scores as a demo (5), not also as a plain call (1).
+    const demos = userActs.filter(a=>a.type==="Demo").length + demoCalls;
+    const actScore = (userCalls.length - demoCalls)*1 + meetings*3 + demos*5;
     return {
       id:u.id, name:u.name, firstName:u.name.split(" ")[0], role:u.role, initials:u.initials,
       activeDeals:active.length, pipelineVal, wonDeals:won.length, wonVal, lostDeals:lost.length,
       winRate:wr, calls:userCalls.length, meetings, demos, activities:userActs.length, leads:userLeads.length,
       targetVal, achievedVal, targetPct:pct(achievedVal,targetVal), actScore
     };
-  }).filter(u=>u.activeDeals>0||u.wonDeals>0||u.calls>0||u.activities>0),[_reportTeam,filteredOpps,wActs,wCalls,wLeads,targets]);
+  }).map(u=>({ ...u, noActivity: u.activeDeals===0&&u.wonDeals===0&&u.calls===0&&u.activities===0 }))
+    // Reps with a target in the window stay visible even with nothing logged —
+    // that is the person a manager most needs to see. Reps with neither a
+    // target nor activity are still omitted. targetPeriods is a real dependency
+    // (sumTargets reads it); it was missing, masked by filteredOpps changing too.
+    .filter(u=>!u.noActivity||u.targetVal>0),[_reportTeam,filteredOpps,wActs,wCalls,wLeads,targets,targetPeriods]);
 
   // ── Lead Analytics ──
   const leadData = useMemo(()=>{
@@ -407,7 +445,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   const callData = useMemo(()=>{
     if(!wCalls.length) return {byType:[],byPerson:[],byOutcome:[],byObjective:[],trend:[]};
     const byType = CALL_TYPES.map(t=>({type:t,count:wCalls.filter(r=>r.callType===t).length})).filter(c=>c.count>0);
-    const byPerson = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],calls:wCalls.filter(r=>r.marketingPerson===u.id).length})).filter(c=>c.calls>0).sort((a,b)=>b.calls-a.calls);
+    const byPerson = _scopedTeamSrc.map(u=>({name:u.name.split(" ")[0],calls:wCalls.filter(r=>isCallPerson(r,u.id)).length})).filter(c=>c.calls>0).sort((a,b)=>b.calls-a.calls);
     const byOutcome = [...new Set(wCalls.map(r=>r.outcome))].map(o=>({outcome:o||"N/A",count:wCalls.filter(r=>(r.outcome||"N/A")===o).length})).sort((a,b)=>b.count-a.count);
     const byObjective = [...new Set(wCalls.map(r=>r.objective))].filter(Boolean).map(o=>({objective:o.length>20?o.slice(0,20)+"...":o,full:o,count:wCalls.filter(r=>r.objective===o).length})).sort((a,b)=>b.count-a.count).slice(0,8);
     return {byType,byPerson,byOutcome,byObjective};
@@ -473,14 +511,12 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
 
     // Target vs achievement
     const targetVsAchieved = _scopedTeamSrc.map(u=>{
-      const ut = (targets||[]).filter(t=>t.userId===u.id&&t.period==="2026-Q1");
-      const target = ut.reduce((s,t)=>s+t.targetValue,0);
-      const achieved = ut.reduce((s,t)=>s+t.achievedValue,0);
+      const { targetVal: target, achievedVal: achieved } = sumTargets(u.id);
       return {name:u.name.split(" ")[0],target,achieved,gap:target-achieved};
     }).filter(d=>d.target>0);
 
     return {weighted,bestCase,likelyCase,committed,months,targetVsAchieved};
-  },[filteredOpps,targets,_scopedTeamSrc]);
+  },[filteredOpps,targets,_scopedTeamSrc,targetPeriods]);
 
   // ── Activity Analytics ──
   const actData = useMemo(()=>{
@@ -950,7 +986,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
             <K label="Total Calls" value={metrics.totalCalls} color="#1B6B5A" icon={Phone}/>
             <K label="Visits" value={wCalls.filter(r=>r.callType==="Visit").length} color="#2563EB" icon={MapPin}/>
             <K label="Web Calls" value={wCalls.filter(r=>r.callType==="Web Call").length} color="#7C3AED" icon={Globe}/>
-            <K label="Avg/Person" value={_scopedTeamSrc.length?(metrics.totalCalls/_scopedTeamSrc.filter(u=>wCalls.some(r=>r.marketingPerson===u.id)).length||0).toFixed(1):"0"} color="#D97706" icon={Users}/>
+            <K label="Avg/Person" value={_scopedTeamSrc.length?(metrics.totalCalls/_scopedTeamSrc.filter(u=>wCalls.some(r=>isCallPerson(r,u.id))).length||0).toFixed(1):"0"} color="#D97706" icon={Users}/>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
@@ -1178,14 +1214,23 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
         <div>
           {/* Scorecards */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,marginBottom:20}}>
-            {teamPerf.slice(0,6).map(u=>(
+            {/* Top six by contribution — won value, then pipeline, then
+                activity. Previously an unsorted slice(0,6), so the cards
+                showed whoever happened to come first in the user list
+                while the leaderboard below ranked properly: the best
+                performer could be missing from the cards entirely. */}
+            {[...teamPerf].sort((a,b)=>
+              (a.noActivity-b.noActivity) || (b.wonVal-a.wonVal) || (b.pipelineVal-a.pipelineVal) || (b.actScore-a.actScore)
+            ).slice(0,6).map(u=>(
               <div key={u.id} style={{background:"#fff",borderRadius:12,padding:"14px 16px",border:"1px solid #E2E8F0"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <div style={{width:32,height:32,borderRadius:"50%",background:"#1B6B5A",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{u.initials}</div>
                     <div><div style={{fontSize:13,fontWeight:700}}>{u.name}</div><div style={{fontSize:10,color:"#94A3B8"}}>{u.role}</div></div>
                   </div>
-                  <Badge text={`${u.winRate}% WR`} color={u.winRate>=35?"#22C55E":"#DC2626"}/>
+                  {u.noActivity
+                    ? <Badge text="0% · no activity" color="#B45309"/>
+                    : <Badge text={`${u.winRate}% WR`} color={u.winRate>=35?"#22C55E":"#DC2626"}/>}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,textAlign:"center"}}>
                   {[

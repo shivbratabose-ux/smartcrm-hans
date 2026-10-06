@@ -5,7 +5,7 @@ import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, BILL_TERMS, BILL_TYPES, CONTRACT_ST
 import { BLANK_CONTRACT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, softDeleteById, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
 import { notify } from '../utils/toast';
-import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge, TypeaheadSelect, EditLockActions } from './shared';
+import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge, TypeaheadSelect, EditLockActions, userName } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
 import { useSort, SortHeader } from './Sort';
@@ -570,7 +570,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
               ["Doc Type", detail.docType],
               ["Approval Stage", detail.approvalStage || "\u2014"],
               ["Renewal Date", detail.renewalDate ? fmt.date(detail.renewalDate) : "\u2014"],
-              ["Owner", TEAM_MAP[detail.owner]?.name || "\u2014"],
+              ["Owner", userName(detail.owner) || "\u2014"],
             ].map(([k, v]) => (
               <div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>
             ))}

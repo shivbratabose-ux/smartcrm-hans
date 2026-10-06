@@ -104,8 +104,12 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
   const critTix = tickets.filter(t => t.priority === "Critical" && !["Resolved", "Closed"].includes(t.status)).length;
 
   // ─── Average deal cycle ───
+  // Deals won IN THE SELECTED PERIOD (falls back to all-time when the
+  // period closed nothing, so the card shows a real number rather than a
+  // hardcoded 45 — `avgCycleAllTime` tells the subtitle which it used).
   const avgDealCycle = useMemo(() => {
-    const wonDeals = opps.filter(o => o.stage === "Won");
+    const inPeriod = opps.filter(o => o.stage === "Won" && inRange(o.closeDate, range));
+    const wonDeals = inPeriod.length > 0 ? inPeriod : opps.filter(o => o.stage === "Won");
     const cycles = wonDeals.map(deal => {
       const dealActs = activities.filter(a => a.oppId === deal.id || a.accountId === deal.accountId);
       if (dealActs.length === 0) return null;
@@ -113,8 +117,11 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       const diff = daysBetween(earliest, deal.closeDate || today);
       return diff > 0 ? diff : null;
     }).filter(Boolean);
-    return cycles.length > 0 ? Math.round(cycles.reduce((s, c) => s + c, 0) / cycles.length) : 45;
-  }, [opps, activities]);
+    return cycles.length > 0 ? Math.round(cycles.reduce((s, c) => s + c, 0) / cycles.length) : 0;
+  }, [opps, activities, range]);
+  // Did the period actually close any deals? Drives the card's subtitle.
+  const cycleFromPeriod = useMemo(
+    () => opps.some(o => o.stage === "Won" && inRange(o.closeDate, range)), [opps, range]);
 
   // ─── Pipeline funnel ───
   const funnelData = useMemo(() => {
@@ -168,29 +175,63 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       .sort((a, b) => b.value - a.value);
   }, [accounts]);
 
-  // ─── Activity trend (last 7 periods) ───
+  // ─── Activity trend — follows the selected date range ───
+  // Was hardcoded to the last 7 days whatever the filter said, so QTD /
+  // 6M / Year showed a week of data under a quarter's KPIs and the axes
+  // never moved. Now the buckets span the actual range, at a granularity
+  // that keeps the chart readable: daily up to 2 weeks, weekly up to ~3
+  // months, monthly beyond. Counts come from the range-filtered set so
+  // chart and KPI cards always agree.
   const activityTrend = useMemo(() => {
-    const days = rangeKey === "7d" ? 7 : rangeKey === "10d" ? 10 : 7;
-    const data = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(parseLocalDate(today).getTime() - i * 864e5);
-      const ds = toLocalISODate(d);
-      const label = d.toLocaleDateString("en-US", { weekday: "short" });
-      const count = activities.filter(a => a.date === ds).length;
-      data.push({ name: label, count });
+    const to = parseLocalDate(range.to);
+    // "All Time" ranges from 2000 — clamp the start to the earliest real
+    // activity so the chart isn't hundreds of empty buckets.
+    let from = parseLocalDate(range.from);
+    if (range.from <= "2001-01-01") {
+      const earliest = fActivities.reduce((m, a) => (a.date && a.date < m ? a.date : m), range.to);
+      from = parseLocalDate(earliest);
     }
-    return data;
-  }, [activities, rangeKey]);
+    const spanDays = Math.max(1, Math.round((to - from) / 864e5) + 1);
+
+    const buckets = [];
+    if (spanDays <= 14) {
+      for (let i = 0; i < spanDays; i++) {
+        const d = new Date(from.getTime() + i * 864e5);
+        buckets.push({
+          name: d.toLocaleDateString("en-US", { weekday: "short", day: "numeric" }),
+          from: toLocalISODate(d), to: toLocalISODate(d),
+        });
+      }
+    } else if (spanDays <= 92) {
+      // Weekly, aligned to the range start.
+      for (let t = from.getTime(); t <= to.getTime(); t += 7 * 864e5) {
+        const a = new Date(t), b = new Date(Math.min(t + 6 * 864e5, to.getTime()));
+        buckets.push({
+          name: a.toLocaleDateString("en-US", { day: "numeric", month: "short" }),
+          from: toLocalISODate(a), to: toLocalISODate(b),
+        });
+      }
+    } else {
+      // Monthly, capped at the most recent 24 buckets.
+      const cur = new Date(from.getFullYear(), from.getMonth(), 1);
+      while (cur <= to) {
+        const end = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+        buckets.push({
+          name: cur.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
+          from: toLocalISODate(cur), to: toLocalISODate(end < to ? end : to),
+        });
+        cur.setMonth(cur.getMonth() + 1);
+      }
+      if (buckets.length > 24) buckets.splice(0, buckets.length - 24);
+    }
+
+    return buckets.map(b => ({
+      name: b.name,
+      count: fActivities.filter(a => a.date && a.date >= b.from && a.date <= b.to).length,
+    }));
+  }, [fActivities, range]);
 
   // ─── Lead conversion funnel ───
-  const leadFunnel = useMemo(() => {
-    if (!leads || leads.length === 0) return [];
-    const stages = ["New", "MQL", "SQL", "SAL"];
-    return stages.map(s => ({
-      name: s,
-      count: leads.filter(l => l.stage === s || (s === "New" && !["MQL", "SQL", "SAL", "NA"].includes(l.stage))).length
-    }));
-  }, [leads]);
 
   // ─── Region performance ───
   const regionData = useMemo(() => {
@@ -222,9 +263,11 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
   }, [accounts, opps]);
 
   // ─── Sales velocity by vertical ───
+  // Period-scoped: fOpps = deals closed in the range or touched by a
+  // range activity. All-time here made the chart identical on every preset.
   const velocityData = useMemo(() => {
     const byType = {};
-    opps.forEach(o => {
+    fOpps.forEach(o => {
       const acc = accounts.find(a => a.id === o.accountId);
       // Group by the most specific populated classifier so deals don't all
       // collapse into "Other" when `type` happens to be blank.
@@ -243,7 +286,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       .map(([name, d]) => ({ name, days: d.days.length > 0 ? Math.round(d.days.reduce((s, v) => s + v, 0) / d.days.length) : 30, deals: d.count, value: d.value }))
       .sort((a, b) => b.deals - a.deals)
       .slice(0, 5);
-  }, [opps, accounts, activities]);
+  }, [fOpps, accounts, activities]);
 
   // ─── Risk deals ───
   const riskDeal = useMemo(() => {
@@ -359,9 +402,9 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
 
       {/* ──── PRIMARY KPI ROW ──── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 16 }}>
-        <KPI label="Total ARR" value={parseFloat(totalArr.toFixed(1))} unit="L" sub={`${activeAccounts} active accounts`} onClick={() => setPage("accounts")} />
-        <KPI label="Weighted Pipeline" value={parseFloat(weighted.toFixed(1))} unit="L" sub={`${openDeals.length} open deals`} onClick={() => setPage("pipeline")} />
-        <KPI label="Avg Deal Cycle" value={avgDealCycle} unit="d" sub={`Target: ${Math.round(avgDealCycle * 0.8)}d`} />
+        <KPI label="Total ARR" value={parseFloat(totalArr.toFixed(1))} unit="L" sub={`${activeAccounts} active accounts · current`} onClick={() => setPage("accounts")} />
+        <KPI label="Weighted Pipeline" value={parseFloat(weighted.toFixed(1))} unit="L" sub={`${openDeals.length} open deals · current`} onClick={() => setPage("pipeline")} />
+        <KPI label="Avg Deal Cycle" value={avgDealCycle} unit="d" sub={avgDealCycle === 0 ? "no closed deals yet" : cycleFromPeriod ? `${rangeLabel} · target ${Math.round(avgDealCycle * 0.8)}d` : `all time · target ${Math.round(avgDealCycle * 0.8)}d`} />
         <KPI label="Win Rate" value={periodTotalClosed > 0 ? periodWinRate : Math.round(opps.filter(o => o.stage === "Won").length / Math.max(1, opps.filter(o => ["Won", "Lost"].includes(o.stage)).length) * 100)} unit="%" sub={periodTotalClosed > 0 ? `${periodWon.length}W / ${periodLost.length}L in period` : "All time"} />
       </div>
 
@@ -404,7 +447,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
         </div>
 
         <div className="card" style={{ padding: 20 }}>
-          <div className="card-title">Activity Trend</div>
+          <div className="card-title">Activity Trend <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text3)" }}>· {rangeLabel}</span></div>
           <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 12 }}>
             {periodCompleted}/{periodActivities} completed · {completionRate}% completion rate
           </div>
@@ -423,7 +466,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       {/* ──── ROW 3: REVENUE BY PRODUCT + EXECUTIVE INSIGHTS ──── */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr", gap: 16, marginBottom: 18 }}>
         <div className="card" style={{ padding: 20 }}>
-          <div className="card-title">Revenue by Product</div>
+          <div className="card-title">Revenue by Product <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text3)" }}>· current ARR</span></div>
           <ResponsiveContainer width="100%" height={190}>
             <PieChart>
               <Pie data={productRevenue} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
@@ -488,7 +531,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
       {/* ──── ROW 4: REGIONAL + SALES VELOCITY ──── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18 }}>
         <div className="card" style={{ padding: 20 }}>
-          <div className="card-title">Regional Performance</div>
+          <div className="card-title">Regional Performance <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text3)" }}>· current ARR &amp; open deals</span></div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, marginTop: 12 }}>
             {regionData.map((r, i) => (
               <div key={r.name} style={{ padding: 14, background: i === 0 ? "#1B6B5A" : "var(--s1)", borderRadius: 10, color: i === 0 ? "white" : "var(--text1)" }}>
@@ -501,7 +544,7 @@ function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callR
         </div>
 
         <div className="card" style={{ padding: 20 }}>
-          <div className="card-title">Sales Velocity by Vertical</div>
+          <div className="card-title">Sales Velocity by Vertical <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text3)" }}>· {rangeLabel}</span></div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={velocityData} layout="vertical" barSize={18}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />

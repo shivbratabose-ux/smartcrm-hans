@@ -329,7 +329,7 @@ export const CONTACT_ROLES = ["Decision Maker/CXO","Decision Maker/HOD","Influen
 export const CONTACT_DISPOSITIONS = ["Favourable","Neutral","Unfavourable"];
 
 // ── Call Types & Objectives ──
-export const CALL_TYPES = ["Telephone Call","Visit","Web Call","WhatsApp/Text","Email","LinkedIn"];
+export const CALL_TYPES = ["Telephone Call","Demo","Visit","Web Call","WhatsApp/Text","Email","LinkedIn"];
 export const CALL_OBJECTIVES = ["Maintenance/QBR","Maintenance/MBR","Issue Resolution","Renewal Followup","Payment Followup","Cross-Sales/New Offer","Cross-Sales/New Info","Training/Feature Adoption","Request Referrals","VOC/Testimonials","Competition Info","General Followup"];
 export const CALL_OUTCOMES = ["Completed","No Answer","Rescheduled","Voicemail","Left Message"];
 

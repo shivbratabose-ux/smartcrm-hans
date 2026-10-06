@@ -1,3 +1,4 @@
+import { normProductKey } from './leadFieldDict.js';
 import {
   ACT_TYPES, ACT_STATUS, CUST_TYPES, COUNTRIES, REGIONS, PRIORITIES,
   STAGES, STAGE_PROB, STAGE_COL, TICKET_TYPES, TICKET_STATUSES, CALL_TYPES, CALL_OBJECTIVES,
@@ -84,7 +85,77 @@ export const INIT_PRODUCT_CATALOG = [
       {id:"m_wt4",name:"Monitoring Console",type:"Add-on",      desc:"Real-time message queue monitoring"},
       {id:"m_wt5",name:"API Connector",     type:"Integration", desc:"REST API bridge for modern system integration"},
     ]},
+  // ── Product lines carried by the lead-capture field dictionary ──────
+  // These ship with no modules on purpose: their qualifying questions are
+  // already defined in leadFieldDict.js, but the module/pricing breakdown
+  // is owned by each product's PM and gets filled in via Masters →
+  // Product Catalogue. An empty modules[] still lets sales select the line
+  // (the picker auto-sets noAddons), so nothing is blocked while it's empty.
+  // `id` is the alias the field dictionary matches on (see normProductKey);
+  // `name` is what sales sees on the chip.
+  { id:"EANNEX",       name:"E-Annex Ultra", color:"#0EA5E9", bg:"#F0F9FF", desc:"ICEGATE Customs Filing — BE / SB",           modules:[] },
+  { id:"AMSOcean",     name:"AMS - Ocean Consol", color:"#0369A1", bg:"#F0F9FF", desc:"Ocean Consol Manifest Filing",         modules:[] },
+  { id:"AMSAir",       name:"AMS - Air Consol",   color:"#0284C7", bg:"#F0F9FF", desc:"Air Consol Manifest Filing",           modules:[] },
+  { id:"AMSIGM",       name:"AMS - IGM-EGM Filing", color:"#075985", bg:"#F0F9FF", desc:"IGM / EGM Filing to Customs",        modules:[] },
+  { id:"WiseGSA",      name:"WiseGSA",      color:"#9333EA", bg:"#FAF5FF", desc:"GSA / Airline Representation Management",    modules:[] },
+  { id:"WiseStox",     name:"WiseStox",     color:"#CA8A04", bg:"#FEFCE8", desc:"Warehouse & Inventory Management",           modules:[] },
+  { id:"WiseFleet",    name:"WiseFleet",    color:"#EA580C", bg:"#FFF7ED", desc:"Fleet & Transport Management (TMS)",         modules:[] },
+  { id:"WiseDo",       name:"WiseDo",       color:"#059669", bg:"#ECFDF5", desc:"Electronic Delivery Order",                  modules:[] },
+  { id:"BagTrack",     name:"BagTrack",     color:"#DB2777", bg:"#FDF2F8", desc:"Baggage Tracking & Reconciliation",          modules:[] },
+  // Named to match their existing price-book rows (P17 HRMS, P14 SmartCRM) so
+  // the quotation catalogue dedupes them instead of listing the same product
+  // twice. The ids stay distinct and are what the lead field dictionary
+  // matches on, so their qualifying questions are unaffected.
+  { id:"WiseHRMS",     name:"HRMS",         color:"#4F46E5", bg:"#EEF2FF", desc:"Human Resource Management System",           modules:[] },
+  { id:"CRMExpert",    name:"SmartCRM",     color:"#0D9488", bg:"#F0FDFA", desc:"Sales & Customer Relationship Management",   modules:[] },
+  { id:"VMS",          name:"VMS",          color:"#65A30D", bg:"#F7FEE7", desc:"Vehicle / Visitor Management System",        modules:[] },
 ];
+
+// ── Product-catalogue backfill ────────────────────────────────────────
+// The catalogue is org data: it lives in localStorage and in the Supabase
+// app_settings blob, and the cloud copy is authoritative. That means adding
+// a product to INIT_PRODUCT_CATALOG above does NOT reach an org that has
+// already saved a catalogue — their stored blob simply wins and the new
+// product never appears in any picker.
+//
+// This merges any seed product the stored catalogue is missing, keyed on a
+// normalised id/name so an admin who renamed "WiseDox" → "WiseDOX" doesn't
+// get a duplicate. Stored entries are never touched: an admin's edits to
+// colour, description, modules and lineManagerId all survive.
+//
+// CATALOG_RENAMES additionally corrects names we shipped and then changed.
+// Renaming in the seed alone would not reach an org that already stored the
+// old name — the same "cloud blob wins" trap this whole function exists for.
+// Applied only when the stored name still matches the exact string we
+// shipped, so an admin who has since renamed the product keeps their label.
+const CATALOG_RENAMES = {
+  // id → { from: name as shipped, to: name that dedupes against the price book }
+  WiseHRMS:  { from: "WiseHRMS",   to: "HRMS" },
+  CRMExpert: { from: "CRM Expert", to: "SmartCRM" },
+};
+
+export function mergeCatalogSeed(stored) {
+  if (!Array.isArray(stored) || stored.length === 0) return INIT_PRODUCT_CATALOG;
+  let renamed = false;
+  const next = stored.map(p => {
+    const r = p?.id && CATALOG_RENAMES[p.id];
+    if (!r || p.name !== r.from) return p;
+    renamed = true;
+    return { ...p, name: r.to };
+  });
+  const seen = new Set();
+  next.forEach(p => {
+    if (p?.id)   seen.add(normProductKey(p.id));
+    if (p?.name) seen.add(normProductKey(p.name));
+  });
+  const missing = INIT_PRODUCT_CATALOG.filter(
+    p => !seen.has(normProductKey(p.id)) && !seen.has(normProductKey(p.name))
+  );
+  // Return the original array when nothing changed, so callers that diff on
+  // identity (setCatalog → the debounced app_settings push) don't see a write.
+  if (!renamed && missing.length === 0) return stored;
+  return [...next, ...missing];
+}
 
 // ── Org Hierarchy: Market -> Company -> Division -> Country -> Branch -> Department (structural — keep) ──
 export const INIT_ORG = {
@@ -220,12 +291,21 @@ export const INIT_MASTERS = {
 
   // ── System / Bulk Upload ─────────────────────────────
   uploadTypes:      mk("upt", UPLOAD_TYPES),
+
+  // ── Holidays & Admin days ────────────────────────────
+  // [{id, date:"YYYY-MM-DD", name, type:"Holiday"|"Admin day"}]. Non-working
+  // weekdays org-wide; excluded from the daily call target (Calendar → Team).
+  holidays:         [],
+
+  // Purposes offered for timed "Admin work" in Calendar → Mark leave.
+  adminWorkTypes:   mk("awt", ["Preparing quotation / proposal", "Internal meeting", "Training", "Tender / RFP documentation",
+                              "Customer documentation (PO, invoice, KYC)", "CRM data update / reporting", "Other"]),
 };
 
 // ── Blank form templates ──
-export const BLANK_ACC={name:"",type:"Airline",country:"India",city:"",website:"",segment:"Enterprise",status:"Prospect",products:[],productSelection:[],owner:"u1",arrRevenue:0,potential:0,parentId:"",hierarchyLevel:"Parent Company",hierarchyPath:"",address:"",accountNo:"",erpAccountNo:"",state:"",pincode:"",legalName:"",pan:"",gstin:"",cin:"",taxTreatment:"Domestic",tdsApplicable:"No",poMandatory:"No",billingAddress:"",billingCity:"",billingState:"",billingPincode:"",billingCountry:"",primaryContact:"",primaryEmail:"",primaryPhone:"",billingContactName:"",billingContactEmail:"",financeContactEmail:"",paymentTerms:"Net 30",creditDays:30,currency:"INR",billingFrequency:"Annual",entityType:"Head Office",groupCode:"",territory:"",addresses:[]};
+export const BLANK_ACC={name:"",type:"",country:"India",city:"",website:"",segment:"Enterprise",status:"Prospect",products:[],productSelection:[],owner:"",doNotContact:"No",doNotContactReason:"",lastAgentFollowupAt:"",arrRevenue:0,potential:0,parentId:"",hierarchyLevel:"Parent Company",hierarchyPath:"",address:"",accountNo:"",erpAccountNo:"",state:"",pincode:"",legalName:"",pan:"",gstin:"",cin:"",taxTreatment:"Domestic",tdsApplicable:"No",poMandatory:"No",billingAddress:"",billingCity:"",billingState:"",billingPincode:"",billingCountry:"",primaryContact:"",primaryEmail:"",primaryPhone:"",billingContactName:"",billingContactEmail:"",financeContactEmail:"",paymentTerms:"Net 30",creditDays:30,currency:"INR",billingFrequency:"Annual",entityType:"Head Office",groupCode:"",territory:"",addresses:[]};
 export const BLANK_ADDRESS={id:"",label:"Head Office",line1:"",city:"",state:"",country:"India",pincode:"",isPrimary:true,isBilling:true};
-export const BLANK_CON={name:"",role:"",email:"",phone:"",accountId:"",addressId:"",primary:false,contactId:"",designation:"",department:"",departments:[],products:[],branches:[],countries:[],linkedOpps:[],city:"",state:"",country:"",pincode:"",alternateEmail:"",alternatePhone:"",linkedInUrl:"",decisionLevel:"",influence:"Medium",category:"",preferredContactMode:"Email",doNotContact:"No",lastContactDate:"",source:""};
+export const BLANK_CON={name:"",role:"",email:"",phone:"",accountId:"",addressId:"",primary:false,contactId:"",designation:"",department:"",departments:[],products:[],branches:[],countries:[],linkedOpps:[],city:"",state:"",country:"",pincode:"",alternateEmail:"",alternatePhone:"",linkedInUrl:"",decisionLevel:"",influence:"Medium",category:"",preferredContactMode:"Email",doNotContact:"No",emailVerified:false,emailOptOut:false,lastContactDate:"",source:""};
 export const BLANK_OPP={oppNo:"",title:"",accountId:"",products:[],productSelection:[],stage:"Prospect",value:0,probability:10,owner:"u1",closeDate:"",country:"India",notes:"",source:"New Lead",primaryContactId:"",secondaryContactIds:[],hierarchyLevel:"Parent Company",leadId:"",contactRoles:[],sourceLeadIds:[],lob:"",dealSize:"Medium",forecastCat:"Pipeline",currency:"INR",competitors:"",lossReason:"",lossReasonSecondary:"",lostToCompetitor:"",lossImpactAreas:[],lossMgmtFeedback:"",lossImprovementNotes:"",lossClosedAt:"",upsellFlag:false,crossSellNotes:"",nextStep:"",decisionDate:"",budget:"",territory:"",campaignSource:"",createdDate:"",
   // ── Tender management (Phase 1): government/RFP bid metadata ──
   isTender:false,tenderNo:"",tenderAuthority:"",tenderDepartment:"",tenderPortal:"",tenderCategory:"",tenderState:"",
@@ -243,8 +323,8 @@ export const BLANK_PROJECT={projectNo:"",name:"",accountId:"",oppId:"",contractI
   scope:"",deliverables:"",risks:"",notes:"",milestones:[],team:[],createdDate:""};
 export const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
 export const BLANK_TKT={ticketNo:"",title:"",accountId:"",product:"iCAFFE",productSelection:[],type:"Bug / Glitch",priority:"Medium",status:"Open",assigned:"u7",description:"",sla:"",escalation:"L1 – Support Engineer",resolution:"",csat:0,category:"Technical",subCategory:"",reportedBy:"",reportedDate:"",resolvedDate:"",affectedModule:"",severity:"Medium",environment:"Production",workaround:"No",internalNotes:"",revisitDate:"",tags:""};
-export const BLANK_LEAD={company:"",contact:"",email:"",phone:"",product:"iCAFFE",productSelection:[],productFields:{},vertical:"CHA",region:"South Asia",source:"Inside Sales",stage:"MQL",assignedTo:"u1",assignedBy:"",assignedAt:"",assignmentHistory:[],notes:"",nextCall:"",score:50,createdDate:"",leadId:"",accountId:"",temperature:"Warm",designation:"",noOfUsers:0,businessType:"Customs Broker",staffSize:"",branches:0,monthlyVolume:{airExp:"",airImp:"",seaTEU:"",customsEntries:""},currentSoftware:"",swAge:"",swSatisfaction:0,painPoints:[],budgetRange:"",decisionMaker:"",decisionTimeline:"",evaluatingOthers:"",nextStep:"",objections:"",contactIds:[],contactRoles:{},additionalProducts:[],estimatedValue:0,stageHistory:[],convertedOppIds:[],branch:"",location:"",department:"",addresses:[],salesTeam:[],country:"",state:"",city:"",companyWebsite:"",alternatePhone:"",alternateEmail:"",linkedInUrl:"",annualRevenue:0,campaignName:"",referredBy:"",expectedCloseDate:"",proposalSent:"No",demoScheduled:"No",competitorName:"",lastContactDate:"",duplicateOf:""};
-export const BLANK_CALL_REPORT={leadName:"",company:"",marketingPerson:"u1",leadStage:"MQL",callType:"Telephone Call",product:"iCAFFE",productSelection:[],callDate:"",notes:"",nextCallDate:"",objective:"General Followup",outcome:"Completed",contactId:"",accountId:"",oppId:"",duration:15};
+export const BLANK_LEAD={company:"",contact:"",email:"",phone:"",product:"",productSelection:[],productFields:{},vertical:"",region:"South Asia",source:"",stage:"MQL",assignedTo:"",assignedBy:"",assignedAt:"",assignmentHistory:[],notes:"",nextCall:"",score:50,createdDate:"",leadId:"",accountId:"",temperature:"",designation:"",noOfUsers:0,businessType:"",staffSize:"",branches:0,monthlyVolume:{airExp:"",airImp:"",seaTEU:"",customsEntries:""},currentSoftware:"",swAge:"",swSatisfaction:0,painPoints:[],budgetRange:"",decisionMaker:"",decisionTimeline:"",evaluatingOthers:"",nextStep:"",objections:"",contactIds:[],contactRoles:{},additionalProducts:[],estimatedValue:0,stageHistory:[],convertedOppIds:[],branch:"",location:"",department:"",addresses:[],salesTeam:[],country:"",state:"",city:"",companyWebsite:"",alternatePhone:"",alternateEmail:"",linkedInUrl:"",annualRevenue:0,campaignName:"",referredBy:"",expectedCloseDate:"",proposalSent:"No",demoScheduled:"No",competitorName:"",lastContactDate:"",duplicateOf:""};
+export const BLANK_CALL_REPORT={leadName:"",company:"",marketingPerson:"",leadStage:"MQL",callType:"Telephone Call",product:"",productSelection:[],callDate:"",notes:"",nextCallDate:"",objective:"General Followup",outcome:"Completed",contactId:"",accountId:"",oppId:"",duration:15};
 export const BLANK_CONTRACT={contractNo:"",title:"",accountId:"",oppId:"",product:"iCAFFE",productSelection:[],status:"Draft",startDate:"",endDate:"",value:0,billTerm:"Yearly",billType:"Renewals",approvalStage:"",terms:"",docType:"Contract",owner:"u1",poNumber:"",renewalDate:"",renewalType:"Manual",paymentTerms:"Net 30",currency:"INR",billingFrequency:"Annual",invoiceGenBasis:"Advance",griApplicable:"No",griPercentage:0,noOfUsers:0,noOfBranches:0,serviceStartDate:"",commercialModel:"Annual SaaS",autoRenewal:"No",warrantyMonths:0,goLiveDate:"",territory:"",signedDocUrl:"",eulaUrl:"",onboardingNotes:"",renewalNotifiedAt:""};
 export const BLANK_COLLECTION={invoiceNo:"",accountId:"",contractId:"",invoiceDate:"",dueDate:"",billedAmount:0,collectedAmount:0,pendingAmount:0,status:"Current",paymentMode:"NEFT",paymentDate:"",remarks:"",owner:"u1",invoiceType:"Tax Invoice",product:"",currency:"INR",gstAmount:0,tdsAmount:0,netPayable:0,billPeriodFrom:"",billPeriodTo:"",agingBucket:"",followUpDate:"",chequeRef:"",approvedBy:""};
 export const BLANK_TARGET={userId:"u1",period:"",product:"All",vertical:"",targetValue:0,achievedValue:0,targetDeals:0,achievedDeals:0,targetCalls:0,achievedCalls:0};

@@ -15,6 +15,7 @@ import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
 import { batchUpsert } from '../lib/db';
 import { notify } from '../utils/toast';
+import useIsMobile from '../hooks/useIsMobile';
 
 /* ── Date range helpers ── */
 const RANGE_PRESETS = [
@@ -167,8 +168,13 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   const gateResult = validateStageGate(lead, "Converted", STAGE_GATES);
   const [showGateDetails, setShowGateDetails] = useState(false);
   const [showInlineContact, setShowInlineContact] = useState(false);
+  // Newer leads keep products in productSelection and may leave `product`
+  // blank, which used to name the deal "undefined – COMPANY".
+  const leadProductIds = [lead.product, ...(lead.productSelection || []).map(ps => ps?.productId)]
+    .filter(Boolean).filter((id, i, arr) => arr.indexOf(id) === i);
+  const firstProduct = leadProductIds[0] || "";
   const [form, setForm] = useState({
-    title: `${PROD_MAP[lead.product]?.name || lead.product} – ${lead.company}`,
+    title: firstProduct ? `${PROD_MAP[firstProduct]?.name || firstProduct} – ${lead.company}` : (lead.company || ""),
     accountId: lead.accountId || "",
     primaryContactId: "",
     // Carry the lead's Est. Value through to the opportunity by default.
@@ -183,13 +189,17 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
     notes: lead.notes || "",
     forecastCategory: "Likely-Case",
     dealSize: "Medium",
-    createNewAccount: !lead.accountId,
-    selectedProducts: lead.product ? [lead.product] : [],
+    // No account is needed to convert: Finance creates and links the account
+    // when the deal is Won. Only a lead already tied to a customer carries one.
+    createNewAccount: false,
+    selectedProducts: leadProductIds,
     keepLeadOpen: false,
     contactRoles: {},
     lob: "",
   });
   const [errors, setErrors] = useState({});
+  // The account picker stays tucked away unless the lead already has one.
+  const [showAccount, setShowAccount] = useState(!!lead.accountId);
 
   const validate = () => {
     const errs = {};
@@ -290,22 +300,32 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
           </div></div>
 
           <div className="form-row">
-            <div className="form-group"><label>Customer / Account (optional)</label>
-              <select
-                value={form.createNewAccount ? "__CREATE__" : (form.accountId || "")}
-                onChange={e => {
-                  const v = e.target.value;
-                  if (v === "__CREATE__") {
-                    setForm(f => ({ ...f, accountId: "", createNewAccount: true }));
-                  } else {
-                    setForm(f => ({ ...f, accountId: v, createNewAccount: false }));
-                  }
-                }}
-              >
-                <option value="">— Skip — Finance links account at Won —</option>
-                <option value="__CREATE__">— Create new Prospect account for "{lead.company}" —</option>
-                {(accounts || []).map(a => <option key={a.id} value={a.id}>{a.accountNo ? `[${a.accountNo}] ` : ""}{a.name}</option>)}
-              </select>
+            <div className="form-group"><label>Customer / Account</label>
+              {showAccount ? (
+                <select
+                  value={form.createNewAccount ? "__CREATE__" : (form.accountId || "")}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (v === "__CREATE__") {
+                      setForm(f => ({ ...f, accountId: "", createNewAccount: true }));
+                    } else {
+                      setForm(f => ({ ...f, accountId: v, createNewAccount: false }));
+                    }
+                  }}
+                >
+                  <option value="">Not needed now (Finance links it when the deal is Won)</option>
+                  <option value="__CREATE__">Create a Prospect account for "{lead.company}"</option>
+                  {(accounts || []).map(a => <option key={a.id} value={a.id}>{a.accountNo ? `[${a.accountNo}] ` : ""}{a.name}</option>)}
+                </select>
+              ) : (
+                <div style={{fontSize:12,color:"var(--text3)",padding:"8px 0",lineHeight:1.5}}>
+                  Not needed. Finance links the account when the deal is Won.{" "}
+                  <button type="button" onClick={() => setShowAccount(true)}
+                    style={{background:"none",border:"none",padding:0,color:"var(--brand)",fontWeight:600,cursor:"pointer",fontSize:12}}>
+                    Link an existing customer
+                  </button>
+                </div>
+              )}
             </div>
             <div className="form-group"><label>Contact Person</label>
               <select value={form.primaryContactId} onChange={e => setForm(f => ({...f, primaryContactId: e.target.value}))}>
@@ -460,6 +480,13 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
   const startFieldEdit = (field) => { setEditingField(field); setFieldVal(lead[field] ?? ""); };
   const saveFieldEdit = (field, val) => {
     const v = val !== undefined ? val : fieldVal;
+    // Picking "Converted to Opportunity" must create the deal, not just
+    // relabel the lead — hand over to the Convert window instead.
+    if (field === "stage" && v === "Converted" && lead.stage !== "Converted") {
+      setEditingField(null); setFieldVal("");
+      setShowConvertModal(true);
+      return;
+    }
     updateLead({ [field]: v });
     setEditingField(null); setFieldVal("");
   };
@@ -2036,7 +2063,69 @@ function LeadsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, set
   );
 }
 
-function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess, opps=[], setUpdates }) {
+// ─── Phone layout: one card per lead instead of a 1400px table ───
+// Same data, actions and edit-permission rules as LeadsDataGrid's rows.
+// Tap the company to open the lead; phone / email are tap-to-call / mail.
+const telHref = (p) => `tel:${String(p || "").replace(/[^\d+]/g, "")}`;
+function LeadsCardList({ rows, setDetail, openEdit, openCallLog, setConfirm, handleConvert, canDelete, currentUser, canEditLead, onRequestAccess, commLogs = [] }) {
+  return (
+    <div className="m-cards">
+      {rows.map(l => {
+        const isOverdue = l.nextCall && l.nextCall < today && !["NA","Converted"].includes(l.stage);
+        const age = daysSince(l.createdDate);
+        const editable = canEditLead ? canEditLead(l) : true;
+        return (
+          <div key={l.id} className={`m-card${l.duplicateOf ? " m-card-dup" : isOverdue ? " m-card-overdue" : ""}`}>
+            <div className="m-card-top" role="button" tabIndex={0} onClick={() => setDetail(l)}
+              onKeyDown={e => { if (e.key === "Enter") setDetail(l); }}>
+              <div className="m-card-title">
+                {l.company || "—"}
+                {l.duplicateOf && <span style={{display:"inline-block",whiteSpace:"nowrap",marginLeft:6,fontSize:9,fontWeight:700,color:"#B45309",background:"#FFF7ED",border:"1px solid #FED7AA",padding:"1px 6px",borderRadius:4,verticalAlign:"middle"}}>DUPLICATE</span>}
+              </div>
+              <div style={{flexShrink:0}}><LeadStageBadge stage={l.stage}/></div>
+            </div>
+            <div className="m-card-sub">{[l.leadId, l.source, l.region].filter(Boolean).join(" · ")}</div>
+            <div className="m-card-row">
+              <span style={{fontWeight:600,color:"var(--text)"}}>{l.contact || "—"}</span>
+              {l.phone && <a className="m-card-link" href={telHref(l.phone)}><Phone size={13}/>{l.phone}</a>}
+              {l.email && <a className="m-card-link" href={`mailto:${l.email}`} style={{maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis"}}><Mail size={13}/>{l.email}</a>}
+            </div>
+            <div className="m-card-row">
+              {l.product && <ProdTag pid={l.product}/>}
+              <LeadScore score={l.score}/>
+              <UserPill uid={l.assignedTo}/>
+            </div>
+            <div className="m-card-foot">
+              <span className={`m-card-when${isOverdue ? " late" : ""}`}>
+                {isOverdue ? <AlertTriangle size={12}/> : <Clock size={12}/>}
+                {l.nextCall ? `Next call ${fmt.short(l.nextCall)}` : "No next call"}
+                {age != null && <span style={{fontWeight:600,color: age > 30 ? "#DC2626" : age > 14 ? "#F59E0B" : "#22C55E"}}>· {age}d old</span>}
+              </span>
+              <div className="m-card-actions">
+                <button className="icon-btn" aria-label="Log Call" title="Log Call" style={{ color: "#3B82F6" }} onClick={() => openCallLog(l)}>
+                  <PhoneCall size={17}/>
+                </button>
+                <EditLockActions
+                  editable={editable}
+                  pending={hasPendingAccessReq(commLogs, "lead", l.id, currentUser)}
+                  onEdit={() => openEdit(l)} onDelete={() => setConfirm(l.id)}
+                  onRequest={() => onRequestAccess && onRequestAccess(l)} canDelete={canDelete}>
+                  {editable && l.stage !== "Converted" && l.stage !== "NA" && (
+                    <button className="icon-btn" aria-label="Convert to Opportunity" title="Convert to Opportunity" style={{ color: "var(--brand)" }} onClick={() => handleConvert(l)}>
+                      <ArrowRightCircle size={17}/>
+                    </button>
+                  )}
+                </EditLockActions>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess, opps=[], setUpdates }) {
   const canEditLead = (l) => canEditRecord({ownerId:l?.assignedTo,currentUser,orgUsers,recordType:"lead",recordId:l?.id,commLogs,catalog,recordProductIds:l?.product?[l.product]:[]});
   const requestAccessLead = (l) => onRequestEditAccess && onRequestEditAccess("lead", l.id, l.company||l.leadId||"Lead", l.assignedTo);
   // Scope the team list to only users this logged-in user has visibility over.
@@ -2103,6 +2192,8 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_LEAD);
   const [confirm, setConfirm] = useState(null);
+  // Lead waiting in the Convert window (opened from the grid or Edit Lead).
+  const [convertLead, setConvertLead] = useState(null);
   const [formErrors, setFormErrors] = useState({});
   const [detailId, setDetailId] = useState(null);
   const detail = detailId ? leads.find(l => l.id === detailId) || null : null;
@@ -2117,6 +2208,9 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   const [callLogModal, setCallLogModal] = useState(null); // prefill object when open
   const [showFormInlineContact, setShowFormInlineContact] = useState(null); // null=hidden, false=show existing dropdown, true=show new form
   const [viewMode, setViewMode] = useState("table"); // "table" | "grid" (Excel-like editable)
+  // Phones get cards regardless of viewMode — neither the 1400px table nor
+  // the editable sheet is usable at 375px.
+  const isMobile = useIsMobile();
 
   // Inline field updater for the editable grid. Saves immediately to leads state.
   // Per company-wide text-format policy:
@@ -2125,6 +2219,12 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
   //   email         → lowercase
   // Other fields pass through as-is so dropdowns / dates / numbers are untouched.
   const updateLeadField = (id, field, value) => {
+    // Setting the stage to Converted opens the Convert window so a deal is
+    // actually created; the lead keeps its stage until that finishes.
+    if (field === "stage" && value === "Converted") {
+      const target = leads.find(l => l.id === id);
+      if (target && target.stage !== "Converted") { setConvertLead(target); return; }
+    }
     let v = value;
     if (field === "company") v = upper(value);
     else if (field === "contact" || field === "name") v = title(value);
@@ -2206,7 +2306,12 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     return `#FL-${year}-${String(next).padStart(3, '0')}`;
   };
 
-  const openAdd = async () => {
+  // `prefill` (optional) seeds the form, e.g. from a scanned visiting card.
+  // Ignored when openAdd is used directly as a click handler (event object).
+  const openAdd = async (prefill) => {
+    const seed = prefill && !prefill.nativeEvent && typeof prefill === "object"
+      ? Object.fromEntries(Object.entries(prefill).filter(([k, v]) => k in BLANK_LEAD && v !== "" && v != null))
+      : {};
     // Reserve the number atomically from the DB sequence — SECURITY DEFINER,
     // so it sees the global max regardless of who's asking. Falls back to
     // the local computation when offline / RPC unavailable.
@@ -2230,10 +2335,19 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
       assignedTo: currentUser || BLANK_LEAD.assignedTo,
       assignedBy: currentUser || "",
       assignedAt: today,
+      ...seed,
     });
     setFormErrors({});
     setModal({ mode: "add" });
   };
+  // A scanned visiting card chose "Create a new lead": open Add Lead with
+  // its details once, then clear the hand-off so a re-render won't reopen it.
+  useEffect(() => {
+    if (!leadPrefill) return;
+    openAdd(leadPrefill);
+    onLeadPrefillUsed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadPrefill]);
 
   const openEdit = (l) => {
     if (l && l.id && !canEditLead(l)) { requestAccessLead(l); return; }
@@ -2257,7 +2371,20 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     // (product picked, no module ticked, no explicit "None") don't block save.
     const normalisedForm = { ...form, productSelection: normaliseProductSelection(form.productSelection) };
     const errs = validateLead(normalisedForm);
-    if (hasErrors(errs)) { setFormErrors(errs); return; }
+    if (hasErrors(errs)) {
+      setFormErrors(errs);
+      // The form is long: say what's missing and scroll to the first
+      // problem, otherwise Save looks broken when the error is off-screen.
+      const labels = { company: "Company Name", contact: "Contact Name", email: "Email", nextCall: "Next Call Date", source: "Source", score: "Score", productSelection: "Product" };
+      const missing = Object.keys(errs).filter(k => errs[k]);
+      notify.error(`Can't save yet — check ${missing.map(k => labels[k] || k).join(", ")}.`);
+      setTimeout(() => {
+        const first = missing[0];
+        const el = document.querySelector(`[data-field="${first}"]`);
+        if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); if (typeof el.focus === "function") el.focus({ preventScroll: true }); }
+      }, 50);
+      return;
+    }
     // Duplicate check — a lead is a likely duplicate when ALL THREE hold:
     //   1. same Company name, AND
     //   2. same Contact name OR same email, AND
@@ -2285,7 +2412,13 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
     // Don't block — create the lead, but tag it so the list flags it
     // (highlighted row + DUPLICATE badge) and the rep can act. Re-evaluated
     // on every save, so editing away the overlap clears the flag.
-    const clean = sanitizeObj({ ...normalisedForm, duplicateOf: dup ? dup.id : "" });
+    // Choosing "Converted to Opportunity" here used to relabel the lead
+    // without creating any deal. Save the other edits at the lead's current
+    // stage, then open the Convert window to create the opportunity.
+    const priorStage = modal.mode === "add" ? (BLANK_LEAD.stage || "MQL") : (leads.find(l => l.id === normalisedForm.id)?.stage || "MQL");
+    const wantsConvert = normalisedForm.stage === "Converted" && priorStage !== "Converted";
+    const clean = sanitizeObj({ ...normalisedForm, stage: wantsConvert ? priorStage : normalisedForm.stage, duplicateOf: dup ? dup.id : "" });
+    if (wantsConvert) setConvertLead(clean);
     if (modal.mode === "add") {
       // Creation is the first assignment — seed the audit trail, and notify
       // the owner if the lead was created straight onto someone else's plate.
@@ -2650,7 +2783,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             </select>
 
             {/* View toggle: Table (read-only) vs. Grid (Excel-like editable) */}
-            <div style={{display:"flex",gap:0,marginLeft:"auto",border:"1.5px solid #CBD5E1",borderRadius:6,overflow:"hidden"}}>
+            {!isMobile && <div style={{display:"flex",gap:0,marginLeft:"auto",border:"1.5px solid #CBD5E1",borderRadius:6,overflow:"hidden"}}>
               <button
                 onClick={() => setViewMode("table")}
                 style={{fontSize:11,padding:"5px 12px",fontWeight:600,cursor:"pointer",border:"none",background:viewMode==="table"?"#1B6B5A":"#fff",color:viewMode==="table"?"#fff":"#334155"}}
@@ -2663,7 +2796,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 title="Excel-like editable grid">
                 Grid
               </button>
-            </div>
+            </div>}
           </div>
 
           {/* Bulk Actions */}
@@ -2725,6 +2858,20 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           <div className="card" style={{ padding: 0 }}>
             {filtered.length === 0 ? (
               <Empty icon={<Users size={22}/>} title="No leads found" sub="Try adjusting filters or add a new lead."/>
+            ) : isMobile ? (
+              <LeadsCardList
+                rows={pg.paged}
+                setDetail={setDetail}
+                openEdit={openEdit}
+                openCallLog={openCallLog}
+                setConfirm={setConfirm}
+                handleConvert={handleConvert}
+                canDelete={canDelete}
+                currentUser={currentUser}
+                canEditLead={canEditLead}
+                onRequestAccess={requestAccessLead}
+                commLogs={commLogs}
+              />
             ) : viewMode === "grid" ? (
               <EditableLeadsGrid
                 rows={pg.paged}
@@ -2979,8 +3126,8 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           {/* ── A. PROSPECT DETAILS ── */}
           <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:4}}>A. Prospect Details</div>
           <div className="form-row">
-            <div className="form-group"><label>Company Name * <span style={{fontSize:10.5,color:"var(--text3)",fontWeight:400,letterSpacing:"0.3px",marginLeft:6}}>(ALL CAPS)</span></label><input value={form.company} onChange={e => { setForm(f => ({...f, company:upper(e.target.value)})); setFormErrors(e => ({...e, company:undefined})); }} placeholder="COMPANY NAME" style={{textTransform:"uppercase",...(formErrors.company ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.company}/></div>
-            <div className="form-group"><label>Contact Name *</label><input value={form.contact} onChange={e => { setForm(f => ({...f, contact:title(e.target.value)})); setFormErrors(e => ({...e, contact:undefined})); }} placeholder="Contact Person" style={{textTransform:"capitalize",...(formErrors.contact ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.contact}/></div>
+            <div className="form-group"><label>Company Name * <span style={{fontSize:10.5,color:"var(--text3)",fontWeight:400,letterSpacing:"0.3px",marginLeft:6}}>(ALL CAPS)</span></label><input value={form.company} onChange={e => { setForm(f => ({...f, company:upper(e.target.value)})); setFormErrors(e => ({...e, company:undefined})); }} placeholder="COMPANY NAME" data-field="company" style={{textTransform:"uppercase",...(formErrors.company ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.company}/></div>
+            <div className="form-group"><label>Contact Name *</label><input value={form.contact} onChange={e => { setForm(f => ({...f, contact:title(e.target.value)})); setFormErrors(e => ({...e, contact:undefined})); }} placeholder="Contact Person" data-field="contact" style={{textTransform:"capitalize",...(formErrors.contact ? {borderColor:"#DC2626"} : {})}}/><FormError error={formErrors.contact}/></div>
           </div>
 
           {/* Company Hierarchy */}
@@ -3112,14 +3259,14 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           {/* ── B. BUSINESS PROFILE ── */}
           <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:16,paddingTop:12,borderTop:"1px solid var(--border)"}}>B. Business Profile</div>
           <div className="form-row">
-            <div className="form-group"><label>Business Type</label><select value={form.businessType||"Customs Broker"} onChange={e => setForm(f => ({...f, businessType:e.target.value}))}>{BUSINESS_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
+            <div className="form-group"><label>Business Type</label><select value={form.businessType||""} onChange={e => setForm(f => ({...f, businessType:e.target.value}))}><option value="">Select…</option>{BUSINESS_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
             <div className="form-group"><label>Staff Size</label><select value={form.staffSize||""} onChange={e => setForm(f => ({...f, staffSize:e.target.value}))}><option value="">Select</option>{STAFF_SIZES.map(s => <option key={s}>{s}</option>)}</select></div>
           </div>
           <div className="form-row">
             <div className="form-group"><label>Branches</label><input type="number" min="0" value={form.branches||0} onChange={e => setForm(f => ({...f, branches:+e.target.value}))}/></div>
             <div className="form-group"></div>
           </div>
-          <div className="form-group">
+          <div className="form-group" data-field="productSelection">
             <label>Products & Modules <span style={{color:"#DC2626"}}>*</span></label>
             <ProductModulePicker
               catalog={catalog || []}
@@ -3147,7 +3294,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
             dict={masters?.leadProductFields}
           />
           <div className="form-row">
-            <div className="form-group"><label>Industry / Vertical</label><select value={form.vertical} onChange={e => setForm(f => ({...f, vertical:e.target.value}))}>{VERTICALS.map(v => <option key={v}>{v}</option>)}</select></div>
+            <div className="form-group"><label>Industry / Vertical</label><select value={form.vertical} onChange={e => setForm(f => ({...f, vertical:e.target.value}))}><option value="">Select…</option>{VERTICALS.map(v => <option key={v}>{v}</option>)}</select></div>
             <div className="form-group"><label>Region</label><select value={form.region} onChange={e => setForm(f => ({...f, region:e.target.value}))}>{REGIONS.map(r => <option key={r}>{r}</option>)}</select></div>
           </div>
           {/* Monthly Volume */}
@@ -3204,11 +3351,11 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           {/* ── F. NEXT STEPS & QUALIFICATION ── */}
           <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:16,paddingTop:12,borderTop:"1px solid var(--border)"}}>F. Next Steps & Qualification</div>
           <div className="form-row">
-            <div className="form-group"><label>Source <span style={{color:"#EF4444"}}>*</span></label><select value={form.source} onChange={e => setForm(f => ({...f, source:e.target.value}))}><option value="">Select Source</option>{LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}</select><FormError msg={formErrors.source}/></div>
+            <div className="form-group"><label>Source <span style={{color:"#EF4444"}}>*</span></label><select value={form.source} onChange={e => { setForm(f => ({...f, source:e.target.value})); setFormErrors(e => ({...e, source:undefined})); }} style={formErrors.source ? {borderColor:"#DC2626"} : {}} data-field="source"><option value="">Select Source</option>{LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}</select><FormError error={formErrors.source}/></div>
             <div className="form-group"><label>Next Step</label><select value={form.nextStep||""} onChange={e => setForm(f => ({...f, nextStep:e.target.value}))}><option value="">Select</option>{NEXT_STEPS.map(s => <option key={s}>{s}</option>)}</select></div>
           </div>
           <div className="form-row">
-            <div className="form-group"><label>Link to Account</label>
+            <div className="form-group"><label>Link to Account <span style={{fontWeight:400,color:"var(--text3)"}}>(optional)</span></label>
               <TypeaheadSelect
                 value={form.accountId||""}
                 onChange={(id) => setForm(f => ({...f, accountId: id || ""}))}
@@ -3219,7 +3366,9 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
                 }))}
                 placeholder="Search accounts…"
               />
-              {form.accountId && (() => { const acct = accounts.find(a => a.id === form.accountId); return acct?.hierarchyPath ? <div style={{fontSize:11, color:"var(--text3)", marginTop:2}}>{acct.hierarchyPath}</div> : null; })()}
+              {form.accountId
+                ? (() => { const acct = accounts.find(a => a.id === form.accountId); return acct?.hierarchyPath ? <div style={{fontSize:11, color:"var(--text3)", marginTop:2}}>{acct.hierarchyPath}</div> : null; })()
+                : <div style={{fontSize:11, color:"var(--text3)", marginTop:2}}>Only for an existing customer. Not needed to convert.</div>}
             </div>
             <div className="form-group"><label>Lead Stage</label><select value={form.stage} onChange={e => setForm(f => ({...f, stage:e.target.value}))}>{LEAD_STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
           </div>
@@ -3236,7 +3385,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           <div className="form-row">
             <div className="form-group">
               <label>Next Call Date {form.stage !== "NA" ? "*" : ""}</label>
-              <input type="date" value={form.nextCall} onChange={e => { setForm(f => ({...f, nextCall:e.target.value})); setFormErrors(e => ({...e, nextCall:undefined})); }} style={formErrors.nextCall ? {borderColor:"#DC2626"} : {}}/>
+              <input type="date" value={form.nextCall} data-field="nextCall" onChange={e => { setForm(f => ({...f, nextCall:e.target.value})); setFormErrors(e => ({...e, nextCall:undefined})); }} style={formErrors.nextCall ? {borderColor:"#DC2626"} : {}}/>
               <FormError error={formErrors.nextCall}/>
             </div>
             <div className="form-group">
@@ -3269,6 +3418,18 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           recordLabel={leads.find(l => l.id === confirm)?.company || "this lead"}
           onConfirm={(meta) => del(confirm, meta)}
           onCancel={() => setConfirm(null)}
+        />
+      )}
+
+      {convertLead && (
+        <ConvertToOppModal
+          lead={convertLead}
+          accounts={accounts}
+          contacts={allContacts || []}
+          onConvert={(ld, data) => handleConvert(ld, data)}
+          onClose={() => setConvertLead(null)}
+          orgUsers={orgUsers}
+          setContacts={setContacts}
         />
       )}
 
@@ -3306,6 +3467,7 @@ function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contact
           orgUsers={orgUsers}
           masters={masters}
           prefill={callLogModal}
+          leads={leads}
         />
       )}
     </div>

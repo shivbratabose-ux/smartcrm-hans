@@ -76,6 +76,8 @@ const TEXT_ARRAY_COLUMNS = new Set([
   "terms", "cc_contact_ids",
   // events
   "attendees",
+  // call_reports (add_call_report_participants_v1.sql)
+  "participant_ids",
 ]);
 
 // Normalise any value into a TEXT[]-safe string array. Postgres rejects a
@@ -372,6 +374,10 @@ const toSnake = (obj, module) => {
     addressId:"address_id", decisionLevel:"decision_level",
     preferredContactMode:"preferred_contact_mode",
     doNotContact:"do_not_contact",
+    // Agent consent & cooldown (add_agent_consent_fields_v1.sql)
+    emailVerified:"email_verified", emailOptOut:"email_opt_out",
+    doNotContactReason:"do_not_contact_reason",
+    lastAgentFollowupAt:"last_agent_followup_at",
     // Ticket triage / classification
     ticketNo:"ticket_no", subCategory:"sub_category",
     reportedBy:"reported_by", reportedDate:"reported_date",
@@ -604,6 +610,9 @@ const toCamel = (obj, module) => {
     address_id:"addressId", decision_level:"decisionLevel",
     preferred_contact_mode:"preferredContactMode",
     do_not_contact:"doNotContact",
+    email_verified:"emailVerified", email_opt_out:"emailOptOut",
+    do_not_contact_reason:"doNotContactReason",
+    last_agent_followup_at:"lastAgentFollowupAt",
     // Ticket triage / classification
     ticket_no:"ticketNo", sub_category:"subCategory",
     reported_by:"reportedBy", reported_date:"reportedDate",
@@ -1511,6 +1520,164 @@ export async function deleteProductResource(id) {
   const { error } = await supabase.from("product_resources").delete().eq("id", id);
   if (error) dbLog('error', '[DB] deleteProductResource:', error);
   return { error };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EMAIL-TO-CRM AGENT (Module B) — queue reads + review writes
+// ═══════════════════════════════════════════════════════════════════
+// em_processed is deliberately NOT part of the JSONB app state or the
+// localStorage mirror: it is agent metadata, append-heavy, and RLS-scoped
+// (each user sees their own rows; global roles see all). The queue page
+// reads it directly; realtime is unnecessary at E1 — a manual refresh
+// matches how often anyone works this queue.
+
+export async function loadEmailAgentQueue(limit = 200) {
+  if (!isSupabaseConfigured) return { rows: [], error: "not-configured" };
+  const { data, error } = await supabase
+    .from("em_processed")
+    .select("*")
+    .order("processed_at", { ascending: false })
+    .limit(limit);
+  if (error) return { rows: [], error: error.message };
+  // Generic snake→camel: em_processed keys are regular, no alias table needed.
+  const camelKey = (k) => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  const rows = (data || []).map(r =>
+    Object.fromEntries(Object.entries(r).map(([k, v]) => [camelKey(k), v])));
+  return { rows, error: null };
+}
+
+// Review actions (RLS restricts to own rows / global roles): re-link to a
+// chosen entity, or ignore. Column discipline lives here — only these
+// fields are ever sent.
+export async function reviewEmailActivity(fingerprint, patch, reviewerId) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  const allowed = {};
+  if (patch.status) allowed.status = patch.status;
+  if (patch.matchedEntityType !== undefined) allowed.matched_entity_type = patch.matchedEntityType;
+  if (patch.matchedEntityId !== undefined) allowed.matched_entity_id = patch.matchedEntityId;
+  allowed.reviewed_by = reviewerId || null;
+  allowed.reviewed_at = new Date().toISOString();
+  const { error } = await supabase.from("em_processed").update(allowed).eq("fingerprint", fingerprint);
+  return { error: error?.message || null };
+}
+
+// ── E3: conditional suggestions (spec §7/§9) ─────────────────────────
+// Pending suggestions load alongside the queue; approving applies the
+// change to the target row UNDER THE USER'S JWT (their RLS decides),
+// then marks the suggestion. Realtime propagates the entity change to
+// every client, including this one.
+import { CONDITIONAL_FIELDS as EM_CONDITIONAL_FIELDS } from "../../supabase/functions/em-ingest/logic.mjs";
+export { EM_CONDITIONAL_FIELDS };
+
+export async function loadEmSuggestions(fingerprints) {
+  if (!isSupabaseConfigured || !fingerprints?.length) return { rows: [], error: null };
+  const camelKey = (k) => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  const { data, error } = await supabase
+    .from("em_suggested_updates").select("*")
+    .in("fingerprint", fingerprints)
+    .order("created_at", { ascending: false });
+  if (error) return { rows: [], error: error.message };
+  return {
+    rows: (data || []).map(r => Object.fromEntries(Object.entries(r).map(([k, v]) => [camelKey(k), v]))),
+    error: null,
+  };
+}
+
+export async function decideEmSuggestion(sugg, approve, userId) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  if (approve) {
+    const spec = EM_CONDITIONAL_FIELDS[`${sugg.entityType}:${sugg.field}`];
+    if (!spec) return { error: `No apply mapping for ${sugg.entityType}:${sugg.field}` };
+    const value = spec.isInt ? Number(sugg.newValue) : sugg.newValue;
+    const { error: aerr } = await supabase.from(spec.table)
+      .update({ [spec.column]: value, updated_at: new Date().toISOString() })
+      .eq("id", sugg.entityId);
+    if (aerr) return { error: `Couldn't apply: ${aerr.message}` };
+  }
+  const { error } = await supabase.from("em_suggested_updates")
+    .update({ status: approve ? "approved" : "rejected", decided_by: userId, decided_at: new Date().toISOString() })
+    .eq("id", sugg.id);
+  return { error: error?.message || null };
+}
+
+export async function saveEmFeedback(fingerprint, feedback, userId) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  const { error } = await supabase.from("em_processed")
+    .update({ feedback: (feedback || "").slice(0, 500), reviewed_by: userId, reviewed_at: new Date().toISOString() })
+    .eq("fingerprint", fingerprint);
+  return { error: error?.message || null };
+}
+
+export async function loadAgentConfig() {
+  if (!isSupabaseConfigured) return { config: null, error: "not-configured" };
+  const { data, error } = await supabase.from("agent_config").select("*").eq("scope", "org").maybeSingle();
+  return { config: data || null, error: error?.message || null };
+}
+
+export async function saveAgentConfig(patch, userId) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  const { error } = await supabase.from("agent_config")
+    .update({ ...patch, updated_by: userId || null, updated_at: new Date().toISOString() })
+    .eq("scope", "org");
+  return { error: error?.message || null };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RE-ENGAGEMENT AGENT (Module A) — queue reads + review writes
+// ═══════════════════════════════════════════════════════════════════
+// Same posture as the email agent: relational tables, RLS-scoped
+// (owners see their queue, global roles see all), not part of the
+// JSONB app state. Sending goes through send-email with the USER's
+// JWT so the audit shows who actually approved.
+
+const _camelRow = (r) =>
+  Object.fromEntries(Object.entries(r).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), v]));
+
+export async function loadReQueue(limit = 300) {
+  if (!isSupabaseConfigured) return { rows: [], error: "not-configured" };
+  const { data: cands, error } = await supabase
+    .from("re_candidates").select("*")
+    .in("status", ["new", "drafted", "sent", "skipped"])
+    .order("created_at", { ascending: false }).limit(limit);
+  if (error) return { rows: [], error: error.message };
+  const ids = (cands || []).filter(c => c.status !== "new").map(c => c.id);
+  let draftsBy = {};
+  if (ids.length) {
+    const { data: drafts } = await supabase.from("re_drafts").select("*").in("candidate_id", ids);
+    (drafts || []).forEach(d => { draftsBy[d.candidate_id] = _camelRow(d); });
+  }
+  return { rows: (cands || []).map(c => ({ ..._camelRow(c), draft: draftsBy[c.id] || null })), error: null };
+}
+
+// Approve + send: the caller has already sent the email via send-email
+// (user JWT). This records the outcome and stamps the account cooldown.
+export async function markReSent(candidateId, accountId, { subject, body, messageId }, userId) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  const now = new Date().toISOString();
+  const { error: e1 } = await supabase.from("re_drafts")
+    .update({ edited_subject: subject, edited_body: body, approved_by: userId, sent_at: now, send_message_id: messageId || "" })
+    .eq("candidate_id", candidateId);
+  if (e1) return { error: e1.message };
+  const { error: e2 } = await supabase.from("re_candidates")
+    .update({ status: "sent", decided_by: userId, decided_at: now }).eq("id", candidateId);
+  if (e2) return { error: e2.message };
+  // Cooldown stamp — RLS: account owner (or global) is exactly who's here.
+  await supabase.from("accounts").update({ last_agent_followup_at: now.slice(0, 10) }).eq("id", accountId);
+  return { error: null };
+}
+
+export async function skipReCandidate(candidateId, reason, userId, markDnc = false, accountId = null) {
+  if (!isSupabaseConfigured) return { error: "not-configured" };
+  const { error } = await supabase.from("re_candidates")
+    .update({ status: "skipped", skip_reason: (reason || "").slice(0, 200), decided_by: userId, decided_at: new Date().toISOString() })
+    .eq("id", candidateId);
+  if (error) return { error: error.message };
+  if (markDnc && accountId) {
+    await supabase.from("accounts")
+      .update({ do_not_contact: "Yes", do_not_contact_reason: "Marked from re-engagement queue" })
+      .eq("id", accountId);
+  }
+  return { error: null };
 }
 
 // ═══════════════════════════════════════════════════════════════════

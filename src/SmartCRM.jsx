@@ -5,11 +5,12 @@ import { INIT_USERS, PROD_MAP, STAGE_PROB, registerCatalog, registerMasters } fr
 import {
   INIT_ACCOUNTS, INIT_CONTACTS, INIT_OPPS, INIT_ACTIVITIES,
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
-  INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
+  INIT_PRODUCT_CATALOG, mergeCatalogSeed, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS, INIT_PROJECTS,
-  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
+  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, BLANK_ACC, BLANK_CON, BLANK_TKT, BLANK_CONTRACT, INIT_UPDATES,
   BLANK_INVOICE, INIT_INVOICES, BLANK_OPP, BLANK_QUOTE, BLANK_CALL_REPORT
 } from "./data/seed";
+import { pendingLeaveFor, callPeople } from "./utils/teamSummary";
 import { loadState, saveState, ErrorBoundary, today, refreshToday, uid, canWriteTargets, getScopedUserIds, isGlobalRole, normalizeRole, isValidLeadId, ACCESS_REQ_TYPE, parseAccessReq, canRoleWrite, isReadOnlyRole, canManageUsers, canSeeLeadAssignment, isLeadAssigner, leadAssigners, buildAssignerAlert, buildNotificationUpdate } from "./utils/helpers";
 import { ToastContainer, notify, reportSyncError } from "./utils/toast";
 import { CSS } from "./styles";
@@ -39,6 +40,8 @@ import AiSettings from "./components/AiSettings";
 import OrgHierarchy from "./components/OrgHierarchy";
 import TeamUsers from "./components/TeamUsers";
 import LeadAssignment from "./components/LeadAssignment";
+import EmailAgent from "./components/EmailAgent";
+import ReEngagement from "./components/ReEngagement";
 import Leads from "./components/Leads";
 import CallReports from "./components/CallReports";
 import Contracts from "./components/Contracts";
@@ -162,6 +165,9 @@ function migrateState(raw) {
   if (!Array.isArray(s.files))       s.files       = INIT_FILES;
   if (!s.masters || typeof s.masters !== "object") s.masters = INIT_MASTERS;
   if (!Array.isArray(s.catalog))     s.catalog     = INIT_PRODUCT_CATALOG;
+  // Product lines added in code since this browser last saved get appended
+  // without disturbing any product the org has edited. See mergeCatalogSeed.
+  else                               s.catalog     = mergeCatalogSeed(s.catalog);
   if (!s.org || typeof s.org !== "object") s.org   = INIT_ORG;
   if (!Array.isArray(s.teams))       s.teams       = INIT_TEAMS;
   if (!Array.isArray(s.orgUsers))    s.orgUsers    = INIT_USERS;
@@ -341,6 +347,12 @@ export default function SmartCRM() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
   const [collapsed,setCollapsed]     = useState(false);
+  // Phone-width sidebar drawer (see useIsMobile). Closed on every navigation.
+  const [mobileNavOpen,setMobileNavOpen] = useState(false);
+  // Visiting-card scanner → "Create a new lead": details wait here while we
+  // switch to Leads, which opens Add Lead with them (then clears this).
+  const [leadPrefill,setLeadPrefill] = useState(null);
+  useEffect(() => { setMobileNavOpen(false); }, [page]);
   const [accounts,setAccounts]       = useState(saved?.accounts || INIT_ACCOUNTS);
   const [contacts,setContacts]       = useState(saved?.contacts || INIT_CONTACTS);
   const [opps,setOpps]               = useState(saved?.opps || INIT_OPPS);
@@ -354,8 +366,11 @@ export default function SmartCRM() {
   const [org,setOrg]                 = useState(saved?.org || INIT_ORG);
   const [teams,setTeams]             = useState(saved?.teams || INIT_TEAMS);
   const [orgUsers,setOrgUsers]       = useState(saved?.orgUsers || INIT_USERS);
-  // Keep UserPill (shared.jsx) in sync with real Supabase users
-  useEffect(() => { registerOrgUsers(orgUsers); }, [orgUsers]);
+  // Keep UserPill (shared.jsx) in sync with real Supabase users. Registered
+  // during render (like registerMasters below), not in an effect — an effect
+  // runs after the first paint, so every UserPill / userName() on the first
+  // render showed raw ids ("u_se") until something else re-rendered.
+  useMemo(() => { registerOrgUsers(orgUsers); }, [orgUsers]);
   // Keep PRODUCTS / PROD_MAP (constants.js) in sync with the live Masters catalog
   // so dropdowns app-wide reflect newly added/edited/deleted Product Lines.
   // NOTE: must run DURING render (useMemo), not in a post-commit useEffect.
@@ -397,6 +412,13 @@ export default function SmartCRM() {
       "WiseDox":      lookup("ritesh@hansinfomatic.com","ritesh.srivastava@hansinfomatic.com"),
       "WiseTrax":     lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
       "AMS":          lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
+      // The three AMS filing lines inherit the AMS owner above. The remaining
+      // catalogue products (WiseGSA, WiseStox, WiseFleet, WiseDo, BagTrack,
+      // WiseHRMS, CRM Expert, VMS) have no PM declared yet — their leads stay
+      // unrouted until an admin sets an owner in Masters → Product Catalogue.
+      "AMSOcean":     lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
+      "AMSAir":       lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
+      "AMSIGM":       lookup("lotak@hansinfomatic.com","lotak.mohapatra@hansinfomatic.com"),
     };
     let dirty = false;
     const next = catalog.map(p => {
@@ -444,6 +466,11 @@ export default function SmartCRM() {
       return (u.readStatus || {})[currentUser] !== "read";
     }).length;
   }, [updates, currentUser, orgUsers]);
+
+  // ── Derived: leave requests waiting for this user's approval (Calendar badge) ──
+  const leaveApprovalCount = useMemo(
+    () => currentUser ? pendingLeaveFor(currentUser, events || [], orgUsers || []).length : 0,
+    [currentUser, events, orgUsers]);
 
   // ── Role-scoped data visibility ──
   // Computes the set of user IDs whose records the current user may see.
@@ -841,7 +868,10 @@ export default function SmartCRM() {
   const visibleCallReports = useMemo(() => {
     const live = callReports.filter(cr => !cr.isDeleted);
     if (_globalRole) return live;
-    return live.filter(cr => cr.marketingPerson && _scopedIds.has(cr.marketingPerson));
+    // Anyone on the call counts — the logger or a participant. A tech lead
+    // who joined a sales exec's demo sees it on their own calendar even
+    // though the exec isn't in their reporting line.
+    return live.filter(cr => callPeople(cr).some(id => _scopedIds.has(id)));
   }, [callReports, _scopedIds, _globalRole]);
 
   const visibleAccounts    = useMemo(() => {
@@ -1284,7 +1314,9 @@ export default function SmartCRM() {
           setMasters(prev => ({ ...INIT_MASTERS, ...prev, ...remote.masters }));
         }
         if (Array.isArray(remote.catalog) && remote.catalog.length > 0) {
-          setCatalog(remote.catalog);
+          // Cloud is authoritative for the products it carries; seed products
+          // added since the org last saved are appended (mergeCatalogSeed).
+          setCatalog(mergeCatalogSeed(remote.catalog));
         }
         if (remote.aiConfig && Object.keys(remote.aiConfig).length > 0) {
           // Cloud is authoritative; merge over defaults so a newly added
@@ -1534,7 +1566,7 @@ export default function SmartCRM() {
         }
       }
       if (m && Object.keys(m).length > 0) setMasters(prev => ({ ...prev, ...m }));
-      if (Array.isArray(c) && c.length > 0) setCatalog(c);
+      if (Array.isArray(c) && c.length > 0) setCatalog(mergeCatalogSeed(c));
       if (ai && Object.keys(ai).length > 0) setAiConfig(prev => ({ ...DEFAULT_AI_CONFIG, ...prev, ...ai, features: { ...DEFAULT_AI_CONFIG.features, ...(ai.features || {}) } }));
     });
     return unsubscribe;
@@ -1821,7 +1853,9 @@ export default function SmartCRM() {
     const data = conversionData || {};
     // Build contact roles array from the contactRoles map
     const contactRoles = data.contactRoles ? Object.entries(data.contactRoles).filter(([,role]) => role).map(([contactId, role], i) => ({ contactId, role, isPrimary: i === 0 })) : [];
-    const primaryContact = contactRoles.find(r => r.isPrimary)?.contactId || data.primaryContactId || (lead.contactIds?.[0]) || "";
+    // let: the contact-creation block below may resolve/mint the person
+    // when the modal supplied none, so the initial activity links them too.
+    let primaryContact = contactRoles.find(r => r.isPrimary)?.contactId || data.primaryContactId || (lead.contactIds?.[0]) || "";
     // Generate opportunity ID: O# prefix derived from lead ID
     const oppId = lead.leadId
       ? `O${lead.leadId}`  // e.g. #FL-2026-001 -> O#FL-2026-001
@@ -1894,6 +1928,48 @@ export default function SmartCRM() {
       };
       setAccounts(p => [...p, newAcc]);
       newOpp.accountId = newAccId;
+    }
+    // ── Contact creation on conversion (Agents Phase 0) ──────────────
+    // Before this, converting a lead created an opp + account but let the
+    // person die on the lead: Priya's name/email/phone stayed on a record
+    // nobody revisits, and Account 360 opened with no people in it. If no
+    // CRM contact is linked yet and the lead carries a person, create one —
+    // deduping by email first so re-converting (keepLeadOpen flow) or a
+    // contact added meanwhile never produces twins.
+    if (!primaryContact && (lead.contact || "").trim() && (lead.email || lead.phone)) {
+      const leadEmail = (lead.email || "").trim().toLowerCase();
+      const existing = leadEmail
+        ? (contacts || []).find(c => !c.isDeleted && (c.email || "").trim().toLowerCase() === leadEmail)
+        : null;
+      if (existing) {
+        primaryContact = existing.id;
+        newOpp.primaryContactId = existing.id;
+        newOpp.contactRoles = [{ contactId: existing.id, role: "Primary", isPrimary: true }];
+        // Backfill the account link if the contact floated unattached.
+        if (!existing.accountId && newOpp.accountId) {
+          setContacts(p => p.map(c => c.id === existing.id ? { ...c, accountId: newOpp.accountId } : c));
+        }
+      } else {
+        const newContact = {
+          ...BLANK_CON,
+          id: `c${uid()}`,
+          name: lead.contact,
+          email: lead.email || "",
+          phone: lead.phone || "",
+          designation: lead.designation || "",
+          accountId: newOpp.accountId || "",
+          primary: true,
+          source: "Lead Conversion",
+          // The rep typed this address and worked the lead with it — that
+          // is real-world verification, unlike a bulk-imported address.
+          emailVerified: !!leadEmail,
+          linkedOpps: [newOpp.id],
+        };
+        setContacts(p => [...p, newContact]);
+        primaryContact = newContact.id;
+        newOpp.primaryContactId = newContact.id;
+        newOpp.contactRoles = [{ contactId: newContact.id, role: "Primary", isPrimary: true }];
+      }
     }
     // Assign the opportunity its own canonical number (OPP-YYYY-NNN — the
     // same scheme the Pipeline and bulk import use), generated against the
@@ -1970,7 +2046,9 @@ export default function SmartCRM() {
         `It became opportunity ${newOpp.oppId || ""} (est. ₹${newOpp.value || 0}L).`))]);
     }
     if (!data.keepLeadOpen) setPage("pipeline");
-  }, []);
+    // contacts: the dedupe-by-email read above must see the live list — with
+    // [] deps it saw the mount-time (empty) array and minted duplicates.
+  }, [contacts, currentUser]);
 
   // ── Opportunity-number backfill (runs on the LIVE opps state) ──
   // migrateState only numbers opps on the localStorage path; cloud
@@ -2647,9 +2725,9 @@ export default function SmartCRM() {
       <ToastContainer />
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={visibleTickets} leads={visibleLeads} collections={visibleCollections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount} canRestore={canRestore}/>
+        <Sidebar page={page} setPage={setPage} collapsed={collapsed} setCollapsed={setCollapsed} tickets={visibleTickets} leads={visibleLeads} collections={visibleCollections} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} customPermissions={customPermissions} myUnreadCount={myUnreadCount} canRestore={canRestore} leaveApprovals={leaveApprovalCount} mobileOpen={mobileNavOpen} onMobileClose={()=>setMobileNavOpen(false)}/>
         <div className="main">
-          <Header page={page} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={visibleUpdates} myUnreadCount={myUnreadCount} onSyncAll={_canSyncAll ? syncAllToCloud : undefined} syncing={syncingAll}/>
+          <Header page={page} onMenu={()=>setMobileNavOpen(true)} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} setPage={setPage} currentUser={currentUser} onLogout={logout} orgUsers={orgUsers} updates={visibleUpdates} myUnreadCount={myUnreadCount} onSyncAll={_canSyncAll ? syncAllToCloud : undefined} syncing={syncingAll}/>
           <div className="content" id="main-content" role="main">
             {(() => {
               // Read-only / insufficient-role banner. Mirrors the Supabase RLS
@@ -2669,7 +2747,7 @@ export default function SmartCRM() {
               );
             })()}
             {page==="dashboard"  && <Dashboard accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} setPage={setPage} orgUsers={orgUsers} currentUser={currentUser}/>}
-            {page==="leads"      && <Leads leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} opps={visibleOpps} setUpdates={setUpdates}/>}
+            {page==="leads"      && <Leads leadPrefill={leadPrefill} onLeadPrefillUsed={()=>setLeadPrefill(null)} leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} opps={visibleOpps} setUpdates={setUpdates}/>}
             {page==="accounts"   && <Accounts accounts={visibleAccounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={visibleContacts} setContacts={setContacts} tickets={visibleTickets} contracts={visibleContracts} collections={visibleCollections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="contacts"   && <Contacts contacts={visibleContacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={visibleAccounts} opps={visibleOpps} leads={visibleLeads} contracts={visibleContracts} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} canDelete={canDelete} currentUser={currentUser} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} setLeads={setLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} catalog={catalog} onDealWon={handleDealWon} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} aiConfig={aiConfig}/>}
@@ -2681,13 +2759,15 @@ export default function SmartCRM() {
             {page==="projects"   && <Projects projects={visibleProjects} setProjects={setProjects} accounts={visibleAccounts} opps={visibleOpps} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
             {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} masters={masters} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}
             {page.startsWith("quote-accept/") && <QuoteAcceptLanding quoteId={page.replace(/^quote-accept\//,"")} quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} contracts={contracts} setContracts={setContracts} setActivities={setActivities} currentUser={currentUser} onBack={()=>setPage("quotations")}/>}
-            {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
+            {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} holidays={masters.holidays} adminWorkTypes={masters.adminWorkTypes} onRequestEditAccess={requestEditAccess}/>}
             {page==="communications"&& <CommLog commLogs={visibleCommLogs} setCommLogs={setCommLogs} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} canDelete={canDelete} orgUsers={orgUsers} catalog={catalog} onRespondEditAccess={respondEditAccess} aiConfig={aiConfig} setActivities={setActivities}/>}
             {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} opps={visibleOpps} callReports={visibleCallReports} leads={visibleLeads} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete} masters={masters} canWrite={_canWriteTargets}/>}
             {page==="reports"    && <Reports accounts={visibleAccounts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} contacts={visibleContacts} contracts={visibleContracts} quotes={visibleQuotes} currentUser={currentUser} orgUsers={orgUsers} masters={masters}/>}
             {page==="myperf"     && <MyPerformance targets={visibleTargets} opps={visibleOpps} activities={visibleActivities} accounts={visibleAccounts} leads={visibleLeads} callReports={visibleCallReports} orgUsers={orgUsers} currentUser={currentUser} masters={masters}/>}
             {page==="dashboards" && <Dashboards accounts={visibleAccounts} opps={visibleOpps} projects={visibleProjects} contracts={visibleContracts} tickets={visibleTickets} quotes={visibleQuotes} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
             {page==="leadassign" && _canSeeLeadAssign && <LeadAssignment leads={visibleLeads} setLeads={setLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage} commLogs={commLogs} catalog={catalog} setActivities={setActivities} setUpdates={setUpdates}/>}
+            {page==="emailagent" && <EmailAgent accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} activities={visibleActivities} orgUsers={orgUsers} currentUser={currentUser}/>}
+            {page==="reengage" && <ReEngagement accounts={visibleAccounts} contacts={visibleContacts} orgUsers={orgUsers} currentUser={currentUser}/>}
             {page==="updates"    && <Updates updates={visibleUpdates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload} catalog={catalog} orgUsers={orgUsers} existingData={{ leads: visibleLeads, accounts: visibleAccounts, contacts: visibleContacts, collections: visibleCollections, tickets: visibleTickets, contracts: visibleContracts, invoices: visibleInvoices, opps: visibleOpps }}/>}
@@ -2716,7 +2796,7 @@ export default function SmartCRM() {
             ]}/>}
           </div>
         </div>
-        <QuickLogFAB accounts={accounts} contacts={contacts} opps={visibleOpps} leads={visibleLeads} orgUsers={orgUsers} currentUser={currentUser} callReports={visibleCallReports} setCallReports={setCallReports} activities={visibleActivities} setActivities={setActivities} masters={masters}/>
+        <QuickLogFAB accounts={accounts} contacts={contacts} opps={visibleOpps} leads={visibleLeads} orgUsers={orgUsers} currentUser={currentUser} callReports={visibleCallReports} setCallReports={setCallReports} activities={visibleActivities} setActivities={setActivities} masters={masters} setContacts={setContacts} setLeads={setLeads} setOpps={setOpps} aiConfig={aiConfig} onCreateLead={(prefill)=>{setLeadPrefill(prefill);setPage("leads");}}/>
         {/* Floating Help Button — always visible, bottom-left */}
         {page !== "help" && (
           <button className="help-fab" onClick={() => setPage("help")} title="Open Help & User Guide">

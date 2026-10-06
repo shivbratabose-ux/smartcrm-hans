@@ -891,7 +891,14 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
               </div>
             );
           })()}
-          <div className="form-row"><div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e=>{setForm(f=>({...f,email:lower(e.target.value)}));setFormErrors(e=>({...e,email:undefined}));}} placeholder="email@company.com" style={{textTransform:"lowercase",...(formErrors.email?{borderColor:"#DC2626"}:{})}}/><FormError error={formErrors.email}/></div><div className="form-group"><label>Phone</label><input value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="+91-98765-00000"/></div></div>
+          <div className="form-row"><div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e=>{setForm(f=>({...f,email:lower(e.target.value),emailVerified:false}));setFormErrors(e=>({...e,email:undefined}));}} placeholder="email@company.com" style={{textTransform:"lowercase",...(formErrors.email?{borderColor:"#DC2626"}:{})}}/><FormError error={formErrors.email}/></div><div className="form-group"><label>Phone</label><input value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="+91-98765-00000"/></div></div>
+          {/* Email consent pair — read by the AI agents' selection rules
+              (Phase 0). emailVerified auto-clears whenever the address is
+              edited, so a changed address needs fresh confirmation. */}
+          <div className="form-row">
+            <div className="form-group"><label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={!!form.emailVerified} onChange={e=>setForm(f=>({...f,emailVerified:e.target.checked}))} style={{width:"auto"}}/>Email verified (deliverable, correct person)</label></div>
+            <div className="form-group"><label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={!!form.emailOptOut} onChange={e=>setForm(f=>({...f,emailOptOut:e.target.checked}))} style={{width:"auto"}}/>Email opt-out (no automated emails)</label></div>
+          </div>
           <div className="form-group">
             <label>Departments (multi-select)</label>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>

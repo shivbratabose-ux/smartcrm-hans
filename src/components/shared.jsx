@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight, AlertTriangle, RotateCcw, Edit2, Trash2, Lock, Star, Users, TrendingUp, Phone, MessageSquare, Calendar, ArrowRightCircle, Clock, Plus } from "lucide-react";
 import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
+import { withDemoCallType, isDemoCall } from "../utils/teamSummary";
+import { relatedContacts } from "../utils/relatedContacts";
 import { fmt, uid, today, hasErrors } from "../utils/helpers";
 import { notify } from "../utils/toast";
 
@@ -12,6 +14,12 @@ function resolveUser(id) {
   if (!id) return null;
   return _liveUsers.find(u => u.id === id) || TEAM_MAP[id] || null;
 }
+// Display name for a user id, from the live Supabase users (TEAM_MAP is
+// empty in production, so `TEAM_MAP[id]?.name` shows raw ids).
+export function userName(id) { return resolveUser(id)?.name || id || ""; }
+// The full live user record ({ name, initials, email, role… }) or null.
+export function lookupUser(id) { return resolveUser(id); }
+const initialsOf = (u) => u?.initials || String(u?.name || "").split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 
 export function StatusBadge({status}) {
   const s = (status||"").toLowerCase().replace(/\s+/g,"-");
@@ -570,10 +578,10 @@ export function NotesThread({notes,onAdd,currentUser}) {
       {notes.length===0 && <div style={{color:"var(--text3)",fontSize:13,padding:"12px 0"}}>No notes yet. Add the first note below.</div>}
       <div className="notes-thread">
         {[...notes].sort((a,b)=>b.date.localeCompare(a.date)).map(n=>{
-          const u=TEAM_MAP[n.author];
+          const u=lookupUser(n.author);
           return (
             <div key={n.id} className="note-item">
-              <div className="note-av">{u?.initials||"?"}</div>
+              <div className="note-av">{initialsOf(u)}</div>
               <div className="note-bubble">
                 <div className="note-head">
                   <span className="note-author">{u?.name||"Unknown"}</span>
@@ -586,7 +594,7 @@ export function NotesThread({notes,onAdd,currentUser}) {
         })}
       </div>
       <div className="note-compose">
-        <div className="note-av" style={{marginTop:4}}>{TEAM_MAP[currentUser]?.initials||"?"}</div>
+        <div className="note-av" style={{marginTop:4}}>{initialsOf(lookupUser(currentUser))}</div>
         <div className="note-input-wrap">
           <textarea className="note-input" rows={2} placeholder="Add a note, update, or internal comment…"
             value={text} onChange={e=>setText(e.target.value)}
@@ -885,7 +893,7 @@ export function FilesList({files,onAdd,currentUser}) {
               <div className="file-name">{f.name}</div>
               <div className="file-meta">
                 <span>{f.type}</span><span>{f.size}</span>
-                <span>{TEAM_MAP[f.uploadedBy]?.name}</span><span>{fmt.date(f.date)}</span>
+                <span>{userName(f.uploadedBy)}</span><span>{fmt.date(f.date)}</span>
               </div>
             </div>
           </div>
@@ -1345,9 +1353,9 @@ const nowTime = () => {
   return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
 };
 
-export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUsers, masters, prefill = {} }) {
+export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUsers, masters, prefill = {}, leads = [] }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== "Inactive") : TEAM;
-  const callTypes = masters?.callTypes?.length ? masters.callTypes : CALL_TYPES;
+  const callTypes = withDemoCallType(masters?.callTypes?.length ? masters.callTypes : CALL_TYPES);
   const callSubjects = masters?.callSubjects?.length ? masters.callSubjects : CALL_OBJECTIVES;
   const [form, setForm] = useState({
     callType: "Telephone Call", objective: "General Followup", callDate: today, callTime: nowTime(),
@@ -1370,29 +1378,20 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
   // We deliberately do NOT fall through to "show every contact in the system"
   // — that's noise and was confusing users (#bugfix).
   const filteredContacts = useMemo(() => {
-    const all = contacts || [];
-    // Lead context — caller passed the lead's contactIds[] in prefill
-    if (form.leadId && Array.isArray(form.leadContactIds) && form.leadContactIds.length > 0) {
-      const idSet = new Set(form.leadContactIds);
-      return all.filter(c => idSet.has(c.id));
-    }
-    // Opp context — pull primary + secondary + any contact that has this opp in linkedOpps[]
-    if (form.oppId) {
-      const opp = (opps || []).find(o => o.id === form.oppId);
-      if (opp) {
-        const direct = new Set([opp.primaryContactId, ...(opp.secondaryContactIds || [])].filter(Boolean));
-        return all.filter(c => direct.has(c.id) || (c.linkedOpps || []).includes(form.oppId));
-      }
-    }
-    // Account context — every contact tagged to this account
-    if (form.accountId) {
-      return all.filter(c => c.accountId === form.accountId);
-    }
-    // No record context selected — show nothing rather than the entire org
-    // address book. Once the user picks an Account from the dropdown, this
-    // recomputes to that account's contacts.
-    return [];
-  }, [contacts, opps, form.leadId, form.leadContactIds, form.oppId, form.accountId]);
+    // Same rule as Quick Log (utils/relatedContacts): the picked account,
+    // lead and deal together decide the list. The lead is the full record
+    // when the caller passed `leads`, else a stub from the prefill ids.
+    const lead = form.leadId
+      ? ((leads || []).find(l => l.id === form.leadId) || { id: form.leadId, contactIds: form.leadContactIds || [] })
+      : null;
+    const scope = relatedContacts(contacts || [], {
+      account: (accounts || []).find(a => a.id === form.accountId) || null,
+      lead,
+      opp: (opps || []).find(o => o.id === form.oppId) || null,
+    });
+    // No record picked — show nothing rather than the whole address book.
+    return scope.scoped ? scope.contacts : [];
+  }, [contacts, accounts, opps, leads, form.leadId, form.leadContactIds, form.oppId, form.accountId]);
 
   const filteredOpps = useMemo(() =>
     form.accountId ? (opps || []).filter(o => o.accountId === form.accountId) : (opps || []),
@@ -1425,7 +1424,7 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
       <div className="form-row">
         <div className="form-group"><label>Call Type</label>
           <select value={form.callType} onChange={e => set("callType", e.target.value)}>
-            {callTypes.map(t => { const v = typeof t==="object"?t.name:t; return <option key={v} value={v}>{v}</option>; })}
+            {callTypes.map(v => <option key={v} value={v}>{v}</option>)}
           </select>
         </div>
         <div className="form-group"><label>Call Subject</label>
@@ -1498,7 +1497,12 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
 
       {/* Multi-select our participants */}
       <div className="form-group" style={{ marginBottom: 12 }}>
-        <label>Our Participants</label>
+        <label>{isDemoCall(form) ? "Who joined the demo?" : "Our Participants"}
+          {form.participantIds.length > 0 && <span style={{ fontSize: 10.5, color: "var(--text3)", fontWeight: 400, marginLeft: 6 }}>{form.participantIds.length} selected</span>}
+        </label>
+        <div style={{ fontSize: 10.5, color: "var(--text3)", margin: "-2px 0 4px" }}>
+          Everyone ticked gets this {isDemoCall(form) ? "demo" : "call"} on their calendar and in their own performance numbers.
+        </div>
         <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 4, background: "white" }}>
           {team.map(u => (
             <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>

@@ -221,6 +221,13 @@ export const CSS = `
     .list-with-aside > .lwa-aside { flex:1 1 100%; }
   }
   .tbl-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  /* Mirror of a DataGrid's horizontal scrollbar, pinned to the bottom of the
+     visible area while the table's own scrollbar is below the fold. */
+  .tbl-hbar { position:sticky; bottom:0; z-index:3; overflow-x:auto; overflow-y:hidden; height:16px;
+    background:var(--surface); border-top:1px solid var(--border); box-shadow:0 -2px 6px rgba(15,23,42,0.06); }
+  .tbl-hbar::-webkit-scrollbar { height:12px; }
+  .tbl-hbar::-webkit-scrollbar-thumb { background:#94A3B8; border-radius:6px; border:2px solid var(--surface); }
+  .tbl-hbar::-webkit-scrollbar-thumb:hover { background:#64748B; }
 
   /* ── TYPEAHEAD SELECT ──
      Drop-in replacement for static <select> + <option> filters and
@@ -863,4 +870,182 @@ export const CSS = `
   .bell-item:last-of-type { border-bottom:none; }
   .bell-panel-foot { padding:10px 16px; text-align:center; font-size:12px; color:var(--brand); font-weight:700; cursor:pointer; border-top:1px solid var(--border); transition:background 0.1s; }
   .bell-panel-foot:hover { background:var(--brand-bg); }
+
+  /* ════════════════════════════════════════════════════════════════════
+     PHONES — iOS Safari / Android Chrome (≤ 768px)
+     ────────────────────────────────────────────────────────────────────
+     Keep 768 in step with MOBILE_MAX in src/hooks/useIsMobile.js, which
+     switches the few behaviours CSS can't (sidebar drawer, header search).
+     • 100dvh, not 100vh: iOS Safari's 100vh includes the collapsing
+       address bar, which cut off the bottom of every screen.
+     • env(safe-area-inset-*): notch / home indicator (viewport-fit=cover).
+     • 16px form text: iOS zooms the page into any smaller input on focus.
+     ════════════════════════════════════════════════════════════════════ */
+  .sb-backdrop { display:none; }
+
+  /* ── Mobile record cards ──
+     Phones render Leads / Call Reports as cards instead of a wide table
+     (see LeadsCardList, CallReportCards). Only rendered when useIsMobile(). */
+  .m-cards { display:flex; flex-direction:column; gap:8px; padding:8px; background:var(--s2); }
+  .m-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 12px 10px; box-shadow:var(--sh-xs); }
+  .m-card.m-card-overdue { border-left:4px solid var(--red); }
+  .m-card.m-card-dup { border-left:4px solid #F59E0B; background:#FFFBF5; }
+  .m-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; cursor:pointer; }
+  .m-card-title { font-family:'Outfit',sans-serif; font-weight:700; font-size:15px; color:var(--brand); line-height:1.3; min-width:0; overflow-wrap:anywhere; }
+  .m-card-sub { font-size:11.5px; color:var(--text3); margin-top:2px; }
+  .m-card-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; font-size:13px; color:var(--text2); }
+  .m-card-notes { margin-top:8px; font-size:13px; color:var(--text2); line-height:1.45; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .m-card-link { display:inline-flex; align-items:center; gap:4px; color:var(--blue); font-weight:600; font-size:13px; text-decoration:none; padding:4px 0; }
+  .m-card-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; padding-top:8px; border-top:1px solid var(--border); flex-wrap:wrap; }
+  .m-card-when { font-size:12px; color:var(--text3); display:inline-flex; align-items:center; gap:4px; }
+  .m-card-when.late { color:var(--red); font-weight:700; }
+  .m-card-actions { display:flex; gap:2px; margin-left:auto; }
+  /* Generic cards (DataGrid on phones): label / value pairs, two per row. */
+  .m-card-fields { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px 12px; margin-top:10px; }
+  .m-card-field { min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .m-card-label { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text3); }
+  .m-card-value { font-size:13px; color:var(--text); min-width:0; overflow:hidden; text-overflow:ellipsis; overflow-wrap:anywhere; }
+  .m-card-value .u-pill { max-width:100%; }
+
+  @media (max-width: 768px) {
+    html, body { overscroll-behavior-y:none; }
+    body { min-height:100dvh; }
+    .app { height:100vh; height:100dvh; }
+
+    /* Sidebar → slide-out drawer */
+    .sb.sb-mobile {
+      position:fixed; top:0; bottom:0; left:0; z-index:1000;
+      width:min(86vw, 300px); height:100%;
+      transform:translateX(-102%); transition:transform 0.24s cubic-bezier(0.4,0,0.2,1);
+      box-shadow:0 0 40px rgba(0,0,0,0.35);
+      padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);
+    }
+    .sb.sb-mobile.sb-mobile-open { transform:none; }
+    .sb-backdrop { display:block; position:fixed; inset:0; background:rgba(13,31,45,0.45); z-index:999; animation:fadeIn 0.15s ease; }
+    .sb.sb-mobile .nav-item { padding:11px 12px; font-size:14.5px; }
+    .sb-close { width:34px; height:34px; }
+
+    /* Header */
+    .header { padding:0 8px; gap:4px; padding-top:env(safe-area-inset-top); height:calc(var(--header-h) + env(safe-area-inset-top)); position:relative; }
+    .hdr-page { font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hdr-actions { gap:2px; }
+    .hdr-search.hdr-search-hidden { display:none; }
+    .hdr-search.hdr-search-open {
+      position:absolute; left:8px; right:8px; bottom:8px; width:auto; z-index:5;
+      background:white; border-color:var(--brand); padding:6px 6px 6px 12px;
+    }
+    .search-dropdown { max-height:60vh; }
+    .bell-panel { position:fixed; left:8px; right:8px; width:auto; top:calc(var(--header-h) + env(safe-area-inset-top) + 4px); max-height:70vh; overflow-y:auto; }
+
+    /* Content */
+    .content { padding:12px 12px calc(88px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling:touch; }
+    .pg-head { flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+    .pg-title { font-size:18px; }
+    .pg-actions { flex-wrap:wrap; width:100%; gap:6px; }
+    .pg-actions > * { flex:1 1 auto; justify-content:center; }
+    .filter-bar { gap:6px; }
+    .filter-bar > * { flex:1 1 140px; min-width:0; }
+    .filter-bar > .ts-wrap.ts-filter { width:auto; }
+    .card { padding:14px; }
+
+    /* Grids collapse */
+    .kpi-grid { grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; }
+    .kpi { padding:12px; }
+    .kpi-val { font-size:21px; }
+    .dash-2col, .dash-3col { grid-template-columns:1fr; }
+    .form-row, .form-row.three { grid-template-columns:1fr; gap:10px; margin-bottom:10px; }
+
+    /* Inline grids. ~120 pages set gridTemplateColumns in JSX, which no class
+       can reach, so match the rendered style text. React writes each
+       declaration as "name: value;", so the trailing ";" makes these exact
+       (e.g. "1fr 1fr;" won't match "1fr 1fr 1fr;"). Deliberately NOT
+       touched: auto-fit/auto-fill (already responsive), "1fr auto…"
+       (label + button rows), px-width rows (table-like, they scroll) and the
+       7-column calendar grids.
+       1. Side-by-side page layouts → one column. */
+    :is(.content, .modal-body) :is(
+      [style*="grid-template-columns: 1fr 1fr;"], [style*="grid-template-columns: 2fr 1fr;"],
+      [style*="grid-template-columns: 1fr 2fr;"], [style*="grid-template-columns: 3fr 2fr;"],
+      [style*="grid-template-columns: 2fr 3fr;"], [style*="grid-template-columns: 1.5fr 1fr;"],
+      [style*="grid-template-columns: 1.2fr 0.8fr;"], [style*="grid-template-columns: 1fr 1fr 1fr;"],
+      [style*="grid-template-columns: 1fr 1.4fr 1fr;"], [style*="grid-template-columns: 1.4fr 1fr 1fr;"],
+      [style*="grid-template-columns: repeat(3,1fr);"], [style*="grid-template-columns: repeat(3, 1fr);"],
+      [style*="grid-template-columns: repeat(2,minmax(0,1fr));"]
+    ) { grid-template-columns:minmax(0,1fr) !important; }
+    /* 2. Stat-card rows (4–6 equal columns) → two columns. */
+    :is(.content, .modal-body) :is(
+      [style*="grid-template-columns: repeat(4,1fr);"], [style*="grid-template-columns: repeat(4, 1fr);"],
+      [style*="grid-template-columns: repeat(5,1fr);"], [style*="grid-template-columns: repeat(5, 1fr);"],
+      [style*="grid-template-columns: repeat(6,1fr);"], [style*="grid-template-columns: repeat(2,1fr);"],
+      [style*="grid-template-columns: 1fr 1fr 1fr 1fr;"], [style*="grid-template-columns: 1fr 1fr 1fr 1fr 1fr;"]
+    ) { grid-template-columns:repeat(2, minmax(0,1fr)) !important; }
+    /* Fixed-width side columns ("1fr 300px", "220px 1fr") stack too. */
+    :is(.content, .modal-body) :is(
+      [style*="grid-template-columns: 1fr 300px;"], [style*="grid-template-columns: 1fr 340px;"],
+      [style*="grid-template-columns: 220px 1fr;"]
+    ) { grid-template-columns:minmax(0,1fr) !important; }
+    /* Horizontal flex rows wrap instead of running off the screen. Items
+       only wrap when they don't fit, so short rows are unchanged. */
+    .content [style^="display: flex"]:not([style*="flex-direction: column"]):not([style*="nowrap"]) { flex-wrap:wrap; row-gap:6px; }
+    .pg-head > * { max-width:100%; min-width:0; }
+    .pg-head select, .filter-bar select { max-width:100%; }
+
+    /* Tab bars scroll sideways rather than wrap into a jumble. */
+    .act-tabs, .m-tabs, .m-group-tabs { flex-wrap:nowrap !important; overflow-x:auto; max-width:100%; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .act-tabs > *, .m-tabs > *, .m-group-tabs > * { flex-shrink:0; }
+
+    /* Two-pane pages stack. */
+    .help-layout, .upd-layout { flex-direction:column; min-height:0; }
+    .help-sidebar { width:100%; position:static; }
+    .upd-feed { width:100%; }
+    .list-with-aside > .lwa-main, .list-with-aside > .lwa-aside { flex:1 1 100%; }
+
+    /* Wide trees / editors scroll inside their box. */
+    .ht-tree, .ps-card { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    /* Grid children must be allowed to shrink below their content width. */
+    .content [style*="grid-template-columns"] > * { min-width:0; }
+
+    /* Header: Reports and Help are in the menu; keep the bar uncluttered. */
+    .hdr-desktop-only { display:none !important; }
+
+    /* Tables scroll sideways inside their card instead of squashing */
+    .card:has(> table), .card:has(> .tbl), .card:has(> div > table) { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .tbl th, .tbl td { white-space:nowrap; }
+    .tbl td { padding:10px 12px; }
+
+    /* Forms: 16px stops iOS zooming into the field on focus */
+    input, select, textarea, .ts-input { font-size:16px !important; }
+    .filter-select { font-size:16px; padding:8px 10px; }
+
+    /* Touch targets ≥ 40px */
+    .icon-btn { width:40px; height:40px; }
+    .btn { padding:10px 14px; }
+    .btn-sm { padding:8px 12px; }
+    .btn-xs { padding:6px 10px; }
+
+    /* Modals → full-screen sheets */
+    .overlay { padding:0; align-items:stretch; }
+    .modal, .modal-lg, .modal-xl, .modal.modal-floating {
+      max-width:100% !important; width:100% !important; max-height:none; height:100%;
+      border-radius:0; position:static !important; top:auto !important; left:auto !important;
+    }
+    .modal-head { padding:calc(12px + env(safe-area-inset-top)) 14px 0; }
+    .modal-title { font-size:15.5px; }
+    .modal-body { padding:14px; -webkit-overflow-scrolling:touch; }
+    .modal-foot { padding:10px 14px calc(10px + env(safe-area-inset-bottom)); flex-wrap:wrap; }
+    .modal-foot > .btn { flex:1 1 auto; justify-content:center; }
+    .modal-draggable .modal-head { cursor:default; }
+    .modal-draggable .modal-head .modal-title::before { display:none; }
+    .modal-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .modal-tab { white-space:nowrap; }
+
+    /* Floating buttons: Quick Log docks above the home indicator and steps
+       aside while a form is open; the help bubble goes (Help is in the menu). */
+    .qlog-fab { top:auto !important; left:auto !important; right:14px !important; bottom:calc(14px + env(safe-area-inset-bottom)) !important; }
+    body:has(.overlay) .qlog-fab { display:none; }
+    .help-fab { display:none !important; }
+
+    /* Login */
+    .login-wrap { min-height:100dvh; padding:16px; }
+  }
 `;

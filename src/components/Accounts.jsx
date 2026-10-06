@@ -547,7 +547,7 @@ function AccountsDataGrid({ rows, bulk, toggleSort, sortKey, sortDir, SortIcon, 
         <span className="tbl-link" onClick={() => setDetail(a)}>{a.name}</span>
         <div style={{fontSize:11,color:"var(--text3)"}}>
           {a.accountNo && <span style={{fontFamily:"'Courier New',monospace",marginRight:4}}>{a.accountNo}</span>}
-          {a.city}{a.hierarchyLevel !== "Parent Company" ? ` · ${a.hierarchyLevel}` : ""}
+          {a.city}{a.hierarchyLevel && a.hierarchyLevel !== "Parent Company" ? ` · ${a.hierarchyLevel}` : ""}
         </div>
       </>
     )},
@@ -878,7 +878,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
   // Type distribution
   const typeDistribution = useMemo(() => {
     const byType = {};
-    accounts.forEach(a => { byType[a.type] = (byType[a.type] || 0) + 1; });
+    accounts.forEach(a => { const k = a.type || "Not set"; byType[k] = (byType[k] || 0) + 1; });
     const COLORS = ["#1B6B5A","#3B82F6","#F59E0B","#8B5CF6","#EF4444","#0D9488","#D97706"];
     return Object.entries(byType).map(([name, value], i) => ({ name, value, color: COLORS[i % COLORS.length] })).sort((a, b) => b.value - a.value);
   }, [accounts]);
@@ -1192,7 +1192,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
                       <span className="tbl-link" onClick={() => setDetail(a)}>{a.name}</span>
                       <div style={{fontSize:11,color:"var(--text3)"}}>
                         {a.accountNo && <span style={{fontFamily:"'Courier New',monospace",marginRight:4}}>{a.accountNo}</span>}
-                        {a.city}{a.hierarchyLevel !== "Parent Company" ? ` · ${a.hierarchyLevel}` : ""}
+                        {a.city}{a.hierarchyLevel && a.hierarchyLevel !== "Parent Company" ? ` · ${a.hierarchyLevel}` : ""}
                       </div>
                     </td>
                     <td style={{fontSize:12}}>{a.type}</td>
@@ -1294,7 +1294,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
             <span style={{fontFamily:"'Courier New',monospace",fontSize:13,fontWeight:700,color:"var(--brand)"}}>{form.accountNo}</span>
             <span style={{fontSize:10,color:"var(--text3)",marginLeft:"auto"}}>Auto-generated</span>
           </div>}
-          <div className="form-row"><div className="form-group"><label>Account Name * <span style={{fontSize:10.5,color:"var(--text3)",fontWeight:400,letterSpacing:"0.3px",marginLeft:6}}>(ALL CAPS)</span></label><input value={form.name} onChange={e => {setForm(f => ({...f,name:upper(e.target.value)})); setFormErrors(e => ({...e,name:undefined}));}} placeholder="COMPANY NAME" style={{textTransform:"uppercase",...(formErrors.name?{borderColor:"#DC2626"}:{})}}/><FormError error={formErrors.name}/></div><div className="form-group"><label>Type</label><select value={form.type} onChange={e => setForm(f => ({...f,type:e.target.value}))}>{CUST_TYPES.map(t => <option key={t}>{t}</option>)}</select></div></div>
+          <div className="form-row"><div className="form-group"><label>Account Name * <span style={{fontSize:10.5,color:"var(--text3)",fontWeight:400,letterSpacing:"0.3px",marginLeft:6}}>(ALL CAPS)</span></label><input value={form.name} onChange={e => {setForm(f => ({...f,name:upper(e.target.value)})); setFormErrors(e => ({...e,name:undefined}));}} placeholder="COMPANY NAME" style={{textTransform:"uppercase",...(formErrors.name?{borderColor:"#DC2626"}:{})}}/><FormError error={formErrors.name}/></div><div className="form-group"><label>Type</label><select value={form.type} onChange={e => setForm(f => ({...f,type:e.target.value}))}><option value="">Select…</option>{CUST_TYPES.map(t => <option key={t}>{t}</option>)}</select></div></div>
           <div className="form-row"><div className="form-group"><label>Country</label><select value={form.country} onChange={e => setForm(f => ({...f,country:e.target.value}))}>{COUNTRIES.map(c => <option key={c}>{c}</option>)}</select></div><div className="form-group"><label>City</label><input value={form.city} onChange={e => setForm(f => ({...f,city:title(e.target.value)}))} placeholder="City" style={{textTransform:"capitalize"}}/></div></div>
           <div className="form-row">
             <div className="form-group">
@@ -1316,6 +1316,11 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           </div>
           {/* Legacy single-address input removed — managed via Address Book section below */}
           <div className="form-row"><div className="form-group"><label>Status</label><select value={form.status} onChange={e => setForm(f => ({...f,status:e.target.value}))}><option>Active</option><option>Prospect</option><option>Pending Approval</option><option>Inactive</option></select></div><div className="form-group"><label>Segment</label><select value={form.segment} onChange={e => setForm(f => ({...f,segment:e.target.value}))}>{["Enterprise","Mid-Market","SMB","Government","Association"].map(s => <option key={s}>{s}</option>)}</select></div></div>
+          {/* Account-wide contact block — read by the AI agents' selection
+              rules (Phase 0). Outranks per-contact settings: a "Yes" here
+              stops every automated follow-up for the whole account. */}
+          <div className="form-row"><div className="form-group"><label>Do Not Contact (automated follow-ups)</label><select value={form.doNotContact||"No"} onChange={e => setForm(f => ({...f,doNotContact:e.target.value, doNotContactReason: e.target.value==="No" ? "" : f.doNotContactReason}))}><option>No</option><option>Yes</option></select></div>
+          {form.doNotContact==="Yes" && <div className="form-group"><label>Reason</label><input value={form.doNotContactReason||""} onChange={e => setForm(f => ({...f,doNotContactReason:e.target.value}))} placeholder="e.g. customer requested, legal dispute, unresolved complaint"/></div>}</div>
           <div className="form-row"><div className="form-group"><label>ARR (₹L)</label><input type="number" min="0" value={form.arrRevenue} onChange={e => setForm(f => ({...f,arrRevenue:+e.target.value}))}/><FormError error={formErrors.arrRevenue}/></div><div className="form-group"><label>Potential (₹L)</label><input type="number" min="0" value={form.potential} onChange={e => setForm(f => ({...f,potential:+e.target.value}))}/><FormError error={formErrors.potential}/></div></div>
           <div className="form-row">
             <div className="form-group"><label>Website</label><input value={form.website} onChange={e => setForm(f => ({...f,website:lower(e.target.value)}))} placeholder="website.com" style={{textTransform:"lowercase"}}/></div>
