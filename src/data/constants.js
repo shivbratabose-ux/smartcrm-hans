@@ -284,6 +284,9 @@ export const LEAD_STAGES = [
 export const LEAD_STAGE_MAP = Object.fromEntries(LEAD_STAGES.map(s=>[s.id,s]));
 
 // ── Opportunity Phases & Stages ──
+// Demo pipeline for website demo requests (lead-intake). Separate from the
+// MQL/SQL/SAL lead stages, which drive the funnel, targets and ABP.
+export const DEMO_STATUSES = ["New","Assigned","Contacted","Qualified","Demo Scheduled","Demo Completed","Proposal Sent","Negotiation","Won","Lost","Nurture"];
 export const OPP_PHASES = ["Research","Evaluation","Development","Decision-Making","Implementation & Support","Suspended"];
 export const OPP_STAGES = [
   {id:"lead_identified",   name:"Lead Identified",         phase:"Research",         probability:10,  color:"#94A3B8"},
