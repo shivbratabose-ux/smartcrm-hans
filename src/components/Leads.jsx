@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, UserPlus, ChevronDown, ChevronUp, ShieldCheck, X, Save, Home, Warehouse, Upload, ChevronRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES, STAGES } from '../data/constants';
+import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, DEMO_STATUSES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES, STAGES } from '../data/constants';
 import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, toLocalISODate, parseLocalDate, validateStageGate, getScopedUserIds, upper, lower, title, isValidLeadId, canEditRecord, hasPendingAccessReq, withLeadAssignment, buildAssignmentActivity, isLeadAssigner, withAssignerBackfill, buildNotificationUpdate } from '../utils/helpers';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -993,7 +993,9 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
                 </div>
                 <div>
                   {editField("Product Interest", "product", "select", PRODUCTS)}
-                  {editField("Lead Source", "source", "select", LEAD_SOURCES.map(s => ({id:s, name:s})))}
+                  {/* Masters replaces LEAD_SOURCES at runtime; keep the lead's own value
+                      selectable (e.g. "Website" from the intake before Masters lists it). */}
+                  {editField("Lead Source", "source", "select", [...new Set([...LEAD_SOURCES, lead.source].filter(Boolean))].map(s => ({id:s, name:s})))}
                   {editField("Score", "score", "range")}
                   <button type="button" className="btn btn-sec btn-xs" style={{marginTop:2}}
                     title="Compute score from the sizing inputs (budget, volumes, staff, product scale)"
@@ -1038,6 +1040,31 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
                 )}
               </div>
             </div>
+
+            {/* Website enquiry — leads created by the lead-intake function from the
+                website's Book a demo / contact forms. Campaign fields are first touch:
+                the intake writes them once and never overwrites them. */}
+            {(lead.demoStatus || lead.websiteLeadRef || lead.utmSource || lead.landingPage) && (
+              <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid var(--border)",marginTop:16}}>
+                <div style={{fontSize:13,fontWeight:700,color:"var(--text1)",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+                  <Globe size={15} style={{color:"var(--brand)"}}/> Website enquiry
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 24px"}}>
+                  <div>
+                    {editField("Demo Status", "demoStatus", "select", DEMO_STATUSES.map(s => ({id:s, name:s})))}
+                    {infoRow("Website Reference", lead.websiteLeadRef)}
+                    {infoRow("Preferred Demo Time", [lead.preferredTime, lead.visitorTimezone && `(${lead.visitorTimezone})`].filter(Boolean).join(" "))}
+                    {infoRow("Marketing Consent", lead.marketingConsent ? `Yes${lead.marketingConsentAt ? ` · ${fmt.date(lead.marketingConsentAt)}` : ""}` : "No")}
+                  </div>
+                  <div>
+                    {infoRow("Campaign Source / Medium", [lead.utmSource, lead.utmMedium].filter(Boolean).join(" / "))}
+                    {infoRow("Campaign", lead.utmCampaign)}
+                    {infoRow("Landing Page", lead.landingPage)}
+                    {infoRow("Came From", lead.firstReferrer)}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Linked Account */}
             {linkedAccount && (
