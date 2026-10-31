@@ -109,6 +109,25 @@ export const INIT_PRODUCT_CATALOG = [
   { id:"WiseHRMS",     name:"HRMS",         color:"#4F46E5", bg:"#EEF2FF", desc:"Human Resource Management System",           modules:[] },
   { id:"CRMExpert",    name:"SmartCRM",     color:"#0D9488", bg:"#F0FDFA", desc:"Sales & Customer Relationship Management",   modules:[] },
   { id:"VMS",          name:"VMS",          color:"#65A30D", bg:"#F7FEE7", desc:"Vehicle / Visitor Management System",        modules:[] },
+  // Orbis One — freight forwarding & customs clearance. Plans are modules of
+  // type "Plan" so a lead / deal records which plan the customer wants
+  // (OrbisOne[Business]); pay-per-use services are "Add-on". Prices live in
+  // the quotation price book (OB01–OB18, src/data/quotationMasters.js).
+  { id:"OrbisOne",     name:"Orbis One",    color:"#BE185D", bg:"#FDF2F8", desc:"Freight Forwarding & Customs Clearance Platform",
+    modules:[
+      {id:"m_ob1", name:"Essential",    type:"Plan", desc:"₹2,999/user/month, min 5 users · jobs, AWB/BL/CAN/DO, normal EDI, billing & basic accounting, quotations, standard reports"},
+      {id:"m_ob2", name:"Professional", type:"Plan", desc:"₹3,299/user/month, min 5 users · Essential + advanced accounting"},
+      {id:"m_ob3", name:"Business",     type:"Plan", desc:"₹3,799/user/month, min 10 users · Professional + shipment planning, Quick Entry, Auto eSANCHIT, CB Saathi, CRM, event-based updates"},
+      {id:"m_ob4", name:"Enterprise",   type:"Plan", desc:"₹4,199/user/month, min 20 users · Business + CCR, PGA compliance, AI compliance & duty check, CENTCOM, Orbis360, WMS, Transport"},
+      {id:"m_ob11",name:"CB Saathi AI Document Reading", type:"Add-on", desc:"₹10 per page"},
+      {id:"m_ob12",name:"Additional Cloud Storage",      type:"Add-on", desc:"₹500 per GB / month above allowance"},
+      {id:"m_ob13",name:"e-Invoice Transmission",        type:"Add-on", desc:"₹4 per transmission to the GST portal"},
+      {id:"m_ob14",name:"Ocean Container Tracking",      type:"Add-on", desc:"₹85 per container"},
+      {id:"m_ob15",name:"eAWB Transmission",             type:"Add-on", desc:"₹80 per AWB"},
+      {id:"m_ob16",name:"Air Import Consol Filing",      type:"Add-on", desc:"₹35 per transmission"},
+      {id:"m_ob17",name:"Sea Import Consol Filing (SCMTR)", type:"Add-on", desc:"₹800 per transmission"},
+      {id:"m_ob18",name:"SEZ Filing Services",           type:"Add-on", desc:"₹500 per user"},
+    ]},
 ];
 
 // ── Product-catalogue backfill ────────────────────────────────────────
