@@ -310,5 +310,24 @@ checkJ("pay-per-use rates", ["OB11", "OB12", "OB13", "OB14", "OB15", "OB16", "OB
 check("every Orbis One row belongs to product OrbisOne", HANS_CATALOGUE.filter((p) => p.code.startsWith("OB")).every((p) => p.productId === "OrbisOne"), true);
 check("products without minQty are unchanged", computeLine({ pricingModel: "SaaS Subscription", qty: 3, months: 1, unitPriceResolved: 100 }).lineTotal, 300);
 
+// ── Orbis EDI (price book OE01–OE17) — every figure in the
+//    Orbis EDI Pricing and Feature Guide, 27 Oct 2026 ────────────────────
+console.log("\nOrbis EDI — guide figures");
+check("EDI Essential minimum ₹12,495 / month (5 × ₹2,499)", perMonth("OE01", 5), 12495);
+check("EDI Intelligent minimum ₹14,995 / month (5 × ₹2,999)", perMonth("OE02", 5), 14995);
+check("3 EDI users still bill the 5-user minimum", perMonth("OE01", 3), 12495);
+check("8 EDI Intelligent users bill actual users", perMonth("OE02", 8), 8 * 2999);
+check("installation minimum ₹35,000 (5 × ₹7,000), one-time", inst("OE05", 5).lineTotal, 35000);
+check("installation below 5 users still ₹35,000", inst("OE05", 2).lineTotal, 35000);
+check("installation for 9 committed users ₹63,000", inst("OE05", 9).lineTotal, 63000);
+check("installation is one-time (12 months entered, billed once)", inst("OE05", 5).isOneTime, true);
+check("EDI Essential first year: 12 × 12,495 + 35,000", firstYear("OE01", "OE05", 5), 12 * 12495 + 35000);
+check("SEZ add-on is recurring per user / month (5 users × 12 months)", computeLine(obLine("OE10", 5, 12)).lineTotal, 30000);
+check("SEZ add-on is not one-time", computeLine(obLine("OE10", 5, 12)).isOneTime, false);
+checkJ("pay-per-use rates", ["OE11", "OE12", "OE13", "OE14", "OE15", "OE16", "OE17"].map((c) => ob(c).listPrice), [10, 500, 4, 85, 80, 35, 800]);
+check("EDI guide sets no below-list approval rule: 5% stays within policy", evaluateDiscountGuardrail([obLine("OE01", 5, 12, 5)]).breached, false);
+check("…but the company 10% policy still applies", evaluateDiscountGuardrail([obLine("OE01", 5, 12, 15)]).breached, true);
+check("every Orbis EDI row belongs to product OrbisEDI", HANS_CATALOGUE.filter((p) => p.code.startsWith("OE")).every((p) => p.productId === "OrbisEDI"), true);
+
 console.log(`\n${fail === 0 ? "✅ ALL PASS" : "❌ FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

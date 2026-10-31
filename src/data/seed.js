@@ -128,6 +128,21 @@ export const INIT_PRODUCT_CATALOG = [
       {id:"m_ob17",name:"Sea Import Consol Filing (SCMTR)", type:"Add-on", desc:"₹800 per transmission"},
       {id:"m_ob18",name:"SEZ Filing Services",           type:"Add-on", desc:"₹500 per user"},
     ]},
+  // Orbis EDI — customs clearance EDI. Prices in the quotation price book
+  // (OE01–OE17, src/data/quotationMasters.js).
+  { id:"OrbisEDI",     name:"Orbis EDI",    color:"#0891B2", bg:"#ECFEFF", desc:"Customs Clearance EDI (Bill of Entry / Shipping Bill)",
+    modules:[
+      {id:"m_oe1", name:"EDI Essential",   type:"Plan", desc:"₹2,499/user/month, min 5 users · BoE & SB jobs, entry, checklists, filing & acknowledgement, standard EDI reports · 2 GB, 10 WhatsApp/mo"},
+      {id:"m_oe2", name:"EDI Intelligent", type:"Plan", desc:"₹2,999/user/month, min 5 users · Essential + Quick Entry, Auto eSANCHIT, IRN/DRN, Duty Calculator, CCR, PGA compliance, AI checks · 5 GB, 100 WhatsApp/mo"},
+      {id:"m_oe10",name:"SEZ Add-on",                    type:"Add-on", desc:"₹500 per user / month (EDI Intelligent only)"},
+      {id:"m_oe11",name:"CB Saathi AI Document Reading", type:"Add-on", desc:"₹10 per page"},
+      {id:"m_oe12",name:"Additional Cloud Storage",      type:"Add-on", desc:"₹500 per GB / month above allowance"},
+      {id:"m_oe13",name:"e-Invoice Transmission",        type:"Add-on", desc:"₹4 per transmission to the GST portal"},
+      {id:"m_oe14",name:"Ocean Container Tracking",      type:"Add-on", desc:"₹85 per container"},
+      {id:"m_oe15",name:"eAWB Transmission",             type:"Add-on", desc:"₹80 per AWB"},
+      {id:"m_oe16",name:"Air Import Consol Filing",      type:"Add-on", desc:"₹35 per transmission"},
+      {id:"m_oe17",name:"Sea Import Consol Filing (SCMTR)", type:"Add-on", desc:"₹800 per transmission"},
+    ]},
 ];
 
 // ── Product-catalogue backfill ────────────────────────────────────────
