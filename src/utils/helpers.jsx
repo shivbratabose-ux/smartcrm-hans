@@ -736,7 +736,11 @@ export const isGlobalRole = (userId, orgUsers) => {
 // for that module (everything else may write).
 const WRITE_DENIED_BY_MODULE = {
   accounts:    ["viewer", "support", "tech_lead"],
-  leads:       ["viewer", "support", "tech_lead"],
+  // Support roles may create their own leads (policy 3 Nov 2026); they then
+  // see only those (leads_read_support_scope_v1.sql). The DB already allowed
+  // it (leads_insert WITH CHECK true; leads_update owner-scoped) — this list
+  // only drove a misleading "Limited access" banner on the Leads page.
+  leads:       ["viewer"],
   collections: ["viewer", "support", "tech_lead"],
   opps:        ["viewer", "support"],
   quotes:      ["viewer", "support"],

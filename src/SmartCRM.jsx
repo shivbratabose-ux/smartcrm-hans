@@ -837,14 +837,18 @@ export default function SmartCRM() {
   // leads/opps are auto-routed to the product line manager above, so strict
   // scoping doesn't strand them; collections keep unowned rows visible so
   // finance-uploaded invoices that haven't been routed yet aren't hidden.
+  // Support roles are NOT exempt here (unlike accounts / tickets): the
+  // support team owns onboarded accounts, not the sales pipeline, so they see
+  // only leads they own or created (policy 3 Nov 2026). The DB enforces the
+  // same boundary — leads_read_support_scope_v1.sql.
   const visibleLeads = useMemo(() => {
     const live = leads.filter(l => !l.isDeleted);
-    if (_globalRole || _supportRole) return live;
+    if (_globalRole) return live;
     // Owner + hierarchy, PLUS assigner retention: whoever assigned/routed a
     // lead keeps READ visibility after handoff (incentives track it). Writes
     // stay owner-scoped via canEditRecord + RLS.
     return live.filter(l => (l.assignedTo && _scopedIds.has(l.assignedTo)) || isLeadAssigner(l, currentUser));
-  }, [leads, _scopedIds, _globalRole, _supportRole, currentUser]);
+  }, [leads, _scopedIds, _globalRole, currentUser]);
 
   const visibleOpps = useMemo(() => {
     const live = opps.filter(o => !o.isDeleted);
