@@ -1,16 +1,18 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 
 // Data & Utils
-import { INIT_USERS, PROD_MAP, STAGE_PROB, INIT_USER_PASSWORDS } from "./data/constants";
+import { INIT_USERS, PROD_MAP as STATIC_PROD_MAP, STAGE_PROB, INIT_USER_PASSWORDS } from "./data/constants";
 import {
   INIT_ACCOUNTS, INIT_CONTACTS, INIT_OPPS, INIT_ACTIVITIES,
   INIT_TICKETS, INIT_NOTES, INIT_FILES, INIT_MASTERS,
   INIT_PRODUCT_CATALOG, INIT_ORG, INIT_TEAMS,
   INIT_LEADS, INIT_CALL_REPORTS, INIT_CONTRACTS, INIT_COLLECTIONS, INIT_TARGETS,
-  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, INIT_UPDATES
+  INIT_QUOTES, INIT_COMM_LOGS, INIT_EVENTS, BLANK_LEAD, INIT_UPDATES, BLANK_ACC
 } from "./data/seed";
 import { loadState, saveState, ErrorBoundary, today, uid, getScopedUserIds, isGlobalRole } from "./utils/helpers";
 import { CSS } from "./styles";
+import { ProductsProvider } from "./contexts/ProductsContext";
+import { UsersProvider } from "./contexts/UsersContext";
 
 // Supabase integration
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
@@ -76,7 +78,7 @@ const clearSession = () => {
 // Backfills missing fields introduced in later schema versions
 // Bump DATA_VERSION whenever seed/schema changes to force a reset
 // ═══════════════════════════════════════════════════════════════════
-const DATA_VERSION = "v8";
+const DATA_VERSION = "v16";
 
 function migrateState(raw) {
   if (!raw) return null;
@@ -152,11 +154,14 @@ function migrateState(raw) {
     }));
   }
 
-  // ── 4. Accounts: ensure products is always an array ──
+  // ── 4. Accounts: backfill billing master fields + ensure products array ──
   if (Array.isArray(s.accounts)) {
     s.accounts = s.accounts.map(a => ({
+      ...BLANK_ACC,
       ...a,
       products: Array.isArray(a.products) ? a.products : (a.products ? [a.products] : []),
+      serviceSubscriptions: Array.isArray(a.serviceSubscriptions) ? a.serviceSubscriptions : [],
+      chargeMappings: Array.isArray(a.chargeMappings) ? a.chargeMappings : [],
     }));
   }
 
@@ -168,6 +173,24 @@ function migrateState(raw) {
   // ── 6. Updates: seed if missing ──
   if (!Array.isArray(s.updates)) {
     s.updates = INIT_UPDATES;
+  }
+
+  // ── 7. Masters: backfill new billing master keys ──
+  if (s.masters) {
+    const m = s.masters;
+    const ref = INIT_MASTERS;
+    for (const key of Object.keys(ref)) {
+      if (!Array.isArray(m[key])) m[key] = ref[key];
+    }
+    s.masters = m;
+  }
+
+  // ── 8. OrgUsers: backfill secondaryAssignments field ──
+  if (Array.isArray(s.orgUsers)) {
+    s.orgUsers = s.orgUsers.map(u => ({
+      secondaryAssignments: [],
+      ...u,
+    }));
   }
 
   return s;
@@ -528,7 +551,7 @@ export default function SmartCRM() {
     const newOpp = {
       id: uid(),
       oppId,
-      title: data.title || `${PROD_MAP[lead.product]?.name || lead.product} – ${lead.company}`,
+      title: data.title || `${(catalog.find(p=>p.id===lead.product)?.name || STATIC_PROD_MAP[lead.product]?.name || lead.product)} – ${lead.company}`,
       accountId: data.accountId || lead.accountId || "",
       products: data.selectedProducts?.length ? data.selectedProducts : [lead.product],
       stage: "Prospect",
@@ -711,10 +734,12 @@ export default function SmartCRM() {
   }, [accounts, contacts, leads]);
 
   if(!currentUser) return (
-    <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers} userPasswords={userPasswords}/></>
+    <><style dangerouslySetInnerHTML={{__html:CSS}}/><Login onLogin={login} orgUsers={orgUsers} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/></>
   );
 
   return (
+    <ProductsProvider catalog={catalog}>
+    <UsersProvider orgUsers={orgUsers}>
     <ErrorBoundary>
       <style dangerouslySetInnerHTML={{__html:CSS}}/>
       <a href="#main-content" className="skip-link">Skip to main content</a>
@@ -741,8 +766,8 @@ export default function SmartCRM() {
             {page==="updates"    && <Updates updates={updates} setUpdates={setUpdates} currentUser={currentUser} orgUsers={orgUsers}/>}
             {page==="help"       && <Help currentPage={page}/>}
             {page==="bulkupload" && <BulkUpload onUpload={handleBulkUpload}/>}
-            {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog}/>}
-            {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers}/>}
+            {page==="masters"    && <Masters masters={masters} setMasters={setMasters} catalog={catalog} setCatalog={setCatalog} teams={teams} setTeams={setTeams} org={org} setOrg={setOrg}/>}
+            {page==="org"        && <OrgHierarchy org={org} setOrg={setOrg} users={orgUsers} orgUsers={orgUsers} setOrgUsers={setOrgUsers} setTeams={setTeams}/>}
             {page==="team"       && <TeamUsers teams={teams} setTeams={setTeams} orgUsers={orgUsers} setOrgUsers={setOrgUsers} org={org} currentUser={currentUser} userPasswords={userPasswords} setUserPasswords={setUserPasswords} customPermissions={customPermissions} setCustomPermissions={setCustomPermissions}/>}
             {page==="profile"    && <Profile currentUser={currentUser} orgUsers={orgUsers} setOrgUsers={setOrgUsers} userPasswords={userPasswords} setUserPasswords={setUserPasswords}/>}
           </div>
@@ -759,5 +784,7 @@ export default function SmartCRM() {
         )}
       </div>
     </ErrorBoundary>
+    </UsersProvider>
+    </ProductsProvider>
   );
 }

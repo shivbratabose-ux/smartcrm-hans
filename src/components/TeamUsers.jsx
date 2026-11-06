@@ -1,10 +1,13 @@
 import { useState, useMemo } from "react";
 import { Plus, Edit2, Check, X, Trash2, Key, Eye, EyeOff, Copy, RefreshCw, Shield, AlertTriangle, Lock, Unlock, ChevronDown, ChevronRight, Users } from "lucide-react";
-import { PRODUCTS, PROD_MAP, TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS, hashPassword, DEMO_PW_HASH } from '../data/constants';
+import { TEAM_MAP, ROLES_HIERARCHY, ROLE_MAP, PERMISSIONS, INIT_USERS, DEMO_PW_HASH } from '../data/constants';
+import { verifyPassword, hashPassword } from '../lib/crypto';
+import { useProducts } from '../contexts/ProductsContext';
 import { uid, fmt, today } from '../utils/helpers';
 import { Modal, Confirm } from './shared';
 
 function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPasswords,setUserPasswords,customPermissions,setCustomPermissions}) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const [tab,setTab]=useState("teams");
   const [modal,setModal]=useState(null);
   const [form,setForm]=useState({});
@@ -63,22 +66,25 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
     return {label:"Excellent",color:"#16A34A",pct:100};
   };
 
-  // Save password
-  const savePassword=()=>{
+  // Save password (async — PBKDF2)
+  const [pwLoading,setPwLoading]=useState(false);
+  const savePassword=async()=>{
     setPwErr("");setPwSuccess("");
     const {password,confirm:confirmPw,current}=pwForm;
     // For change password, verify current
     if(pwModal.mode==="change"){
-      const currentHash=hashPassword(current);
+      setPwLoading(true);
       const storedHash=userPasswords?.[pwModal.userId]||DEMO_PW_HASH;
-      if(currentHash!==storedHash){setPwErr("Current password is incorrect.");return;}
+      const {match}=await verifyPassword(current,storedHash);
+      if(!match){setPwErr("Current password is incorrect.");setPwLoading(false);return;}
     }
     const errors=validatePassword(password);
-    if(errors.length>0){setPwErr(errors.join(". ")+".");return;}
-    if(password!==confirmPw){setPwErr("Passwords do not match.");return;}
-    const newHash=hashPassword(password);
+    if(errors.length>0){setPwErr(errors.join(". ")+".");setPwLoading(false);return;}
+    if(password!==confirmPw){setPwErr("Passwords do not match.");setPwLoading(false);return;}
+    setPwLoading(true);
+    const newHash=await hashPassword(password);
     setUserPasswords(prev=>({...prev,[pwModal.userId]:newHash}));
-    // Also update orgUsers CREDS-equivalent (email mapping) for dynamic users
+    setPwLoading(false);
     setPwSuccess("Password saved successfully!");
     setTimeout(()=>{setPwModal(null);setPwSuccess("");setPwForm({password:"",confirm:"",current:""});setShowPw({pw:false,confirm:false,current:false});setGeneratedPw("");},1500);
   };
@@ -86,20 +92,21 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
   // Reset to default
   const resetToDefault=(userId)=>{
     setUserPasswords(prev=>({...prev,[userId]:DEMO_PW_HASH}));
-    setPwSuccess("Password reset to default (hans@2026).");
+    setPwSuccess("Password reset to default.");
     setTimeout(()=>{setPwModal(null);setPwSuccess("");},1500);
   };
 
   const openAddUser=()=>setModal({mode:"adduser",form:{name:"",email:"",role:"sales_exec",lob:"iCAFFE",branchId:"br1",deptId:"dep1",initials:"",active:true,joinDate:today,password:"",confirmPassword:""}});
   const openEditUser=u=>{setForm({...u});setModal({mode:"edituser"});};
-  const saveUser=()=>{
+  const saveUser=async()=>{
     if(modal.mode==="adduser"){
       const f=modal.form;
       const newId=`u${uid()}`;
       const newUser={...f,id:newId,password:undefined,confirmPassword:undefined};
       setOrgUsers(p=>[...p,newUser]);
       if(f.password && f.password.length>=8){
-        setUserPasswords(prev=>({...prev,[newId]:hashPassword(f.password)}));
+        const newHash=await hashPassword(f.password);
+        setUserPasswords(prev=>({...prev,[newId]:newHash}));
       } else {
         setUserPasswords(prev=>({...prev,[newId]:DEMO_PW_HASH}));
       }
@@ -135,29 +142,49 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
   });
   const [editingManager,setEditingManager]=useState(null); // userId being edited
 
-  // Build reportsTo from org hierarchy: dept heads → division heads → company/market heads
+  // Build reportsTo from org hierarchy: market heads → division heads → dept heads → members
+  // Priority: market head (ROOT) > division head (→ market head) > dept head (→ division head) > member (→ dept head)
   const reportsToMap=useMemo(()=>{
     const rmap={};
-    // For each user, find their dept, then branch→division→head
+    // Pre-compute who is a market head, division head
+    const marketHeadIds=new Set(org.markets.map(m=>m.head).filter(Boolean));
+    const divHeadMap={}; // userId → division
+    org.divisions.forEach(d=>{ if(d.head) divHeadMap[d.head]=d; });
+
     orgUsers.forEach(u=>{
+      // 1. Market heads → ROOT (no entry in rmap)
+      if(marketHeadIds.has(u.id)) {
+        // ROOT — skip (unless user-set override)
+        if(u.reportsTo) rmap[u.id]=u.reportsTo;
+        return;
+      }
+      // 2. Division heads → report to market head
+      if(divHeadMap[u.id]){
+        const div=divHeadMap[u.id];
+        const company=org.companies.find(c=>c.id===div.companyId);
+        const market=company?org.markets.find(m=>m.id===company.marketId):null;
+        if(market&&market.head&&market.head!==u.id){
+          rmap[u.id]=market.head;
+        }
+        if(u.reportsTo) rmap[u.id]=u.reportsTo;
+        return;
+      }
+      // 3. Dept heads → report to division head
       const dept=org.departments.find(d=>d.id===u.deptId);
       const branch=dept?org.branches.find(b=>b.id===dept.branchId):null;
       const division=branch?org.divisions.find(d=>d.id===branch.divisionId):null;
-      // If user IS the dept head, they report to division head
-      if(dept&&dept.head===u.id&&division&&division.head&&division.head!==u.id){
-        rmap[u.id]=division.head;
+      if(dept&&dept.head===u.id){
+        if(division&&division.head&&division.head!==u.id){
+          rmap[u.id]=division.head;
+        }
+        if(u.reportsTo) rmap[u.id]=u.reportsTo;
+        return;
       }
-      // If user is NOT the dept head, they report to dept head
-      else if(dept&&dept.head&&dept.head!==u.id){
+      // 4. Regular members → report to dept head
+      if(dept&&dept.head&&dept.head!==u.id){
         rmap[u.id]=dept.head;
       }
-      // If user is division head, they report to market head (through company)
-      else if(division&&division.head===u.id){
-        const company=org.companies.find(c=>c.id===division.companyId);
-        const market=company?org.markets.find(m=>m.id===company.marketId):null;
-        if(market&&market.head&&market.head!==u.id) rmap[u.id]=market.head;
-      }
-      // Apply user-set overrides from orgUsers
+      // Apply user-set overrides
       if(u.reportsTo) rmap[u.id]=u.reportsTo;
     });
     return rmap;
@@ -287,7 +314,10 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
           <div className="team-grid">
             {teams.map(t=>{
               const prod=PROD_MAP[t.productId];
-              const lead=TEAM_MAP[t.lead]||orgUsers.find(u=>u.id===t.lead);
+              const findUser=(id)=>orgUsers.find(u=>u.id===id)||TEAM_MAP[id];
+              const lead=findUser(t.lead);
+              // Filter out members whose IDs don't resolve to any known user
+              const validMembers=t.members.filter(mid=>mid!==t.lead&&findUser(mid));
               return (
                 <div key={t.id} className="team-card">
                   <div className="team-card-head">
@@ -304,20 +334,19 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
                     </div>}
                   </div>
                   {lead&&(
-                    <div className="team-member-row" style={{background:"var(--brand-bg)",borderTop:"1px solid var(--brand-glow)"}}>
+                    <div className="team-member-row" style={{background:"var(--brand-bg)",borderTop:"1px solid var(--brand-glow)",opacity:lead.active===false?0.5:1}}>
                       <div className="u-av" style={{width:28,height:28,borderRadius:8,fontSize:10}}>{lead.initials}</div>
-                      <div style={{flex:1}}><div style={{fontSize:12.5,fontWeight:600,color:"var(--text)"}}>{lead.name}</div><div style={{fontSize:11,color:"var(--brand)"}}>Team Lead</div></div>
+                      <div style={{flex:1}}><div style={{fontSize:12.5,fontWeight:600,color:"var(--text)"}}>{lead.name}{lead.active===false&&<span style={{fontSize:10,color:"#EF4444",marginLeft:6}}>(Inactive)</span>}</div><div style={{fontSize:11,color:"var(--brand)"}}>Team Lead</div></div>
                     </div>
                   )}
-                  {t.members.filter(m=>m!==t.lead).map(mid=>{
-                    const u=TEAM_MAP[mid]||orgUsers.find(x=>x.id===mid);
-                    if(!u) return null;
-                    const userRole=INIT_USERS.find(x=>x.id===mid)?.role||orgUsers.find(x=>x.id===mid)?.role||"sales_exec";
+                  {validMembers.map(mid=>{
+                    const u=findUser(mid);
+                    const userRole=u?.role||"sales_exec";
                     const roleInfo=ROLE_MAP[userRole];
                     return (
                       <div key={mid} className="team-member-row">
                         <div className="u-av" style={{width:28,height:28,borderRadius:8,fontSize:10}}>{u.initials}</div>
-                        <div style={{flex:1}}><div style={{fontSize:12.5,fontWeight:500}}>{u.name}</div><div style={{fontSize:11,color:"var(--text3)"}}>{u.role||u.lob}</div></div>
+                        <div style={{flex:1}}><div style={{fontSize:12.5,fontWeight:500}}>{u.name}</div><div style={{fontSize:11,color:"var(--text3)"}}>{roleInfo?.name||u.lob}</div></div>
                         {roleInfo&&<span className="role-badge" style={{background:roleInfo.color+"18",color:roleInfo.color}}>{roleInfo.name}</span>}
                       </div>
                     );
@@ -511,7 +540,7 @@ function TeamUsers({teams,setTeams,orgUsers,setOrgUsers,org,currentUser,userPass
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
                       <Key size={15} style={{color:"#7C3AED"}}/>
                       <span style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>Set Login Password</span>
-                      <span style={{fontSize:11,color:"var(--text3)",marginLeft:"auto"}}>Leave blank for default (hans@2026)</span>
+                      <span style={{fontSize:11,color:"var(--text3)",marginLeft:"auto"}}>Leave blank for default password</span>
                     </div>
                     <div className="form-row">
                       <div className="form-group">

@@ -51,6 +51,11 @@ export const validateAccount = (f) => {
   if (!f.name?.trim()) errs.name = "Account name is required";
   if (f.arrRevenue < 0) errs.arrRevenue = "ARR cannot be negative";
   if (f.potential < 0) errs.potential = "Potential cannot be negative";
+  if (f.creditDays < 0) errs.creditDays = "Credit days cannot be negative";
+  if (f.creditLimit < 0) errs.creditLimit = "Credit limit cannot be negative";
+  if (f.billingContactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.billingContactEmail)) errs.billingContactEmail = "Invalid email";
+  if (f.financeContactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.financeContactEmail)) errs.financeContactEmail = "Invalid email";
+  if (f.griApplicable && f.griPercentage < 0) errs.griPercentage = "GRI % cannot be negative";
   return errs;
 };
 export const validateContact = (f) => {

@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from 'recharts';
 import { Activity, TrendingUp, TrendingDown, AlertCircle, Plus, Calendar, ChevronDown, Users, Target, Phone, FileText, IndianRupee, Filter } from 'lucide-react';
-import { PRODUCTS, PROD_MAP, STAGES, STAGE_PROB, TEAM, TEAM_MAP } from '../data/constants';
+import { STAGES, STAGE_PROB, TEAM, TEAM_MAP } from '../data/constants';
+import { useProducts } from '../contexts/ProductsContext';
 import { fmt, isFuture, isOverdue, today } from '../utils/helpers';
 import { StatusBadge, ProdTag, PriorityBadge, UserPill, PageTip } from './shared';
 
@@ -49,6 +50,7 @@ const FUNNEL_COLORS = { Prospect: "#94A3B8", Qualification: "#3B82F6", Proposal:
 
 /* ── Component ── */
 function Dashboard({ accounts, contacts, opps, tickets, activities, leads, callReports, collections, targets, setPage, orgUsers }) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const [rangeKey, setRangeKey] = useState("30d");
   const [showRangeMenu, setShowRangeMenu] = useState(false);
 

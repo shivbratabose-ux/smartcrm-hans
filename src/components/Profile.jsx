@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, X, Edit2, Key, Eye, EyeOff, User, Mail, Briefcase, MapPin, Calendar, Shield } from "lucide-react";
-import { ROLE_MAP, INIT_USERS, hashPassword } from '../data/constants';
+import { ROLE_MAP, INIT_USERS, DEMO_PW_HASH } from '../data/constants';
+import { verifyPassword, hashPassword } from '../lib/crypto';
 import { fmt } from '../utils/helpers';
 
 function Profile({currentUser,orgUsers,setOrgUsers,userPasswords,setUserPasswords}) {
@@ -28,13 +29,19 @@ function Profile({currentUser,orgUsers,setOrgUsers,userPasswords,setUserPassword
     setTimeout(()=>setSaveOk(""),3000);
   };
 
-  const changePw=()=>{
+  const [pwLoading,setPwLoading]=useState(false);
+  const changePw=async()=>{
     setPwErr("");setPwOk("");
     if(!pwForm.current){setPwErr("Current password is required");return;}
-    if(hashPassword(pwForm.current)!==userPasswords?.[currentUser]){setPwErr("Current password is incorrect");return;}
-    if(pwForm.password.length<8){setPwErr("New password must be at least 8 characters");return;}
-    if(pwForm.password!==pwForm.confirm){setPwErr("Passwords do not match");return;}
-    setUserPasswords(prev=>({...prev,[currentUser]:hashPassword(pwForm.password)}));
+    setPwLoading(true);
+    const storedHash=userPasswords?.[currentUser]??DEMO_PW_HASH;
+    const {match}=await verifyPassword(pwForm.current,storedHash);
+    if(!match){setPwErr("Current password is incorrect");setPwLoading(false);return;}
+    if(pwForm.password.length<8){setPwErr("New password must be at least 8 characters");setPwLoading(false);return;}
+    if(pwForm.password!==pwForm.confirm){setPwErr("Passwords do not match");setPwLoading(false);return;}
+    const newHash=await hashPassword(pwForm.password);
+    setUserPasswords(prev=>({...prev,[currentUser]:newHash}));
+    setPwLoading(false);
     setPwOk("Password changed successfully");
     setPwForm({current:"",password:"",confirm:""});
     setTimeout(()=>{setPwMode(false);setPwOk("");},2000);

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Phone, Mail, Video, MessageSquare, Globe, MapPin, Calendar, Clock, AlertCircle } from "lucide-react";
-import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, LEAD_STAGES, LEAD_STAGE_MAP } from '../data/constants';
+import { TEAM, TEAM_MAP, PROD_MAP as STATIC_PROD_MAP, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, LEAD_STAGES, LEAD_STAGE_MAP } from '../data/constants';
+import { useProducts } from '../contexts/ProductsContext';
 import { BLANK_CALL_REPORT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, getScopedUserIds } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
@@ -32,7 +33,7 @@ const CSV_COLS = [
   { label: "Person", accessor: r => TEAM_MAP[r.marketingPerson]?.name || r.marketingPerson },
   { label: "Stage", accessor: r => LEAD_STAGE_MAP[r.leadStage]?.name || r.leadStage },
   { label: "Call Type", accessor: r => r.callType },
-  { label: "Product", accessor: r => PROD_MAP[r.product]?.name || r.product },
+  { label: "Product", accessor: r => STATIC_PROD_MAP[r.product]?.name || r.product },
   { label: "Date", accessor: r => r.callDate },
   { label: "Notes", accessor: r => r.notes },
   { label: "Next Call", accessor: r => r.nextCallDate },
@@ -42,6 +43,7 @@ const CSV_COLS = [
 ];
 
 function CallReports({ callReports, setCallReports, accounts, contacts, opps, currentUser, orgUsers }) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const _crScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const team = useMemo(() => {
     const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;

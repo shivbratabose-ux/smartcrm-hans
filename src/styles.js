@@ -462,6 +462,12 @@ export const CSS = `
   .ht-btn-add:hover { color:var(--brand); }
   .ht-btn-del:hover { color:var(--red); }
   .ht-leaf .ht-row { padding-left:26px; }
+  .ht-row-division { border-radius:8px; margin:2px 0; }
+  .ht-secondary-row { display:flex; flex-wrap:wrap; gap:6px; padding:2px 10px 6px 42px; }
+  .ht-secondary-pill { display:inline-flex; align-items:center; gap:4px; font-size:10px; color:var(--text3); background:var(--surface); padding:2px 8px 2px 4px; border-radius:10px; border:1.5px dashed var(--text3); opacity:0.75; transition:opacity 0.15s; }
+  .ht-secondary-pill:hover { opacity:1; border-color:var(--brand); }
+  .ht-av-sec { width:16px; height:16px; border-radius:4px; background:var(--text3); color:white; font-size:7px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+  .ht-sec-label { font-size:9px; color:var(--text3); font-style:italic; margin-left:2px; padding-left:4px; border-left:1px solid var(--border); }
 
   /* ── TEAM HIERARCHY TREE ── */
   .th-tree { padding:16px 12px; }

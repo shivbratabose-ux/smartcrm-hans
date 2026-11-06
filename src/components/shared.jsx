@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { X, Send, FileText, Check, Paperclip, HelpCircle, Lightbulb, ChevronRight } from "lucide-react";
-import { PROD_MAP, TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
+import { TEAM_MAP, FILE_TYPES, TEAM, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES } from "../data/constants";
+import { useProducts } from '../contexts/ProductsContext';
+import { useUsers } from '../contexts/UsersContext';
 import { fmt, uid, today, hasErrors } from "../utils/helpers";
 
 export function StatusBadge({status}) {
@@ -21,12 +23,14 @@ export function PriorityBadge({priority}) {
   return <span className={`badge-pill ${cls}`}>{priority}</span>;
 }
 export function ProdTag({pid}) {
+  const { prodMap: PROD_MAP } = useProducts();
   const p=PROD_MAP[pid];
   if(!p) return <span className="badge-pill" style={{background:"#F3F5F7",color:"#4A6070"}}>{pid}</span>;
   return <span className="prod-tag" style={{background:p.bg,color:p.text}}>{p.name}</span>;
 }
 export function UserPill({uid:u}) {
-  const user=TEAM_MAP[u];
+  const { teamMap } = useUsers();
+  const user = teamMap[u] || TEAM_MAP[u];
   if(!user) return u ? <span className="u-pill"><span className="u-av" style={{background:"#94A3B8"}}>?</span><span className="u-name">{u}</span></span> : null;
   return <span className="u-pill"><span className="u-av">{user.initials}</span><span className="u-name">{user.name}</span></span>;
 }
@@ -134,6 +138,7 @@ export function PageTip({ id, title, text, link, linkLabel, onLink }) {
 // NOTES THREAD (reusable on Account/Opp detail)
 // ═══════════════════════════════════════════════════════════════════
 export function NotesThread({notes,onAdd,currentUser}) {
+  const { teamMap: _TM } = useUsers();
   const [text,setText] = useState("");
   const add = () => {
     if(!text.trim()) return;
@@ -145,7 +150,7 @@ export function NotesThread({notes,onAdd,currentUser}) {
       {notes.length===0 && <div style={{color:"var(--text3)",fontSize:13,padding:"12px 0"}}>No notes yet. Add the first note below.</div>}
       <div className="notes-thread">
         {[...notes].sort((a,b)=>b.date.localeCompare(a.date)).map(n=>{
-          const u=TEAM_MAP[n.author];
+          const u=_TM[n.author]||TEAM_MAP[n.author];
           return (
             <div key={n.id} className="note-item">
               <div className="note-av">{u?.initials||"?"}</div>
@@ -161,7 +166,7 @@ export function NotesThread({notes,onAdd,currentUser}) {
         })}
       </div>
       <div className="note-compose">
-        <div className="note-av" style={{marginTop:4}}>{TEAM_MAP[currentUser]?.initials||"?"}</div>
+        <div className="note-av" style={{marginTop:4}}>{(_TM[currentUser]||TEAM_MAP[currentUser])?.initials||"?"}</div>
         <div className="note-input-wrap">
           <textarea className="note-input" rows={2} placeholder="Add a note, update, or internal comment…"
             value={text} onChange={e=>setText(e.target.value)}
@@ -207,6 +212,7 @@ export function InlineContactForm({ accountId, onSave, onCancel }) {
 }
 
 export function FilesList({files,onAdd,currentUser}) {
+  const { teamMap: _TM } = useUsers();
   const [form,setForm] = useState({name:"",type:"PDF",size:""});
   const [adding,setAdding] = useState(false);
   const add = () => {

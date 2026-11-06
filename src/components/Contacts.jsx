@@ -2,7 +2,8 @@ import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, Users, Mail, Phone, Star, Building2, ArrowUpDown, ArrowUp, ArrowDown, Globe, Briefcase, Calendar, TrendingUp, FileText, Activity } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { uid, cmp, sanitizeObj, validateContact, hasErrors, fmt, today } from "../utils/helpers";
-import { PRODUCTS, PROD_MAP, COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
+import { COUNTRIES, CONTACT_DEPARTMENTS, TEAM_MAP } from '../data/constants';
+import { useProducts } from '../contexts/ProductsContext';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty } from "./shared";
 import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
@@ -172,6 +173,7 @@ function ContactDetail({ c, onClose, onEdit, accounts, opps=[], activities=[] })
 // CONTACTS PAGE
 // ═══════════════════════════════════════════════════════════════════
 function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], activities=[]}) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const [search, setSearch] = useState("");
   const [accF, setAccF] = useState("All");
   const [deptF, setDeptF] = useState("All");

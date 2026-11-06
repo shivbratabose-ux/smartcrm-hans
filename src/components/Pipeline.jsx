@@ -11,7 +11,7 @@ import {
   PieChart, Pie, Cell, Legend, CartesianGrid
 } from "recharts";
 import {
-  PRODUCTS, PROD_MAP, STAGES, STAGE_PROB, STAGE_COL, TEAM, TEAM_MAP,
+  STAGES, STAGE_PROB, STAGE_COL, TEAM, TEAM_MAP,
   COUNTRIES, OPP_SOURCES, HIERARCHY_LEVELS, FORECAST_CATS, OPP_SIZES,
   WIN_REASONS, LOSS_REASONS, SUSPEND_REASONS, ACT_TYPES, INIT_USERS,
   CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES
@@ -19,6 +19,7 @@ import {
 import { BLANK_OPP } from "../data/seed";
 import { uid, fmt, cmp, sanitizeObj, validateOpp, hasErrors, today, isOverdue, getScopedUserIds } from "../utils/helpers";
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip } from "./shared";
+import { useProducts } from '../contexts/ProductsContext';
 
 /* ───────── constants ───────── */
 const HEALTH_CFG = {
@@ -492,6 +493,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, notes, files,
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
 function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, onDealWon }) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const _pipelineScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const team = useMemo(() => {
     const all = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;

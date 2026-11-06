@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Mail, Lock, Eye, EyeOff, Shield, ChevronRight, UserPlus, LogIn, User, Briefcase, ArrowLeft } from "lucide-react";
-import { CREDS, hashPassword, DEMO_PW_HASH, TEAM, ROLES_HIERARCHY } from "../data/constants";
+import { CREDS, DEMO_PW_HASH, TEAM, ROLES_HIERARCHY } from "../data/constants";
+import { verifyPassword, hashPassword } from "../lib/crypto";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 
-function Login({onLogin, orgUsers, userPasswords}) {
+function Login({onLogin, orgUsers, userPasswords, setUserPasswords}) {
   const [mode,setMode] = useState("login"); // login | signup | forgot
   const [email,setEmail] = useState("");
   const [pass,setPass]   = useState("");
@@ -98,20 +99,26 @@ function Login({onLogin, orgUsers, userPasswords}) {
     setLoading(false);
   };
 
-  // ── localStorage fallback login ──
-  const handleLocalLogin = () => {
+  // ── localStorage fallback login (PBKDF2 verified) ──
+  const handleLocalLogin = async () => {
     if(attempts >= 5) { setErr("Too many failed attempts. Please wait and try again."); return; }
+    setLoading(true); setErr("");
     const emailLower = email.toLowerCase().trim();
     let uid = CREDS[emailLower];
     if(!uid && orgUsers) {
       const dynUser = orgUsers.find(u => u.email?.toLowerCase() === emailLower && u.active !== false);
       if(dynUser) uid = dynUser.id;
     }
-    if(!uid) { setErr("Email not found. Check your login email."); setAttempts(a=>a+1); return; }
-    const hashed = hashPassword(pass);
-    const expectedHash = userPasswords?.[uid] ?? DEMO_PW_HASH;
-    if(hashed !== expectedHash) { setErr("Incorrect password."); setAttempts(a=>a+1); return; }
-    setErr(""); setAttempts(0);
+    if(!uid) { setErr("Email not found. Check your login email."); setAttempts(a=>a+1); setLoading(false); return; }
+    const storedHash = userPasswords?.[uid] ?? DEMO_PW_HASH;
+    const { match, needsRehash } = await verifyPassword(pass, storedHash);
+    if(!match) { setErr("Incorrect password."); setAttempts(a=>a+1); setLoading(false); return; }
+    // Auto-upgrade legacy hashes to PBKDF2 on successful login
+    if(needsRehash && setUserPasswords) {
+      const newHash = await hashPassword(pass);
+      setUserPasswords(prev => ({...prev, [uid]: newHash}));
+    }
+    setErr(""); setAttempts(0); setLoading(false);
     onLogin(uid);
   };
 

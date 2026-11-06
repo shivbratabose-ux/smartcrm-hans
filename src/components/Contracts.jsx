@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, FileText, AlertTriangle, Calendar, ShieldCheck, Clock, AlertCircle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, BILL_TERMS, BILL_TYPES, CONTRACT_STATUSES, CONTRACT_DOC_TYPES } from '../data/constants';
+import { TEAM, TEAM_MAP, BILL_TERMS, BILL_TYPES, CONTRACT_STATUSES, CONTRACT_DOC_TYPES } from '../data/constants';
+import { useProducts } from '../contexts/ProductsContext';
 import { BLANK_CONTRACT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, StatusBadge } from './shared';
@@ -47,6 +48,7 @@ const timelineData = [
 ];
 
 function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers }) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search, setSearch] = useState("");
   const [statusF, setStatusF] = useState("All");

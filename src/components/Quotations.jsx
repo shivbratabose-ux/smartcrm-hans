@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity } from "lucide-react";
-import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS } from '../data/constants';
+import { TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS } from '../data/constants';
+import { useProducts } from '../contexts/ProductsContext';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty } from './shared';
@@ -74,6 +75,7 @@ const KpiCard = ({icon,label,value,sub}) => (
 );
 
 function Quotations({quotes,setQuotes,accounts,contacts,opps,currentUser,orgUsers}) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [search,setSearch]=useState("");
   const [statusF,setStatusF]=useState("All");

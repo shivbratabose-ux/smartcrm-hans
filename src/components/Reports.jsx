@@ -5,11 +5,12 @@ import {
   PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ComposedChart
 } from "recharts";
 import {
-  PRODUCTS, PROD_MAP, STAGES, STAGE_PROB, STAGE_COL, TEAM, TEAM_MAP,
+  STAGES, STAGE_PROB, STAGE_COL, TEAM, TEAM_MAP,
   PRIORITIES, LEAD_STAGES, CALL_TYPES, OPP_STAGES, OPP_STAGE_MAP,
   COUNTRIES, REGIONS, ACT_TYPES, CUST_TYPES, AGEING_BUCKETS,
   SLA_HOURS, TICKET_TYPES
 } from "../data/constants";
+import { useProducts } from '../contexts/ProductsContext';
 import { today, fmt, isOverdue } from "../utils/helpers";
 import { PageTip } from "./shared";
 import {
@@ -86,6 +87,7 @@ const Progress = ({value,max,color,height=6}) => (
 
 /* ═══════════════════════════════════════════════════════════════ */
 function Reports({accounts,opps,tickets,activities,leads,callReports,collections,targets,contacts,contracts,quotes,currentUser,orgUsers}) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const [tab,setTab]=useState("executive");
   const [periodFilter,setPeriodFilter]=useState("all");
   const [ownerFilter,setOwnerFilter]=useState("all");

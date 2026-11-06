@@ -25,25 +25,18 @@ export const FILE_TYPES   = ["PDF","Excel","Word","PPT","Image","CSV","Zip","Oth
 export const REGIONS      = ["South Asia","Africa","Middle East","Southeast Asia","Europe","Americas"];
 
 export const TEAM = [
-  {id:"u1",name:"Shivbrata Bose",  role:"BD Lead",      lob:"All",          country:"India",        initials:"SB", email:"shivbrata@hansinfomatic.com"},
-  {id:"u2",name:"Rahul Sharma",    role:"Sales Exec",   lob:"iCAFFE",       country:"India",        initials:"RS", email:"rahul@hansinfomatic.com"},
-  {id:"u3",name:"Priya Nair",      role:"Sales Exec",   lob:"WiseHandling", country:"India",        initials:"PN", email:"priya@hansinfomatic.com"},
-  {id:"u4",name:"Charles Isabirye",role:"Country Mgr",  lob:"All",          country:"South Africa", initials:"CI", email:"charles@hansinfomatic.com"},
-  {id:"u5",name:"Vikram Mehta",    role:"Line Mgr",     lob:"WiseCargo",    country:"India",        initials:"VM", email:"vikram@hansinfomatic.com"},
-  {id:"u6",name:"Aisha Patel",     role:"Sales Exec",   lob:"WiseDox",      country:"India",        initials:"AP", email:"aisha@hansinfomatic.com"},
-  {id:"u7",name:"Tanbir Ansari",   role:"Tech Lead",    lob:"All",          country:"India",        initials:"TA", email:"tanbir@hansinfomatic.com"},
-  {id:"u8",name:"Suresh Kumar",    role:"Support Engr", lob:"All",          country:"India",        initials:"SK", email:"suresh@hansinfomatic.com"},
+  {id:"u1", name:"Shivbrata Bose",       role:"Admin",       lob:"All",    country:"India", initials:"SB", email:"shivbrata.bose@hansinfomatic.com"},
+  {id:"u2", name:"Amit Mopari",          role:"Line Mgr",    lob:"iCAFFE", country:"India", initials:"AM", email:"amit@hansinfomatic.com"},
+  {id:"u3", name:"Rajesh Kumar",         role:"Tech Lead",   lob:"iCAFFE", country:"India", initials:"RK", email:"rajesh@hansinfomatic.com"},
+  {id:"u4", name:"Parvinder Singh",      role:"Managing Dir", lob:"All",   country:"India", initials:"PS", email:"hansinfo@hansinfomatic.com"},
+  {id:"u5", name:"Lalchand Prasad Pal",  role:"Sales Exec",  lob:"iCAFFE", country:"India", initials:"LP", email:"lalchand@hansinfomatic.com"},
+  {id:"u6", name:"Lotak Mohapatra",      role:"Line Mgr",    lob:"All",    country:"India", initials:"LM", email:"lotak@hansinfomatic.com"},
 ];
 export const TEAM_MAP = Object.fromEntries(TEAM.map(u=>[u.id,u]));
-// Password hashing — demo-grade (production should use bcrypt server-side)
-export const hashPassword = (pw) => {
-  let h = 0;
-  for (let i = 0; i < pw.length; i++) { h = ((h << 5) - h + pw.charCodeAt(i)) | 0; }
-  return h.toString(36);
-};
-export const DEMO_PW_HASH = hashPassword("hans@2026");
+// Pre-computed PBKDF2 hash for the default password (plaintext is NOT in the bundle)
+// Generated via: PBKDF2-SHA256, 100 000 iterations, 16-byte random salt
+export const DEMO_PW_HASH = "pbkdf2:nTEjA996BVoMexZ7FMfO7A==:SHbKmy/dfVZU6wXxVCs3W3yTECDpMb3as0k2jfIOKng=";
 // Per-user password store: { [userId]: hashedPassword }
-// Seeded with default password for all initial users
 export const INIT_USER_PASSWORDS = Object.fromEntries(TEAM.map(u=>[u.id, DEMO_PW_HASH]));
 export const CREDS = Object.fromEntries(TEAM.map(u=>[u.email, u.id]));
 
@@ -55,8 +48,13 @@ export const ROLES_HIERARCHY = [
   {id:"line_mgr",    name:"Line Manager",      level:4, color:"#D97706", desc:"Team oversight, reports, deals management"},
   {id:"country_mgr", name:"Country Manager",   level:5, color:"#16A34A", desc:"Country-scoped accounts, pipeline, activities"},
   {id:"bd_lead",     name:"BD Lead",           level:5, color:"#0D9488", desc:"Cross-LOB BD, full sales access"},
+  {id:"prod_mgr",    name:"Product Manager",   level:5, color:"#6366F1", desc:"Product strategy, roadmap, and design oversight"},
+  {id:"mktg_mgr",    name:"Marketing Manager", level:5, color:"#EA580C", desc:"Marketing campaigns, events, branding"},
+  {id:"kam_mgr",     name:"Key Account Mgr",   level:5, color:"#0891B2", desc:"Strategic account management and retention"},
+  {id:"impl_mgr",    name:"Implementation Mgr",level:5, color:"#059669", desc:"Client onboarding, training, and go-live"},
   {id:"sales_exec",  name:"Sales Executive",   level:6, color:"#64748B", desc:"Own accounts, contacts, pipeline, activities"},
   {id:"tech_lead",   name:"Tech Lead",         level:6, color:"#8B5CF6", desc:"Technical modules, tickets, integrations"},
+  {id:"qa_lead",     name:"QA Lead",           level:6, color:"#A855F7", desc:"Quality assurance, test automation oversight"},
   {id:"support",     name:"Support Engineer",  level:7, color:"#94A3B8", desc:"Tickets and account read access"},
   {id:"viewer",      name:"Viewer",            level:8, color:"#CBD5E1", desc:"Read-only across all modules"},
 ];
@@ -69,22 +67,28 @@ export const PERMISSIONS = {
   line_mgr:    {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:"r", org:"r", team:"r"},
   country_mgr: {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:false,org:"r", team:"r"},
   bd_lead:     {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:false,org:"r", team:"r"},
+  prod_mgr:    {accounts:"r", contacts:"r", pipeline:"r", activities:"r", tickets:"rw",reports:true,masters:"r", org:"r", team:"r"},
+  mktg_mgr:    {accounts:"rw",contacts:"rw",pipeline:"r", activities:"rw",tickets:"r", reports:true,masters:false,org:"r", team:"r"},
+  kam_mgr:     {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"rw",reports:true,masters:false,org:"r", team:"r"},
+  impl_mgr:    {accounts:"rw",contacts:"rw",pipeline:"r", activities:"rw",tickets:"rw",reports:true,masters:false,org:"r", team:"r"},
   sales_exec:  {accounts:"rw",contacts:"rw",pipeline:"rw",activities:"rw",tickets:"r", reports:false,masters:false,org:false,team:false},
   tech_lead:   {accounts:"r", contacts:"r", pipeline:"r", activities:"r", tickets:"rw",reports:true,masters:false,org:"r", team:"r"},
+  qa_lead:     {accounts:"r", contacts:"r", pipeline:false,activities:"r", tickets:"rw",reports:true,masters:false,org:"r", team:"r"},
   support:     {accounts:"r", contacts:"r", pipeline:false,activities:"r", tickets:"rw",reports:false,masters:false,org:false,team:false},
   viewer:      {accounts:"r", contacts:"r", pipeline:"r", activities:"r", tickets:"r", reports:false,masters:false,org:false,team:false},
 };
 
 // ── Extended Users with roles, branch, dept ──
 export const INIT_USERS = [
-  {id:"u1",name:"Shivbrata Bose",  email:"shivbrata@hansinfomatic.com",  initials:"SB",role:"bd_lead",    lob:"All",         branchId:"br1",deptId:"dep1",active:true,joinDate:"2022-04-01"},
-  {id:"u2",name:"Rahul Sharma",    email:"rahul@hansinfomatic.com",      initials:"RS",role:"sales_exec", lob:"iCAFFE",      branchId:"br1",deptId:"dep1",active:true,joinDate:"2023-06-15"},
-  {id:"u3",name:"Priya Nair",      email:"priya@hansinfomatic.com",      initials:"PN",role:"sales_exec", lob:"WiseHandling",branchId:"br2",deptId:"dep1",active:true,joinDate:"2023-08-01"},
-  {id:"u4",name:"Charles Isabirye",email:"charles@hansinfomatic.com",    initials:"CI",role:"country_mgr",lob:"All",         branchId:"br3",deptId:"dep4",active:true,joinDate:"2024-02-23"},
-  {id:"u5",name:"Vikram Mehta",    email:"vikram@hansinfomatic.com",     initials:"VM",role:"line_mgr",   lob:"WiseCargo",   branchId:"br1",deptId:"dep1",active:true,joinDate:"2022-09-01"},
-  {id:"u6",name:"Aisha Patel",     email:"aisha@hansinfomatic.com",      initials:"AP",role:"sales_exec", lob:"WiseDox",     branchId:"br1",deptId:"dep1",active:true,joinDate:"2024-01-10"},
-  {id:"u7",name:"Tanbir Ansari",   email:"tanbir@hansinfomatic.com",     initials:"TA",role:"tech_lead",  lob:"All",         branchId:"br1",deptId:"dep2",active:true,joinDate:"2021-11-01"},
-  {id:"u8",name:"Suresh Kumar",    email:"suresh@hansinfomatic.com",     initials:"SK",role:"support",    lob:"All",         branchId:"br1",deptId:"dep3",active:true,joinDate:"2023-03-20"},
+  {id:"u1", name:"Shivbrata Bose",       email:"shivbrata.bose@hansinfomatic.com", initials:"SB",role:"admin",     lob:"All",    branchId:"br1", deptId:"dep1", active:true,joinDate:"2022-04-01",
+    secondaryAssignments:[{branchId:"br13",deptId:"dep23",label:"UAE Oversight"},{branchId:"br17",deptId:"dep27",label:"EU Oversight"}]},
+  {id:"u2", name:"Amit Mopari",          email:"amit@hansinfomatic.com",           initials:"AM",role:"line_mgr",  lob:"iCAFFE", branchId:"br2", deptId:"dep3", active:true,joinDate:"2003-12-22"},
+  {id:"u3", name:"Rajesh Kumar",         email:"rajesh@hansinfomatic.com",          initials:"RK",role:"tech_lead", lob:"iCAFFE", branchId:"br11",deptId:"dep18",active:true,joinDate:"2003-02-20",
+    secondaryAssignments:[{branchId:"br10",deptId:"dep16",label:"Product Strategy Advisor"}]},
+  {id:"u4", name:"Parvinder Singh",      email:"hansinfo@hansinfomatic.com",        initials:"PS",role:"md",        lob:"All",    branchId:"br1", deptId:"dep1", active:true,joinDate:"2002-02-02"},
+  {id:"u5", name:"Lalchand Prasad Pal",  email:"lalchand@hansinfomatic.com",        initials:"LP",role:"sales_exec",lob:"iCAFFE", branchId:"br3", deptId:"dep5", active:true,joinDate:"2026-04-08"},
+  {id:"u6", name:"Lotak Mohapatra",      email:"lotak@hansinfomatic.com",           initials:"LM",role:"line_mgr",  lob:"All",    branchId:"br7", deptId:"dep11",active:true,joinDate:"2005-10-20",
+    secondaryAssignments:[{branchId:"br8",deptId:"dep13",label:"Support Oversight"},{branchId:"br15",deptId:"dep25",label:"Africa Oversight"}]},
 ];
 export const USERS_MAP = Object.fromEntries(INIT_USERS.map(u=>[u.id,u]));
 
@@ -300,3 +304,52 @@ export const PERMISSIONS_UPDATES = {
   canPost:      ["admin","md","director","line_mgr","country_mgr","bd_lead","tech_lead"],
   canManageAll: ["admin","md","director"],
 };
+
+// ══════════════════════════════════════════════════════════════
+// ACCOUNT BILLING MASTER — Dropdown/Reference Lists
+// ══════════════════════════════════════════════════════════════
+export const ACCOUNT_TYPES = ["Customer","Vendor","Both","Internal"];
+export const ACCOUNT_STATUSES = ["Active","Inactive","On Hold","Closed","Prospect"];
+export const ACCOUNT_LEVELS = ["Parent Company","Subsidiary","Branch","Division","Franchise / Partner Unit"];
+export const ENTITY_TYPES = ["Head Office","Branch Office","Sister Concern","Subsidiary","Franchise"];
+export const TAX_TREATMENTS = ["Domestic","Export","Exempt","SEZ"];
+export const RENEWAL_TYPES = ["Auto","Manual","Month-to-Month"];
+export const PAYMENT_TERMS_LIST = ["Advance","Immediate","Net 7","Net 15","Net 30","Net 45","Net 60"];
+export const BILLING_FREQUENCIES = ["Monthly","Quarterly","Half-Yearly","Annual","One-Time"];
+export const INVOICE_GEN_BASIS = ["Advance","Arrears","Consumption","Milestone","Hybrid"];
+export const DISCOUNT_TYPES = ["Flat","%","Volume"];
+export const GRI_TYPES = ["Fixed Percentage","Flat Amount Increase","CPI Linked","WPI Linked","Inflation Linked","Contract Renewal Based","Anniversary Based","Usage Slab Revision","Manual Commercial Review"];
+export const GRI_FREQUENCIES = ["Annual","Half-Yearly","Renewal-Based"];
+export const GRI_EFFECTIVE_BASIS = ["Contract Anniversary","Renewal Date","Financial Year"];
+export const SERVICE_CATEGORIES = ["SaaS","Annual Plan","One-Time Software Sale","Development / Customization","Transaction / Filing / Data Entry","Messaging","OCR / AI / API"];
+export const COMMERCIAL_MODELS = ["Monthly SaaS","Quarterly SaaS","Annual SaaS","Prepaid Annual Plan","Postpaid Annual Plan","One-Time Software Sale","Perpetual License","One-Time License + AMC","Fixed Cost Development","T&M Development","Milestone Billing","Per Transaction","Per Filing","Per Record","Per OCR Page","Per Document","Per API Call","Per AI Call","Per Message","Hybrid Commercial Model"];
+export const CHARGE_TYPES = ["Subscription","Usage","One-time","Adjustment"];
+export const UNIT_OF_MEASURES = ["User","Branch","Transaction","Filing","Record","Page","Message","API Call","AI Call","Document"];
+export const RATE_TYPES = ["Fixed","Slab","Tiered","Variable"];
+export const USAGE_SOURCES = ["API","System","Manual","Upload"];
+export const RECONCILIATION_METHODS = ["System","Manual","Joint review"];
+export const PRORATION_RULES = ["Daily","Pro-rata","Full month"];
+export const INVOICE_CONSOLIDATION_RULES = ["By Branch","By Service","By Parent"];
+export const LICENSE_TYPES = ["Named","Concurrent","Tenant","Branch"];
+export const PLAN_TYPES_ANNUAL = ["Prepaid","Postpaid","Annual Commitment"];
+export const SOFTWARE_SALE_TYPES = ["Perpetual","One-time license","On-premise"];
+export const LICENSE_OWNERSHIP_MODELS = ["Owned","Subscription-like","Enterprise buyout"];
+export const LICENSE_SCOPES = ["Company","Branch","Server","User","Site"];
+export const DEPLOYMENT_TYPES = ["Cloud","On-premise","Hybrid"];
+export const DELIVERY_TYPES = ["Soft delivery","Installation","Hosted setup"];
+export const DEV_PROJECT_TYPES = ["Fixed","T&M","Milestone"];
+export const REVENUE_RECOGNITION_BASIS = ["On delivery","On sign-off","Milestone"];
+export const BILLING_MILESTONE_BASIS = ["PO Received","UAT Sign-off","Go-Live","Milestone %"];
+export const CHANNEL_TYPES = ["SMS","Email","WhatsApp","Push"];
+export const MESSAGING_BILLING_BASIS = ["Sent","Delivered","Template"];
+export const OCR_AI_SERVICE_UNITS = ["Page","Document","API","AI Call"];
+export const CUSTOMER_TIERS = ["Enterprise","SME","Strategic"];
+export const BUSINESS_UNITS = ["SaaS","Software Development","Managed Services","Transaction Processing","Compliance Filing","OCR Services","AI Services","Messaging"];
+export const COLLECTION_BUCKETS = ["Low","Medium","High"];
+export const GRI_RULE_TYPES = ["Compound","Flat","Replace Rate"];
+export const BILLING_TIMINGS = ["Advance","Arrears"];
+export const ANNUAL_INVOICE_TYPES = ["Full annual","Split annual"];
+export const DEFERRED_REVENUE_METHODS = ["Monthly amortization","Straight line"];
+export const MID_TERM_UPGRADE_RULES = ["Pro-rata","Fresh annual","Differential"];
+export const AMC_BILLING_FREQUENCIES = ["Annual","Quarterly"];
+export const RENEWAL_INCREMENT_BASIS = ["Previous Contract Value","Per User","Flat Rate"];

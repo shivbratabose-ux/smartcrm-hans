@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { Plus, Edit2, Trash2, Check, Download, Target, TrendingUp, TrendingDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP } from '../data/constants';
+import { TEAM, TEAM_MAP } from '../data/constants';
+import { useProducts } from '../contexts/ProductsContext';
 import { BLANK_TARGET } from '../data/seed';
 import { uid, sanitizeObj, hasErrors } from '../utils/helpers';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
@@ -22,6 +23,7 @@ const CSV_COLS = [
 ];
 
 function Targets({ targets, setTargets, currentUser }) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const [periodF, setPeriodF] = useState("All");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK_TARGET);

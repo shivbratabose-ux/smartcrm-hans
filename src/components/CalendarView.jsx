@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Plus, Edit2, Trash2, Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin, Users, Phone, Video, Zap } from "lucide-react";
-import { PRODUCTS, TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES } from '../data/constants';
+import { TEAM, TEAM_MAP, EVENT_TYPES, EVENT_STATUSES } from '../data/constants';
+import { useProducts } from '../contexts/ProductsContext';
 import { BLANK_EVENT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors } from '../utils/helpers';
 import { UserPill, Modal, Confirm, FormError, Empty } from './shared';
@@ -11,6 +12,7 @@ const TYPE_ICON={"Call":<Phone size={12}/>,"Meeting":<Users size={12}/>,"Demo":<
 const STATUS_COL={"Scheduled":"#3B82F6","Completed":"#22C55E","Cancelled":"#94A3B8","Rescheduled":"#F59E0B","No Show":"#EF4444"};
 
 function CalendarView({events,setEvents,accounts,contacts,opps,currentUser,orgUsers}) {
+  const { products: PRODUCTS } = useProducts();
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
   const [viewDate,setViewDate]=useState(new Date(today));
   const [view,setView]=useState("week");

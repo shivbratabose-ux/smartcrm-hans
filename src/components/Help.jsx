@@ -658,7 +658,7 @@ const HELP_DATA = [
           {type:"list", items:[
             "Create new users with name, email, role, LOB, branch, department",
             "Deactivate a user to prevent login without deleting their records",
-            "Reset user passwords (all users default to hans@2026)",
+            "Reset user passwords to the organisation default",
             "View login history and last active dates",
           ]},
           {type:"heading", text:"Custom Permissions"},

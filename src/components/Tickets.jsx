@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Bug, Clock, AlertCircle, Download } from "lucide-react";
-import { PRODUCTS, PROD_MAP, TICKET_TYPES, TICKET_STATUSES, PRIORITIES, TEAM, TEAM_MAP } from '../data/constants';
+import { TICKET_TYPES, TICKET_STATUSES, PRIORITIES, TEAM, TEAM_MAP } from '../data/constants';
+import { useProducts } from '../contexts/ProductsContext';
 import { BLANK_TKT } from '../data/seed';
 import { uid, fmt, today, isOverdue, sanitizeObj, validateTicket, hasErrors } from '../utils/helpers';
 import { StatusBadge, PriorityBadge, ProdTag, UserPill, Modal, Confirm, FormError } from './shared';
@@ -9,6 +10,7 @@ import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 
 function Tickets({tickets,setTickets,accounts,orgUsers}) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const [tabS,setTabS]=useState("Open");
   const [search,setSearch]=useState("");

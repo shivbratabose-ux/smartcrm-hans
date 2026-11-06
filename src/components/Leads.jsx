@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, UserPlus, ChevronDown, ChevronUp, ShieldCheck, X, Save, Home, Warehouse, Upload, ChevronRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
+import { TEAM, TEAM_MAP, PROD_MAP as STATIC_PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES } from '../data/constants';
+import { useProducts } from '../contexts/ProductsContext';
 import { BLANK_LEAD } from '../data/seed';
 import { fmt, uid, cmp, sanitizeObj, hasErrors, today, validateStageGate, getScopedUserIds } from '../utils/helpers';
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, FormError, Empty, InlineContactForm, LogCallModal, PageTip } from './shared';
@@ -88,7 +89,7 @@ const CSV_COLS = [
   { label: "Contact", accessor: l => l.contact },
   { label: "Email", accessor: l => l.email },
   { label: "Phone", accessor: l => l.phone },
-  { label: "Product", accessor: l => PROD_MAP[l.product]?.name || l.product },
+  { label: "Product", accessor: l => STATIC_PROD_MAP[l.product]?.name || l.product },
   { label: "Vertical", accessor: l => l.vertical },
   { label: "Source", accessor: l => l.source },
   { label: "Stage", accessor: l => LEAD_STAGE_MAP[l.stage]?.name || l.stage },
@@ -136,6 +137,7 @@ const activityItem = (icon, title, desc, time) => (
 
 /* ── Lead Conversion Modal ── */
 function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUsers, setContacts }) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const gateResult = validateStageGate(lead, "Converted", STAGE_GATES);
   const [showGateDetails, setShowGateDetails] = useState(false);
@@ -393,6 +395,7 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
 }
 
 function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts, setLeads }) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -1372,6 +1375,7 @@ function LeadDetail({ lead, onClose, accounts, contacts, onConvertToOpp, onEdit,
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════════════════
 function Leads({ leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters }) {
+  const { products: PRODUCTS, prodMap: PROD_MAP } = useProducts();
   // Scope the team list to only users this logged-in user has visibility over.
   // This keeps owner filter and assignment dropdowns consistent with the scoped data.
   const _scopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
