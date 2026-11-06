@@ -338,9 +338,9 @@ function ActionSheet({ item, onClose }: { item: PlanItem; onClose: () => void })
           tone="danger"
           // Delete is intentionally disabled in this PR — needs a confirm
           // sheet of its own AND scoping by the existing delete-permission
-          // matrix on the web side. Ships in PR #108 alongside the People
+          // matrix on the web side. Ships in PR #109 alongside the People
           // tab's delete flows.
-          onPress={() => Alert.alert('Coming soon', 'Delete will ship in PR #108 with the same role-based confirm flow as the web app.')}
+          onPress={() => Alert.alert('Coming soon', 'Delete will ship in PR #109 with the same role-based confirm flow as the web app.')}
         />
       </View>
 
