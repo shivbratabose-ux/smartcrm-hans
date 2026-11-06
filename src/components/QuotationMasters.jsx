@@ -30,6 +30,7 @@ const CATALOGUE_CSV_COLS = [
   { key: "rateSource", label: "Rate source" },
   { key: "listPrice", label: "List price" }, { key: "costPrice", label: "Cost" },
   { key: "minMonthFloor", label: "Floor per month" },
+  { key: "minQty", label: "Min qty" }, { key: "maxDiscountPct", label: "Max discount %" },
   { key: "active", label: "Active", accessor: p => p.active !== false },
 ];
 
@@ -38,7 +39,7 @@ const CATALOGUE_CSV_COLS = [
 // always come from the seed/code, so new products and rate-source changes
 // ship without an admin reset; entered rates/overrides are preserved.
 const CATALOGUE_OVERLAY_FIELDS = [
-  "listPrice", "costPrice", "minMonthFloor", "active", "notes",
+  "listPrice", "costPrice", "minMonthFloor", "minQty", "maxDiscountPct", "active", "notes",
   "rateSchedule", "segmentPrices", "currencyPrices", "bandRates",
   "matrixId", "matrixRow", // rate-card attachment (Phase 2e)
   // Structural fields are now admin-editable too, so they overlay the seed.
@@ -66,8 +67,11 @@ function mergeCatalogue(saved, appCatalog) {
   const norm = (s) => (s || "").trim().toLowerCase();
   const have = new Set(merged.map(p => norm(p.name)));
   const haveCodes = new Set(merged.map(p => p.code));
+  // Products priced as a family of rows (e.g. Orbis One's plans, installation
+  // and add-ons all carry productId "OrbisOne") are already represented.
+  const haveProductIds = new Set(merged.map(p => p.productId).filter(Boolean));
   (appCatalog || []).forEach(ap => {
-    if (!ap || !ap.id || haveCodes.has(ap.id) || have.has(norm(ap.name))) return;
+    if (!ap || !ap.id || haveCodes.has(ap.id) || haveProductIds.has(ap.id) || have.has(norm(ap.name))) return;
     const base = {
       code: ap.id, name: ap.name || ap.id, module: ap.desc || "From Product Catalogue",
       pricingModel: "SaaS Subscription", unit: "User", listPrice: null,
@@ -138,6 +142,8 @@ export default function QuotationMasters({ masters, setMasters, catalog = [] }) 
         if ("List price" in r) out.listPrice = r["List price"].trim() === "" ? null : numOr(r["List price"], p.listPrice);
         if ("Cost" in r) out.costPrice = r["Cost"].trim() === "" ? null : numOr(r["Cost"], p.costPrice);
         if ("Floor per month" in r) out.minMonthFloor = r["Floor per month"].trim() === "" ? null : numOr(r["Floor per month"], p.minMonthFloor);
+        if ("Min qty" in r) out.minQty = r["Min qty"].trim() === "" ? null : numOr(r["Min qty"], p.minQty);
+        if ("Max discount %" in r) out.maxDiscountPct = r["Max discount %"].trim() === "" ? null : numOr(r["Max discount %"], p.maxDiscountPct);
         if ("Active" in r) out.active = !/^(false|no|0)$/i.test(r["Active"].trim());
         return out;
       });
@@ -398,10 +404,10 @@ export default function QuotationMasters({ masters, setMasters, catalog = [] }) 
               <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; importCatalogue(f); }} />
             </div>
           </div>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 760 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 900 }}>
             <thead>
               <tr style={{ background: "var(--s2)", textAlign: "left" }}>
-                {["Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Cost (₹)", "Floor/mo (₹)", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
+                {["Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Cost (₹)", "Floor/mo (₹)", "Min qty", "Max disc %", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -457,6 +463,12 @@ export default function QuotationMasters({ masters, setMasters, catalog = [] }) 
                     </td>
                     <td style={cell}>
                       <input style={numInput} type="number" value={p.minMonthFloor ?? ""} onChange={e => setCatRow(p.code, "minMonthFloor", numOrNull(e.target.value))} />
+                    </td>
+                    <td style={cell}>
+                      <input style={numInput} type="number" min={0} placeholder="—" title="Minimum committed quantity — quotes are billed on at least this many units" value={p.minQty ?? ""} onChange={e => setCatRow(p.code, "minQty", numOrNull(e.target.value))} />
+                    </td>
+                    <td style={cell}>
+                      <input style={numInput} type="number" min={0} max={100} placeholder="policy" title="Product discount cap. Blank = company policy; 0 = any discount needs approval" value={p.maxDiscountPct ?? ""} onChange={e => setCatRow(p.code, "maxDiscountPct", numOrNull(e.target.value))} />
                     </td>
                     <td style={cell}>
                       <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, color: st.c, background: st.bg, whiteSpace: "nowrap" }}>{st.label}</span>

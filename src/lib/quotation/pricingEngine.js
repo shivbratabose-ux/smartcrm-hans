@@ -217,9 +217,9 @@ export function resolveUnitPrice(product, opts = {}) {
  * Compute a single line's totals.
  *
  * @param {object} line  {
- *   pricingModel, unitPriceResolved, qty, months, discountPct, minMonthFloor
+ *   pricingModel, unitPriceResolved, qty, months, discountPct, minMonthFloor, minQty
  * }
- * @returns { isOneTime, effectiveMonths, grossPerPeriod, lineTotal,
+ * @returns { isOneTime, effectiveMonths, billedQty, minQtyApplied, grossPerPeriod, lineTotal,
  *            lineOneTime, lineRecurring }
  */
 export function computeLine(line) {
@@ -229,15 +229,22 @@ export function computeLine(line) {
   const effectiveMonths = oneTime ? 1 : months;
   const floor = hasFloor(pricingModel) ? num(line.minMonthFloor) : 0;
   const qty = num(line.qty);
+  // Minimum commitment (e.g. Orbis One plans: 5 / 10 / 20 users). Billed on
+  // max(qty, minQty) — a quote can never price below the committed minimum.
+  // No-op for products without minQty.
+  const minQty = num(line.minQty);
+  const billedQty = Math.max(qty, minQty);
   const unitPrice = num(line.unitPriceResolved);
   const discountPct = num(line.discountPct);
 
-  const grossPerPeriod = Math.max(qty * unitPrice, floor);
+  const grossPerPeriod = Math.max(billedQty * unitPrice, floor);
   const lineTotal = grossPerPeriod * effectiveMonths * (1 - discountPct / 100);
 
   return {
     isOneTime: oneTime,
     effectiveMonths,
+    billedQty,
+    minQtyApplied: billedQty > qty,
     grossPerPeriod,
     lineTotal,
     lineOneTime: oneTime ? lineTotal : 0,
@@ -318,11 +325,24 @@ export function computeQuote(lines = [], header = {}, config = QUOTE_CONFIG) {
  */
 export function evaluateDiscountGuardrail(lines = [], header = {}, config = QUOTE_CONFIG) {
   const cap = num(config.maxUserDiscountPct);
+  // A product can set a stricter cap (maxDiscountPct) than the company
+  // policy — Orbis One plans carry 0: any price below list needs approval.
+  const capOf = (l) => (l.maxDiscountPct == null || l.maxDiscountPct === "") ? cap : Math.min(cap, num(l.maxDiscountPct));
   const reasons = [];
-  const maxLine = lines.reduce((m, l) => Math.max(m, num(l.discountPct)), 0);
+  // Ordinary lines: one message for the largest breach (unchanged wording).
+  const maxLine = lines.filter(l => capOf(l) === cap).reduce((m, l) => Math.max(m, num(l.discountPct)), 0);
   if (maxLine > cap) reasons.push(`Line discount ${maxLine}% exceeds policy ${cap}%`);
+  // Lines with a stricter product cap: named, so the approver sees which.
+  for (const l of lines) {
+    const d = num(l.discountPct), c = capOf(l);
+    if (c < cap && d > c) reasons.push(c === 0
+      ? `${l.name || l.productCode || "Line"}: priced ${d}% below list — any discount needs management approval`
+      : `${l.name || l.productCode || "Line"}: discount ${d}% exceeds this product's cap ${c}%`);
+  }
+  // An overall discount applies to every line, so the strictest cap wins.
   const overall = num(header.overallDiscountPct);
-  if (overall > cap) reasons.push(`Overall discount ${overall}% exceeds policy ${cap}%`);
+  const strictest = lines.reduce((m, l) => Math.min(m, capOf(l)), cap);
+  if (overall > strictest) reasons.push(`Overall discount ${overall}% exceeds policy ${strictest}%`);
   return { breached: reasons.length > 0, reasons };
 }
 

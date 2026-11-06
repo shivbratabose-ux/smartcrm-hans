@@ -260,5 +260,74 @@ console.log("Extra: WiseHandling ≥ 3 modules + numbering");
   check("inclusive WH06 not flagged (explicit 0)", resolveUnitPrice(prod("WH06"), { qty: 1 }).missingRate, false);
 }
 
+// ── Orbis One (price book OB01–OB18) — every worked figure in the
+//    Orbis One Sales Pricing and Feature Guide, 27 Oct 2026 ─────────────
+console.log("\nOrbis One — guide figures");
+const ob = (code) => HANS_CATALOGUE.find((p) => p.code === code);
+// check() compares non-numbers with ===; arrays/objects go through JSON.
+const checkJ = (name, got, want) => check(name, JSON.stringify(got), JSON.stringify(want));
+// A quote line the way the builder feeds the engine.
+const obLine = (code, qty, months = 1, discountPct = 0) => {
+  const p = ob(code);
+  return { productCode: code, name: p.name, pricingModel: p.pricingModel, unit: p.unit, qty, months, discountPct,
+    unitPriceResolved: resolveUnitPrice(p, { qty }).unitPrice, minMonthFloor: p.minMonthFloor,
+    minQty: p.minQty, maxDiscountPct: p.maxDiscountPct };
+};
+const perMonth = (code, qty) => computeLine(obLine(code, qty)).lineTotal;
+// §1 basic price × minimum users = minimum per month
+check("Essential minimum ₹14,995 / month (5 × ₹2,999)", perMonth("OB01", 5), 14995);
+check("Professional minimum ₹16,495 / month", perMonth("OB02", 5), 16495);
+check("Business minimum ₹37,990 / month", perMonth("OB03", 10), 37990);
+check("Enterprise minimum ₹83,980 / month", perMonth("OB04", 20), 83980);
+// Minimum commitment enforced
+check("3 Essential users still bill the 5-user minimum", perMonth("OB01", 3), 14995);
+check("…and the line says the minimum applied", computeLine(obLine("OB01", 3)).minQtyApplied, true);
+check("above the minimum bills actual users", perMonth("OB01", 7), 7 * 2999);
+// §2 installation ₹8,000 per committed user, one-time
+const inst = (code, qty) => computeLine(obLine(code, qty, 12));
+checkJ("installation is one-time (months ignored)", [inst("OB05", 5).isOneTime, inst("OB05", 5).lineTotal], [true, 40000]);
+checkJ("installation minimums 40k / 40k / 80k / 1.6L", ["OB05", "OB06", "OB07", "OB08"].map((c) => inst(c, 1).lineTotal), [40000, 40000, 80000, 160000]);
+// §3 minimum first-year value = 12 × minimum month + installation
+const firstYear = (plan, instCode, users) => computeQuote([obLine(plan, users, 12), obLine(instCode, users, 1)], {}).subtotal;
+check("Essential first year ₹2,19,940", firstYear("OB01", "OB05", 5), 219940);
+check("Professional first year ₹2,37,940", firstYear("OB02", "OB06", 5), 237940);
+check("Business first year ₹5,35,880", firstYear("OB03", "OB07", 10), 535880);
+check("Enterprise first year ₹11,67,760", firstYear("OB04", "OB08", 20), 1167760);
+// §5 worked example: Business, 15 users
+check("§5 Business 15 users: ₹56,985 / month", perMonth("OB03", 15), 56985);
+check("§5 installation ₹1,20,000", inst("OB07", 15).lineTotal, 120000);
+check("§5 first-year total ₹8,03,820", firstYear("OB03", "OB07", 15), 803820);
+// §1 any price below list needs management approval; add-ons keep company policy
+check("1% off an Orbis One plan breaches (cap 0)", evaluateDiscountGuardrail([obLine("OB03", 10, 12, 1)]).breached, true);
+check("…and names the product", evaluateDiscountGuardrail([obLine("OB03", 10, 12, 1)]).reasons[0].startsWith("Orbis One Business"), true);
+check("list price on a plan is fine", evaluateDiscountGuardrail([obLine("OB03", 10, 12, 0)]).breached, false);
+check("overall discount on a quote with a plan breaches", evaluateDiscountGuardrail([obLine("OB03", 10)], { overallDiscountPct: 2 }).breached, true);
+check("5% on an add-on stays within company policy", evaluateDiscountGuardrail([obLine("OB14", 100, 1, 5)]).breached, false);
+check("other products keep the 10% policy (5% ok)", evaluateDiscountGuardrail([{ discountPct: 5 }]).breached, false);
+checkJ("other products: wording unchanged", evaluateDiscountGuardrail([{ discountPct: 15 }]).reasons, ["Line discount 15% exceeds policy 10%"]);
+// §7 pay-per-use rates
+checkJ("pay-per-use rates", ["OB11", "OB12", "OB13", "OB14", "OB15", "OB16", "OB17", "OB18"].map((c) => ob(c).listPrice), [10, 500, 4, 85, 80, 35, 800, 500]);
+check("every Orbis One row belongs to product OrbisOne", HANS_CATALOGUE.filter((p) => p.code.startsWith("OB")).every((p) => p.productId === "OrbisOne"), true);
+check("products without minQty are unchanged", computeLine({ pricingModel: "SaaS Subscription", qty: 3, months: 1, unitPriceResolved: 100 }).lineTotal, 300);
+
+// ── Orbis EDI (price book OE01–OE17) — every figure in the
+//    Orbis EDI Pricing and Feature Guide, 27 Oct 2026 ────────────────────
+console.log("\nOrbis EDI — guide figures");
+check("EDI Essential minimum ₹12,495 / month (5 × ₹2,499)", perMonth("OE01", 5), 12495);
+check("EDI Intelligent minimum ₹14,995 / month (5 × ₹2,999)", perMonth("OE02", 5), 14995);
+check("3 EDI users still bill the 5-user minimum", perMonth("OE01", 3), 12495);
+check("8 EDI Intelligent users bill actual users", perMonth("OE02", 8), 8 * 2999);
+check("installation minimum ₹35,000 (5 × ₹7,000), one-time", inst("OE05", 5).lineTotal, 35000);
+check("installation below 5 users still ₹35,000", inst("OE05", 2).lineTotal, 35000);
+check("installation for 9 committed users ₹63,000", inst("OE05", 9).lineTotal, 63000);
+check("installation is one-time (12 months entered, billed once)", inst("OE05", 5).isOneTime, true);
+check("EDI Essential first year: 12 × 12,495 + 35,000", firstYear("OE01", "OE05", 5), 12 * 12495 + 35000);
+check("SEZ add-on is recurring per user / month (5 users × 12 months)", computeLine(obLine("OE10", 5, 12)).lineTotal, 30000);
+check("SEZ add-on is not one-time", computeLine(obLine("OE10", 5, 12)).isOneTime, false);
+checkJ("pay-per-use rates", ["OE11", "OE12", "OE13", "OE14", "OE15", "OE16", "OE17"].map((c) => ob(c).listPrice), [10, 500, 4, 85, 80, 35, 800]);
+check("EDI guide sets no below-list approval rule: 5% stays within policy", evaluateDiscountGuardrail([obLine("OE01", 5, 12, 5)]).breached, false);
+check("…but the company 10% policy still applies", evaluateDiscountGuardrail([obLine("OE01", 5, 12, 15)]).breached, true);
+check("every Orbis EDI row belongs to product OrbisEDI", HANS_CATALOGUE.filter((p) => p.code.startsWith("OE")).every((p) => p.productId === "OrbisEDI"), true);
+
 console.log(`\n${fail === 0 ? "✅ ALL PASS" : "❌ FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

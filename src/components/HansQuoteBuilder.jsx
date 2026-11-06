@@ -226,13 +226,14 @@ export default function HansQuoteBuilder({
       ...l,
       productCode: p.code, name: p.name, module: p.module, description: p.description,
       pricingModel: p.pricingModel, unit: p.unit, minMonthFloor: p.minMonthFloor,
+      minQty: p.minQty, maxDiscountPct: p.maxDiscountPct,
       unitPriceResolved: unitPrice, missingRate,
       rateCardLabel: card ? card.label : null, tierLabel,
       // Per-unit cost (same scale as the resolved unit price) for the margin
       // guardrail — only present when the product has a cost in masters.
       costPerUnit: p.costPrice != null ? (Number(p.costPrice) || 0) / fxForCurrency : null,
       months: oneTime ? 1 : l.months,
-      ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor }),
+      ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty }),
     };
   }), [lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
 
@@ -559,7 +560,11 @@ export default function HansQuoteBuilder({
                   return (
                     <div key={i} style={{ padding: "7px 10px", borderTop: "1px solid var(--border)", background: l.missingRate ? "#FEF2F2" : "transparent" }}>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, alignItems: "center" }}>
-                        <select value={l.productCode} onChange={e => updateLine(i, { productCode: e.target.value })} style={{ ...fieldStyle, cursor: "pointer" }}>
+                        <select value={l.productCode} onChange={e => {
+                          // A product with a minimum commitment starts at that minimum.
+                          const min = Number(catByCode[e.target.value]?.minQty) || 0;
+                          updateLine(i, { productCode: e.target.value, ...(min > (Number(l.qty) || 0) ? { qty: min } : {}) });
+                        }} style={{ ...fieldStyle, cursor: "pointer" }}>
                           <option value="">— Pick product —</option>
                           {productGroups.general.length > 0 && (
                             <optgroup label="Catalogue">
@@ -572,9 +577,13 @@ export default function HansQuoteBuilder({
                             </optgroup>
                           ))}
                         </select>
-                        <input type="number" min={0} value={l.qty} onChange={e => updateLine(i, { qty: +e.target.value })} style={{ ...fieldStyle, textAlign: "right" }} />
+                        <input type="number" min={l.minQty || 0} value={l.qty} onChange={e => updateLine(i, { qty: +e.target.value })}
+                          onBlur={() => { if (l.minQty && (Number(l.qty) || 0) < l.minQty) updateLine(i, { qty: l.minQty }); }}
+                          title={l.minQty ? `Minimum ${l.minQty} ${String(l.unit || "unit").toLowerCase()}s` : ""}
+                          style={{ ...fieldStyle, textAlign: "right", border: (Number(l.qty) || 0) < (l.minQty || 0) ? "1.5px solid #DC2626" : fieldStyle.border }} />
                         <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })} style={{ ...fieldStyle, textAlign: "right", opacity: oneTime ? 0.5 : 1 }} />
-                        <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: +e.target.value })} style={{ ...fieldStyle, textAlign: "right", color: Number(l.discountPct) > config.maxUserDiscountPct ? "#DC2626" : "var(--text)", fontWeight: Number(l.discountPct) > config.maxUserDiscountPct ? 700 : 400 }} />
+                        <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: +e.target.value })} title={l.maxDiscountPct === 0 ? "Any discount on this product needs management approval" : ""}
+                          style={{ ...fieldStyle, textAlign: "right", color: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? "#DC2626" : "var(--text)", fontWeight: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? 700 : 400 }} />
                         <span style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, fontFamily: "'Outfit',sans-serif" }}>{l._empty ? "—" : inr(l.lineTotal)}</span>
                         <button className="icon-btn" onClick={() => removeLine(i)} title="Remove"><Trash2 size={13} /></button>
                       </div>
@@ -583,6 +592,8 @@ export default function HansQuoteBuilder({
                           <span>{l.module}</span>·<span>{l.pricingModel}</span>·<span>{bucketBadge(l.pricingModel)}</span>·
                           <span>{l.missingRate ? <span style={{ color: "#DC2626", fontWeight: 700 }}>Enter rate in master</span> : `unit ${inr2(l.unitPriceResolved)}/${l.unit}`}</span>
                           {l.minMonthFloor ? <span>· floor {inr(l.minMonthFloor)}/mo</span> : null}
+                          {l.minQty ? <span style={{ color: (Number(l.qty) || 0) < l.minQty ? "#DC2626" : undefined, fontWeight: (Number(l.qty) || 0) < l.minQty ? 700 : 400 }}>· minimum {l.minQty} {String(l.unit || "unit").toLowerCase()}s{(Number(l.qty) || 0) < l.minQty ? ` — billed for ${l.minQty}` : ""}</span> : null}
+                          {l.maxDiscountPct === 0 ? <span>· list price; discount needs approval</span> : null}
                           {l.rateCardLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.rateCardLabel}{l.tierLabel ? ` · tier ${l.tierLabel}` : ""}</span> : null}
                         </div>
                       )}
