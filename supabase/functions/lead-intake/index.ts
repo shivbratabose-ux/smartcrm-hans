@@ -36,6 +36,8 @@
 //
 // Secrets (supabase secrets set ...):
 //   LEAD_INTAKE_TOKEN     required — long random string, shared with Netlify
+//   LEAD_INTAKE_TOKEN_ORBISONE  optional — separate token for the OrbisOne website,
+//                         so either site's token can be replaced without the other
 //   INTAKE_DEFAULT_OWNER  optional — users.id that gets leads nothing else routes
 //   INTAKE_ALERT_TO       optional — e-mail address alerted when a lead has no owner
 //   The owner alert uses the Graph mail settings in ../_shared/graphMail.ts. With
@@ -72,10 +74,11 @@ const likeExact = (s: string) => s.replace(/[\\%_]/g, (m) => "\\" + m);
 serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  const expected = Deno.env.get("LEAD_INTAKE_TOKEN") || "";
-  if (expected.length < 24) return json({ error: "Intake not configured" }, 503);
+  const tokens = [Deno.env.get("LEAD_INTAKE_TOKEN"), Deno.env.get("LEAD_INTAKE_TOKEN_ORBISONE")]
+    .filter((t): t is string => (t || "").length >= 24);
+  if (!tokens.length) return json({ error: "Intake not configured" }, 503);
   const bearer = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
-  if (!safeEqual(bearer, expected)) return json({ error: "Unauthorized" }, 401);
+  if (!tokens.some((t) => safeEqual(bearer, t))) return json({ error: "Unauthorized" }, 401);
 
   const raw = await req.text();
   if (raw.length > 64_000) return json({ error: "Payload too large" }, 413);
