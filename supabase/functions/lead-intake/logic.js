@@ -19,7 +19,7 @@ export const normKey = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g
 // enquiries become ordinary leads; support and general questions are not
 // sales leads (Netlify still e-mails every submission to sales@).
 const DEMO_INTENT = "bookademo";
-const LEAD_INTENTS = { partnership: "Partnership enquiry", tenderorrfp: "Tender / RFP enquiry" };
+const LEAD_INTENTS = { partnership: "Partnership enquiry", tenderorrfp: "Tender / RFP enquiry", requestinformation: "Information request" };
 const SKIP_INTENTS = {
   customersupport: "Support request: handled by the support desk, not the sales pipeline.",
   somethingelse: "General enquiry (press, events, careers): not a sales lead.",
@@ -197,4 +197,26 @@ export function buildActivity({ p, cls, lead, product, repeat, id, now = new Dat
     account_id: lead.account_id || null,
     notes: lines.join("\n"),
   };
+}
+
+// ── The owner's instant e-mail alert ───────────────────────────────────
+// Everything here comes from a public form, so every value is escaped.
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+export function buildOwnerAlert({ p, cls, lead, product, repeat, leadNumber, unrouted = false }) {
+  const f = fieldsOf(p);
+  const what = cls.kind === "demo" ? "demo request" : cls.label.toLowerCase();
+  const who = String(p.name || "").trim() || lead.contact_name || lead.email;
+  const company = lead.company || String(p.company || "").trim();
+  const rows = [
+    ["Lead", leadNumber], ["Name", who], ["Company", company], ["Email", lead.email || p.email],
+    ["Phone", p.phone || lead.phone], ["Product", product ? product.name : p.product],
+    ["Details", f.note], ["Campaign", campaignFields(p).utm_campaign],
+  ].filter(([, v]) => String(v ?? "").trim());
+  const subject = `${unrouted ? "Unassigned " : ""}${repeat ? "repeat " : "new "}${what}: ${company || who}`
+    .replace(/[\r\n]+/g, " ").replace(/^./, (c) => c.toUpperCase()).slice(0, 150);
+  const html = `<p>${unrouted ? "This enquiry has no owner yet. Please assign it." : "A website enquiry has been assigned to you."} A call task is on today's plan.</p>`
+    + `<table cellpadding="4">${rows.map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(v)}</td></tr>`).join("")}</table>`
+    + `<p><a href="https://smartcrm-hans.vercel.app/">Open SmartCRM</a></p>`;
+  return { subject, html };
 }

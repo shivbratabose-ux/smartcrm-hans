@@ -32,10 +32,14 @@
 //      domain) → product's Line Manager (Masters → Catalogue) →
 //      INTAKE_DEFAULT_OWNER.
 //   5. Creates a planned Call for the owner, due today: the first-response task.
+//   6. E-mails the owner at once. A failed alert never fails the intake.
 //
 // Secrets (supabase secrets set ...):
 //   LEAD_INTAKE_TOKEN     required — long random string, shared with Netlify
 //   INTAKE_DEFAULT_OWNER  optional — users.id that gets leads nothing else routes
+//   INTAKE_ALERT_TO       optional — e-mail address alerted when a lead has no owner
+//   The owner alert uses the Graph mail settings in ../_shared/graphMail.ts. With
+//   those unset the alert is skipped; the lead and the call task are unaffected.
 //
 // Deploy:
 //   supabase functions deploy lead-intake --no-verify-jwt --project-ref kiiykerktkvfkzlyqtza
@@ -45,8 +49,9 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
   classify, matchProduct, emailDomain, isFreeMail,
-  buildNewLead, buildRepeatPatch, buildActivity,
+  buildNewLead, buildRepeatPatch, buildActivity, buildOwnerAlert,
 } from "./logic.js";
+import { mailConfigured, sendMail } from "../_shared/graphMail.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -102,6 +107,24 @@ serve(async (req) => {
     return json({ ok: outcome !== "error", outcome, reason, leadId, ...extra }, status);
   };
 
+  // Best effort: the lead and its task are already saved when this runs.
+  const alertOwner = async (a: { cls: any; lead: any; product: any; repeat: boolean; leadNumber: string }) => {
+    try {
+      if (!mailConfigured()) return;
+      let to = "";
+      if (a.lead.owner) {
+        const { data } = await admin.from("users").select("email").eq("id", a.lead.owner).maybeSingle();
+        to = data?.email || "";
+      }
+      const unrouted = !to;
+      if (!to) to = Deno.env.get("INTAKE_ALERT_TO") || "";
+      if (!to) return;
+      await sendMail({ to, replyTo: a.lead.email, ...buildOwnerAlert({ p, ...a, unrouted }) });
+    } catch (e: any) {
+      console.error("lead-intake: owner alert failed:", String(e?.message || e).slice(0, 200));
+    }
+  };
+
   try {
     // 2 ── Classify ───────────────────────────────────────────────────
     const cls = classify(p);
@@ -128,6 +151,7 @@ serve(async (req) => {
         if (error) throw new Error(`lead update: ${error.message}`);
       }
       await admin.from("activities").insert(buildActivity({ p, cls, lead: existing, product, repeat: true, id: rid("act"), now }));
+      await alertOwner({ cls, lead: existing, product, repeat: true, leadNumber: existing.lead_id });
       return await finish("updated", "Existing lead matched by e-mail.", existing.id, 200, { leadNumber: existing.lead_id });
     }
 
@@ -166,6 +190,7 @@ serve(async (req) => {
     const { error: insErr } = await admin.from("leads").insert(row);
     if (insErr) throw new Error(`lead insert: ${insErr.message}`);
     await admin.from("activities").insert(buildActivity({ p, cls, lead: row, product, repeat: false, id: rid("act"), now }));
+    await alertOwner({ cls, lead: row, product, repeat: false, leadNumber: leadNo });
     return await finish("created", `Routed to: ${routedBy}.`, row.id, 200, { leadNumber: leadNo });
   } catch (e: any) {
     // Netlify keeps the submission and sales@ has the e-mail, so nothing is lost.

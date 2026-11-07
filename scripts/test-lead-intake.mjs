@@ -5,7 +5,7 @@
 // Run: node scripts/test-lead-intake.mjs
 import {
   classify, matchProduct, companyFor, emailDomain, isFreeMail,
-  buildNewLead, buildRepeatPatch, buildActivity, fillEmpty, istParts,
+  buildNewLead, buildRepeatPatch, buildActivity, buildOwnerAlert, fillEmpty, istParts,
 } from "../supabase/functions/lead-intake/logic.js";
 
 let pass = 0, fail = 0;
@@ -133,6 +133,21 @@ check("notes carry message, time, reference", act.notes.split("\n"), [
 check("repeat enquiry is labelled", buildActivity({ p: payload(), cls, lead: existing, product: null, repeat: true, id: "a", now }).title.startsWith("Respond to repeat website demo request"), true);
 check("IST time of day", istParts(now).time, "09:30");
 check("IST date rolls over at local midnight", istParts(new Date("2026-10-11T19:00:00Z")).date, "2026-10-12");
+
+// Owner alert
+{
+  const orbis = payload({ source: "orbisone.in", product: "OrbisOne", name: "<b>Eve</b>", company: "Acme & Co" }, { intent: "Request information", note: "Role: Director" });
+  const c = classify(orbis);
+  check("Request information is an ordinary lead", [c.kind, c.label], ["lead", "Information request"]);
+  const lead = { email: "eve@acme.com", company: "ACME & CO", contact_name: "Eve", owner: "u1" };
+  const a = buildOwnerAlert({ p: orbis, cls: c, lead, product: { name: "Orbis One" }, repeat: false, leadNumber: "#FL-1" });
+  check("alert subject names the enquiry", a.subject, "New information request: ACME & CO");
+  check("alert escapes form text", [a.html.includes("<b>Eve"), a.html.includes("&lt;b&gt;Eve"), a.html.includes("ACME &amp; CO")], [false, true, true]);
+  check("alert carries the details", [a.html.includes("Role: Director"), a.html.includes("#FL-1"), a.html.includes("oct-wisecargo")], [true, true, true]);
+  const u = buildOwnerAlert({ p: payload(), cls: classify(payload()), lead: { ...lead, owner: null }, product: null, repeat: true, leadNumber: "#FL-2", unrouted: true });
+  check("unassigned repeat alert says so", [u.subject, u.html.includes("no owner yet")], ["Unassigned repeat demo request: ACME & CO", true]);
+  check("subject has no line breaks", buildOwnerAlert({ p: payload({ company: "" }), cls: classify(payload()), lead: { email: "a@b.co", company: "X\r\nBcc: y" }, product: null, repeat: false, leadNumber: "1" }).subject, "New demo request: X Bcc: y");
+}
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
