@@ -147,6 +147,21 @@ export function buildNewLead({ p, cls, product, owner, accountId, id, leadId, no
 }
 
 // ── Patch for a repeat enquiry on an existing lead ─────────────────────
+// Which earlier lead, if any, does this enquiry belong to? Only an open lead
+// for the same product. A lead for another product, or one already Converted
+// or marked NA, is a different sale: the enquiry becomes a new lead, so it
+// shows up in the list instead of disappearing into an old record.
+// `leads` are this e-mail's leads, oldest first; `product` is the catalogue
+// match for the enquiry (null when it names no known product).
+const CLOSED_STAGES = new Set(["converted", "na"]);
+export function pickRepeat(leads, product) {
+  const list = Array.isArray(leads) ? leads : [];
+  const keys = product ? [normKey(product.id), normKey(product.name)].filter(Boolean) : [];
+  const open = (l) => !CLOSED_STAGES.has(normKey(l.stage));
+  const same = (l) => !keys.length || !normKey(l.product) || keys.includes(normKey(l.product));
+  return list.find(l => open(l) && same(l)) || null;
+}
+
 // Campaign stays first touch. Consent can be granted, never silently
 // withdrawn here (opt-out comes from Mailchimp). A returning Lost / Nurture
 // demo lead goes back to Qualified with its history kept; a lead with no

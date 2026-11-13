@@ -51,7 +51,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
   classify, matchProduct, emailDomain, isFreeMail,
-  buildNewLead, buildRepeatPatch, buildActivity, buildOwnerAlert,
+  buildNewLead, buildRepeatPatch, buildActivity, buildOwnerAlert, pickRepeat,
 } from "./logic.js";
 import { mailConfigured, sendMail } from "../_shared/graphMail.ts";
 
@@ -142,10 +142,13 @@ serve(async (req) => {
 
     // 3 ── Repeat e-mail? ──────────────────────────────────────────────
     const { data: found } = await admin.from("leads")
-      .select("id, lead_id, owner, account_id, contact_name, email, demo_status, marketing_consent, phone, website_lead_ref, preferred_time, visitor_timezone, campaign_name, utm_source, utm_medium, utm_campaign, utm_content, utm_term, landing_page, first_referrer")
+      .select("id, lead_id, owner, account_id, contact_name, email, product, stage, demo_status, marketing_consent, phone, website_lead_ref, preferred_time, visitor_timezone, campaign_name, utm_source, utm_medium, utm_campaign, utm_content, utm_term, landing_page, first_referrer")
       .ilike("email", likeExact(email)).eq("is_deleted", false)
-      .order("created_date", { ascending: true }).limit(1);
-    const existing = found?.[0];
+      .order("created_date", { ascending: true }).limit(50);
+    // Only an open lead for the same product counts as a repeat (see pickRepeat).
+    const asked = product || matchProduct(p.product, settings?.catalog);
+    const existing = pickRepeat(found, asked);
+    const earlier = !existing && found?.length ? found[found.length - 1].lead_id : null;
 
     if (existing) {
       const patch = buildRepeatPatch({ existing, p, cls, now });
@@ -194,7 +197,8 @@ serve(async (req) => {
     if (insErr) throw new Error(`lead insert: ${insErr.message}`);
     await admin.from("activities").insert(buildActivity({ p, cls, lead: row, product, repeat: false, id: rid("act"), now }));
     await alertOwner({ cls, lead: row, product, repeat: false, leadNumber: leadNo });
-    return await finish("created", `Routed to: ${routedBy}.`, row.id, 200, { leadNumber: leadNo });
+    const why = earlier ? ` New lead: ${earlier} is for another product or already closed.` : "";
+    return await finish("created", `Routed to: ${routedBy}.${why}`, row.id, 200, { leadNumber: leadNo });
   } catch (e: any) {
     // Netlify keeps the submission and sales@ has the e-mail, so nothing is lost.
     return await finish("error", String(e?.message || e).slice(0, 500), null, 500);

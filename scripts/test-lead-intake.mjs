@@ -5,7 +5,7 @@
 // Run: node scripts/test-lead-intake.mjs
 import {
   classify, matchProduct, companyFor, emailDomain, isFreeMail,
-  buildNewLead, buildRepeatPatch, buildActivity, buildOwnerAlert, fillEmpty, istParts,
+  buildNewLead, buildRepeatPatch, buildActivity, buildOwnerAlert, fillEmpty, istParts, pickRepeat,
 } from "../supabase/functions/lead-intake/logic.js";
 
 let pass = 0, fail = 0;
@@ -147,6 +147,22 @@ check("IST date rolls over at local midnight", istParts(new Date("2026-10-11T19:
   const u = buildOwnerAlert({ p: payload(), cls: classify(payload()), lead: { ...lead, owner: null }, product: null, repeat: true, leadNumber: "#FL-2", unrouted: true });
   check("unassigned repeat alert says so", [u.subject, u.html.includes("no owner yet")], ["Unassigned repeat demo request: ACME & CO", true]);
   check("subject has no line breaks", buildOwnerAlert({ p: payload({ company: "" }), cls: classify(payload()), lead: { email: "a@b.co", company: "X\r\nBcc: y" }, product: null, repeat: false, leadNumber: "1" }).subject, "New demo request: X Bcc: y");
+}
+
+// Which earlier lead a website enquiry joins
+{
+  const orbis = { id: "orbisone", name: "OrbisOne" };
+  const old = { id: "l1", product: "iCAFFE", stage: "Converted" };
+  check("a converted lead for another product is not a repeat", pickRepeat([old], orbis), null);
+  check("an open lead for another product is not a repeat", pickRepeat([{ id: "l2", product: "WiseCargo", stage: "MQL" }], orbis), null);
+  check("a converted lead for the same product is not a repeat", pickRepeat([{ id: "l3", product: "OrbisOne", stage: "Converted" }], orbis), null);
+  check("a lead marked NA is not a repeat", pickRepeat([{ id: "l4", product: "OrbisOne", stage: "NA" }], orbis), null);
+  check("an open lead for the same product is the repeat", pickRepeat([old, { id: "l5", product: "Orbis One", stage: "SQL" }], orbis)?.id, "l5");
+  check("the product id matches as well as the name", pickRepeat([{ id: "l6", product: "orbisone", stage: "MQL" }], { id: "orbisone", name: "Orbis One Platform" })?.id, "l6");
+  check("the oldest matching open lead wins", pickRepeat([{ id: "a", product: "OrbisOne", stage: "MQL" }, { id: "b", product: "OrbisOne", stage: "SQL" }], orbis)?.id, "a");
+  check("an open lead with no product still joins", pickRepeat([{ id: "l7", product: null, stage: "MQL" }], orbis)?.id, "l7");
+  check("an enquiry with no known product joins any open lead", pickRepeat([old, { id: "l8", product: "WiseCargo", stage: "SAL" }], null)?.id, "l8");
+  check("no earlier leads", pickRepeat(null, orbis), null);
 }
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
