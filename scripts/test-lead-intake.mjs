@@ -163,6 +163,13 @@ check("IST date rolls over at local midnight", istParts(new Date("2026-10-11T19:
   check("an open lead with no product still joins", pickRepeat([{ id: "l7", product: null, stage: "MQL" }], orbis)?.id, "l7");
   check("an enquiry with no known product joins any open lead", pickRepeat([old, { id: "l8", product: "WiseCargo", stage: "SAL" }], null)?.id, "l8");
   check("no earlier leads", pickRepeat(null, orbis), null);
+  // Ordinary leads keep the website's product name, not the catalogue id.
+  const ams = matchProduct("AMS", CATALOG), annex = matchProduct("E-Annex Ultra", CATALOG);
+  check("a lead stored as the website name AMS is the repeat", pickRepeat([{ id: "w1", product: "AMS", stage: "MQL" }], ams, CATALOG)?.id, "w1");
+  check("a lead stored as E-Annex Ultra is the repeat (alias)", pickRepeat([{ id: "w2", product: "E-Annex Ultra", stage: "SQL" }], annex, CATALOG)?.id, "w2");
+  check("a website name for another product is still not a repeat", pickRepeat([{ id: "w3", product: "E-Annex Ultra", stage: "MQL" }], ams, CATALOG), null);
+  check("an unknown stored product is not a repeat", pickRepeat([{ id: "w4", product: "WiseFleet", stage: "MQL" }], ams, CATALOG), null);
+  check("no catalogue falls back to the plain comparison", pickRepeat([{ id: "w5", product: "AMSOcean", stage: "MQL" }], ams, undefined)?.id, "w5");
 }
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);

@@ -147,7 +147,7 @@ serve(async (req) => {
       .order("created_date", { ascending: true }).limit(50);
     // Only an open lead for the same product counts as a repeat (see pickRepeat).
     const asked = product || matchProduct(p.product, settings?.catalog);
-    const existing = pickRepeat(found, asked);
+    const existing = pickRepeat(found, asked, settings?.catalog);
     const earlier = !existing && found?.length ? found[found.length - 1].lead_id : null;
 
     if (existing) {

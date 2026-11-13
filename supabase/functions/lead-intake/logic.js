@@ -153,12 +153,20 @@ export function buildNewLead({ p, cls, product, owner, accountId, id, leadId, no
 // shows up in the list instead of disappearing into an old record.
 // `leads` are this e-mail's leads, oldest first; `product` is the catalogue
 // match for the enquiry (null when it names no known product).
+// A lead may hold the website's own product name ("AMS", "E-Annex Ultra")
+// rather than the catalogue id, so its product is resolved through the same
+// catalogue before the two are compared.
 const CLOSED_STAGES = new Set(["converted", "na"]);
-export function pickRepeat(leads, product) {
+export function pickRepeat(leads, product, catalog) {
   const list = Array.isArray(leads) ? leads : [];
-  const keys = product ? [normKey(product.id), normKey(product.name)].filter(Boolean) : [];
+  const keysOf = (pr) => pr ? [normKey(pr.id), normKey(pr.name)].filter(Boolean) : [];
+  const keys = keysOf(product);
   const open = (l) => !CLOSED_STAGES.has(normKey(l.stage));
-  const same = (l) => !keys.length || !normKey(l.product) || keys.includes(normKey(l.product));
+  const same = (l) => {
+    const own = normKey(l.product);
+    if (!keys.length || !own || keys.includes(own)) return true;
+    return keysOf(matchProduct(l.product, catalog)).some(k => keys.includes(k));
+  };
   return list.find(l => open(l) && same(l)) || null;
 }
 
