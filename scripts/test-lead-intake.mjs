@@ -5,7 +5,7 @@
 // Run: node scripts/test-lead-intake.mjs
 import {
   classify, matchProduct, companyFor, emailDomain, isFreeMail,
-  buildNewLead, buildRepeatPatch, buildActivity, fillEmpty, istParts,
+  buildNewLead, buildRepeatPatch, buildActivity, buildOwnerAlert, fillEmpty, istParts, pickRepeat,
 } from "../supabase/functions/lead-intake/logic.js";
 
 let pass = 0, fail = 0;
@@ -133,6 +133,44 @@ check("notes carry message, time, reference", act.notes.split("\n"), [
 check("repeat enquiry is labelled", buildActivity({ p: payload(), cls, lead: existing, product: null, repeat: true, id: "a", now }).title.startsWith("Respond to repeat website demo request"), true);
 check("IST time of day", istParts(now).time, "09:30");
 check("IST date rolls over at local midnight", istParts(new Date("2026-10-11T19:00:00Z")).date, "2026-10-12");
+
+// Owner alert
+{
+  const orbis = payload({ source: "orbisone.in", product: "OrbisOne", name: "<b>Eve</b>", company: "Acme & Co" }, { intent: "Request information", note: "Role: Director" });
+  const c = classify(orbis);
+  check("Request information is an ordinary lead", [c.kind, c.label], ["lead", "Information request"]);
+  const lead = { email: "eve@acme.com", company: "ACME & CO", contact_name: "Eve", owner: "u1" };
+  const a = buildOwnerAlert({ p: orbis, cls: c, lead, product: { name: "Orbis One" }, repeat: false, leadNumber: "#FL-1" });
+  check("alert subject names the enquiry", a.subject, "New information request: ACME & CO");
+  check("alert escapes form text", [a.html.includes("<b>Eve"), a.html.includes("&lt;b&gt;Eve"), a.html.includes("ACME &amp; CO")], [false, true, true]);
+  check("alert carries the details", [a.html.includes("Role: Director"), a.html.includes("#FL-1"), a.html.includes("oct-wisecargo")], [true, true, true]);
+  const u = buildOwnerAlert({ p: payload(), cls: classify(payload()), lead: { ...lead, owner: null }, product: null, repeat: true, leadNumber: "#FL-2", unrouted: true });
+  check("unassigned repeat alert says so", [u.subject, u.html.includes("no owner yet")], ["Unassigned repeat demo request: ACME & CO", true]);
+  check("subject has no line breaks", buildOwnerAlert({ p: payload({ company: "" }), cls: classify(payload()), lead: { email: "a@b.co", company: "X\r\nBcc: y" }, product: null, repeat: false, leadNumber: "1" }).subject, "New demo request: X Bcc: y");
+}
+
+// Which earlier lead a website enquiry joins
+{
+  const orbis = { id: "orbisone", name: "OrbisOne" };
+  const old = { id: "l1", product: "iCAFFE", stage: "Converted" };
+  check("a converted lead for another product is not a repeat", pickRepeat([old], orbis), null);
+  check("an open lead for another product is not a repeat", pickRepeat([{ id: "l2", product: "WiseCargo", stage: "MQL" }], orbis), null);
+  check("a converted lead for the same product is not a repeat", pickRepeat([{ id: "l3", product: "OrbisOne", stage: "Converted" }], orbis), null);
+  check("a lead marked NA is not a repeat", pickRepeat([{ id: "l4", product: "OrbisOne", stage: "NA" }], orbis), null);
+  check("an open lead for the same product is the repeat", pickRepeat([old, { id: "l5", product: "Orbis One", stage: "SQL" }], orbis)?.id, "l5");
+  check("the product id matches as well as the name", pickRepeat([{ id: "l6", product: "orbisone", stage: "MQL" }], { id: "orbisone", name: "Orbis One Platform" })?.id, "l6");
+  check("the oldest matching open lead wins", pickRepeat([{ id: "a", product: "OrbisOne", stage: "MQL" }, { id: "b", product: "OrbisOne", stage: "SQL" }], orbis)?.id, "a");
+  check("an open lead with no product still joins", pickRepeat([{ id: "l7", product: null, stage: "MQL" }], orbis)?.id, "l7");
+  check("an enquiry with no known product joins any open lead", pickRepeat([old, { id: "l8", product: "WiseCargo", stage: "SAL" }], null)?.id, "l8");
+  check("no earlier leads", pickRepeat(null, orbis), null);
+  // Ordinary leads keep the website's product name, not the catalogue id.
+  const ams = matchProduct("AMS", CATALOG), annex = matchProduct("E-Annex Ultra", CATALOG);
+  check("a lead stored as the website name AMS is the repeat", pickRepeat([{ id: "w1", product: "AMS", stage: "MQL" }], ams, CATALOG)?.id, "w1");
+  check("a lead stored as E-Annex Ultra is the repeat (alias)", pickRepeat([{ id: "w2", product: "E-Annex Ultra", stage: "SQL" }], annex, CATALOG)?.id, "w2");
+  check("a website name for another product is still not a repeat", pickRepeat([{ id: "w3", product: "E-Annex Ultra", stage: "MQL" }], ams, CATALOG), null);
+  check("an unknown stored product is not a repeat", pickRepeat([{ id: "w4", product: "WiseFleet", stage: "MQL" }], ams, CATALOG), null);
+  check("no catalogue falls back to the plain comparison", pickRepeat([{ id: "w5", product: "AMSOcean", stage: "MQL" }], ams, undefined)?.id, "w5");
+}
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
