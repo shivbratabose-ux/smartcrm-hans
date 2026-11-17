@@ -3,6 +3,8 @@ import { Check, MessageCircle, FileText, Building2, User, Calendar, Receipt } fr
 import { fmt, today, uid, resolveAddress, formatAddress } from "../utils/helpers";
 import { TEAM_MAP, PROD_MAP } from "../data/constants";
 import { BLANK_CONTRACT } from "../data/seed";
+import { allocateDocNo } from "../lib/db";
+import { newContractId, nextContractNo } from "../lib/quotation/docNumbers";
 import { userName } from "./shared";
 
 /* ──────────────────────────────────────────────────────────────────
@@ -48,16 +50,18 @@ export default function QuoteAcceptLanding({ quoteId, quotes, setQuotes, account
 
   const isTerminal = ["Accepted","Rejected","Expired","Revised"].includes(quote.status);
 
-  const handleAccept = () => {
-    if (!window.confirm(`Confirm acceptance of quote ${quote.id} for ₹${quote.total}L total. This will lock the quote and create a contract draft.`)) return;
+  const handleAccept = async () => {
+    if (!window.confirm(`Confirm acceptance of quote ${quote.quoteNo || quote.id} for ₹${quote.total}L total. This will lock the quote and create a contract draft.`)) return;
     const at = new Date().toISOString();
-    let contractId = "";
+    let contractId = "", contractNo = "";
     if (setContracts && BLANK_CONTRACT) {
-      contractId = `CT-${String(contracts.length + 1).padStart(3, "0")}`;
+      // Random id + shared-counter number (contracts.length+1 collided across users).
+      contractId = newContractId();
+      contractNo = (await nextContractNo(allocateDocNo, contracts)).contractNo;
       const newContract = {
         ...BLANK_CONTRACT,
         id: contractId,
-        contractNo: contractId,
+        contractNo,
         title: quote.title,
         accountId: quote.accountId,
         oppId: quote.oppId || "",
@@ -74,7 +78,7 @@ export default function QuoteAcceptLanding({ quoteId, quotes, setQuotes, account
       };
       setContracts(p => [...p, newContract]);
     }
-    const ce = { id: uid(), at, by: "customer", field: "status", from: quote.status, to: "Accepted", note: `accepted via QR link${comment ? ` — ${comment}` : ""}${contractId ? ` · contract ${contractId} created` : ""}` };
+    const ce = { id: uid(), at, by: "customer", field: "status", from: quote.status, to: "Accepted", note: `accepted via QR link${comment ? ` — ${comment}` : ""}${contractId ? ` · contract ${contractNo} created` : ""}` };
     setQuotes(p => p.map(r => r.id === quote.id ? {
       ...r,
       status: "Accepted",

@@ -27,6 +27,8 @@ import {
 import { TC_TEMPLATES, STANDARD_TERMS } from "../data/constants";
 import { printHansQuote } from "../lib/quotation/printQuote";
 import { toLocalISODate } from "../utils/helpers";
+import { allocateDocNo } from "../lib/db";
+import { newQuoteId, nextQuoteNo } from "../lib/quotation/docNumbers";
 
 const today = () => toLocalISODate();
 const inr = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
@@ -265,32 +267,22 @@ export default function HansQuoteBuilder({
     !billing.paymentTerms && "Payment terms",
   ].filter(Boolean);
 
-  // Internal id from the max existing QT- sequence (not array length, which
-  // collides after a deletion or against the legacy builder in the same session).
-  const nextQuoteId = () => {
-    const max = quotes.reduce((m, q) => {
-      const x = typeof q.id === "string" && q.id.match(/^QT-(\d+)$/);
-      return x ? Math.max(m, parseInt(x[1], 10)) : m;
-    }, 0);
-    return `QT-${String(max + 1).padStart(3, "0")}`;
+  // Ids are random and the quote number comes from the shared DB counter
+  // (supabase/doc_numbers_v1.sql). Both used to be "highest number in MY list
+  // + 1", which collided across users: reps only see their team's quotes and
+  // nobody sees deleted ones, so new quotes failed to save or overwrote others.
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (!canSave || !setQuotes || saving) return;
+    setSaving(true);
+    try { await _save(); } finally { setSaving(false); }
   };
-
-  const nextQuoteNo = () => {
-    // Per-FY incrementing sequence across engine-built quotes.
-    const fy = formatQuoteNumber(0).split("/").pop();
-    const seqs = quotes
-      .filter(q => typeof q.quoteNo === "string" && q.quoteNo.endsWith(fy) && q.quoteNo.startsWith(config.quoteNumberPrefix))
-      .map(q => parseInt(q.quoteNo.replace(config.quoteNumberPrefix, ""), 10) || 0);
-    const next = (seqs.length ? Math.max(...seqs) : 0) + 1;
-    return formatQuoteNumber(next);
-  };
-
-  const save = () => {
-    if (!canSave || !setQuotes) return;
+  const _save = async () => {
     const opp = opps.find(o => o.id === oppId);
     const isEdit = !!editQuote;
-    const quoteNo = isEdit ? (editQuote.quoteNo || nextQuoteNo()) : nextQuoteNo();
-    const id = isEdit ? editQuote.id : nextQuoteId();
+    const quoteNo = isEdit && editQuote.quoteNo ? editQuote.quoteNo
+      : (await nextQuoteNo(allocateDocNo, config, quotes)).quoteNo;
+    const id = isEdit ? editQuote.id : newQuoteId();
     const items = pricedLines.filter(l => !l._empty).map((l, idx) => ({
       lineNo: idx + 1, productCode: l.productCode, name: l.name, module: l.module,
       description: l.description, pricingModel: l.pricingModel, unit: l.unit,
@@ -661,7 +653,7 @@ export default function HansQuoteBuilder({
 
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <button className="btn btn-sec" style={{ flex: "0 0 auto" }} disabled={!pricedLines.some(l => !l._empty)} onClick={previewPrint} title="Preview the client-facing document">Preview</button>
-                <button className="btn btn-primary" style={{ flex: 1 }} disabled={!canSave} onClick={save}>
+                <button className="btn btn-primary" style={{ flex: 1 }} disabled={!canSave || saving} onClick={save}>
                   {needsApproval ? "Save (route for approval)" : "Save quote"}
                 </button>
               </div>
