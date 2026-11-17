@@ -13,6 +13,9 @@ import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
 import HansQuoteBuilder from './HansQuoteBuilder';
 import { resolveQuotationMasters } from './QuotationMasters';
+import { allocateDocNo } from '../lib/db';
+import { QUOTE_CONFIG } from '../data/quotationMasters';
+import { newQuoteId, newContractId, nextQuoteNo, nextContractNo, revisionOf, sendBlockedReason } from '../lib/quotation/docNumbers';
 import GuidedTour from './GuidedTour';
 
 // Coach-mark steps for "How to create a quote". Targets map to
@@ -872,7 +875,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       // numbers became DB-enforced-unique. Display-only field, so no
       // data migration: every quote renders with the new prefix
       // immediately.
-      _quoteId:`#QT-${yr}-${seqStr.padStart(3,"0")}`,
+      _quoteId:q.quoteNo||`#QT-${yr}-${seqStr.padStart(3,"0")}`,  // real number when the quote has one
       _prob:opp?.probability||({"Draft":20,"Sent":50,"Under Review":65,"Accepted":100,"Rejected":0,"Expired":0,"Revised":30}[q.status]||0),
       _ownerName:userName(q.owner)||"—",
     };
@@ -1021,10 +1024,11 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
   // Next internal id from the max existing QT- sequence — array length+1
   // collides after a deletion or against the Hans builder's minting.
-  const nextQuoteId=()=>{
-    const max=quotes.reduce((m,q)=>{const x=typeof q.id==="string"&&q.id.match(/^QT-(\d+)$/);return x?Math.max(m,parseInt(x[1],10)):m;},0);
-    return `QT-${String(max+1).padStart(3,"0")}`;
-  };
+  // Random id: it only has to be unique. The old "highest QT- number I can see
+  // + 1" collided across users (reps only see their team's quotes; nobody sees
+  // deleted ones) — see supabase/doc_numbers_v1.sql. The human number is quoteNo.
+  const nextQuoteId=()=>newQuoteId();
+  const quoteConfig=masters?.quoteConfig||QUOTE_CONFIG;
   const openAdd=()=>{
     const id=nextQuoteId();
     setForm({...BLANK_QUOTE,id,owner:currentUser,createdDate:today,items:[]});
@@ -1070,8 +1074,12 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const duplicate=(q)=>{
     const id=nextQuoteId();
     // Create new revision linked to parent + flip parent → Revised (terminal/superseded)
+    // A revision keeps the quote number (same quote, next version) but NOT the
+    // original's approval, accept link, acceptance, contract or e-mail history:
+    // copying the accept token broke the unique index and the revision never saved.
+    const rev={...revisionOf(q,{id,today}),changeLog:[{id:uid(),at:new Date().toISOString(),by:currentUser,field:"",from:"",to:"created",note:`Revision of ${q.quoteNo||q.id}`}]};
     setQuotes(p=>{
-      const next=[...p,{...q,id,status:"Draft",version:(q.version||1)+1,createdDate:today,sentDate:"",expiryDate:"",isFinal:false,supersedesQuoteId:q.id,notes:`Revised from ${q.id}. `+(q.notes||"")}];
+      const next=[...p,rev];
       return next.map(r=>r.id===q.id&&!["Accepted","Rejected","Revised"].includes(r.status)?{...r,status:"Revised"}:r);
     });
   };
@@ -1103,9 +1111,17 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
   /* ── Send action: Draft → Sent + stamp sentDate (gated by approval matrix) ── */
   const sendQuote=(q)=>{
-    if(needsApproval(q) && q.approvalStatus!=="Approved"){
-      setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Pending",approvalRequestedAt:new Date().toISOString()}:r));
-      alert(`This quote needs manager approval before sending — ${approvalReason(q)}.\nApproval has been requested.`);
+    // Blocked if EITHER rule says so: the list's legacy thresholds, or the
+    // approval the quote builder recorded (price-book caps, e.g. Orbis plans
+    // at 0%). Checking only the legacy rule let a builder quote marked
+    // "Pending" be e-mailed to the customer.
+    const blocked=sendBlockedReason(q,needsApproval(q));
+    if(blocked){
+      if(q.approvalStatus!=="Pending"&&q.approvalStatus!=="Rejected")
+        setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Pending",approvalRequestedAt:new Date().toISOString()}:r));
+      alert(q.approvalStatus==="Rejected"
+        ? `This quote's approval was rejected${q.rejectedReason?` — ${q.rejectedReason}`:""}. Revise it before sending.`
+        : `This quote can't go to the customer yet — ${blocked}${needsApproval(q)?` (${approvalReason(q)})`:""}.\nApproval has been requested.`);
       return;
     }
     const sentDate=today;
@@ -1139,6 +1155,9 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
   /* ── Open SendEmailModal pre-filled for a quote ── */
   const openEmailModal=(q, templateId="quote")=>{
+    // Every route to e-mailing a draft (list button, detail panel) passes the
+    // approval gate here; sendQuote explains and requests approval.
+    if(q.status==="Draft"&&sendBlockedReason(q,needsApproval(q))){ sendQuote(q); return; }
     const eq=enriched.find(e=>e.id===q.id)||q;
     const acc=accounts.find(a=>a.id===q.accountId)||{};
     const contact=contacts.find(c=>c.id===q.contactId)
@@ -1191,19 +1210,21 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
 
   /* ── Customer Accept: Sent/Under Review → Accepted + stamp + auto-create Contract draft ── */
   const acceptQuote=(q)=>setAcceptModal({quote:q});
-  const _doAcceptQuote=(q,url="")=>{
+  const _doAcceptQuote=async(q,url="")=>{
     setAcceptModal(null);
     const acceptedDate=today;
-    // Auto-create a Contract draft linking back to this quote
-    let contractId="";
+    // Auto-create a Contract draft linking back to this quote. Random id +
+    // number from the shared counter: contracts.length+1 collided with
+    // contracts this user couldn't see, and the save overwrote or failed.
+    let contractId="", contractNo="";
     if(setContracts && BLANK_CONTRACT){
-      const existing=contracts.length;
-      contractId=`CT-${String(existing+1).padStart(3,"0")}`;
+      contractId=newContractId();
+      contractNo=(await nextContractNo(allocateDocNo,contracts)).contractNo;
       const acc=accounts.find(a=>a.id===q.accountId);
       const newContract={
         ...BLANK_CONTRACT,
         id:contractId,
-        contractNo:contractId,
+        contractNo,
         title:q.title,
         accountId:q.accountId,
         oppId:q.oppId||"",
@@ -1221,9 +1242,9 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       };
       setContracts(p=>[...p,newContract]);
     }
-    const ce={id:uid(),at:new Date().toISOString(),by:currentUser,field:"status",from:q.status,to:"Accepted",note:contractId?`contract ${contractId} created`:"customer accepted"};
+    const ce={id:uid(),at:new Date().toISOString(),by:currentUser,field:"status",from:q.status,to:"Accepted",note:contractId?`contract ${contractNo} created`:"customer accepted"};
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,status:"Accepted",acceptedDate,signedQuoteUrl:url,contractId,isFinal:true,changeLog:[...(r.changeLog||[]),ce]}:r));
-    if(contractId) setToast({msg:`Quote accepted ✓  Contract draft ${contractId} created — open Contracts to finalise terms.`});
+    if(contractId) setToast({msg:`Quote accepted ✓  Contract draft ${contractNo} created — open Contracts to finalise terms.`});
   };
 
   /* ── Reminder cadence: queue follow-up nudges at QUOTE_REMINDER_OFFSETS days after sentDate ── */
@@ -1314,7 +1335,13 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     return out;
   };
 
-  const save=()=>{
+  const savingRef=useRef(false);  // save waits for the quote number: ignore a double-click meanwhile
+  const save=async()=>{
+    if(savingRef.current) return;
+    savingRef.current=true;
+    try { await _save(); } finally { savingRef.current=false; }
+  };
+  const _save=async()=>{
     if(modal?.mode==="edit"&&!canEditQuote(form)){setModal(null);setFormErrors({});return;}
     if(modal?.lockedFinal){
       setFormErrors({_lock:"This quote is marked Final and cannot be edited. Duplicate/Revise it instead to create a new version."});
@@ -1331,7 +1358,9 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const totals=recalc(resolvedForm.items,resolvedForm.taxType,resolvedForm.discount,resolvedForm.placeOfSupply);
     const clean=sanitizeObj({...resolvedForm,...totals});
     if(modal.mode==="add"){
-      const created={...clean,changeLog:[{id:uid(),at:new Date().toISOString(),by:currentUser,field:"",from:"",to:"created",note:""}]};
+      // The quote number customers see comes from the shared DB counter.
+      const {quoteNo,provisional}=clean.quoteNo?{quoteNo:clean.quoteNo,provisional:false}:await nextQuoteNo(allocateDocNo,quoteConfig,quotes);
+      const created={...clean,quoteNo,changeLog:[{id:uid(),at:new Date().toISOString(),by:currentUser,field:"",from:"",to:"created",note:provisional?"Quote number assigned offline — check it is unique":""}]};
       setQuotes(p=>[...p,created]);
     } else {
       setQuotes(p=>p.map(q=>{
@@ -2129,7 +2158,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                   <button className="icon-btn" title="View" onClick={()=>setDetail(q)}><Eye size={14}/></button>
                   {editable ? (<>
                   <button className="icon-btn" title="Edit" onClick={()=>openEdit(q)}><Edit2 size={14}/></button>
-                  {q.status==="Draft"&&<button className="icon-btn" title={needsApproval(q)&&q.approvalStatus!=="Approved"?`Request approval (${approvalReason(q)})`:"Email quote to customer"} onClick={()=>{if(needsApproval(q)&&q.approvalStatus!=="Approved"){sendQuote(q);}else{openEmailModal(q);}}} style={{color:needsApproval(q)&&q.approvalStatus!=="Approved"?"#F59E0B":"#3B82F6"}}><Send size={14}/></button>}
+                  {q.status==="Draft"&&(()=>{const blocked=sendBlockedReason(q,needsApproval(q));return <button className="icon-btn" title={blocked?`Can't send yet: ${blocked}`:"Email quote to customer"} onClick={()=>openEmailModal(q)} style={{color:blocked?"#F59E0B":"#3B82F6"}}><Send size={14}/></button>;})()}
                   {isManager && q.approvalStatus==="Pending" && (<>
                     <button className="icon-btn" title={`Approve (${approvalReason(q)})`} onClick={()=>approveQuote(q)} style={{color:"#22C55E"}}><ThumbsUp size={14}/></button>
                     <button className="icon-btn" title="Reject" onClick={()=>rejectQuote(q)} style={{color:"#EF4444"}}><ThumbsDown size={14}/></button>

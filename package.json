@@ -23,7 +23,8 @@
     "test:card": "node scripts/test-card-match.mjs",
     "test:related": "node scripts/test-related-contacts.mjs",
     "test:intake": "node scripts/test-lead-intake.mjs",
-    "test:digest": "node scripts/test-activity-digest.mjs"
+    "test:digest": "node scripts/test-activity-digest.mjs",
+    "test:docnos": "node scripts/test-doc-numbers.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",

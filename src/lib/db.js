@@ -1331,6 +1331,23 @@ const lsSaveViews = (userId, module, views) => {
  * default first then by name. Empty array means "no saved views" — the
  * caller should fall back to its built-in default column registry.
  */
+/**
+ * Next human document number from the shared DB counter (doc_numbers_v1.sql).
+ * kind: "quote:26-27" | "contract". Returns a number, or null when the
+ * database can't be reached (callers fall back to a local guess).
+ */
+export async function allocateDocNo(kind) {
+  if (!isSupabaseConfigured) return null;
+  try {
+    const { data, error } = await supabase.rpc("allocate_doc_no", { p_kind: kind });
+    if (error || data == null) { dbLog("warn", "[DB] allocate_doc_no:", error); return null; }
+    return Number(data);
+  } catch (e) {
+    dbLog("warn", "[DB] allocate_doc_no:", e);
+    return null;
+  }
+}
+
 export async function loadUserTableViews(userId, module) {
   if (!userId || !module) return [];
   if (!isSupabaseConfigured) return lsLoadViews(userId, module);
