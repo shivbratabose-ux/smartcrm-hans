@@ -8,6 +8,9 @@ import {
   Sparkles, Briefcase, Gauge, Gavel
 } from "lucide-react";
 
+// Team playbook PDFs served from public/guides/ (open in a new tab / download).
+const PLAYBOOK_URL = "/guides/SmartCRM_Sales_Playbook_Leads_Opportunities_Calls.pdf";
+
 // ══════════════════════════════════════════════════════════════════════
 // HELP CONTENT DATA
 // ══════════════════════════════════════════════════════════════════════
@@ -18,6 +21,24 @@ const HELP_DATA = [
   {
     id:"getting-started", label:"Getting Started", icon:<Rocket size={15}/>, color:"#7C3AED",
     articles:[
+      {
+        id:"sales-playbook", title:"Sales Playbook — Leads, Opportunities & Calls (PDF)",
+        tags:["playbook","golden rule","qualification","lead","opportunity","convert","stage","call","remark","overdue","training","guide","pdf"],
+        content:[
+          {type:"para", text:"A 3-page guide with screenshots for every sales rep: what a lead is, how to update leads and their contacts, when to convert to an opportunity, how to move a deal through the stages, and how to log calls and what to write. Open it from the banner at the top of this page."},
+          {type:"heading", text:"The rules in short"},
+          {type:"list", items:[
+            "If it's not in CRM, it didn't happen — every call gets a remark and a next date.",
+            "Lead stages MQL → SQL → SAL → Converted: move them only with the 'Advance to …' button so the checks run.",
+            "Fill the Minimum Qualification Set before converting: Users, Volume, Value, Competition, Challenges, Close date.",
+            "Convert from inside the lead (Convert button), never from the round-arrow icon in the list.",
+            "Move deals with Advance / drag / Back on the Pipeline board — never the Stage dropdown.",
+            "Remarks: who, what (numbers), the customer's response, next step + date. Never 'Follow up' or 'Call back'.",
+            "Start every day on Call Reports → Overdue and clear it.",
+          ]},
+          {type:"tip", text:"Print it or share the PDF with new joiners — it opens in any browser and on mobile."},
+        ]
+      },
       {
         id:"welcome", title:"Welcome to SmartCRM", tags:["intro","overview","start","welcome","crm"],
         content:[
@@ -1110,6 +1131,17 @@ function Help({ currentPage }) {
           <BookOpen size={15} style={{ color:"var(--text3)" }}/>
           <span style={{ fontSize:12, color:"var(--text3)" }}>{allArticles.length} articles</span>
         </div>
+      </div>
+
+      {/* Team playbook */}
+      <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap", background:"#FEF6E0", border:"1px solid #F2C94C", borderRadius:10, padding:"10px 14px", marginBottom:12 }}>
+        <BookOpen size={18} style={{ color:"#B7791F", flexShrink:0 }}/>
+        <div style={{ flex:1, minWidth:220 }}>
+          <div style={{ fontWeight:800, fontSize:13, color:"#1F3A5F" }}>Sales Playbook — Leads, Opportunities &amp; Calls</div>
+          <div style={{ fontSize:12, color:"var(--text2)" }}>3 pages with screenshots: stages, qualification, converting, moving deals, logging calls and writing remarks.</div>
+        </div>
+        <a className="btn btn-primary btn-sm" href={PLAYBOOK_URL} target="_blank" rel="noopener noreferrer"><FileText size={13}/>Open PDF</a>
+        <a className="btn btn-sec btn-sm" href={PLAYBOOK_URL} download>Download</a>
       </div>
 
       {/* Search bar */}
