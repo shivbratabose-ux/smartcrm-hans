@@ -20,7 +20,10 @@
 //
 // Actions (POST JSON):
 //   { token, action: "view" }
-//   { token, action: "accept",  name?, designation? }
+//   { token, action: "accept",  name, designation?, kyc: { legalName, pan, gstin, address } }
+//     KYC is required on accept (14 Nov 2026 flow: the customer confirms and
+//     returns KYC). gstin may be "UNREGISTERED". Saved onto the quote's
+//     legal_name / pan / gstin / billing_address_snapshot.
 //   { token, action: "changes", name?, comment }
 //
 // State rules:
@@ -64,6 +67,29 @@ const todayISO = () => {
   return ist.toISOString().slice(0, 10);
 };
 
+// ── KYC rules: keep in step with src/lib/quotation/handover.js ──
+const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+const GST_UNREGISTERED = "UNREGISTERED";
+const clean = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
+function readKyc(raw: any) {
+  const k = {
+    legalName: clean(raw?.legalName, 200).replace(/\s+/g, " "),
+    pan: clean(raw?.pan, 20).toUpperCase().replace(/\s+/g, ""),
+    gstin: clean(raw?.gstin, 20).toUpperCase().replace(/\s+/g, ""),
+    address: clean(raw?.address, 600),
+  };
+  const problems: string[] = [];
+  if (k.legalName.length < 3) problems.push("legal name");
+  if (!PAN_RE.test(k.pan)) problems.push("PAN (like ABCDE1234F)");
+  if (k.gstin !== GST_UNREGISTERED) {
+    if (!GSTIN_RE.test(k.gstin)) problems.push("GSTIN (15 characters) or tick \"not registered under GST\"");
+    else if (PAN_RE.test(k.pan) && k.gstin.slice(2, 12) !== k.pan) problems.push("GSTIN that matches the PAN");
+  }
+  if (k.address.length < 10) problems.push("registered address");
+  return { k, problems };
+}
+
 // The only fields a customer may see.
 function sanitise(q: any, accountName: string, contactName: string) {
   const expired = !!(q.expiry_date && q.expiry_date < todayISO() && q.status !== "Accepted");
@@ -95,6 +121,8 @@ function sanitise(q: any, accountName: string, contactName: string) {
       : [],
     terms: q.terms || "",
     acceptedDate: q.accepted_date || "",
+    hosting: q.hosting || "",
+    kyc: { legalName: q.legal_name || "", pan: q.pan || "", gstin: q.gstin || "", address: q.billing_address_snapshot || "" },
   };
 }
 
@@ -120,7 +148,7 @@ serve(async (req) => {
 
   const { data: q, error: qErr } = await admin
     .from("quotations")
-    .select("id, quote_no, title, account_id, contact_id, owner, status, items, subtotal, tax_type, tax_amount, discount, total, currency, validity, sent_date, expiry_date, accepted_date, supersedes_quote_id, is_final, terms, change_log")
+    .select("id, quote_no, title, account_id, contact_id, owner, status, items, subtotal, tax_type, tax_amount, discount, total, currency, validity, sent_date, expiry_date, accepted_date, supersedes_quote_id, is_final, terms, change_log, hosting, legal_name, pan, gstin, billing_address_snapshot")
     .eq("accept_token", token)
     .eq("is_deleted", false)
     .maybeSingle();
@@ -157,6 +185,9 @@ serve(async (req) => {
   const changeLog = Array.isArray(q.change_log) ? q.change_log : [];
 
   if (action === "accept") {
+    if (!customer) return json({ error: "Please enter your name." }, 400);
+    const { k, problems } = readKyc(body?.kyc);
+    if (problems.length) return json({ error: `Please check: ${problems.join(", ")}.`, quote: summary }, 400);
     const entry = {
       id: crypto.randomUUID().slice(0, 8),
       at: nowIso,
@@ -164,11 +195,23 @@ serve(async (req) => {
       field: "status", from: q.status, to: "Accepted",
       note: `Accepted via public link${customer ? ` by ${customer}` : ""}${body?.designation ? ` (${String(body.designation).slice(0, 80)})` : ""}`,
     };
+    const kycEntry = {
+      id: crypto.randomUUID().slice(0, 8),
+      at: nowIso,
+      by: "customer",
+      field: "kyc", from: "", to: "submitted",
+      note: `KYC from customer: ${k.legalName} · PAN ${k.pan} · GSTIN ${k.gstin === GST_UNREGISTERED ? "not registered" : k.gstin}`,
+    };
+    // Accepting is NOT "FINAL": Sales marks FINAL in the CRM after checking
+    // approval, hosting and KYC (that is what tells Accounts to bill).
     const { error: uErr } = await admin.from("quotations").update({
       status: "Accepted",
       accepted_date: todayISO(),
-      is_final: true,
-      change_log: [...changeLog, entry],
+      legal_name: k.legalName,
+      pan: k.pan,
+      gstin: k.gstin,
+      billing_address_snapshot: k.address,
+      change_log: [...changeLog, entry, kycEntry],
     }).eq("id", q.id).eq("accept_token", token);
     if (uErr) return json({ error: "Could not record the acceptance. Please try again." }, 500);
 
@@ -179,7 +222,7 @@ serve(async (req) => {
         title: `Quote ${q.quote_no || q.id} accepted by customer${customer ? ` (${customer})` : ""}`,
         type: "Task", status: "Planned",
         date: todayISO(), owner: q.owner, account_id: q.account_id || null,
-        notes: "Accepted via the public quote link. Convert to contract from the Quotations page.",
+        notes: "Accepted via the public quote link, with KYC. Check hosting and KYC on the quote, then Mark as FINAL so Accounts can raise the bill.",
       });
     }
     return json({ ok: true, accepted: true, quote: { ...summary, status: "Accepted", acceptedDate: todayISO() } });

@@ -29,6 +29,7 @@ import { printHansQuote } from "../lib/quotation/printQuote";
 import { toLocalISODate } from "../utils/helpers";
 import { allocateDocNo } from "../lib/db";
 import { newQuoteId, nextQuoteNo } from "../lib/quotation/docNumbers";
+import { HOSTING_OPTIONS, HOSTING_LABEL } from "../lib/quotation/handover";
 
 const today = () => toLocalISODate();
 const inr = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
@@ -77,6 +78,8 @@ export default function HansQuoteBuilder({
   const [billingFrequency, setBillingFrequency] = useState(eh?.billingFrequency || editQuote?.billingFrequency || "Monthly");
   const [selectedPlan, setSelectedPlan] = useState(eh?.plan || "");
   const [segment, setSegment] = useState(eh?.segment || editQuote?.segment || "Commercial");
+  // Hans- or client-hosted — asked on every quote (Quote → Accounts flow).
+  const [hosting, setHosting] = useState(editQuote?.hosting || "");
   const [overallDiscountPct, setOverallDiscountPct] = useState(eh?.overallDiscountPct || 0);
   const [prepaymentApplicable, setPrepaymentApplicable] = useState(!!eh?.prepaymentApplicable);
   const [prepaymentDiscountPct, setPrepaymentDiscountPct] = useState(eh?.prepaymentDiscountPct ?? config.prepaymentDiscountPctDefault);
@@ -256,7 +259,7 @@ export default function HansQuoteBuilder({
   const needsApproval = discGuard.breached || marginGuard.breached;
 
   // ── Save ────────────────────────────────────────────────────────────
-  const canSave = oppId && party.name && pricedLines.some(l => !l._empty) && missingRateLines.length === 0;
+  const canSave = oppId && party.name && hosting && pricedLines.some(l => !l._empty) && missingRateLines.length === 0;
 
   // Advisory billing-completeness hint (doesn't block save — the engine only
   // needs opp + party + a priced line). Mirrors the Custom Quote's verify intent.
@@ -355,6 +358,7 @@ export default function HansQuoteBuilder({
       currency, notes, preparedBy: me?.name || currentUser,
       billingFrequency, // invoicing cadence — also lives in hans for print
       segment, // also in hans
+      hosting,
       owner: isEdit ? (editQuote.owner || currentUser) : currentUser,
       createdDate: isEdit ? (editQuote.createdDate || today()) : today(),
       terms: termsText, // legacy/register/verify read quote.terms
@@ -378,7 +382,8 @@ export default function HansQuoteBuilder({
       lineTotal: round2(l.lineTotal),
     }));
     return {
-      quoteNo: nextQuoteNo() + " (preview)", status: needsApproval ? "Approval Required" : "Draft",
+      quoteNo: (editQuote?.quoteNo || "New quote") + " (preview)", status: needsApproval ? "Approval Required" : "Draft",
+      hosting, legalName: billing.legalName || party.name || "", pan: billing.pan || "", gstin: party.gstin || "", billingAddressSnapshot: party.address || "",
       createdDate: today(), preparedBy: me?.name || currentUser, notes,
       items,
       hans: {
@@ -540,6 +545,13 @@ export default function HansQuoteBuilder({
                     {BILLING_FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
                   </select>
                 </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
+                  <span style={{ fontSize: 11, color: hosting ? "var(--text3)" : "#B45309", fontWeight: 600 }}>Hosting<Req /></span>
+                  <select value={hosting} onChange={e => setHosting(e.target.value)} style={{ fontSize: 11, padding: "3px 6px", borderRadius: 6, border: `1px solid ${hosting ? "var(--border)" : "#F59E0B"}` }}>
+                    <option value="">— Select —</option>
+                    {HOSTING_OPTIONS.map(o => <option key={o} value={o}>{HOSTING_LABEL[o]}</option>)}
+                  </select>
+                </span>
               </div>
 
               {/* Line grid */}
@@ -657,7 +669,7 @@ export default function HansQuoteBuilder({
                   {needsApproval ? "Save (route for approval)" : "Save quote"}
                 </button>
               </div>
-              {!canSave && <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 6, textAlign: "center" }}>Pick an opportunity, a party, at least one priced line (no missing rates).</div>}
+              {!canSave && <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 6, textAlign: "center" }}>Pick an opportunity, a party, hosting (Hans / Client), at least one priced line (no missing rates).</div>}
               {canSave && billingMissing.length > 0 && (
                 <div style={{ fontSize: 10.5, color: "#B45309", marginTop: 6, textAlign: "center", cursor: "pointer" }} onClick={() => setShowBilling(true)} title="Open Billing & tax details">
                   {billingMissing.length} billing detail{billingMissing.length > 1 ? "s" : ""} missing: {billingMissing.join(", ")} — click to complete.

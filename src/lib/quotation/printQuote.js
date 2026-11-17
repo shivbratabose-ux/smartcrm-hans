@@ -7,6 +7,8 @@
 // engine breakdown stored by HansQuoteBuilder).
 // ═══════════════════════════════════════════════════════════════════
 
+import { kycPageHtml } from "./handover.js";
+
 const inr = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -89,6 +91,7 @@ export function printHansQuote(quote, opts = {}) {
     <h3 style="font-size:12px;margin:18px 0 4px">Terms &amp; Conditions</h3>
     ${termsBlock}
     ${quote.notes ? `<div class="muted" style="margin-top:10px"><b>Notes:</b> ${esc(quote.notes)}</div>` : ""}
+    ${kycPageHtml({ ...quote, legalName: quote.legalName || party.name, gstin: quote.gstin || party.gstin, billingAddressSnapshot: quote.billingAddressSnapshot || party.address }, { acceptUrl: opts.acceptUrl || "", seller: seller.name })}
     <script>window.onload=function(){window.print();}</script>
   </body></html>`;
 

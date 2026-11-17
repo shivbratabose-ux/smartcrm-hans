@@ -523,6 +523,18 @@ export default function SmartCRM() {
     const r = (orgUsers || []).find(u => u.id === currentUser)?.role;
     return r === "finance";
   }, [currentUser, orgUsers]);
+  // Quote desk (Quote → Accounts flow): Finance plus the approvers and the
+  // Accounts team picked in Masters → Quotation → Config. They act on quotes
+  // they don't own (approve, raise the bill, record the customer's
+  // confirmation), so they see every quote and their quote edits sync —
+  // mirrored in the DB by is_quote_desk_member() (quote_to_accounts_v1.sql).
+  const _quoteDesk = useMemo(() => {
+    if (_financeRole) return true;
+    const qc = masters?.quotation?.quoteConfig || {};
+    const ids = [...(Array.isArray(qc.approverIds) ? qc.approverIds : []), ...(Array.isArray(qc.accountsUserIds) ? qc.accountsUserIds : [])];
+    return !!currentUser && ids.includes(currentUser);
+  }, [masters, currentUser, _financeRole]);
+  _scopeRef.current.quoteDesk = _quoteDesk;
   // Support roles (support engineer, tech lead) are cross-cutting: to service
   // tickets they need to see ALL accounts, contacts, leads, opportunities and
   // tickets (a ticket must link to an account they likely don't own). They are
@@ -906,9 +918,9 @@ export default function SmartCRM() {
   }, [projects, _scopedIds, _globalRole]);
   const visibleQuotes      = useMemo(() => {
     const live = quotes.filter(q => !q.isDeleted);
-    if (_globalRole) return live;
+    if (_globalRole || _quoteDesk) return live;
     return live.filter(q => q.owner && _scopedIds.has(q.owner));
-  }, [quotes, _scopedIds, _globalRole]);
+  }, [quotes, _scopedIds, _globalRole, _quoteDesk]);
   const visibleCommLogs    = useMemo(() => {
     const live = commLogs.filter(c => !c.isDeleted);
     if (_globalRole) return live;
@@ -1091,6 +1103,7 @@ export default function SmartCRM() {
     const canWriteRec = (module, rec, prevRec) => {
       const scope = _scopeRef.current;
       if (scope.global) return true;
+      if (module === "quotes" && scope.quoteDesk) return true;
       const f = OWNER_FIELD_BY_MODULE[module];
       const owner = f ? rec?.[f] : null;
       if (!owner || scope.ids.has(owner)) return true;
@@ -2761,7 +2774,7 @@ export default function SmartCRM() {
             {page==="contracts"  && <Contracts contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote} onGenerateRenewalOpp={generateRenewalOpportunity} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="collections"&& <Collections collections={visibleCollections} setCollections={setCollections} accounts={visibleAccounts} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="projects"   && <Projects projects={visibleProjects} setProjects={setProjects} accounts={visibleAccounts} opps={visibleOpps} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
-            {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} masters={masters} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}
+            {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} collections={collections} setCollections={setCollections} projects={projects} setProjects={setProjects} setActivities={setActivities} setUpdates={setUpdates} isFinance={_financeRole} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} masters={masters} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}
             {page.startsWith("quote-accept/") && <QuoteAcceptLanding quoteId={page.replace(/^quote-accept\//,"")} quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} contracts={contracts} setContracts={setContracts} setActivities={setActivities} currentUser={currentUser} onBack={()=>setPage("quotations")}/>}
             {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} holidays={masters.holidays} adminWorkTypes={masters.adminWorkTypes} onRequestEditAccess={requestEditAccess}/>}
             {page==="communications"&& <CommLog commLogs={visibleCommLogs} setCommLogs={setCommLogs} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} canDelete={canDelete} orgUsers={orgUsers} catalog={catalog} onRespondEditAccess={respondEditAccess} aiConfig={aiConfig} setActivities={setActivities}/>}

@@ -48,6 +48,7 @@ check("back to Draft, not final, supersedes the original", [rev.status, rev.isFi
 check("previous approval NOT inherited — must be re-approved", [rev.approvalStatus, rev.approvedBy, rev.approvedAt], ["Pending", "", ""]);
 check("accept link not copied (unique index made the save fail)", rev.acceptToken, "");
 check("contract, signed copy and e-mail history not copied", [rev.contractId, rev.signedQuoteUrl, rev.emailLog], ["", "", []]);
+check("FINAL / bill / project handover not copied", revisionOf({ ...approved, handover: { finalAt: "t", billId: "b" } }, { id: "x", today: "t" }).handover, {});
 check("prices and lines carried over", [rev.total, rev.items.length], [12, 1]);
 check("a quote that never needed approval stays that way", revisionOf({ ...approved, approvalStatus: "Not Required" }, { id: "x", today: "t" }).approvalStatus, "Not Required");
 

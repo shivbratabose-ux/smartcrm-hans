@@ -12,6 +12,7 @@ import { useState, useEffect } from "react";
 import { Check, MessageCircle, FileText, Clock, AlertTriangle } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { fmt } from "../utils/helpers";
+import { kycProblems, GST_UNREGISTERED, HOSTING_LABEL } from "../lib/quotation/handover";
 
 // Default transport — swappable in tests/harness via the `api` prop.
 async function callQuoteAccept(payload) {
@@ -47,12 +48,20 @@ export default function PublicQuoteAccept({ token, api = callQuoteAccept }) {
   const [showChanges, setShowChanges] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null); // "accepted" | "changes"
+  // KYC — the customer returns it with their acceptance (flow of 14 Nov 2026).
+  const [kyc, setKyc] = useState({ legalName: "", pan: "", gstin: "", address: "" });
+  const [unreg, setUnreg] = useState(false);
 
   useEffect(() => {
     let alive = true;
     api({ token, action: "view" }).then(res => {
       if (!alive) return;
-      if (res?.ok && res.quote) setState({ phase: "ready", quote: res.quote });
+      if (res?.ok && res.quote) {
+        setState({ phase: "ready", quote: res.quote });
+        const k = res.quote.kyc || {};
+        setKyc({ legalName: k.legalName || res.quote.accountName || "", pan: k.pan || "", gstin: k.gstin === GST_UNREGISTERED ? "" : (k.gstin || ""), address: k.address || "" });
+        setUnreg(k.gstin === GST_UNREGISTERED);
+      }
       else setState({ phase: "missing" });
     }).catch(() => alive && setState({ phase: "error", message: "Couldn't load the quote. Please check your connection and reload." }));
     return () => { alive = false; };
@@ -60,7 +69,7 @@ export default function PublicQuoteAccept({ token, api = callQuoteAccept }) {
 
   const act = async (action) => {
     setBusy(true);
-    const res = await api({ token, action, name, designation, comment }).catch(() => null);
+    const res = await api({ token, action, name, designation, comment, kyc: { ...kyc, gstin: unreg ? GST_UNREGISTERED : kyc.gstin } }).catch(() => null);
     setBusy(false);
     if (res?.ok) {
       setState({ phase: "ready", quote: res.quote });
@@ -104,6 +113,10 @@ export default function PublicQuoteAccept({ token, api = callQuoteAccept }) {
   const q = state.quote;
   const money = (v) => v == null ? "—" : `${q.currency === "INR" || !q.currency ? "₹" : q.currency + " "}${Number(v).toLocaleString("en-IN")}`;
   const open = !q.expired && !q.superseded && ["Sent", "Under Review"].includes(q.status) && done !== "accepted";
+  const kycIssues = kycProblems({ ...kyc, gstin: unreg ? GST_UNREGISTERED : kyc.gstin });
+  const canAccept = !busy && name.trim() && kycIssues.length === 0;
+  const field = { width: "100%", padding: "9px 12px", border: "1.5px solid #C8D4DF", borderRadius: 8, fontSize: 13, boxSizing: "border-box" };
+  const lbl = { fontSize: 11, fontWeight: 700, color: "#4A6070", marginBottom: 4, display: "block" };
 
   return shell(
     <div style={{background:"#fff", border:"1px solid #E2E9EF", borderRadius:12, overflow:"hidden"}}>
@@ -182,8 +195,35 @@ export default function PublicQuoteAccept({ token, api = callQuoteAccept }) {
           </details>
         )}
 
+        {q.hosting && (
+          <div style={{fontSize:12.5, color:"#4A6070", marginBottom:12}}>Hosting: <b>{HOSTING_LABEL[q.hosting] || q.hosting}</b></div>
+        )}
+
         {open && !showChanges && (
           <div style={{borderTop:"1px solid #E2E9EF", paddingTop:16}}>
+            <div style={{fontSize:13, fontWeight:800, marginBottom:2}}>Your company details (KYC)</div>
+            <div style={{fontSize:11.5, color:"#8BA3B4", marginBottom:10}}>We raise the invoice, licence and agreement exactly as entered here.</div>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10}}>
+              <div style={{gridColumn:"1 / -1"}}>
+                <label style={lbl}>Legal name of the company *</label>
+                <input value={kyc.legalName} onChange={e => setKyc(k => ({...k, legalName: e.target.value}))} placeholder="As on your PAN / GST certificate" style={field}/>
+              </div>
+              <div>
+                <label style={lbl}>PAN *</label>
+                <input value={kyc.pan} maxLength={10} onChange={e => setKyc(k => ({...k, pan: e.target.value.toUpperCase()}))} placeholder="ABCDE1234F" style={field}/>
+              </div>
+              <div>
+                <label style={lbl}>GSTIN *</label>
+                <input value={unreg ? "" : kyc.gstin} disabled={unreg} maxLength={15} onChange={e => setKyc(k => ({...k, gstin: e.target.value.toUpperCase()}))} placeholder={unreg ? "Not registered" : "27ABCDE1234F1Z5"} style={{...field, background: unreg ? "#F4F7FA" : "#fff"}}/>
+                <label style={{display:"flex", alignItems:"center", gap:6, fontSize:11.5, color:"#4A6070", marginTop:4, cursor:"pointer"}}>
+                  <input type="checkbox" checked={unreg} onChange={e => setUnreg(e.target.checked)}/> We are not registered under GST
+                </label>
+              </div>
+              <div style={{gridColumn:"1 / -1"}}>
+                <label style={lbl}>Registered / billing address *</label>
+                <textarea rows={2} value={kyc.address} onChange={e => setKyc(k => ({...k, address: e.target.value}))} placeholder="Address with state and PIN code" style={{...field, resize:"vertical"}}/>
+              </div>
+            </div>
             <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12}}>
               <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name"
                 style={{padding:"9px 12px", border:"1.5px solid #C8D4DF", borderRadius:8, fontSize:13}}/>
@@ -191,10 +231,10 @@ export default function PublicQuoteAccept({ token, api = callQuoteAccept }) {
                 style={{padding:"9px 12px", border:"1.5px solid #C8D4DF", borderRadius:8, fontSize:13}}/>
             </div>
             <div style={{display:"flex", gap:10, flexWrap:"wrap"}}>
-              <button disabled={busy || !name.trim()} onClick={() => act("accept")}
-                title={!name.trim() ? "Please enter your name first" : undefined}
-                style={{flex:1, minWidth:180, padding:"11px 16px", borderRadius:8, border:"none", cursor: busy || !name.trim() ? "not-allowed" : "pointer",
-                  background: busy || !name.trim() ? "#9CC3B8" : "#1B6B5A", color:"#fff", fontWeight:700, fontSize:14}}>
+              <button disabled={!canAccept} onClick={() => act("accept")}
+                title={!name.trim() ? "Please enter your name" : kycIssues.length ? kycIssues.join(" · ") : undefined}
+                style={{flex:1, minWidth:180, padding:"11px 16px", borderRadius:8, border:"none", cursor: canAccept ? "pointer" : "not-allowed",
+                  background: canAccept ? "#1B6B5A" : "#9CC3B8", color:"#fff", fontWeight:700, fontSize:14}}>
                 <Check size={15} style={{verticalAlign:-3, marginRight:6}}/>{busy ? "Recording…" : "Accept quotation"}
               </button>
               <button disabled={busy} onClick={() => setShowChanges(true)}
@@ -202,6 +242,11 @@ export default function PublicQuoteAccept({ token, api = callQuoteAccept }) {
                 <MessageCircle size={14} style={{verticalAlign:-2, marginRight:6}}/>Request changes
               </button>
             </div>
+            {(!name.trim() || kycIssues.length > 0) && (
+              <div style={{fontSize:11.5, color:"#B45309", marginTop:8}}>
+                To accept, please fill in: {[!name.trim() && "your name", ...kycIssues].filter(Boolean).join(" · ")}
+              </div>
+            )}
           </div>
         )}
         {open && showChanges && (

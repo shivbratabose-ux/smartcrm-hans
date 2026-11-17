@@ -3,7 +3,7 @@ import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE, INDIAN_STATES } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { getQuoteTemplate, STANDARD_TERMS_SECTIONS, STANDARD_PAYMENT_MILESTONES, STANDARD_EXTRA_NOTES } from '../data/quoteTemplates';
-import { fmt, uid, today, toLocalISODate, parseLocalDate, generateAcceptToken, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress, canEditRecord, hasPendingAccessReq } from '../utils/helpers';
+import { fmt, uid, today, toLocalISODate, parseLocalDate, generateAcceptToken, sanitizeObj, hasErrors, softDeleteById, resolveAddress, formatAddress, canEditRecord, hasPendingAccessReq, buildNotificationUpdate, GLOBAL_ROLES } from '../utils/helpers';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, HelpTooltip, TypeaheadSelect, SendEmailModal, userName } from './shared';
 import ProductModulePicker, { ProductSelectionDisplay, productSelectionToString } from './ProductModulePicker';
 import Pagination, { usePagination } from './Pagination';
@@ -17,6 +17,8 @@ import { allocateDocNo } from '../lib/db';
 import { QUOTE_CONFIG } from '../data/quotationMasters';
 import { newQuoteId, newContractId, nextQuoteNo, nextContractNo, revisionOf, sendBlockedReason } from '../lib/quotation/docNumbers';
 import GuidedTour from './GuidedTour';
+import QuoteHandoverPanel from './QuoteHandoverPanel';
+import { approverIds, accountsIds, approvalNoticeDue, finalBlockers, handoverOf, kycPageHtml, customerBaseUrl, acceptLink, billFromQuote, projectFromQuote, nextProjectNo, GST_UNREGISTERED } from '../lib/quotation/handover';
 
 // Coach-mark steps for "How to create a quote". Targets map to
 // data-tour="…" attributes on the page's action buttons.
@@ -628,7 +630,7 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
   );
 }
 
-function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,commLogs,setCommLogs,currentUser,orgUsers,catalog,masters=null,canDelete,isManager=false,onRequestEditAccess}) {
+function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,collections=[],setCollections,projects=[],setProjects,setActivities,setUpdates,isFinance=false,commLogs,setCommLogs,currentUser,orgUsers,catalog,masters=null,canDelete,isManager=false,onRequestEditAccess}) {
   const canEditQuote = (q) => canEditRecord({ownerId:q?.owner,currentUser,orgUsers,recordType:"quote",recordId:q?.id,commLogs:commLogs||[]});
   const requestAccessQuote = (q) => onRequestEditAccess && onRequestEditAccess("quote", q.id, q.title||q.id||"Quote", q.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
@@ -1028,7 +1030,15 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   // + 1" collided across users (reps only see their team's quotes; nobody sees
   // deleted ones) — see supabase/doc_numbers_v1.sql. The human number is quoteNo.
   const nextQuoteId=()=>newQuoteId();
-  const quoteConfig=masters?.quoteConfig||QUOTE_CONFIG;
+  const quoteConfig=resolveQuotationMasters(masters,catalog).quoteConfig||QUOTE_CONFIG;
+  // Who approves quotes / who is Accounts: picked in Masters → Quotation →
+  // Config; until then every top-level role approves and Finance is Accounts.
+  const approvers=approverIds(quoteConfig,orgUsers||[],GLOBAL_ROLES);
+  const accountsTeam=accountsIds(quoteConfig,orgUsers||[]);
+  // Nobody approves their own quote — unless they are the only approver.
+  const canApproveQuote=(q)=>approvers.includes(currentUser)&&(q.owner!==currentUser||approvers.every(id=>id===currentUser));
+  const canBill=isFinance||accountsTeam.includes(currentUser)||isManager;
+  const customerBase=customerBaseUrl(import.meta.env.VITE_PUBLIC_APP_URL,window.location);
   const openAdd=()=>{
     const id=nextQuoteId();
     setForm({...BLANK_QUOTE,id,owner:currentUser,createdDate:today,items:[]});
@@ -1036,6 +1046,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   };
   const openEdit=(q)=>{
     if(q&&q.id&&!canEditQuote(q)){requestAccessQuote(q);return;}
+    if(q&&handoverOf(q).finalAt){alert(`Quote ${q.quoteNo||q.id} is FINAL and with Accounts. Use Revise to make a new version.`);return;}
     // Engine-priced quotes (q.hans) must NOT go through the legacy editor —
     // its recalc reads mrp/unitPrice (absent on engine items) and would zero
     // the totals. Route them back to the Hans builder in edit mode.
@@ -1166,7 +1177,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const cur=q.currency||"INR";
     const sym=cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":`${cur} `;
     const totalDisp=`${sym}${(Number(q.total)||0).toFixed(2)}L`;
-    const acceptUrl=`${window.location.origin}${window.location.pathname}#/quote-accept/${acceptToken}`;
+    const acceptUrl=acceptLink(customerBase,acceptToken);
     // Build CC list: quote CC contacts + account owner (if different from sender + contact)
     const ccContactEmails=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)?.email).filter(Boolean);
     const accOwner=orgUsers?.find(u=>u.id===acc.owner);
@@ -1195,17 +1206,103 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   };
 
   /* ── Approval actions (manager only) ── */
+  const tellUser=(uidTo,title,body,refs={})=>{
+    if(!uidTo||uidTo===currentUser) return;
+    setUpdates&&setUpdates(p=>[...p,buildNotificationUpdate(uidTo,currentUser,title,body)]);
+    setActivities&&setActivities(p=>[...p,{id:`act_${uid()}`,type:"Follow-up",status:"Planned",date:today,title,notes:body,accountId:refs.accountId||"",contactId:"",oppId:refs.oppId||"",owner:uidTo,createdBy:currentUser,assignedBy:currentUser,duration:15,files:[],outcome:""}]);
+  };
   const approveQuote=(q)=>{
+    if(!canApproveQuote(q)){alert("Only the quote approvers set in Masters → Quotation can approve this quote.");return;}
+    tellUser(q.owner,`Quote ${q.quoteNo||q.id} approved`,`${userName(currentUser)} approved "${q.title||""}". You can send it to the customer now.`,{accountId:q.accountId,oppId:q.oppId});
     const at=new Date().toISOString();
     const ce={id:uid(),at,by:currentUser,field:"approvalStatus",from:q.approvalStatus||"Pending",to:"Approved",note:""};
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Approved",approvedBy:currentUser,approvedAt:at,rejectedReason:"",changeLog:[...(r.changeLog||[]),ce]}:r));
   };
   const rejectQuote=(q)=>setRejectModal({quote:q});
   const _doRejectQuote=(q,reason)=>{
+    tellUser(q.owner,`Quote ${q.quoteNo||q.id} not approved`,`${userName(currentUser)}: ${reason||"No reason given"}. Revise the quote and resubmit.`,{accountId:q.accountId,oppId:q.oppId});
     const at=new Date().toISOString();
     const ce={id:uid(),at,by:currentUser,field:"approvalStatus",from:q.approvalStatus||"Pending",to:"Rejected",note:reason||"No reason given"};
     setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Rejected",approvedBy:currentUser,approvedAt:at,rejectedReason:reason||"No reason given",changeLog:[...(r.changeLog||[]),ce]}:r));
     setRejectModal(null);
+  };
+
+  /* ── Approvers are told when a quote needs them (once per request) ── */
+  // The ref stops a second run (React re-runs effects; quotes can change
+  // again before the "told" log entry lands) from alerting twice.
+  const noticedRef=useRef(new Set());
+  useEffect(()=>{
+    const key=(q)=>`${q.id}|${q.approvalRequestedAt||""}|${q.approvedAt||""}`;
+    const due=quotes.filter(q=>q.owner===currentUser&&!q.isDeleted&&approvalNoticeDue(q)&&!noticedRef.current.has(key(q)));
+    if(!due.length) return;
+    due.forEach(q=>noticedRef.current.add(key(q)));
+    const at=new Date().toISOString();
+    const others=approvers.filter(a=>a!==currentUser);
+    due.forEach(q=>others.forEach(a=>tellUser(a,`Approve quote ${q.quoteNo||q.id}`,
+      `${userName(currentUser)} needs approval for "${q.title||""}" — ${approvalReason(q)||"discount above the allowed limit"}. Total ₹${q.total||0}L. Open Quotations to approve or reject.`,
+      {accountId:q.accountId,oppId:q.oppId})));
+    const ids=new Set(due.map(q=>q.id));
+    setQuotes(p=>p.map(r=>ids.has(r.id)?{...r,changeLog:[...(r.changeLog||[]),{id:uid(),at,by:currentUser,field:"approvalNotice",from:"",to:"sent",note:others.length?`Approval requested from ${others.map(userName).join(", ")}`:"No other approver is set in Masters → Quotation"}]}:r));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[quotes,currentUser]);
+
+  /* ── Quote → Accounts → Implementation (flow approved 14 Nov 2026) ── */
+  const hEntry=(from,to,note)=>({id:uid(),at:new Date().toISOString(),by:currentUser,field:"handover",from,to,note});
+  const patchQuote=(q,patch,entry)=>setQuotes(p=>p.map(r=>r.id===q.id?{...r,...patch,changeLog:entry?[...(r.changeLog||[]),entry]:(r.changeLog||[])}:r));
+  const refsOf=(q)=>({accountId:q.accountId,oppId:q.oppId});
+  const saveHandoverDetails=(q,d)=>{
+    patchQuote(q,{hosting:d.hosting,legalName:d.legalName,pan:d.pan,gstin:d.gstin,billingAddressSnapshot:d.address},
+      {id:uid(),at:new Date().toISOString(),by:currentUser,field:"kyc",from:"",to:"saved",note:`Hosting: ${d.hosting||"—"} · KYC: ${d.legalName||"—"} · PAN ${d.pan||"—"} · GSTIN ${d.gstin===GST_UNREGISTERED?"not registered":(d.gstin||"—")}`});
+  };
+  const markFinal=(q)=>{
+    const blockers=finalBlockers(q,sendBlockedReason(q,needsApproval(q)));
+    if(blockers.length){alert("Not ready to mark FINAL:\n• "+blockers.join("\n• "));return;}
+    if(!window.confirm(`Mark ${q.quoteNo||q.id} FINAL?\n\nThe quote is locked and Accounts is told to raise the bill from it.`)) return;
+    patchQuote(q,{isFinal:true,handover:{...handoverOf(q),finalAt:new Date().toISOString(),finalBy:currentUser}},hEntry("Accepted","FINAL","Marked FINAL — Accounts notified"));
+    const team=accountsTeam.filter(a=>a!==currentUser);
+    team.forEach(a=>tellUser(a,`FINAL quote ${q.quoteNo||q.id}: raise the bill`,
+      `${userName(currentUser)} marked "${q.title||""}" FINAL. Bill to ${q.legalName||"—"} · GSTIN ${q.gstin||"—"} · total ₹${q.total||0}L. Open Quotations → this quote → Raise bill. All values come from the quote.`,refsOf(q)));
+    setToast({msg:team.length?`${q.quoteNo||"Quote"} is FINAL — ${team.map(userName).join(", ")} notified to raise the bill.`:`${q.quoteNo||"Quote"} is FINAL. No Accounts team is set in Masters → Quotation and nobody has the Finance role — tell Accounts directly.`});
+  };
+  const raiseBill=(q)=>{
+    const h=handoverOf(q);
+    if(!h.finalAt||h.billId) return;
+    if(!q.accountId){alert("Link the customer account to this quote first.");return;}
+    if(!setCollections){alert("Collections is not available here.");return;}
+    const productId=(Array.isArray(q.productSelection)&&q.productSelection[0]?.productId)||q.product||"";
+    const bill=billFromQuote(q,{today,by:currentUser,productId});
+    setCollections(p=>[...p,bill]);
+    patchQuote(q,{handover:{...h,billId:bill.id,billNo:bill.invoiceNo,billAt:new Date().toISOString(),billBy:currentUser}},hEntry("FINAL","Billed",`Bill ${bill.invoiceNo} raised from the quote (₹${bill.netPayable}L incl. GST)`));
+    tellUser(q.owner,`Bill ${bill.invoiceNo} raised for ${q.quoteNo||q.id}`,`Accounts raised the bill (₹${bill.netPayable}L incl. GST). Send the bill, ULA and agreement; when the customer confirms, record it in the quote.`,refsOf(q));
+    setToast({msg:`Bill ${bill.invoiceNo} created in Collections — taxable ₹${bill.billedAmount}L + GST ₹${bill.gstAmount}L. Replace the number with the tax-invoice number when issued.`});
+  };
+  const confirmBill=async(q)=>{
+    const h=handoverOf(q);
+    if(!h.billId||h.confirmedAt) return;
+    if(!window.confirm(`Record that the customer confirmed bill ${h.billNo||""}, the ULA and the agreement?\n\nThis is "deemed signed" and starts implementation.`)) return;
+    const at=new Date().toISOString();
+    const productIds=[...new Set([...(Array.isArray(q.productSelection)?q.productSelection.map(x=>x.productId):[]),q.product].filter(Boolean))];
+    const leadUser=(catalog||[]).find(c=>productIds.includes(c.id)&&c.lineManagerId)?.lineManagerId||"";
+    const acc=accounts.find(a=>a.id===q.accountId);
+    // A won deal may already have its delivery project — reuse it, don't fork.
+    let prj=projects.find(p=>!p.isDeleted&&q.oppId&&p.oppId===q.oppId)||null;
+    const reused=!!prj;
+    if(!prj&&setProjects){
+      const year=new Date().getFullYear();
+      const n=await allocateDocNo(`project:${year}`);
+      const projectNo=n?`PRJ-${year}-${String(n).padStart(3,"0")}`:nextProjectNo(projects,year);
+      prj=projectFromQuote(q,{today,projectNo,leadUserId:leadUser,products:productIds,accountName:acc?.name||""});
+      setProjects(p=>[...p,prj]);
+    }
+    patchQuote(q,{handover:{...h,confirmedAt:at,confirmedBy:currentUser,...(prj?{projectId:prj.id,projectNo:prj.projectNo,projectAt:at}:{})}},
+      hEntry("Billed","Confirmed",`Customer confirmed — deemed signed.${prj?` Implementation: ${prj.projectNo}${reused?" (existing project for this deal)":" created"}.`:""}`));
+    const scope=(q.items||[]).map(it=>it.name||it.description).filter(Boolean).join(", ");
+    const told=[...new Set([leadUser,q.owner,...accountsTeam].filter(Boolean))];
+    told.forEach(u=>tellUser(u,`Start implementation: ${acc?.name||q.legalName||q.title||""}`,
+      `Customer confirmed ${q.quoteNo||q.id}. Project ${prj?.projectNo||"—"}. Hosting: ${q.hosting||"—"}. Activate exactly what was quoted: ${scope||"see the quote"}.`,refsOf(q)));
+    setToast({msg:leadUser
+      ? `Implementation ${prj?.projectNo||""} ${reused?"linked":"created"} — ${userName(leadUser)} notified.`
+      : `Implementation ${prj?.projectNo||""} ${reused?"linked":"created"}. No delivery lead is set for this product (Masters → Catalog → Line Manager) — assign one in Projects.`});
   };
 
   /* ── Customer Accept: Sent/Under Review → Accepted + stamp + auto-create Contract draft ── */
@@ -1515,7 +1612,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       printToken = generateAcceptToken();
       setQuotes(p=>p.map(r=>r.id===q.id?{...r,acceptToken:printToken}:r));
     }
-    const acceptUrl = `${window.location.origin}${window.location.pathname}#/quote-accept/${printToken}`;
+    const acceptUrl = acceptLink(customerBase,printToken);
     const qrUrl     = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(acceptUrl)}`;
     const logoUrl   = `${window.location.origin}/hans-logo.png`;
 
@@ -1759,6 +1856,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       <span>${q.id} · v${q.version||1} · Generated ${new Date().toLocaleString("en-IN")} · ${template.toUpperCase()}</span>
     </div>
 
+    ${!isInternal?kycPageHtml(q,{acceptUrl}):""}
   </div><!-- /page -->
 </body></html>`;
 
@@ -2159,7 +2257,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
                   {editable ? (<>
                   <button className="icon-btn" title="Edit" onClick={()=>openEdit(q)}><Edit2 size={14}/></button>
                   {q.status==="Draft"&&(()=>{const blocked=sendBlockedReason(q,needsApproval(q));return <button className="icon-btn" title={blocked?`Can't send yet: ${blocked}`:"Email quote to customer"} onClick={()=>openEmailModal(q)} style={{color:blocked?"#F59E0B":"#3B82F6"}}><Send size={14}/></button>;})()}
-                  {isManager && q.approvalStatus==="Pending" && (<>
+                  {canApproveQuote(q) && q.approvalStatus==="Pending" && (<>
                     <button className="icon-btn" title={`Approve (${approvalReason(q)})`} onClick={()=>approveQuote(q)} style={{color:"#22C55E"}}><ThumbsUp size={14}/></button>
                     <button className="icon-btn" title="Reject" onClick={()=>rejectQuote(q)} style={{color:"#EF4444"}}><ThumbsDown size={14}/></button>
                   </>)}
@@ -2417,6 +2515,18 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             </div>
           )}
           {detail.notes&&<div style={{marginTop:8,fontSize:12,color:"var(--text3)"}}><strong>Notes:</strong> {detail.notes}</div>}
+          {(()=>{
+            const live=quotes.find(q=>q.id===detail.id)||detail;
+            const h=handoverOf(live);
+            return <QuoteHandoverPanel quote={live}
+              canEdit={canEditQuote(live)} canBill={canBill}
+              sendBlocked={sendBlockedReason(live,needsApproval(live))}
+              hasAccount={!!live.accountId}
+              bill={h.billId?collections.find(c=>c.id===h.billId):null}
+              project={h.projectId?projects.find(p=>p.id===h.projectId):null}
+              userName={userName}
+              actions={{saveDetails:(d)=>saveHandoverDetails(live,d),markFinal:()=>markFinal(live),raiseBill:()=>raiseBill(live),confirmBill:()=>confirmBill(live)}}/>;
+          })()}
         </Modal>
       )}
 
@@ -2917,9 +3027,9 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}>
-                  <input type="checkbox" checked={!!form.isFinal} onChange={e=>setForm(f=>({...f,isFinal:e.target.checked}))}/>
-                  Mark as Final Quote (locked for contract)
+                <label style={{display:"flex",alignItems:"center",gap:6,color:"var(--text3)"}}>
+                  <input type="checkbox" checked={!!form.isFinal} disabled readOnly/>
+                  Final quote — set with "Mark as FINAL" in the quote's handover panel (checks approval, hosting &amp; KYC)
                 </label>
               </div>
               <div className="form-group"><label>Supersedes Quote ID</label><input value={form.supersedesQuoteId||""} onChange={e=>setForm(f=>({...f,supersedesQuoteId:e.target.value}))} placeholder="e.g. QT-007"/></div>
