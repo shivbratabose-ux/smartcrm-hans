@@ -84,6 +84,31 @@ function mergeCatalogue(saved, appCatalog) {
   return merged;
 }
 
+// Pick people from the active users (approvers, Accounts team).
+function PeoplePicker({ label, hint, orgUsers, value, onChange }) {
+  const live = (orgUsers || []).filter(u => u && u.active !== false && !u.isDeleted && String(u.status || "Active").toLowerCase() !== "inactive")
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  const chosen = new Set(value);
+  const known = new Set(live.map(u => u.id));
+  const missing = value.filter(id => !known.has(id));
+  return (
+    <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+      <label>{label} {value.length ? <span style={{ color: "var(--text3)", fontWeight: 500 }}>· {value.length} selected</span> : <span style={{ color: "#B45309", fontWeight: 500 }}>· none — default rule applies</span>}</label>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: 8, border: "1.5px solid var(--border)", borderRadius: 8, background: "#fff", maxHeight: 150, overflowY: "auto" }}>
+        {live.map(u => (
+          <button key={u.id} type="button" onClick={() => onChange(chosen.has(u.id) ? value.filter(x => x !== u.id) : [...value, u.id])}
+            style={{ fontSize: 11.5, padding: "3px 10px", borderRadius: 14, cursor: "pointer", border: `1.5px solid ${chosen.has(u.id) ? "#1B6B5A" : "var(--border)"}`, background: chosen.has(u.id) ? "#E6F4EF" : "#fff", color: chosen.has(u.id) ? "#1B6B5A" : "var(--text2)", fontWeight: chosen.has(u.id) ? 700 : 500 }}>
+            {chosen.has(u.id) ? "✓ " : ""}{u.name || u.email || u.id}<span style={{ color: "var(--text3)", fontWeight: 400 }}> · {u.role || ""}</span>
+          </button>
+        ))}
+        {live.length === 0 && <span style={{ fontSize: 11.5, color: "var(--text3)" }}>No users loaded.</span>}
+      </div>
+      {missing.length > 0 && <div style={{ fontSize: 11, color: "#B45309", marginTop: 4 }}>{missing.length} selected user(s) are no longer active and are ignored. <button type="button" className="btn btn-xs btn-sec" onClick={() => onChange(value.filter(id => known.has(id)))}>Remove</button></div>}
+      {hint && <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>{hint}</div>}
+    </div>
+  );
+}
+
 // Resolve current masters with seeded fallbacks. `catalog` is the Product
 // Catalogue master (the single product list) unioned into the price book.
 export function resolveQuotationMasters(masters, catalog) {
@@ -103,7 +128,7 @@ export function resolveQuotationMasters(masters, catalog) {
 const cell = { padding: "8px 12px", borderBottom: "1px solid var(--border)", fontSize: 12.5, verticalAlign: "middle" };
 const numInput = { width: "100%", border: "1.5px solid var(--border)", borderRadius: 6, background: "white", fontSize: 12, padding: "5px 7px", textAlign: "right", fontFamily: "'Outfit',sans-serif", outline: "none", boxSizing: "border-box" };
 
-export default function QuotationMasters({ masters, setMasters, catalog = [] }) {
+export default function QuotationMasters({ masters, setMasters, catalog = [], orgUsers = [] }) {
   const cur = resolveQuotationMasters(masters, catalog);
   const [sub, setSub] = useState("config");
   const [schedFor, setSchedFor] = useState(null); // {kind,key} whose rate schedule is open
@@ -384,6 +409,12 @@ export default function QuotationMasters({ masters, setMasters, catalog = [] }) 
               }} />
             </div>
           ))}
+          <PeoplePicker label="Quote approvers" orgUsers={orgUsers} value={cur.quoteConfig.approverIds || []}
+            onChange={(ids) => setConfig("approverIds", ids)}
+            hint="Who approves a quote whose discount or value is above the limit. They get a bell alert and a task. Nobody approves their own quote unless they are the only approver. Leave empty and every Admin / MD / Director / VP approves (the old rule)." />
+          <PeoplePicker label="Accounts team (raises bills)" orgUsers={orgUsers} value={cur.quoteConfig.accountsUserIds || []}
+            onChange={(ids) => setConfig("accountsUserIds", ids)}
+            hint="Told when Sales marks a quote FINAL, and can raise the bill from it. Leave empty and everyone with the Finance role is Accounts." />
           <div style={{ gridColumn: "1 / -1", fontSize: 11, color: "var(--text3)" }}>
             Quote number format: <code>{cur.quoteConfig.quoteNumberPrefix}</code> + {cur.quoteConfig.quoteNumberSeqWidth}-digit sequence + <code>/YY-YY</code> (fiscal year, Apr–Mar).
           </div>

@@ -54,6 +54,8 @@ export function revisionOf(q, { id, today }) {
     // Customer-side state stays with the original.
     acceptToken: "", acceptedDate: "", signedQuoteUrl: "", contractId: "",
     emailLog: [], lastReminderAt: "",
+    // A revision starts its own Accounts handover (FINAL, bill, project).
+    handover: {},
     changeLog: [{ id: rand(), at: new Date().toISOString(), by: "", field: "", from: "", to: "created", note: `Revision of ${q.quoteNo || q.id}` }],
     notes: `Revised from ${q.quoteNo || q.id}. ` + (q.notes || ""),
   };
