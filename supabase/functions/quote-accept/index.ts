@@ -25,6 +25,12 @@
 //     returns KYC). gstin may be "UNREGISTERED". Saved onto the quote's
 //     legal_name / pan / gstin / billing_address_snapshot.
 //   { token, action: "changes", name?, comment }
+//   { token: <billToken>, action: "bill-view" }
+//   { token: <billToken>, action: "bill-confirm", name, designation? }
+//     The customer confirms the bill, ULA and Agreement ("deemed signed").
+//     The token is handover.billToken, minted when Accounts raises the bill.
+//     Confirming creates the implementation project (or links a won deal's
+//     project) and alerts the delivery lead, the sales owner and Accounts.
 //
 // State rules:
 //   - view    : any status; expired/superseded/accepted states are reported
@@ -45,6 +51,10 @@
 // deno-lint-ignore-file no-explicit-any
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import {
+  handoverOf, quoteAmounts, scopeLines, kycOf, resolveDocuments, docContext, fillTemplate,
+  projectFromQuote, accountsIds, HOSTING_LABEL, GST_UNREGISTERED,
+} from "../_shared/handoverCore.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -138,13 +148,15 @@ serve(async (req) => {
   // Tokens are 64 hex chars (backfill) or 48 (client-minted). Reject junk
   // early so the DB never sees probe traffic shapes.
   if (!/^[a-f0-9]{32,80}$/i.test(token)) return json({ error: "Quote not found" }, 404);
-  if (!["view", "accept", "changes"].includes(action)) return json({ error: "Unknown action" }, 400);
+  if (!["view", "accept", "changes", "bill-view", "bill-confirm"].includes(action)) return json({ error: "Unknown action" }, 400);
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  if (action.startsWith("bill-")) return billStep(admin, token, action, body);
 
   const { data: q, error: qErr } = await admin
     .from("quotations")
@@ -255,3 +267,107 @@ serve(async (req) => {
   }
   return json({ ok: true, changesRequested: true, quote: { ...summary, status: "Under Review" } });
 });
+
+
+// ═══ Bill confirmation (customer) ═══════════════════════════════════════
+const quoteOf = (r: any) => ({
+  id: r.id, quoteNo: r.quote_no, title: r.title, version: r.version, owner: r.owner,
+  accountId: r.account_id, oppId: r.opp_id, contractId: r.contract_id, contactId: r.contact_id,
+  createdDate: r.created_date, status: r.status, hosting: r.hosting, handover: r.handover || {},
+  legalName: r.legal_name, pan: r.pan, gstin: r.gstin, billingAddressSnapshot: r.billing_address_snapshot,
+  paymentTerms: r.payment_terms, product: r.product, productSelection: r.product_selection,
+  items: Array.isArray(r.items) ? r.items : [], total: r.total, taxAmount: r.tax_amount, hans: r.hans, currency: r.currency,
+});
+
+async function billStep(admin: any, token: string, action: string, body: any) {
+  const { data: rows, error } = await admin.from("quotations").select("*")
+    .eq("is_deleted", false).filter("handover->>billToken", "eq", token).limit(1);
+  if (error) return json({ error: "Lookup failed" }, 500);
+  const row = rows?.[0];
+  if (!row) return json({ error: "Bill not found" }, 404);
+  const q = quoteOf(row);
+  const h = handoverOf(q);
+  const [{ data: acc }, { data: settings }, { data: bill }] = await Promise.all([
+    q.accountId ? admin.from("accounts").select("name").eq("id", q.accountId).maybeSingle() : Promise.resolve({ data: null }),
+    admin.from("app_settings").select("masters, catalog").eq("scope", "org").maybeSingle(),
+    h.billId ? admin.from("collections").select("invoice_no, invoice_date, due_date, billed_amount, gst_amount, net_payable, currency").eq("id", h.billId).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  const docs = resolveDocuments(settings?.masters);
+  const ctx = docContext(q, { today: todayISO() });
+  const k = kycOf(q);
+  const a = quoteAmounts(q);
+  const summary = {
+    quoteNo: q.quoteNo || q.id, title: q.title || "", accountName: acc?.name || "",
+    billNo: bill?.invoice_no || h.billNo || "", billDate: bill?.invoice_date || "", dueDate: bill?.due_date || "",
+    taxable: bill?.billed_amount ?? a.taxable, gst: bill?.gst_amount ?? a.gst, total: bill?.net_payable ?? a.total,
+    currency: bill?.currency || q.currency || "INR",
+    customer: { legalName: k.legalName, pan: k.pan, gstin: k.gstin === GST_UNREGISTERED ? "Not registered under GST" : k.gstin, address: k.address },
+    hosting: HOSTING_LABEL[q.hosting] || q.hosting || "",
+    lines: scopeLines(q),
+    documents: docs.filter((d: any) => d.body.trim()).map((d: any) => ({ title: d.title, html: fillTemplate(d.body, ctx).html })),
+    confirmed: !!h.confirmedAt, confirmedAt: h.confirmedAt || "", confirmedName: h.confirmedName || "",
+  };
+  if (action === "bill-view") return json({ ok: true, bill: summary });
+
+  // ── bill-confirm ──
+  if (h.confirmedAt) return json({ ok: true, alreadyConfirmed: true, bill: summary });
+  const name = String(body?.name || "").slice(0, 120).trim();
+  const designation = String(body?.designation || "").slice(0, 80).trim();
+  if (!name) return json({ error: "Please enter your name." }, 400);
+  const at = new Date().toISOString();
+  const today = todayISO();
+
+  // Implementation project: a won deal's project if there is one, else a new one.
+  const productIds = [...new Set([...(Array.isArray(q.productSelection) ? q.productSelection.map((x: any) => x?.productId) : []), q.product].filter(Boolean))];
+  const catalog = Array.isArray(settings?.catalog) ? settings.catalog : [];
+  const leadUser = catalog.find((c: any) => productIds.includes(c?.id) && c?.lineManagerId)?.lineManagerId || "";
+  let project: any = null, reused = false;
+  if (q.oppId) {
+    const { data: ex } = await admin.from("projects").select("id, project_no").eq("opp_id", q.oppId).eq("is_deleted", false).limit(1);
+    if (ex?.[0]) { project = { id: ex[0].id, projectNo: ex[0].project_no }; reused = true; }
+  }
+  if (!project) {
+    const year = new Date().getUTCFullYear();
+    const { data: n } = await admin.rpc("allocate_doc_no", { p_kind: `project:${year}` });
+    const p = projectFromQuote(q, { today, projectNo: `PRJ-${year}-${String(n || Date.now() % 1000).padStart(3, "0")}`, leadUserId: leadUser, products: productIds, accountName: acc?.name || "" });
+    const { error: pErr } = await admin.from("projects").insert({
+      id: p.id, project_no: p.projectNo, name: p.name, account_id: p.accountId || null, opp_id: p.oppId || null,
+      contract_id: p.contractId || null, owner: p.owner || null, products: p.products, status: p.status, progress: 0,
+      start_date: today, value: p.value, scope: p.scope, deliverables: p.deliverables, risks: "", notes: p.notes,
+      milestones: [], team: p.team, created_date: today, is_deleted: false,
+    });
+    if (pErr) console.error("bill-confirm project insert", pErr.message);
+    else project = { id: p.id, projectNo: p.projectNo };
+  }
+
+  const entry = {
+    id: crypto.randomUUID().slice(0, 8), at, by: "customer", field: "handover", from: "Billed", to: "Confirmed",
+    note: `Bill, ULA and Agreement confirmed online by ${name}${designation ? ` (${designation})` : ""} — deemed signed.${project ? ` Implementation: ${project.projectNo}${reused ? " (existing project for this deal)" : " created"}.` : ""}`,
+  };
+  const handover = { ...h, confirmedAt: at, confirmedBy: "customer", confirmedName: name, confirmedDesignation: designation,
+    ...(project ? { projectId: project.id, projectNo: project.projectNo, projectAt: at } : {}) };
+  const { error: uErr } = await admin.from("quotations").update({
+    handover, change_log: [...(Array.isArray(row.change_log) ? row.change_log : []), entry],
+  }).eq("id", q.id).filter("handover->>billToken", "eq", token);
+  if (uErr) return json({ error: "Could not record your confirmation. Please try again." }, 500);
+
+  // Alerts: delivery lead, sales owner, Accounts — a task and a bell each.
+  const { data: users } = await admin.from("users").select("id, role, active, status");
+  const qc = settings?.masters?.quotation?.quoteConfig || {};
+  const told = [...new Set([leadUser, q.owner, ...accountsIds(qc, users || [])].filter(Boolean))];
+  const title = `Start implementation: ${acc?.name || q.title || q.quoteNo}`;
+  const text = `${name} confirmed bill ${summary.billNo} for ${q.quoteNo} online (deemed signed). Project ${project?.projectNo || "—"}. Hosting: ${summary.hosting || "—"}. Activate exactly what was quoted: ${summary.lines.join("; ") || "see the quote"}.`;
+  if (told.length) {
+    await admin.from("activities").insert(told.map((uid) => ({
+      id: `act${crypto.randomUUID().slice(0, 8)}`, title, type: "Follow-up", status: "Planned", date: today,
+      owner: uid, account_id: q.accountId || null, opp_id: q.oppId || null, notes: text,
+    })));
+    await admin.from("updates").insert(told.map((uid) => ({
+      id: `upd_${crypto.randomUUID().slice(0, 12)}`, update_id: `NTF-${Date.now().toString(36).toUpperCase()}`,
+      title, description: text, category: "Announcement", priority: "High", tags: ["notification"],
+      created_by: q.owner || "", created_at: at, updated_at: at, recipient_mode: "users",
+      recipient_team_ids: [], recipient_user_ids: [uid], tagged_user_ids: [], attachments: [], read_status: {}, edit_history: [], archived: false, is_deleted: false,
+    })));
+  }
+  return json({ ok: true, confirmed: true, bill: { ...summary, confirmed: true, confirmedAt: at, confirmedName: name } });
+}

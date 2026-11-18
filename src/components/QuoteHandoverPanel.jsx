@@ -3,7 +3,7 @@
 //   customer accepted → FINAL → bill raised → customer confirmed → project.
 // All rules live in lib/quotation/handover.js; this file only draws them.
 import { useState, useEffect } from "react";
-import { Check, Circle, Lock, Receipt, Rocket, ShieldCheck, AlertTriangle } from "lucide-react";
+import { Check, Circle, Lock, Receipt, Rocket, ShieldCheck, AlertTriangle, Mail, Link2, FileText } from "lucide-react";
 import {
   HOSTING_OPTIONS, HOSTING_LABEL, GST_UNREGISTERED, kycOf, kycProblems, normaliseKyc, finalBlockers, handoverOf, handoverStage, quoteAmounts,
 } from "../lib/quotation/handover";
@@ -29,7 +29,7 @@ function Step({ done, locked, title, sub, children }) {
 }
 
 export default function QuoteHandoverPanel({
-  quote, canEdit, canBill, sendBlocked = "", bill = null, project = null, hasAccount = true, userName = (id) => id, actions,
+  quote, canEdit, canBill, sendBlocked = "", bill = null, project = null, hasAccount = true, docsReady = false, userName = (id) => id, actions,
 }) {
   const stage = handoverStage(quote);
   const h = handoverOf(quote);
@@ -100,32 +100,41 @@ export default function QuoteHandoverPanel({
         sub={stage.accepted ? `Accepted ${when(quote.acceptedDate)}` : "Send the quote; the customer accepts from the link or QR and fills the KYC page."} />
 
       <Step done={stage.final} locked={!stage.accepted} title="2. Marked FINAL by Sales"
-        sub={stage.final ? `By ${userName(h.finalBy)} on ${when(h.finalAt)} — Accounts has been notified`
+        sub={stage.final ? `By ${userName(h.finalBy)} on ${when(h.finalAt)} — Accounts notified${h.accountsMailedAt ? " (in the CRM and by e-mail)" : " in the CRM"}.${docsReady ? "" : " ULA / Agreement templates are not set up yet (Masters → Quotation Pricing → Documents)."}`
           : blockers.length ? `Not yet: ${blockers.join(" · ")}` : "Everything is in place. Marking FINAL locks the quote and tells Accounts."}>
+        {stage.final && actions.openPack && (
+          <button className="btn btn-sec btn-sm" title="Final quote + ULA + Agreement + KYC page — print or save as PDF" onClick={actions.openPack}><FileText size={13} />Accounts pack</button>
+        )}
         {!stage.final && canEdit && (
           <button className="btn btn-primary btn-sm" disabled={blockers.length > 0 || dirty} title={dirty ? "Save hosting & KYC first" : blockers.join("\n")} onClick={actions.markFinal}>Mark as FINAL</button>
         )}
       </Step>
 
       <Step done={stage.billed} locked={!stage.final} title="3. Bill raised by Accounts"
-        sub={stage.billed ? `${bill?.invoiceNo || h.billNo || "Bill"} · by ${userName(h.billBy)} on ${when(h.billAt)} — open Collections to edit or send`
+        sub={stage.billed ? `${bill?.invoiceNo || h.billNo || "Bill"} · by ${userName(h.billBy)} on ${when(h.billAt)}${h.billMailedAt ? ` · sent to ${h.billMailedTo || "the customer"} on ${when(h.billMailedAt)}` : " · not sent to the customer yet"}`
           : !hasAccount ? "Link the customer account to this quote first (Finance creates it)."
           : `From the quote: taxable ₹${amounts.taxable}L + GST ₹${amounts.gst}L = ₹${amounts.total}L. Nothing is retyped.`}>
         {stage.final && !stage.billed && canBill && (
           <button className="btn btn-primary btn-sm" disabled={!hasAccount} onClick={actions.raiseBill}><Receipt size={13} />Raise bill</button>
         )}
+        {stage.billed && !stage.confirmed && h.billToken && (canBill || canEdit) && (<>
+          <button className={`btn btn-sm ${h.billMailedAt ? "btn-sec" : "btn-primary"}`} onClick={actions.sendBill} title="E-mail the bill, ULA and Agreement with the online confirm link"><Mail size={13} />{h.billMailedAt ? "Send again" : "Send to customer"}</button>
+          <button className="btn btn-sec btn-sm" onClick={actions.copyBillLink} title="Copy the customer's confirm link (to share by WhatsApp or your own e-mail)"><Link2 size={13} />Copy link</button>
+        </>)}
       </Step>
 
       <Step done={stage.confirmed} locked={!stage.billed} title="4. Customer confirmed the bill, ULA and agreement"
-        sub={stage.confirmed ? `Recorded by ${userName(h.confirmedBy)} on ${when(h.confirmedAt)} — deemed signed`
-          : "When the customer confirms, record it here. That starts implementation."}>
+        sub={stage.confirmed ? (h.confirmedBy === "customer"
+              ? `Confirmed online by ${h.confirmedName || "the customer"}${h.confirmedDesignation ? ` (${h.confirmedDesignation})` : ""} on ${when(h.confirmedAt)} — deemed signed`
+              : `Recorded by ${userName(h.confirmedBy)} on ${when(h.confirmedAt)} — deemed signed`)
+          : "The customer confirms online from the link (that starts implementation). If they confirm by e-mail or on paper instead, record it here."}>
         {stage.billed && !stage.confirmed && (canBill || canEdit) && (
           <button className="btn btn-primary btn-sm" onClick={actions.confirmBill}>Customer confirmed</button>
         )}
       </Step>
 
       <Step done={stage.project} locked={!stage.confirmed} title="5. Implementation project"
-        sub={stage.project ? `${project?.projectNo || h.projectNo || "Project"} · ${project?.status || "created"}${project ? ` · ${project.progress || 0}%` : ""} — the delivery team has been notified`
+        sub={stage.project ? `${project?.projectNo || h.projectNo || "Project"} · ${project?.status || "created"}${project ? ` · ${project.progress || 0}%` : ""}${h.deliveredAt ? ` — delivery complete (${h.deliveredStatus || "Go-Live"}) on ${when(h.deliveredAt)}` : " — the delivery team has been notified"}`
           : "Created automatically at step 4, with the quote's modules, users and hosting."}>
         {stage.project && <Rocket size={16} color="#16A34A" />}
       </Step>

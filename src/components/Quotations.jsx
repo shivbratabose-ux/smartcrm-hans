@@ -18,7 +18,8 @@ import { QUOTE_CONFIG } from '../data/quotationMasters';
 import { newQuoteId, newContractId, nextQuoteNo, nextContractNo, revisionOf, sendBlockedReason } from '../lib/quotation/docNumbers';
 import GuidedTour from './GuidedTour';
 import QuoteHandoverPanel from './QuoteHandoverPanel';
-import { approverIds, accountsIds, approvalNoticeDue, finalBlockers, handoverOf, kycPageHtml, customerBaseUrl, acceptLink, billFromQuote, projectFromQuote, nextProjectNo, GST_UNREGISTERED } from '../lib/quotation/handover';
+import { approverIds, accountsIds, approvalNoticeDue, finalBlockers, handoverOf, kycPageHtml, customerBaseUrl, acceptLink, billFromQuote, projectFromQuote, nextProjectNo, GST_UNREGISTERED, billConfirmLink, resolveDocuments, documentPagesHtml, customerBillEmail } from '../lib/quotation/handover';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 // Coach-mark steps for "How to create a quote". Targets map to
 // data-tour="…" attributes on the page's action buttons.
@@ -1254,6 +1255,23 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     patchQuote(q,{hosting:d.hosting,legalName:d.legalName,pan:d.pan,gstin:d.gstin,billingAddressSnapshot:d.address},
       {id:uid(),at:new Date().toISOString(),by:currentUser,field:"kyc",from:"",to:"saved",note:`Hosting: ${d.hosting||"—"} · KYC: ${d.legalName||"—"} · PAN ${d.pan||"—"} · GSTIN ${d.gstin===GST_UNREGISTERED?"not registered":(d.gstin||"—")}`});
   };
+  // E-mails of the flow go through the quote-handover function. Until Microsoft
+  // 365 sending is set up it answers notConfigured and we say so plainly.
+  const callHandover=async(action,q,attempt=0)=>{
+    if(!isSupabaseConfigured) return {ok:false,offline:true};
+    const {data,error}=await supabase.functions.invoke("quote-handover",{body:{action,quoteId:q.id}});
+    let res=data;
+    if(error){ try{ res=await error.context?.json?.(); }catch{ res=null; } res=res||{error:error.message}; }
+    // Just saved locally: the cloud copy may lag a moment — try again.
+    if(res?.retry&&attempt<4){ await new Promise(r=>setTimeout(r,2500)); return callHandover(action,q,attempt+1); }
+    return res||{};
+  };
+  const recordMail=(q,res,what,stamp)=>{
+    if(!res?.sent?.length) return;
+    const at=new Date().toISOString();
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,handover:{...handoverOf(r),[stamp]:at,...(stamp==="billMailedAt"?{billMailedTo:res.sent[0]}:{})},
+      changeLog:[...(r.changeLog||[]),{id:uid(),at,by:currentUser,field:"mail",from:"",to:stamp,note:`${what} e-mailed to ${res.sent.join(", ")}${res.from?` from ${res.from}`:""}`}]}:r));
+  };
   const markFinal=(q)=>{
     const blockers=finalBlockers(q,sendBlockedReason(q,needsApproval(q)));
     if(blockers.length){alert("Not ready to mark FINAL:\n• "+blockers.join("\n• "));return;}
@@ -1263,6 +1281,13 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     team.forEach(a=>tellUser(a,`FINAL quote ${q.quoteNo||q.id}: raise the bill`,
       `${userName(currentUser)} marked "${q.title||""}" FINAL. Bill to ${q.legalName||"—"} · GSTIN ${q.gstin||"—"} · total ₹${q.total||0}L. Open Quotations → this quote → Raise bill. All values come from the quote.`,refsOf(q)));
     setToast({msg:team.length?`${q.quoteNo||"Quote"} is FINAL — ${team.map(userName).join(", ")} notified to raise the bill.`:`${q.quoteNo||"Quote"} is FINAL. No Accounts team is set in Masters → Quotation and nobody has the Finance role — tell Accounts directly.`});
+    // Accounts pack by e-mail (after the save reaches the cloud).
+    setTimeout(async()=>{
+      const res=await callHandover("notify-final",q);
+      if(res?.sent?.length){ recordMail(q,res,"Accounts pack","accountsMailedAt"); setToast({msg:`Accounts pack e-mailed to ${res.sent.join(", ")}.`}); }
+      else if(res?.notConfigured) setToast({msg:`E-mail isn't set up yet — Accounts got the alert in the CRM instead (${(res.recipients||[]).join(", ")}).`});
+      else if(res?.error) setToast({msg:`Accounts pack not e-mailed: ${res.error}`});
+    },1500);
   };
   const raiseBill=(q)=>{
     const h=handoverOf(q);
@@ -1272,10 +1297,31 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
     const productId=(Array.isArray(q.productSelection)&&q.productSelection[0]?.productId)||q.product||"";
     const bill=billFromQuote(q,{today,by:currentUser,productId});
     setCollections(p=>[...p,bill]);
-    patchQuote(q,{handover:{...h,billId:bill.id,billNo:bill.invoiceNo,billAt:new Date().toISOString(),billBy:currentUser}},hEntry("FINAL","Billed",`Bill ${bill.invoiceNo} raised from the quote (₹${bill.netPayable}L incl. GST)`));
-    tellUser(q.owner,`Bill ${bill.invoiceNo} raised for ${q.quoteNo||q.id}`,`Accounts raised the bill (₹${bill.netPayable}L incl. GST). Send the bill, ULA and agreement; when the customer confirms, record it in the quote.`,refsOf(q));
-    setToast({msg:`Bill ${bill.invoiceNo} created in Collections — taxable ₹${bill.billedAmount}L + GST ₹${bill.gstAmount}L. Replace the number with the tax-invoice number when issued.`});
+    // billToken = the customer's confirm link (#/bill-confirm/<token>).
+    patchQuote(q,{handover:{...h,billId:bill.id,billNo:bill.invoiceNo,billAt:new Date().toISOString(),billBy:currentUser,billToken:h.billToken||generateAcceptToken()}},hEntry("FINAL","Billed",`Bill ${bill.invoiceNo} raised from the quote (₹${bill.netPayable}L incl. GST)`));
+    tellUser(q.owner,`Bill ${bill.invoiceNo} raised for ${q.quoteNo||q.id}`,`Accounts raised the bill (₹${bill.netPayable}L incl. GST). The customer confirms the bill, ULA and Agreement online from the link Accounts sends.`,refsOf(q));
+    setToast({msg:`Bill ${bill.invoiceNo} created in Collections — taxable ₹${bill.billedAmount}L + GST ₹${bill.gstAmount}L. Next: "Send to customer".`});
   };
+  const sendBill=async(q)=>{
+    const h=handoverOf(q);
+    if(!h.billToken) return;
+    const contact=contacts.find(c=>c.id===q.contactId);
+    const to=customerBillEmail(q,contact?.email||"");
+    if(!to){alert("This quote has no billing e-mail. Add the billing contact e-mail on the quote (Edit → Billing), then send again — or copy the confirm link and share it yourself.");return;}
+    if(!window.confirm(`E-mail the bill, ULA and Agreement with the confirm link to ${to}?`)) return;
+    const res=await callHandover("send-bill",q);
+    if(res?.sent?.length){ recordMail(q,res,"Bill pack","billMailedAt"); setToast({msg:`Bill pack e-mailed to ${res.sent.join(", ")}. The customer confirms from the link.`}); }
+    else if(res?.notConfigured||res?.offline){ copyBillLink(q); setToast({msg:"E-mail isn't set up yet — the confirm link is copied; send it to the customer with the bill."}); }
+    else alert(`Not sent: ${res?.error||"unknown error"}`);
+  };
+  const copyBillLink=(q)=>{
+    const h=handoverOf(q);
+    if(!h.billToken) return;
+    const link=billConfirmLink(customerBase,h.billToken);
+    try{ navigator.clipboard?.writeText(link); }catch{}
+    setToast({msg:`Confirm link copied: ${link}`});
+  };
+  const openPack=(q)=>printQuote(q,"pack");
   const confirmBill=async(q)=>{
     const h=handoverOf(q);
     if(!h.billId||h.confirmedAt) return;
@@ -1856,6 +1902,7 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
       <span>${q.id} · v${q.version||1} · Generated ${new Date().toLocaleString("en-IN")} · ${template.toUpperCase()}</span>
     </div>
 
+    ${template==="pack"?documentPagesHtml(q,resolveDocuments(masters),{today}):""}
     ${!isInternal?kycPageHtml(q,{acceptUrl}):""}
   </div><!-- /page -->
 </body></html>`;
@@ -2525,7 +2572,9 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
               bill={h.billId?collections.find(c=>c.id===h.billId):null}
               project={h.projectId?projects.find(p=>p.id===h.projectId):null}
               userName={userName}
-              actions={{saveDetails:(d)=>saveHandoverDetails(live,d),markFinal:()=>markFinal(live),raiseBill:()=>raiseBill(live),confirmBill:()=>confirmBill(live)}}/>;
+              docsReady={resolveDocuments(masters).every(d=>d.body.trim().length>=40)}
+              actions={{saveDetails:(d)=>saveHandoverDetails(live,d),markFinal:()=>markFinal(live),raiseBill:()=>raiseBill(live),confirmBill:()=>confirmBill(live),
+                sendBill:()=>sendBill(live),copyBillLink:()=>copyBillLink(live),openPack:()=>openPack(live)}}/>;
           })()}
         </Modal>
       )}
