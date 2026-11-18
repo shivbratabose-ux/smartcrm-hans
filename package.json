@@ -26,7 +26,8 @@
     "test:digest": "node scripts/test-activity-digest.mjs",
     "test:docnos": "node scripts/test-doc-numbers.mjs",
     "test:handover": "node scripts/test-quote-handover.mjs",
-    "test:assistant": "node scripts/test-quote-assistant.mjs"
+    "test:assistant": "node scripts/test-quote-assistant.mjs",
+    "test:productgroups": "node scripts/test-product-groups.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",

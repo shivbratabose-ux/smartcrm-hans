@@ -21,6 +21,7 @@ import {
 
 const RATE_SOURCES = ["Flat", "Band", "iCAFFE"];
 import { validateCcsRule } from "../lib/quotation/pricingEngine";
+import { groupRates, groupOf, productsToAdd, SERVICES_GROUP, SERVICES_LABEL } from "../lib/quotation/productGroups";
 import { exportCSV, parseCSV } from "../utils/csv";
 
 // Columns for catalogue CSV round-trip (identifiers + the simple editable
@@ -41,6 +42,7 @@ const CATALOGUE_CSV_COLS = [
 // ship without an admin reset; entered rates/overrides are preserved.
 const CATALOGUE_OVERLAY_FIELDS = [
   "listPrice", "costPrice", "minMonthFloor", "minQty", "maxDiscountPct", "active", "notes",
+  "productId", // which Product Catalogue product the row belongs to (one product master)
   "rateSchedule", "segmentPrices", "currencyPrices", "bandRates",
   "matrixId", "matrixRow", // rate-card attachment (Phase 2e)
   // Structural fields are now admin-editable too, so they overlay the seed.
@@ -129,9 +131,17 @@ export function resolveQuotationMasters(masters, catalog) {
 const cell = { padding: "8px 12px", borderBottom: "1px solid var(--border)", fontSize: 12.5, verticalAlign: "middle" };
 const numInput = { width: "100%", border: "1.5px solid var(--border)", borderRadius: 6, background: "white", fontSize: 12, padding: "5px 7px", textAlign: "right", fontFamily: "'Outfit',sans-serif", outline: "none", boxSizing: "border-box" };
 
-export default function QuotationMasters({ masters, setMasters, catalog = [], orgUsers = [] }) {
+// mode "rules": Quotation Rules (config, bands, rate cards, terms, documents).
+// mode "rates": the price rows, grouped by product, shown on Products & Pricing.
+export default function QuotationMasters({ masters, setMasters, catalog = [], orgUsers = [], mode = "rules", onOpenRates, onAddProducts, focusProduct = "", setFocusProduct }) {
   const cur = resolveQuotationMasters(masters, catalog);
-  const [sub, setSub] = useState("config");
+  const [subState, setSub] = useState("config");
+  const sub = mode === "rates" ? "catalogue" : subState;
+  // Rates live on Products & Pricing: send "go to rates" links there.
+  const goSub = (t) => { if (t === "catalogue" && mode === "rules" && onOpenRates) onOpenRates(); else setSub(t); };
+  const [prodFilterState, setProdFilterState] = useState("");
+  const prodFilter = setFocusProduct ? focusProduct : prodFilterState;
+  const setProdFilter = setFocusProduct || setProdFilterState;
   const [schedFor, setSchedFor] = useState(null); // {kind,key} whose rate schedule is open
   const [segFor, setSegFor] = useState(null); // product code whose segment prices are open
   const [curFor, setCurFor] = useState(null); // product code whose currency prices are open
@@ -329,7 +339,7 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
     return { label: "Priced", c: "#15803D", bg: "#F0FDF4" };
   };
   const healthChip = (label, ok, detail, tab) => (
-    <button type="button" onClick={() => tab && setSub(tab)} title={tab ? "Go to tab" : ""}
+    <button type="button" onClick={() => tab && goSub(tab)} title={tab ? "Go to tab" : ""}
       style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 8, border: `1px solid ${ok ? "#A7F3D0" : "#FDE68A"}`, background: ok ? "#F0FDF4" : "#FFFBEB", cursor: tab ? "pointer" : "default", fontSize: 11.5 }}>
       <span style={{ width: 8, height: 8, borderRadius: "50%", background: ok ? "#22C55E" : "#F59E0B" }} />
       <span style={{ fontWeight: 700, color: "var(--text2)" }}>{label}</span>
@@ -339,7 +349,6 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
 
   const SUBS = [
     { id: "config", label: "Config" },
-    { id: "catalogue", label: "Product rates" },
     { id: "bands", label: "Pricing Bands" },
     { id: "icaffe", label: "iCAFFE Rate Card" },
     { id: "ratecards", label: "Rate Cards" },
@@ -351,7 +360,7 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
     <div>
       {/* Secondary (underline) tabs — visually subordinate to the top group
           tabs so the two rows don't read as duplicate tab bars. */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", gap: 8, borderBottom: "1px solid var(--border)" }}>
+      {mode === "rules" && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", gap: 8, borderBottom: "1px solid var(--border)" }}>
         <div style={{ display: "flex", gap: 2 }}>
           {SUBS.map(s => (
             <button key={s.id} onClick={() => setSub(s.id)}
@@ -365,20 +374,20 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
         <button className="btn btn-sec btn-xs" style={{ marginBottom: 6 }} onClick={() => { if (window.confirm("Reset quotation masters to the workbook defaults?")) setMasters(m => ({ ...m, quotation: undefined })); }}>
           <RotateCcw size={12} /> Reset to defaults
         </button>
-      </div>
+      </div>}
 
       {/* ── Masters health / coverage strip ── */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12, alignItems: "center" }}>
         <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text3)" }}>Pricing coverage</span>
         {healthChip("Catalogue", flatMissing.length === 0, `${flatActive.length - flatMissing.length}/${flatActive.length} flat rates`, "catalogue")}
-        {healthChip("Pricing bands", !usesBand || bandsFilled === bandsTotal, `${bandsFilled}/${bandsTotal} filled`, "bands")}
-        {healthChip("iCAFFE rate card", icaffeFilled === icaffeCells, `${icaffeFilled}/${icaffeCells} cells`, "icaffe")}
+        {mode === "rules" && healthChip("Pricing bands", !usesBand || bandsFilled === bandsTotal, `${bandsFilled}/${bandsTotal} filled`, "bands")}
+        {mode === "rules" && healthChip("iCAFFE rate card", icaffeFilled === icaffeCells, `${icaffeFilled}/${icaffeCells} cells`, "icaffe")}
         {healthChip("CC03 > CC04", ccs.ok, ccs.ok ? "valid" : "invalid", "catalogue")}
       </div>
 
       {flatMissing.length > 0 && sub !== "catalogue" && (
         <div style={{ fontSize: 12, color: "#B45309", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
-          {flatMissing.length} product{flatMissing.length > 1 ? "s" : ""} need a list price before they can be quoted (e.g. {flatMissing.slice(0, 3).map(p => p.code).join(", ")}{flatMissing.length > 3 ? "…" : ""}). <button type="button" onClick={() => setSub("catalogue")} style={{ background: "none", border: "none", color: "var(--brand)", fontWeight: 700, cursor: "pointer", padding: 0 }}>Open Product rates →</button>
+          {flatMissing.length} product{flatMissing.length > 1 ? "s" : ""} need a list price before they can be quoted (e.g. {flatMissing.slice(0, 3).map(p => p.code).join(", ")}{flatMissing.length > 3 ? "…" : ""}). <button type="button" onClick={() => goSub("catalogue")} style={{ background: "none", border: "none", color: "var(--brand)", fontWeight: 700, cursor: "pointer", padding: 0 }}>Open prices in Products &amp; Pricing →</button>
         </div>
       )}
 
@@ -427,8 +436,13 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
       {sub === "catalogue" && (
         <div style={{ overflowX: "auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 11, color: "var(--text3)" }}>
-              Quotation rates for each product. (The product list itself lives in the <b>Product Catalogue</b> master tab.) Edit list price (Flat models) and per-month floor (PaaS); Band/iCAFFE products price from their own tabs.
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, color: "var(--text3)" }}>Prices for each product. Band / iCAFFE items price from Quotation Rules.</span>
+              <select value={prodFilter} onChange={e => setProdFilter(e.target.value)} style={{ ...numInput, width: "auto", textAlign: "left", cursor: "pointer" }}>
+                <option value="">All products</option>
+                {catalog.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                <option value={SERVICES_GROUP}>{SERVICES_LABEL}</option>
+              </select>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
               {importMsg && <span style={{ fontSize: 11, color: "#15803D" }}>Updated {importMsg.matched} of {importMsg.rows} row(s)</span>}
@@ -437,20 +451,43 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
               <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; importCatalogue(f); }} />
             </div>
           </div>
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 900 }}>
+          {(() => {
+            const toAdd = productsToAdd(cur.catalogue, catalog);
+            return toAdd.length > 0 && onAddProducts ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px", margin: "6px 0 10px", fontSize: 12.5, color: "#92400E" }}>
+                <AlertTriangle size={14} />
+                <span><b>{toAdd.length}</b> priced item{toAdd.length > 1 ? "s are" : " is"} not a product yet, so {toAdd.length > 1 ? "they" : "it"} can't be used on leads or deals: {toAdd.map(x => x.product.name).join(", ")}.</span>
+                <button type="button" className="btn btn-primary btn-xs" onClick={() => onAddProducts(toAdd)}><Plus size={12} /> Add as products</button>
+              </div>
+            ) : null;
+          })()}
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1080 }}>
             <thead>
               <tr style={{ background: "var(--s2)", textAlign: "left" }}>
-                {["Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Cost (₹)", "Floor/mo (₹)", "Min qty", "Max disc %", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
+                {["Product", "Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Cost (₹)", "Floor/mo (₹)", "Min qty", "Max disc %", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
-              {cur.catalogue.map(p => {
+              {groupRates(cur.catalogue, catalog).filter(g => g.rows.length && (!prodFilter || g.id === prodFilter)).map(g => [
+                <tr key={`g-${g.id || "none"}`}>
+                  <td colSpan={13} style={{ ...cell, background: g.id ? "#F1F5F9" : "#FEF2F2", fontWeight: 800, fontSize: 12, color: g.id ? "var(--text)" : "#B91C1C" }}>
+                    {g.name} <span style={{ fontWeight: 500, color: "var(--text3)" }}>· {g.rows.length} price row{g.rows.length > 1 ? "s" : ""}</span>
+                  </td>
+                </tr>,
+                ...g.rows.map(p => {
                 const editablePrice = p.rateSource === "Flat" && !p.matrixId;
                 const ccRow = (p.code === "CC03" || p.code === "CC04") && !ccs.ok;
                 const st = rowStatus(p);
                 const priceMissing = editablePrice && p.listPrice == null && p.active !== false;
                 return (
                   <tr key={p.code} style={{ background: ccRow ? "#FEF2F2" : "transparent" }}>
+                    <td style={cell}>
+                      <select title="Which product this price belongs to" style={{ ...numInput, textAlign: "left", cursor: "pointer", minWidth: 110 }} value={groupOf(p, catalog)} onChange={e => setCatRow(p.code, "productId", e.target.value)}>
+                        <option value="">— not linked —</option>
+                        {catalog.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        <option value={SERVICES_GROUP}>Services &amp; add-ons</option>
+                      </select>
+                    </td>
                     <td style={{ ...cell, fontFamily: "monospace", fontWeight: 700 }}>{p.code}</td>
                     <td style={cell}><input style={{ ...numInput, textAlign: "left" }} value={p.name ?? ""} onChange={e => setCatRow(p.code, "name", e.target.value)} /></td>
                     <td style={cell}>
@@ -511,7 +548,7 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
                     </td>
                   </tr>
                 );
-              })}
+              })])}
             </tbody>
           </table>
         </div>

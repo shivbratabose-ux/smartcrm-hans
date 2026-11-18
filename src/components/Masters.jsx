@@ -5,7 +5,8 @@ import { uid } from '../utils/helpers';
 import { Modal, Confirm, HelpTooltip, PageTip } from './shared';
 import { saveSettings } from '../lib/db';
 import LeadFieldsEditor from './LeadFieldsEditor';
-import QuotationMasters from './QuotationMasters';
+import QuotationMasters, { resolveQuotationMasters } from './QuotationMasters';
+import { countsByProduct } from '../lib/quotation/productGroups';
 import { notify } from '../utils/toast';
 import { OFF_DAY_TYPES } from '../utils/teamSummary';
 
@@ -609,6 +610,7 @@ function HolidayCalendarEditor({ holidays, setHolidays }) {
 
 function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],currentUser=null}) {
   const [tab,setTab]=useState("reference");
+  const [priceFocus,setPriceFocus]=useState(""); // product whose prices are shown (Products & Pricing)
   const [group,setGroup]=useState("sales");
   const [search,setSearch]=useState("");
 
@@ -674,7 +676,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
       </div>
 
       <div style={{display:"flex",gap:8,marginBottom:18}}>
-        {[{id:"reference",label:"Reference Data"},{id:"products",label:"Product Catalogue"},{id:"leadfields",label:"Lead Capture Fields"},{id:"quotation",label:"Quotation Pricing"}].map(t=>(
+        {[{id:"reference",label:"Reference Data"},{id:"products",label:"Products & Pricing"},{id:"leadfields",label:"Lead Capture Fields"},{id:"quotation",label:"Quotation Rules"}].map(t=>(
           <button key={t.id} className={`btn btn-sm ${tab===t.id?"btn-primary":"btn-sec"}`} onClick={()=>setTab(t.id)}>{t.label}</button>
         ))}
       </div>
@@ -735,9 +737,29 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
         </div>
       )}
 
-      {tab==="products" && <ProductCatalogPage catalog={catalog} setCatalog={setCatalog} orgUsers={orgUsers} currentUser={currentUser}/>}
+      {tab==="products" && (<>
+        <ProductCatalogPage catalog={catalog} setCatalog={setCatalog} orgUsers={orgUsers} currentUser={currentUser}
+          priceCounts={countsByProduct(resolveQuotationMasters(masters, catalog).catalogue, catalog)}
+          onShowPrices={(id)=>{setPriceFocus(id);setTimeout(()=>document.getElementById("product-prices")?.scrollIntoView({behavior:"smooth",block:"start"}),50);}}/>
+        {/* One product master: the prices sit under the products they belong to. */}
+        <div id="product-prices" style={{marginTop:22}}>
+          <div style={{fontSize:15,fontWeight:800,marginBottom:2}}>Prices</div>
+          <div style={{fontSize:12,color:"var(--text3)",marginBottom:8}}>Every price row belongs to a product above, or to the shared Services &amp; add-ons. Quotes, the pricing engine and the Quote Assistant use these rows.</div>
+          <QuotationMasters mode="rates" masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers}
+            focusProduct={priceFocus} setFocusProduct={setPriceFocus}
+            onAddProducts={(list)=>{
+              setCatalog(c=>[...c,...list.map(x=>x.product).filter(np=>!c.some(p=>p.id===np.id))]);
+              // Each price row now points at its new product.
+              setMasters(m=>{
+                const qm=resolveQuotationMasters(m,catalog);
+                const byCode=new Map(list.map(x=>[x.code,x.product.id]));
+                return {...m,quotation:{...qm,...(m?.quotation||{}),catalogue:qm.catalogue.map(r=>byCode.has(r.code)?{...r,productId:byCode.get(r.code)}:r)}};
+              });
+            }}/>
+        </div>
+      </>)}
       {tab==="leadfields" && <LeadFieldsEditor masters={masters} setMasters={setMasters} catalog={catalog}/>}
-      {tab==="quotation" && <QuotationMasters masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers}/>}
+      {tab==="quotation" && <QuotationMasters masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers} onOpenRates={()=>setTab("products")}/>}
     </div>
   );
 }
@@ -747,7 +769,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
 // ═══════════════════════════════════════════════════════════════════
 const MOD_TYPE_CLS={Core:"mod-core","Add-on":"mod-addon",Integration:"mod-integration",Analytics:"mod-analytics",Mobile:"mod-mobile"};
 
-function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
+function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,priceCounts={},onShowPrices}) {
   // Admin/MD/Director can re-assign a product's Line Manager directly from
   // this page (inline dropdown on each card) without opening the edit modal.
   // Everyone else sees a read-only label. Same allow-list as other admin
@@ -867,7 +889,7 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
   return (
     <div>
       <div className="pg-head">
-        <div><div className="pg-title">Product Catalogue</div><div className="pg-sub">Manage product lines and their sub-products, modules, and value-add features.</div></div>
+        <div><div className="pg-title">Products &amp; Pricing</div><div className="pg-sub">The one product master: product lines, their modules and line managers, and the prices quotes use (below).</div></div>
         <div className="pg-actions"><button className="btn btn-primary" onClick={openAddProd}><Plus size={14}/>Add Product</button></div>
       </div>
       <div className="prod-catalog-grid">
@@ -911,6 +933,11 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null}) {
                 </div>
                 <div className="prod-catalog-stats">
                   <span style={{fontSize:12,color:"var(--text3)"}}>{p.modules.length} modules</span>
+                  {onShowPrices && (()=>{const pc=priceCounts[p.id]||{rows:0,priced:0};return (
+                    <button type="button" className="btn btn-xs btn-sec" onClick={e=>{e.stopPropagation();onShowPrices(p.id);}} title="Show this product's prices"
+                      style={{color:pc.rows&&pc.priced<pc.rows?"#B45309":pc.rows?"#15803D":"#DC2626"}}>
+                      ₹ {pc.rows?`${pc.priced}/${pc.rows} priced`:"no prices"}
+                    </button>);})()}
                   {Object.entries(modCounts).map(([t,c])=>(
                     <span key={t} className={`module-type-tag ${MOD_TYPE_CLS[t]||"mod-core"}`}>{c} {t}</span>
                   ))}
