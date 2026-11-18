@@ -35,6 +35,8 @@ import Reports from "./components/Reports";
 import Dashboards from "./components/Dashboards";
 import MyPerformance from "./components/MyPerformance";
 import PublicQuoteAccept from "./components/PublicQuoteAccept";
+import PublicBillConfirm from "./components/PublicBillConfirm";
+import { becameDelivered, handoverOf } from "./lib/quotation/handover";
 import Masters from "./components/Masters";
 import AiSettings from "./components/AiSettings";
 import OrgHierarchy from "./components/OrgHierarchy";
@@ -2677,6 +2679,28 @@ export default function SmartCRM() {
     }
   }, [accounts, contacts, leads, tickets, contracts, collections, invoices, opps, orgUsers, currentUser]);
 
+  // ── Delivery complete (Quote → Accounts flow, last step) ──
+  // A project reaching Go-Live / Hypercare / Closed: stamp its quote and tell
+  // the sales owner and Accounts (bell + task, which also reach the mobile app).
+  const onProjectDelivered = (prev, next) => {
+    if (!becameDelivered(prev, next)) return;
+    const q = quotes.find(x => !x.isDeleted && (handoverOf(x).projectId === next.id || (next.oppId && x.oppId === next.oppId && handoverOf(x).confirmedAt)));
+    const qc = masters?.quotation?.quoteConfig || {};
+    const accountsTeam = (Array.isArray(qc.accountsUserIds) && qc.accountsUserIds.length ? qc.accountsUserIds : (orgUsers || []).filter(u => u.role === "finance" && u.active !== false).map(u => u.id));
+    const told = [...new Set([q?.owner, next.owner, ...accountsTeam].filter(id => id && id !== currentUser))];
+    const title = `Delivery complete: ${next.name || next.projectNo}`;
+    const body = `${next.projectNo || "Project"} is now ${next.status}${q ? ` (quote ${q.quoteNo || q.id})` : ""}. Modules per the quote are live for the customer.`;
+    if (told.length) {
+      setUpdates(p => [...p, ...told.map(uid => buildNotificationUpdate(uid, currentUser, title, body))]);
+      setActivities(p => [...p, ...told.map(uid => buildAssignerAlert(uid, title, body, { accountId: next.accountId || "", oppId: next.oppId || "", by: currentUser }))]);
+    }
+    if (q) {
+      const at = new Date().toISOString();
+      setQuotes(p => p.map(r => r.id === q.id ? { ...r, handover: { ...handoverOf(r), deliveredAt: at, deliveredStatus: next.status },
+        changeLog: [...(r.changeLog || []), { id: `ce_${uid()}`, at, by: currentUser, field: "handover", from: "Confirmed", to: "Delivered", note: `${next.projectNo || "Project"} reached ${next.status}` }] } : r));
+    }
+  };
+
   // ── Public quote-accept ──
   // A customer arriving from the emailed link / printed QR has no CRM login,
   // so this branch renders BEFORE the login gate. The page holds no org data:
@@ -2689,6 +2713,15 @@ export default function SmartCRM() {
   })();
   if (!currentUser && publicAcceptToken) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><PublicQuoteAccept token={publicAcceptToken}/></>
+  );
+  // Customer confirming a bill (+ ULA / Agreement) from the link Accounts sent.
+  // Shown with or without a CRM session: it is always the customer's page.
+  const publicBillToken = (() => {
+    const m = /^#\/?bill-confirm\/([A-Za-z0-9]+)/.exec(window.location.hash || "");
+    return m ? m[1] : null;
+  })();
+  if (publicBillToken) return (
+    <><style dangerouslySetInnerHTML={{__html:CSS}}/><PublicBillConfirm token={publicBillToken}/></>
   );
 
   if(!currentUser) return (
@@ -2773,7 +2806,7 @@ export default function SmartCRM() {
             {page==="tickets"    && <Tickets tickets={visibleTickets} setTickets={setTickets} accounts={visibleAccounts} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete} catalog={catalog} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="contracts"  && <Contracts contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote} onGenerateRenewalOpp={generateRenewalOpportunity} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="collections"&& <Collections collections={visibleCollections} setCollections={setCollections} accounts={visibleAccounts} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
-            {page==="projects"   && <Projects projects={visibleProjects} setProjects={setProjects} accounts={visibleAccounts} opps={visibleOpps} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
+            {page==="projects"   && <Projects projects={visibleProjects} setProjects={setProjects} onDelivered={onProjectDelivered} accounts={visibleAccounts} opps={visibleOpps} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
             {page==="quotations" && <Quotations quotes={visibleQuotes} setQuotes={setQuotes} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} collections={collections} setCollections={setCollections} projects={projects} setProjects={setProjects} setActivities={setActivities} setUpdates={setUpdates} isFinance={_financeRole} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} masters={masters} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}
             {page.startsWith("quote-accept/") && <QuoteAcceptLanding quoteId={page.replace(/^quote-accept\//,"")} quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} contracts={contracts} setContracts={setContracts} setActivities={setActivities} currentUser={currentUser} onBack={()=>setPage("quotations")}/>}
             {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} holidays={masters.holidays} adminWorkTypes={masters.adminWorkTypes} onRequestEditAccess={requestEditAccess}/>}

@@ -30,7 +30,7 @@ const projectHealth = (p) => {
   return { label: "On Track", color: "#16A34A" };
 };
 
-function Projects({ projects, setProjects, accounts, opps = [], contracts = [], currentUser, orgUsers, canDelete, catalog = [] }) {
+function Projects({ projects, setProjects, accounts, opps = [], contracts = [], currentUser, orgUsers, canDelete, catalog = [], onDelivered }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== "Inactive") : TEAM;
   const [statusF, setStatusF] = useState("All");
   const [ownerF, setOwnerF] = useState("All");
@@ -78,7 +78,11 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const clean = sanitizeObj(form);
     if (modal.mode === "add") setProjects(p => [...p, { ...clean }]);
-    else setProjects(p => p.map(x => x.id === clean.id ? { ...clean } : x));
+    else {
+      const prev = projects.find(x => x.id === clean.id);
+      setProjects(p => p.map(x => x.id === clean.id ? { ...clean } : x));
+      if (onDelivered && prev) onDelivered(prev, clean);
+    }
     setModal(null); setFormErrors({});
   };
   const del = (id) => { setProjects(p => softDeleteById(p, id, currentUser)); setConfirm(null); };

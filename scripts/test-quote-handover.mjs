@@ -5,6 +5,10 @@ import {
   finalBlockers, handoverStage, quoteAmounts, scopeLines, billFromQuote, projectFromQuote, nextProjectNo,
   customerBaseUrl, acceptLink, kycPageHtml, SMART_CRM_URL,
 } from "../src/lib/quotation/handover.js";
+import {
+  resolveDocuments, documentsReady, docContext, fillTemplate, documentPagesHtml, billConfirmLink, isToken,
+  customerBillEmail, accountsPackEmail, customerBillPackEmail, becameDelivered, DOC_PLACEHOLDERS,
+} from "../src/lib/quotation/handover.js";
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -93,6 +97,57 @@ truthy("shows the quote number, hosting and the online link", blank.includes("SQ
 const filled = kycPageHtml({ ...quote, legalName: "A & B <Ltd>" });
 truthy("pre-fills what is known, safely escaped", filled.includes("A &amp; B &lt;Ltd&gt;") && filled.includes("ABCDE1234F") && !filled.includes("<Ltd>"));
 truthy("unregistered shown in words", kycPageHtml({ ...quote, gstin: GST_UNREGISTERED }).includes("Not registered under GST"));
+
+console.log("\nULA / Agreement templates");
+const noDocs = resolveDocuments({});
+check("two documents, default titles, empty until pasted", noDocs.map((d) => [d.key, d.title, d.body]), [["ula", "Software Licence Agreement (ULA)", ""], ["agreement", "Agreement", ""]]);
+check("not ready while empty", documentsReady(noDocs), false);
+const ULA = "This licence is granted to {{customer.legalName}} (PAN {{customer.pan}}, GSTIN {{customer.gstin}}) for {{users}} users, {{hosting}}.\n\nLicensed items:\n{{modules}}\n\nFees: {{quote.total}} as per quote {{quote.no}}.";
+const docs = resolveDocuments({ quotation: { documents: { ula: { title: "End User Licence", body: ULA }, agreement: { body: "Agreement between {{seller.name}} and {{customer.legalName}} dated {{today}}, bill {{bill.no}}. " + "x".repeat(30) } } } });
+check("custom title kept", docs[0].title, "End User Licence");
+check("ready once both are written", documentsReady(docs), true);
+const billed = { ...quote, handover: { billNo: "PI-SQ/M000013/26-27" }, createdDate: "2026-11-14" };
+const ctx = docContext(billed, { today: "2026-11-20" });
+check("context: KYC, money in rupees, users, hosting", [ctx["customer.legalName"], ctx["quote.total"], ctx.users, ctx.hosting, ctx["bill.no"], ctx.today],
+  [KYC.legalName, "₹5,31,000", "25", "Hans-hosted (cloud)", "PI-SQ/M000013/26-27", "20 November 2026"]);
+check("every documented placeholder has a value source", DOC_PLACEHOLDERS.every(([k]) => k in ctx), true);
+const ulaFilled = fillTemplate(ULA, ctx);
+check("filled: nothing missing", ulaFilled.missing, []);
+truthy("filled text carries the quote's data", ["ABCDE1234F", "33ABCDE1234F1Z5", "25 users", "₹5,31,000", "• iCAFFE Customs [Customs] × 25 User · 12 mo"].every((s) => ulaFilled.html.includes(s)));
+truthy("paragraphs from blank lines", (ulaFilled.html.match(/<p /g) || []).length === 3);
+const gap = fillTemplate("Licensed to {{customer.legalName}}, PO {{po.no}}", { "customer.legalName": "" });
+check("empty or unknown values are listed, not silently dropped", gap.missing, ["customer.legalName", "po.no"]);
+truthy("…and highlighted in the document", gap.html.includes("<mark") && gap.html.includes("[po.no]"));
+truthy("template text is escaped", fillTemplate("<script>x</script> {{customer.legalName}}", { "customer.legalName": "A&B" }).html.includes("&lt;script&gt;") );
+truthy("values are escaped too", fillTemplate("{{customer.legalName}}", { "customer.legalName": "<b>X</b>" }).html.includes("&lt;b&gt;X&lt;/b&gt;"));
+const pages = documentPagesHtml(billed, docs, { today: "2026-11-20" });
+check("one print page per written document", (pages.match(/page-break-before:always/g) || []).length, 2);
+check("empty documents are left out of the pack", (documentPagesHtml(billed, resolveDocuments({ quotation: { documents: { ula: { body: ULA } } } }), {}).match(/page-break-before/g) || []).length, 1);
+
+console.log("\nCustomer confirm link and e-mail address");
+check("confirm link", billConfirmLink("https://smartcrm-hans.vercel.app", "ab12"), "https://smartcrm-hans.vercel.app/#/bill-confirm/ab12");
+check("token shape", [isToken("a".repeat(48)), isToken("short"), isToken("zz" + "a".repeat(40))], [true, false, false]);
+check("billing contact first", customerBillEmail({ billingContactEmail: "bill@cust.in", financeContactEmail: "fin@cust.in" }, "c@cust.in"), "bill@cust.in");
+check("then finance contact", customerBillEmail({ billingContactEmail: "not-an-email", financeContactEmail: "fin@cust.in" }, "c@cust.in"), "fin@cust.in");
+check("then the quote's contact", customerBillEmail({}, "c@cust.in"), "c@cust.in");
+check("none → empty (the CRM asks for one)", customerBillEmail({}, ""), "");
+
+console.log("\nE-mails");
+const finalQ = { ...billed, handover: { finalAt: "t", finalBy: "u1" }, poNumber: "PO-778" };
+const acc = accountsPackEmail(finalQ, { crmUrl: "https://smartcrm-hans.vercel.app/#/quotations", finalByName: "Rahul Mehta", docs: noDocs });
+truthy("Accounts subject names the quote and customer", acc.subject.includes("SQ/M000013/26-27") && acc.subject.includes(KYC.legalName));
+truthy("Accounts body: KYC, hosting, amounts, PO, lines, CRM link", ["ABCDE1234F", "33ABCDE1234F1Z5", "Hans-hosted", "₹4,50,000", "₹81,000", "₹5,31,000", "PO-778", "OCR add-on", "#/quotations", "Rahul Mehta"].every((s) => acc.html.includes(s)));
+truthy("Accounts body says when ULA/Agreement are not set up", acc.html.includes("not set up"));
+truthy("…and lists them when they are", accountsPackEmail(finalQ, { crmUrl: "x", docs }).html.includes("ULA and Agreement"));
+const cust = customerBillPackEmail({ ...billed }, { link: "https://smartcrm-hans.vercel.app/#/bill-confirm/ab12", bill: { invoiceNo: "INV-0042", netPayable: 5.31, dueDate: "2026-12-02" }, docs, contactName: "Meera" });
+truthy("customer e-mail: bill no, amount, due date, link, documents by name", ["INV-0042", "₹5,31,000", "2 December 2026", "#/bill-confirm/ab12", "End User Licence", "Dear Meera"].every((s) => cust.html.includes(s)));
+{ const leak = cust.html.replace(/<[^>]+>/g, " ").match(/.{0,25}(owner|approv|margin|cost).{0,25}/i); check("customer e-mail never shows internal fields", leak ? leak[0] : null, null); }
+
+console.log("\nDelivery complete");
+check("UAT → Go-Live", becameDelivered({ status: "UAT" }, { status: "Go-Live" }), true);
+check("Go-Live → Hypercare is not a second delivery", becameDelivered({ status: "Go-Live" }, { status: "Hypercare" }), false);
+check("Development → Closed counts", becameDelivered({ status: "Development" }, { status: "Closed" }), true);
+check("On Hold is not delivery", becameDelivered({ status: "UAT" }, { status: "On Hold" }), false);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

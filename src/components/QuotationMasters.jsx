@@ -11,6 +11,7 @@
 // blocks an invalid rate card (brief §9).
 // ═══════════════════════════════════════════════════════════════════
 
+import QuoteDocumentsMaster from "./QuoteDocumentsMaster";
 import { useState, useRef } from "react";
 import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X, Tag, Globe, Download, Upload } from "lucide-react";
 import {
@@ -343,6 +344,7 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
     { id: "icaffe", label: "iCAFFE Rate Card" },
     { id: "ratecards", label: "Rate Cards" },
     { id: "terms", label: "Terms" },
+    { id: "documents", label: "Documents (ULA / Agreement)" },
   ];
 
   return (
@@ -812,6 +814,8 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
       })()}
 
       {/* ── Terms ── */}
+      {sub === "documents" && <QuoteDocumentsMaster masters={masters} setMasters={setMasters} />}
+
       {sub === "terms" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 720 }}>
           {cur.terms.map(t => (
