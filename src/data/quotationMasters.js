@@ -22,7 +22,14 @@ export const QUOTE_CONFIG = {
   homeState: "Delhi",            // intra- vs inter-state GST pivot
   gstRatePct: 18,
   maxUserDiscountPct: 10,        // above → approval required
-  alrPctOfLicence: 20,
+  alrPctOfLicence: 20,           // legacy name; AMC uses amcDefaultPct (falls back to this)
+  // AMC on one-time licences (lib/quotation/amc.js)
+  amcDefaultPct: 20,             // % of the licence fee per year (a product can set its own)
+  amcStartYear: 2,               // contract year AMC starts (year 1 = warranty)
+  amcFixedYears: 2,              // AMC years before the first increase
+  amcEscalationPct: 10,          // increase per step
+  amcEscalationEvery: 2,         // years between increases
+  amcScheduleYears: 5,           // AMC years shown on the quote
   prepaymentDiscountPctDefault: 5,
   fx: 1,                         // INR base; divisor on resolved unit price
   // Multi-currency stub (Config sheet) — FX only, no live feeds.

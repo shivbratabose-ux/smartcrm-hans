@@ -233,6 +233,8 @@ const needsApproval = (q) => {
   return pct > QUOTE_APPROVAL_THRESHOLDS.discountPct || (Number(q.total)||0) > QUOTE_APPROVAL_THRESHOLDS.totalValue;
 };
 const approvalReason = (q) => {
+  // Pricing-engine quotes record why they need approval (discount, margin, AMC terms).
+  if (Array.isArray(q?.hans?.approvalReasons) && q.hans.approvalReasons.length) return q.hans.approvalReasons.join(" + ");
   const pct = computeDiscountPct(q);
   const reasons = [];
   if (pct > QUOTE_APPROVAL_THRESHOLDS.discountPct) reasons.push(`discount ${pct}% > ${QUOTE_APPROVAL_THRESHOLDS.discountPct}%`);

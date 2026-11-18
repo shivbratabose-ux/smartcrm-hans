@@ -85,7 +85,9 @@ export function printHansQuote(quote, opts = {}) {
       ${sumRow("Taxable value", inr(h.taxableBase), "sub")}
       ${gstRows}
       ${sumRow("GRAND TOTAL (upfront, incl. GST)", inr(h.grandTotal), "grand")}
-      ${h.alrAnnual ? `<tr class="alr"><td>ALR — annual (billed separately, excl. above)</td><td class="r">${inr(h.alrAnnual)}</td></tr>` : ""}
+      ${h.amc && h.amc.applies
+        ? h.amc.schedule.map((y) => `<tr class="alr"><td>AMC — contract year ${y.contractYear} (billed separately, + GST)</td><td class="r">${inr(y.amount)}</td></tr>`).join("")
+        : h.alrAnnual ? `<tr class="alr"><td>ALR — annual (billed separately, excl. above)</td><td class="r">${inr(h.alrAnnual)}</td></tr>` : ""}
       ${sumRow("Total Contract Value (TCV)", inr(h.tcv), "sub")}
     </table>
     <h3 style="font-size:12px;margin:18px 0 4px">Terms &amp; Conditions</h3>

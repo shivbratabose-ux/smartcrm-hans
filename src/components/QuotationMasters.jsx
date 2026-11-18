@@ -43,6 +43,7 @@ const CATALOGUE_CSV_COLS = [
 const CATALOGUE_OVERLAY_FIELDS = [
   "listPrice", "costPrice", "minMonthFloor", "minQty", "maxDiscountPct", "active", "notes",
   "productId", // which Product Catalogue product the row belongs to (one product master)
+  "amcPct",    // AMC % for a one-time licence row (blank = the default in Quotation Rules)
   "rateSchedule", "segmentPrices", "currencyPrices", "bandRates",
   "matrixId", "matrixRow", // rate-card attachment (Phase 2e)
   // Structural fields are now admin-editable too, so they overlay the seed.
@@ -404,7 +405,12 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
             ["homeState", "Home state (GST pivot)", "text"],
             ["gstRatePct", "GST rate %", "number"],
             ["maxUserDiscountPct", "Max discount % (approval)", "number"],
-            ["alrPctOfLicence", "ALR % of licence", "number"],
+            ["amcDefaultPct", "AMC % of licence (default)", "number"],
+            ["amcStartYear", "AMC starts in contract year", "number"],
+            ["amcFixedYears", "AMC fixed for (years)", "number"],
+            ["amcEscalationPct", "AMC increase %", "number"],
+            ["amcEscalationEvery", "AMC increase every (years)", "number"],
+            ["amcScheduleYears", "AMC years shown on quote", "number"],
             ["prepaymentDiscountPctDefault", "Default prepayment %", "number"],
             ["minMarginPct", "Min margin % (0 = off)", "number"],
             ["fx", "FX to INR (divisor)", "number"],
@@ -464,13 +470,13 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1080 }}>
             <thead>
               <tr style={{ background: "var(--s2)", textAlign: "left" }}>
-                {["Product", "Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Cost (₹)", "Floor/mo (₹)", "Min qty", "Max disc %", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
+                {["Product", "Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Cost (₹)", "Floor/mo (₹)", "Min qty", "Max disc %", "AMC %", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {groupRates(cur.catalogue, catalog).filter(g => g.rows.length && (!prodFilter || g.id === prodFilter)).map(g => [
                 <tr key={`g-${g.id || "none"}`}>
-                  <td colSpan={13} style={{ ...cell, background: g.id ? "#F1F5F9" : "#FEF2F2", fontWeight: 800, fontSize: 12, color: g.id ? "var(--text)" : "#B91C1C" }}>
+                  <td colSpan={14} style={{ ...cell, background: g.id ? "#F1F5F9" : "#FEF2F2", fontWeight: 800, fontSize: 12, color: g.id ? "var(--text)" : "#B91C1C" }}>
                     {g.name} <span style={{ fontWeight: 500, color: "var(--text3)" }}>· {g.rows.length} price row{g.rows.length > 1 ? "s" : ""}</span>
                   </td>
                 </tr>,
@@ -539,6 +545,11 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
                     </td>
                     <td style={cell}>
                       <input style={numInput} type="number" min={0} max={100} placeholder="policy" title="Product discount cap. Blank = company policy; 0 = any discount needs approval" value={p.maxDiscountPct ?? ""} onChange={e => setCatRow(p.code, "maxDiscountPct", numOrNull(e.target.value))} />
+                    </td>
+                    <td style={cell}>
+                      {p.pricingModel === "One-time Licence"
+                        ? <input style={numInput} type="number" min={0} max={100} placeholder={`${cur.quoteConfig.amcDefaultPct ?? cur.quoteConfig.alrPctOfLicence ?? 20}`} title="AMC % of this licence per year. Blank = the default in Quotation Rules" value={p.amcPct ?? ""} onChange={e => setCatRow(p.code, "amcPct", numOrNull(e.target.value))} />
+                        : <span style={{ color: "var(--text3)", fontSize: 11 }}>—</span>}
                     </td>
                     <td style={cell}>
                       <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, color: st.c, background: st.bg, whiteSpace: "nowrap" }}>{st.label}</span>

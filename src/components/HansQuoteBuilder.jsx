@@ -24,6 +24,7 @@ import {
   evaluateDiscountGuardrail, evaluateMarginGuardrail, validateCcsRule, validateWiseHandlingModules,
   formatQuoteNumber, cardBandIndex,
 } from "../lib/quotation/pricingEngine";
+import { computeAmc, amcRules, describeEscalation, amcTermText } from "../lib/quotation/amc";
 import { TC_TEMPLATES, STANDARD_TERMS } from "../data/constants";
 import { printHansQuote } from "../lib/quotation/printQuote";
 import { toLocalISODate } from "../utils/helpers";
@@ -84,6 +85,9 @@ export default function HansQuoteBuilder({
   const [prepaymentApplicable, setPrepaymentApplicable] = useState(!!eh?.prepaymentApplicable);
   const [prepaymentDiscountPct, setPrepaymentDiscountPct] = useState(eh?.prepaymentDiscountPct ?? config.prepaymentDiscountPctDefault);
   const [notes, setNotes] = useState(editQuote?.notes || "");
+  // AMC terms changed on this quote (empty = the company rules). Any change needs approval.
+  const [amcOverrides, setAmcOverrides] = useState(eh?.amc?.overrides || {});
+  const [showAmcEdit, setShowAmcEdit] = useState(false);
   // Terms & conditions (free text). Seed from the edited quote, else the
   // default Hans terms as a sensible starting block the rep can replace via
   // a template. Same field (quote.terms) the Custom Quote / print use.
@@ -276,7 +280,9 @@ export default function HansQuoteBuilder({
   const usesBothCcs = pricedLines.some(l => l.productCode === "CC03") && pricedLines.some(l => l.productCode === "CC04");
   const whRule = validateWiseHandlingModules(pricedLines);
   const missingRateLines = pricedLines.filter(l => l.missingRate);
-  const needsApproval = discGuard.breached || marginGuard.breached;
+  const amc = useMemo(() => computeAmc(pricedLines, { config, catalogue, overallDiscountPct, overrides: amcOverrides }), [pricedLines, config, catalogue, overallDiscountPct, amcOverrides]);
+  const needsApproval = discGuard.breached || marginGuard.breached || amc.breached;
+  const approvalReasons = [...discGuard.reasons, ...marginGuard.reasons, ...amc.deviations];
 
   // ── Save ────────────────────────────────────────────────────────────
   const canSave = oppId && party.name && hosting && pricedLines.some(l => !l._empty) && missingRateLines.length === 0;
@@ -315,6 +321,8 @@ export default function HansQuoteBuilder({
       lineOneTime: +l.lineOneTime.toFixed(2), lineRecurring: +l.lineRecurring.toFixed(2),
       lineTotal: +l.lineTotal.toFixed(2),
     }));
+    // The quote's AMC terms ride in the T&C (one line, replaced on every save).
+    const termsWithAmc = amc.applies ? [termsText.replace(/\n?AMC: [^\n]*/g, "").trimEnd(), amcTermText(amc)].join("\n") : termsText;
     // Additive engine breakdown — absolute ₹, rounded to paise.
     const round2 = (v) => +(Number(v) || 0).toFixed(2);
     const hans = {
@@ -331,14 +339,16 @@ export default function HansQuoteBuilder({
       gstTotal: round2(summary.gstTotal),
       grandTotal: round2(summary.grandTotal),
       licenceBase: round2(summary.licenceBase),
-      alrAnnual: round2(summary.alrAnnual),
+      alrAnnual: round2(amc.annual), // kept for older readers: now the AMC per year
+      amc: { ...amc, overrides: amcOverrides },
+      approvalReasons,
       tcv: round2(summary.tcv),
       intraState: summary.intraState,
       billingFrequency, // invoicing cadence (Monthly / Quarterly / …)
       segment, // customer segment driving segment price lists
       plan: selectedPlan, // chosen iCAFFE plan preset (for re-seed on edit)
       terms: QUOTE_TERMS,
-      termsText, // the rep's edited T&C (rendered by print)
+      termsText: termsWithAmc, // the rep's edited T&C (rendered by print), with the AMC line
       billing, // snapshot for clean re-seed on edit
     };
     // Billing & tax snapshot mapped onto the quote with the same field names
@@ -381,7 +391,7 @@ export default function HansQuoteBuilder({
       hosting,
       owner: isEdit ? (editQuote.owner || currentUser) : currentUser,
       createdDate: isEdit ? (editQuote.createdDate || today()) : today(),
-      terms: termsText, // legacy/register/verify read quote.terms
+      terms: termsWithAmc, // legacy/register/verify read quote.terms
       ...billingSnapshot,
       items, hans,
     };
@@ -411,8 +421,9 @@ export default function HansQuoteBuilder({
         oneTimeSubtotal: round2(summary.oneTimeSubtotal), recurringSubtotal: round2(summary.recurringSubtotal),
         overallDiscount: round2(summary.overallDiscount), prepaymentDisc: round2(summary.prepaymentDisc),
         taxableBase: round2(summary.taxableBase), cgst: round2(summary.cgst), sgst: round2(summary.sgst),
-        igst: round2(summary.igst), grandTotal: round2(summary.grandTotal), alrAnnual: round2(summary.alrAnnual),
-        tcv: round2(summary.tcv), billingFrequency, terms: QUOTE_TERMS, termsText, billing,
+        igst: round2(summary.igst), grandTotal: round2(summary.grandTotal), alrAnnual: round2(amc.annual), amc,
+        tcv: round2(summary.tcv), billingFrequency, terms: QUOTE_TERMS, billing,
+        termsText: amc.applies ? [termsText.replace(/\n?AMC: [^\n]*/g, "").trimEnd(), amcTermText(amc)].join("\n") : termsText,
       },
     };
   };
@@ -669,14 +680,61 @@ export default function HansQuoteBuilder({
                 {summary.sgst > 0 && sumRow(`SGST ${config.gstRatePct / 2}%`, inr(summary.sgst))}
                 {summary.igst > 0 && sumRow(`IGST ${config.gstRatePct}%`, inr(summary.igst))}
                 {sumRow("Grand Total (upfront)", inr(summary.grandTotal), { big: true, divide: true })}
-                {summary.alrAnnual > 0 && sumRow("ALR — annual (separate)", inr(summary.alrAnnual), { color: "var(--text3)" })}
+                {amc.applies && sumRow(`AMC per year (from year ${amc.terms.startYear}, billed separately)`, inr(amc.annual), { color: "var(--text3)" })}
                 {sumRow("TCV", inr(summary.tcv), { bold: true })}
                 {summary.recurringSubtotal > 0 && sumRow("Billing", billingFrequency, { color: "var(--text3)" })}
               </div>
 
+              {/* AMC on one-time licences */}
+              {amc.applies && (
+                <div style={{ marginTop: 10, border: `1px solid ${amc.breached ? "#FDE68A" : "var(--border)"}`, background: amc.breached ? "#FFFBEB" : "#fff", borderRadius: 8, padding: "8px 10px", fontSize: 11.5 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <b>AMC</b>
+                    <span style={{ color: "var(--text3)" }}>{[...new Set(amc.lines.map(l => l.pct))].join("% / ")}% of licence · from year {amc.terms.startYear} · {describeEscalation(amc.terms)}</span>
+                    <button type="button" className="btn btn-xs btn-sec" style={{ marginLeft: "auto" }} onClick={() => setShowAmcEdit(s => !s)}>{showAmcEdit ? "Done" : "Change AMC terms"}</button>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 6 }}>
+                    <tbody>
+                      {amc.schedule.map(y => (
+                        <tr key={y.amcYear}><td style={{ padding: "2px 0", color: "var(--text3)" }}>Year {y.contractYear}</td><td style={{ textAlign: "right", fontFamily: "'Outfit',sans-serif" }}>{inr(y.amount)}</td></tr>
+                      ))}
+                      <tr><td style={{ padding: "3px 0", fontWeight: 700, borderTop: "1px solid var(--border)" }}>AMC, {amc.schedule.length} years (+ GST)</td><td style={{ textAlign: "right", fontWeight: 700, borderTop: "1px solid var(--border)", fontFamily: "'Outfit',sans-serif" }}>{inr(amc.scheduleTotal)}</td></tr>
+                    </tbody>
+                  </table>
+                  {showAmcEdit && (() => {
+                    const rules = amcRules(config);
+                    const set = (k, v) => setAmcOverrides(o => { const n = { ...o }; if (v === "" || v == null) delete n[k]; else n[k] = Number(v); return n; });
+                    const setLine = (code, v) => setAmcOverrides(o => { const lp = { ...(o.linePct || {}) }; if (v === "" || v == null) delete lp[code]; else lp[code] = Number(v); return { ...o, linePct: lp }; });
+                    const inp = { width: 54, padding: "3px 5px", border: "1px solid var(--border)", borderRadius: 5, fontSize: 11.5 };
+                    return (
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ color: "#92400E" }}>Changing any of these sends the quote for approval. Leave a box empty to use the company rule.</div>
+                        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>Starts in contract year
+                          <select value={amcOverrides.startYear ?? ""} onChange={e => set("startYear", e.target.value)} style={{ ...inp, width: 150 }}>
+                            <option value="">{rules.startYear} (rule)</option>
+                            {[1, 2, 3, 4].filter(y => y !== rules.startYear).map(y => <option key={y} value={y}>{y === 1 ? "1 — from go-live" : y}</option>)}
+                          </select>
+                        </label>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>Fixed for
+                          <input type="number" min={0} placeholder={rules.fixedYears} value={amcOverrides.fixedYears ?? ""} onChange={e => set("fixedYears", e.target.value)} style={inp} /> yrs, then +
+                          <input type="number" min={0} placeholder={rules.escalationPct} value={amcOverrides.escalationPct ?? ""} onChange={e => set("escalationPct", e.target.value)} style={inp} />% every
+                          <input type="number" min={1} placeholder={rules.escalationEvery} value={amcOverrides.escalationEvery ?? ""} onChange={e => set("escalationEvery", e.target.value)} style={inp} /> yrs
+                        </div>
+                        {amc.lines.map(l => (
+                          <label key={l.productCode} style={{ display: "flex", alignItems: "center", gap: 6 }}>{l.name}: AMC
+                            <input type="number" min={0} max={100} placeholder={l.rulePct} value={amcOverrides.linePct?.[l.productCode] ?? ""} onChange={e => setLine(l.productCode, e.target.value)} style={inp} />% per year
+                          </label>
+                        ))}
+                        {Object.keys(amcOverrides).length > 0 && <button type="button" className="btn btn-xs btn-sec" style={{ alignSelf: "flex-start" }} onClick={() => setAmcOverrides({})}>Back to the company rules</button>}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {/* Guardrail banners */}
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                {needsApproval && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={`Approval required — ${[...discGuard.reasons, ...marginGuard.reasons].join("; ")}`} />}
+                {needsApproval && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={`Approval required — ${approvalReasons.join("; ")}`} />}
                 {!ccsRule.ok && <Banner color="#B91C1C" bg="#FEF2F2" icon={<AlertTriangle size={14} />} text={ccsRule.error} />}
                 {ccsRule.ok && usesBothCcs && <Banner color="#B45309" bg="#FFFBEB" icon={<Info size={14} />} text="Quote uses both CC03 and CC04 — confirm CC03 is priced above CC04." />}
                 {whRule.warning && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={whRule.warning} />}
