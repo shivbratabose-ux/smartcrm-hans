@@ -41,6 +41,7 @@ export const DEFAULT_AI_CONFIG = {
 };
 
 export const AI_MODELS = [
+  { id: "claude-opus-5-5", label: "Claude Opus 5.5 — newest, most capable" },
   { id: "claude-opus-4-8", label: "Claude Opus 4.8 — most capable (default)" },
   { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 — balanced" },
   { id: "claude-haiku-4-5", label: "Claude Haiku 4.5 — fastest / cheapest" },
@@ -52,6 +53,7 @@ export const AI_FEATURES = [
   { key: "callSummary", label: "Meeting / Call Summaries", desc: "Turn a raw call note into a structured brief: decisions, action items, sentiment." },
   { key: "complianceMatrix", label: "Compliance Matrix from RFP", desc: "Extract a requirement→compliance matrix from an uploaded RFP / tender PDF." },
   { key: "businessCard", label: "Visiting Card Scanner", desc: "Photograph a business card and turn it into a contact — checks for existing accounts, contacts and leads first. The photo is read, not stored." },
+  { key: "quoteAssistant", label: "Quote Assistant (chat)", desc: "Reps describe the requirement in a chat; the assistant picks the opportunity and catalogue items and opens a filled pricing-builder draft to check and save. Always runs on Claude Opus 5.5; it never sets prices." },
   { key: "emailAnalysis", label: "Email Analysis", desc: "Summarise a customer email/thread and extract intent, action items, commitments, shipment refs, priority & sentiment." },
 ];
 
@@ -109,6 +111,15 @@ export async function getAiStatus() {
 /** Generic feature runner. `feature` must match an edge-function feature. */
 export async function runAiFeature(feature, { payload, pdfBase64, imageBase64, imageMediaType, model } = {}) {
   return invokeAi({ action: "run", feature, payload, pdfBase64, imageBase64, imageMediaType, model });
+}
+
+/**
+ * Quote assistant: one chat turn. `messages` = [{role:"user"|"assistant", text}],
+ * `context` = { catalogue, opportunities, segments, currencies, billingFrequencies, approvalLimitPct },
+ * `draft` = the current draft. Resolves { ok, result: { reply, missing, ready, draft } }.
+ */
+export function aiQuoteAssistant({ messages, context, draft }) {
+  return invokeAi({ action: "run", feature: "quoteAssistant", messages, context, draft });
 }
 
 /** Read a visiting-card photo. Resolves { ok, result: {name, company, emails, phones, …} }. */

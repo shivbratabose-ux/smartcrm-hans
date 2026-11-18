@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip, Lock, HelpCircle } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Check, Download, FileText, Copy, Send, Eye, TrendingUp, BarChart3, Activity, GitBranch, X, ShieldCheck, ThumbsUp, ThumbsDown, FileSignature, Mail, Bell, History, Paperclip, Lock, HelpCircle, Sparkles } from "lucide-react";
 import { PRODUCTS, PROD_MAP, TEAM, TEAM_MAP, QUOTE_STATUSES, TAX_TYPES, TAX_RATES, QUOTE_VALIDITY, STANDARD_TERMS, TC_TEMPLATES, PLACES_OF_SUPPLY, SELLER_HOME_STATE, INDIAN_STATES } from '../data/constants';
 import { BLANK_QUOTE, BLANK_QUOTE_ITEM, BLANK_CONTRACT, QUOTE_APPROVAL_THRESHOLDS, QUOTE_REMINDER_OFFSETS } from '../data/seed';
 import { getQuoteTemplate, STANDARD_TERMS_SECTIONS, STANDARD_PAYMENT_MILESTONES, STANDARD_EXTRA_NOTES } from '../data/quoteTemplates';
@@ -18,6 +18,8 @@ import { QUOTE_CONFIG } from '../data/quotationMasters';
 import { newQuoteId, newContractId, nextQuoteNo, nextContractNo, revisionOf, sendBlockedReason } from '../lib/quotation/docNumbers';
 import GuidedTour from './GuidedTour';
 import QuoteHandoverPanel from './QuoteHandoverPanel';
+import QuoteAssistant from './QuoteAssistant';
+import { isAiFeatureOn } from '../utils/ai';
 import { approverIds, accountsIds, approvalNoticeDue, finalBlockers, handoverOf, kycPageHtml, customerBaseUrl, acceptLink, billFromQuote, projectFromQuote, nextProjectNo, GST_UNREGISTERED, billConfirmLink, resolveDocuments, documentPagesHtml, customerBillEmail } from '../lib/quotation/handover';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -631,7 +633,7 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
   );
 }
 
-function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,collections=[],setCollections,projects=[],setProjects,setActivities,setUpdates,isFinance=false,commLogs,setCommLogs,currentUser,orgUsers,catalog,masters=null,canDelete,isManager=false,onRequestEditAccess}) {
+function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,collections=[],setCollections,projects=[],setProjects,setActivities,setUpdates,isFinance=false,commLogs,setCommLogs,currentUser,orgUsers,catalog,masters=null,canDelete,isManager=false,onRequestEditAccess}) {
   const canEditQuote = (q) => canEditRecord({ownerId:q?.owner,currentUser,orgUsers,recordType:"quote",recordId:q?.id,commLogs:commLogs||[]});
   const requestAccessQuote = (q) => onRequestEditAccess && onRequestEditAccess("quote", q.id, q.title||q.id||"Quote", q.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
@@ -643,6 +645,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
   const [modal,setModal]=useState(null);
   const [hansBuilder,setHansBuilder]=useState(false); // engine-backed builder (Hans pricing)
   const [hansEdit,setHansEdit]=useState(null); // quote being edited in the Hans builder (null = new)
+  const [hansDraft,setHansDraft]=useState(null); // draft from the Quote Assistant chat
+  const [showAssistant,setShowAssistant]=useState(false);
   // Guided "How to create a quote" coach-mark tour. Auto-runs once per
   // browser (localStorage flag) so first-time users get oriented, and can
   // be re-triggered any time from the help button in the header.
@@ -2106,7 +2110,8 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           <button className="btn btn-sec" onClick={()=>setShowTour(true)} title="How to create a quote — guided walkthrough"><HelpCircle size={14}/>How to</button>
           <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"quotations")}><Download size={14}/>Export</button>
           <button data-tour="custom-quote-btn" className="btn btn-sec" onClick={openAdd} title="Manual / ad-hoc quote — type your own line items and pricing (no catalogue engine)"><Plus size={14}/>Custom Quote</button>
-          <button data-tour="new-quote-btn" className="btn btn-primary" onClick={()=>{setHansEdit(null);setHansBuilder(true);}} title="Recommended — CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment, guardrails)"><FileText size={14}/>New Quote (Pricing Engine)</button>
+          {isAiFeatureOn(aiConfig,"quoteAssistant")&&<button className="btn btn-sec" onClick={()=>setShowAssistant(true)} title="Describe the requirement in a chat — the assistant fills the pricing builder for you"><Sparkles size={14}/>Quote Assistant</button>}
+          <button data-tour="new-quote-btn" className="btn btn-primary" onClick={()=>{setHansEdit(null);setHansDraft(null);setHansBuilder(true);}} title="Recommended — CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment, guardrails)"><FileText size={14}/>New Quote (Pricing Engine)</button>
         </div>
       </div>
 
@@ -2116,7 +2121,18 @@ function Quotations({quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=
           quotes={quotes} setQuotes={setQuotes} currentUser={currentUser} orgUsers={orgUsers}
           masters={resolveQuotationMasters(masters, catalog)}
           editQuote={hansEdit}
-          onClose={()=>{setHansBuilder(false);setHansEdit(null);}}
+          draft={hansDraft}
+          onClose={()=>{setHansBuilder(false);setHansEdit(null);setHansDraft(null);}}
+        />
+      )}
+
+      {showAssistant && (
+        <QuoteAssistant
+          opps={opps} accounts={accounts}
+          catalogue={resolveQuotationMasters(masters, catalog).catalogue.filter(p=>p.active!==false)}
+          quoteConfig={quoteConfig}
+          onClose={()=>setShowAssistant(false)}
+          onOpenBuilder={(d)=>{setShowAssistant(false);setHansEdit(null);setHansDraft(d);setHansBuilder(true);}}
         />
       )}
 
