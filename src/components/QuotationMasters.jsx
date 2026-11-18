@@ -44,6 +44,7 @@ const CATALOGUE_OVERLAY_FIELDS = [
   "listPrice", "costPrice", "minMonthFloor", "minQty", "maxDiscountPct", "active", "notes",
   "productId", // which Product Catalogue product the row belongs to (one product master)
   "amcPct",    // AMC % for a one-time licence row (blank = the default in Quotation Rules)
+  "amcFixed",  // or a fixed AMC in ₹ per unit per year (e.g. E-Annex ₹10,000 per branch)
   "rateSchedule", "segmentPrices", "currencyPrices", "bandRates",
   "matrixId", "matrixRow", // rate-card attachment (Phase 2e)
   // Structural fields are now admin-editable too, so they overlay the seed.
@@ -426,6 +427,13 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
               }} />
             </div>
           ))}
+          <div className="form-group">
+            <label>AMC calculated on</label>
+            <select value={cur.quoteConfig.amcBase || "net"} onChange={e => setConfig("amcBase", e.target.value)}>
+              <option value="net">Licence fee after discount</option>
+              <option value="list">Listed licence fee, before any discount</option>
+            </select>
+          </div>
           <PeoplePicker label="Quote approvers" orgUsers={orgUsers} value={cur.quoteConfig.approverIds || []}
             onChange={(ids) => setConfig("approverIds", ids)}
             hint="Who approves a quote whose discount or value is above the limit. They get a bell alert and a task. Nobody approves their own quote unless they are the only approver. Leave empty and every Admin / MD / Director / VP approves (the old rule)." />
@@ -548,7 +556,10 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
                     </td>
                     <td style={cell}>
                       {p.pricingModel === "One-time Licence"
-                        ? <input style={numInput} type="number" min={0} max={100} placeholder={`${cur.quoteConfig.amcDefaultPct ?? cur.quoteConfig.alrPctOfLicence ?? 20}`} title="AMC % of this licence per year. Blank = the default in Quotation Rules" value={p.amcPct ?? ""} onChange={e => setCatRow(p.code, "amcPct", numOrNull(e.target.value))} />
+                        ? <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            <input style={{ ...numInput, width: 56 }} type="number" min={0} max={100} placeholder={`${cur.quoteConfig.amcDefaultPct ?? cur.quoteConfig.alrPctOfLicence ?? 20}%`} title="AMC % of this licence per year. Blank = the default in Quotation Rules" value={p.amcPct ?? ""} onChange={e => setCatRow(p.code, "amcPct", numOrNull(e.target.value))} />
+                            <input style={{ ...numInput, width: 78 }} type="number" min={0} placeholder="or ₹/unit" title="Or a fixed AMC in ₹ per unit per year (e.g. ₹10,000 per branch). Used instead of the %." value={p.amcFixed ?? ""} onChange={e => setCatRow(p.code, "amcFixed", numOrNull(e.target.value))} />
+                          </span>
                         : <span style={{ color: "var(--text3)", fontSize: 11 }}>—</span>}
                     </td>
                     <td style={cell}>

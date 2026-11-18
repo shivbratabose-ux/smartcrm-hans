@@ -14,7 +14,7 @@ const saas = { productCode: "P01", name: "iCAFFE", pricingModel: "SaaS Subscript
 const catalogue = [{ code: "S03", amcPct: null }, { code: "WH-LIC", amcPct: 18 }];
 
 console.log("\nRules");
-check("defaults", amcRules({}), { defaultPct: 20, startYear: 2, fixedYears: 2, escalationPct: 10, escalationEvery: 2, scheduleYears: 5 });
+check("defaults", amcRules({}), { defaultPct: 20, startYear: 2, fixedYears: 2, escalationPct: 10, escalationEvery: 2, scheduleYears: 5, base: "net" });
 check("old ALR % is used when no AMC % is set", amcRules({ alrPctOfLicence: 22 }).defaultPct, 22);
 check("AMC % wins over the old ALR %", amcRules({ alrPctOfLicence: 22, amcDefaultPct: 18 }).defaultPct, 18);
 check("fixed 2 yrs, then +10% every 2 yrs", [1, 2, 3, 4, 5, 6].map((k) => +escalationFactor(k, { fixedYears: 2, escalationPct: 10, escalationEvery: 2 }).toFixed(4)), [1, 1, 1.1, 1.1, 1.21, 1.21]);
@@ -46,6 +46,19 @@ check("overrides with no licence don't flag", computeAmc([saas], { overrides: { 
 console.log("\nWording");
 check("escalation text", [describeEscalation({ fixedYears: 2, escalationPct: 10, escalationEvery: 2 }), describeEscalation({ fixedYears: 1, escalationPct: 5, escalationEvery: 1 })], ["fixed 2 yrs, then +10% every 2 yrs", "fixed 1 yr, then +5% every year"]);
 check("term line", amcTermText(a), "AMC: 20% of the licence fee per year, from contract year 2 (year 1 under warranty); fixed 2 yrs, then +10% every 2 yrs. Billed annually in advance.");
+
+console.log("\nCustomizable: list price, fixed amount per unit");
+const disc = { ...licence, discountPct: 10, grossPerPeriod: 1000000, lineTotal: 900000, billedQty: 1 };
+check("net (default): after line + overall discount", computeAmc([disc], { overallDiscountPct: 10 }).base, 810000);
+check("list: the listed fee, discounts ignored (invoice wording)", computeAmc([disc], { overallDiscountPct: 10, config: { amcBase: "list" } }).base, 1000000);
+check("list base + 25% gives the invoice's ALR", computeAmc([disc], { config: { amcBase: "list", amcDefaultPct: 25 } }).annual, 250000);
+const eannex = { productCode: "P18", name: "E-Annex Ultra", pricingModel: "One-time Licence", lineTotal: 110000, grossPerPeriod: 110000, billedQty: 2, qty: 2 };
+const ea = computeAmc([eannex], { catalogue: [{ code: "P18", amcFixed: 10000 }] });
+check("fixed ₹10,000 per branch × 2 branches", [ea.annual, ea.lines[0].fixed, ea.breached], [20000, 10000, false]);
+check("fixed amount wording", amcTermText(ea).startsWith("AMC: ₹10,000 per unit per year"), true);
+const eaPct = computeAmc([eannex], { catalogue: [{ code: "P18", amcFixed: 10000 }], overrides: { linePct: { P18: 15 } } });
+check("rep switches a fixed-AMC product to a % → approval", [eaPct.annual, eaPct.breached], [16500, true]);
+check("list-base wording", amcTermText(computeAmc([licence], { config: { amcBase: "list" } }), { amcBase: "list" }).includes("listed licence fee (before any discount)"), true);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

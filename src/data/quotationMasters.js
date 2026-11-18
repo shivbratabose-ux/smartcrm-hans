@@ -30,6 +30,7 @@ export const QUOTE_CONFIG = {
   amcEscalationPct: 10,          // increase per step
   amcEscalationEvery: 2,         // years between increases
   amcScheduleYears: 5,           // AMC years shown on the quote
+  amcBase: "net",                // "net" = after discount · "list" = listed fee before discount (invoice wording)
   prepaymentDiscountPctDefault: 5,
   fx: 1,                         // INR base; divisor on resolved unit price
   // Multi-currency stub (Config sheet) — FX only, no live feeds.

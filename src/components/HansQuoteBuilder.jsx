@@ -322,7 +322,7 @@ export default function HansQuoteBuilder({
       lineTotal: +l.lineTotal.toFixed(2),
     }));
     // The quote's AMC terms ride in the T&C (one line, replaced on every save).
-    const termsWithAmc = amc.applies ? [termsText.replace(/\n?AMC: [^\n]*/g, "").trimEnd(), amcTermText(amc)].join("\n") : termsText;
+    const termsWithAmc = amc.applies ? [termsText.replace(/\n?AMC: [^\n]*/g, "").trimEnd(), amcTermText(amc, config)].join("\n") : termsText;
     // Additive engine breakdown — absolute ₹, rounded to paise.
     const round2 = (v) => +(Number(v) || 0).toFixed(2);
     const hans = {
@@ -423,7 +423,7 @@ export default function HansQuoteBuilder({
         taxableBase: round2(summary.taxableBase), cgst: round2(summary.cgst), sgst: round2(summary.sgst),
         igst: round2(summary.igst), grandTotal: round2(summary.grandTotal), alrAnnual: round2(amc.annual), amc,
         tcv: round2(summary.tcv), billingFrequency, terms: QUOTE_TERMS, billing,
-        termsText: amc.applies ? [termsText.replace(/\n?AMC: [^\n]*/g, "").trimEnd(), amcTermText(amc)].join("\n") : termsText,
+        termsText: amc.applies ? [termsText.replace(/\n?AMC: [^\n]*/g, "").trimEnd(), amcTermText(amc, config)].join("\n") : termsText,
       },
     };
   };
