@@ -82,6 +82,7 @@ function json(body: unknown, status = 200) {
 // reaching Anthropic. Default is Opus 4.8 (most capable). Admins can pick
 // Haiku for cheap, high-volume tasks. All three support structured outputs.
 const ALLOWED_MODELS = new Set([
+  "claude-opus-5-5",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
   "claude-haiku-4-5",
@@ -97,6 +98,7 @@ const FEATURE_FLAG: Record<string, string> = {
   emailToActivity: "emailToActivity",
   reEngageDraft: "reEngageDraft",
   businessCard: "businessCard",
+  quoteAssistant: "quoteAssistant",
 };
 
 // ── Static, cacheable company context ──────────────────────────────
@@ -612,6 +614,12 @@ serve(async (req) => {
     }
 
     const feature: string = body.feature;
+    if (feature === "quoteAssistant") {
+      if (aiConfig?.features?.quoteAssistant === false) {
+        return json({ error: 'The "quoteAssistant" AI feature is disabled by an administrator.' }, 403);
+      }
+      return await runQuoteAssistant(new Anthropic({ apiKey: ANTHROPIC_API_KEY }), body, callerProfile);
+    }
     if (!feature || !FEATURE_SYSTEM[feature]) {
       return json({ error: `Unknown or missing feature: ${feature}` }, 400);
     }
@@ -721,3 +729,135 @@ serve(async (req) => {
     return json({ error: `Unexpected: ${(e as Error).message}` }, 500);
   }
 });
+
+
+// ═══ Quote assistant (chat → pricing-engine draft) ═════════════════════
+// A sales rep describes the requirement in a chat; Claude maps it to the
+// org's catalogue codes and the rep's open opportunities and returns a
+// draft the CRM opens in the Hans pricing builder. The model never prices
+// anything — the pricing engine does, and approval guardrails still apply.
+// Multi-turn: the client sends the chat history plus the current draft.
+const QUOTE_ASSISTANT_MODEL = "claude-opus-5-5";
+
+const QUOTE_ASSISTANT_SYSTEM = `You help a Hans Infomatic sales rep put together a quotation by chatting. Hans Infomatic sells logistics, cargo and customs software (iCAFFE, Wise* products, Orbis One, Orbis EDI and services) to Indian and overseas logistics companies.
+
+Each turn you get the conversation so far and the CURRENT DRAFT. Update the draft from what the rep said and return the whole draft every time, keeping earlier values unless the rep changes them.
+
+How to fill the draft:
+- Products: map the requirement to items in CATALOGUE and use their exact "code". Never invent a code. If a requirement matches nothing in the catalogue, say so in the reply and leave it out.
+- qty follows the item's unit (users for "User", sites for "Site", and so on). months: what the rep says; for a recurring subscription item with no term given, use 12 and say that you assumed it. One-time items keep months 1.
+- discountPct per line and overallDiscountPct only when the rep gives a discount. Discounts above the approval limit are allowed but go for approval; mention that once.
+- Opportunity: choose from OPPORTUNITIES by exact "id" when the rep names the customer or deal. If more than one fits, ask which. If none fits, leave oppId empty and tell the rep to create or convert the opportunity first.
+- hosting: "Hans" (Hans-hosted cloud) or "Client" (on the customer's servers). Ask if it was not said.
+- segment, currency and billingFrequency: use only the values in CONTEXT; keep the defaults when not said.
+- Never state prices, totals or rates. The pricing engine calculates them when the rep opens the draft.
+
+The draft is ready when it has an opportunity, hosting, and at least one line with a quantity.
+
+Reply style: short and plain. First confirm what you understood in a few bullet lines (product names, not codes), then ask at most two questions about what is still missing. Match the rep's language (English or Hinglish). When ready, tell the rep to click "Open in pricing builder" to check the prices and save.`;
+
+const QUOTE_ASSISTANT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    reply: { type: "string" },
+    missing: { type: "array", items: { type: "string" } },
+    ready: { type: "boolean" },
+    draft: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        oppId: { type: "string" },
+        segment: { type: "string" },
+        currency: { type: "string" },
+        hosting: { type: "string", enum: ["", "Hans", "Client"] },
+        billingFrequency: { type: "string" },
+        overallDiscountPct: { type: "number" },
+        prepaymentApplicable: { type: "boolean" },
+        notes: { type: "string" },
+        lines: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              productCode: { type: "string" },
+              qty: { type: "number" },
+              months: { type: "number" },
+              discountPct: { type: "number" },
+              why: { type: "string" },
+            },
+            required: ["productCode", "qty", "months", "discountPct", "why"],
+          },
+        },
+      },
+      required: ["oppId", "segment", "currency", "hosting", "billingFrequency", "overallDiscountPct", "prepaymentApplicable", "notes", "lines"],
+    },
+  },
+  required: ["reply", "missing", "ready", "draft"],
+};
+
+const clip = (v: unknown, n: number) => String(v ?? "").slice(0, n);
+
+async function runQuoteAssistant(anthropic: any, body: any, caller: any) {
+  const history = Array.isArray(body.messages) ? body.messages.slice(-30) : [];
+  const turns = history
+    .filter((m: any) => (m?.role === "user" || m?.role === "assistant") && String(m?.text || "").trim())
+    .map((m: any) => ({ role: m.role, content: clip(m.text, 4000) }));
+  if (!turns.length || turns[turns.length - 1].role !== "user") {
+    return json({ error: "Send a message to the assistant first." }, 400);
+  }
+  // Context: the org catalogue + the rep's open opportunities (sent by the
+  // client from what this user can see). Capped so a huge org stays bounded.
+  const ctx = body.context || {};
+  const context = {
+    catalogue: (Array.isArray(ctx.catalogue) ? ctx.catalogue : []).slice(0, 400).map((p: any) => ({
+      code: clip(p.code, 20), name: clip(p.name, 120), module: clip(p.module, 120), unit: clip(p.unit, 30),
+      pricingModel: clip(p.pricingModel, 40), description: clip(p.description, 200),
+    })),
+    opportunities: (Array.isArray(ctx.opportunities) ? ctx.opportunities : []).slice(0, 300).map((o: any) => ({
+      id: clip(o.id, 60), title: clip(o.title, 160), account: clip(o.account, 160), stage: clip(o.stage, 40),
+    })),
+    segments: (ctx.segments || []).slice(0, 10), currencies: (ctx.currencies || []).slice(0, 10),
+    billingFrequencies: (ctx.billingFrequencies || []).slice(0, 10),
+    approvalLimitPct: Number(ctx.approvalLimitPct) || null,
+  };
+  const draft = body.draft && typeof body.draft === "object" ? body.draft : {};
+  // The current draft rides with the newest message, so the stable prefix
+  // (system + context + earlier turns) stays cacheable.
+  turns[turns.length - 1] = {
+    role: "user",
+    content: `${turns[turns.length - 1].content}\n\nCURRENT DRAFT (JSON):\n${JSON.stringify(draft).slice(0, 8000)}`,
+  };
+
+  const stream = anthropic.beta.messages.stream({
+    model: QUOTE_ASSISTANT_MODEL,
+    max_tokens: 8000,
+    betas: ["server-side-fallback-2026-07-01"],
+    fallbacks: "default",
+    system: [
+      { type: "text", text: QUOTE_ASSISTANT_SYSTEM, cache_control: { type: "ephemeral" } },
+      { type: "text", text: `CONTEXT (JSON):\n${JSON.stringify(context)}`, cache_control: { type: "ephemeral" } },
+    ],
+    messages: turns,
+    output_config: { effort: "medium", format: { type: "json_schema", schema: QUOTE_ASSISTANT_SCHEMA } },
+  });
+  const message = await stream.finalMessage();
+  if (message.stop_reason === "refusal") {
+    return json({ ok: false, error: "The assistant could not help with that message. Please rephrase the requirement." }, 422);
+  }
+  const raw = (message.content || []).find((b: any) => b.type === "text")?.text || "";
+  let result: any;
+  try { result = JSON.parse(raw); } catch {
+    return json({ ok: false, error: message.stop_reason === "max_tokens" ? "The reply was cut off. Try a shorter message." : "The assistant's reply could not be read. Please try again.", stopReason: message.stop_reason }, 502);
+  }
+  return json({
+    ok: true, feature: "quoteAssistant", model: message.model || QUOTE_ASSISTANT_MODEL, result,
+    usage: {
+      input: message.usage?.input_tokens ?? null, output: message.usage?.output_tokens ?? null,
+      cacheRead: (message.usage as any)?.cache_read_input_tokens ?? null,
+      cacheWrite: (message.usage as any)?.cache_creation_input_tokens ?? null,
+    },
+    generatedAt: new Date().toISOString(), generatedBy: caller?.name || caller?.id,
+  });
+}

@@ -13,7 +13,7 @@
 // toolbar) without touching the legacy per-line-GST builder.
 // ═══════════════════════════════════════════════════════════════════
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Plus, Trash2, X, AlertTriangle, Check, Info } from "lucide-react";
 import {
   QUOTE_CONFIG, HANS_CATALOGUE, PRICING_BANDS, ICAFFE_EDITIONS,
@@ -40,7 +40,7 @@ const BLANK_LINE = { productCode: "", qty: 1, months: 12, discountPct: 0 };
 export default function HansQuoteBuilder({
   opps = [], leads = [], accounts = [], contacts = [],
   quotes = [], setQuotes, currentUser, orgUsers = [], onClose,
-  masters = null, editQuote = null,
+  masters = null, editQuote = null, draft = null,
 }) {
   // Masters resolve from persisted overrides if present, else seeded defaults.
   const config = masters?.quoteConfig || QUOTE_CONFIG;
@@ -165,6 +165,26 @@ export default function HansQuoteBuilder({
       setBilling({ ...blankBilling, legalName: lead.company || "", billingContactName: lead.contact || "", billingContactEmail: lead.email || "", billingContactPhone: lead.phone || "" });
     }
   };
+
+  // A draft from the Quote Assistant chat: fill the builder once, then the rep
+  // checks the engine's prices and saves (approval rules apply as usual).
+  const seededDraft = useRef(false);
+  useEffect(() => {
+    if (!draft || editQuote || seededDraft.current) return;
+    seededDraft.current = true;
+    if (draft.oppId) onPickOpp(draft.oppId);
+    if (draft.segment) setSegment(draft.segment);
+    if (draft.currency) setCurrency(draft.currency);
+    if (draft.hosting) setHosting(draft.hosting);
+    if (draft.billingFrequency) setBillingFrequency(draft.billingFrequency);
+    setOverallDiscountPct(Number(draft.overallDiscountPct) || 0);
+    setPrepaymentApplicable(!!draft.prepaymentApplicable);
+    if (draft.notes) setNotes(draft.notes);
+    if (Array.isArray(draft.lines) && draft.lines.length) {
+      setLines(draft.lines.map(l => ({ productCode: l.productCode, qty: Number(l.qty) || 1, months: Number(l.months) || 12, discountPct: Number(l.discountPct) || 0 })));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
 
   // Contacts belonging to the picked opportunity's account — drive the
   // "pick existing contact" dropdowns for billing / finance.
