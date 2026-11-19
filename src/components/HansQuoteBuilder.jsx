@@ -41,7 +41,7 @@ const BLANK_LINE = { productCode: "", qty: 1, months: 12, discountPct: 0 };
 export default function HansQuoteBuilder({
   opps = [], leads = [], accounts = [], contacts = [],
   quotes = [], setQuotes, currentUser, orgUsers = [], onClose,
-  masters = null, editQuote = null, draft = null,
+  masters = null, editQuote = null, draft = null, catalog = [],
 }) {
   // Masters resolve from persisted overrides if present, else seeded defaults.
   const config = masters?.quoteConfig || QUOTE_CONFIG;
@@ -88,6 +88,8 @@ export default function HansQuoteBuilder({
   // AMC terms changed on this quote (empty = the company rules). Any change needs approval.
   const [amcOverrides, setAmcOverrides] = useState(eh?.amc?.overrides || {});
   const [showAmcEdit, setShowAmcEdit] = useState(false);
+  // Print the discount for the customer to see (list rate, discount, net) or only net rates.
+  const [showDiscount, setShowDiscount] = useState(!!eh?.showDiscount);
   // Terms & conditions (free text). Seed from the edited quote, else the
   // default Hans terms as a sensible starting block the rep can replace via
   // a template. Same field (quote.terms) the Custom Quote / print use.
@@ -328,7 +330,7 @@ export default function HansQuoteBuilder({
     const hans = {
       pricingMode: "hans-engine",
       party, currency,
-      overallDiscountPct, prepaymentApplicable, prepaymentDiscountPct,
+      overallDiscountPct, prepaymentApplicable, prepaymentDiscountPct, showDiscount,
       oneTimeSubtotal: round2(summary.oneTimeSubtotal),
       recurringSubtotal: round2(summary.recurringSubtotal),
       subtotal: round2(summary.subtotal),
@@ -406,18 +408,20 @@ export default function HansQuoteBuilder({
   const buildPrintPayload = () => {
     const round2 = (v) => +(Number(v) || 0).toFixed(2);
     const items = pricedLines.filter(l => !l._empty).map((l, idx) => ({
-      lineNo: idx + 1, name: l.name, module: l.module, description: l.description,
+      lineNo: idx + 1, productCode: l.productCode, unit: l.unit, name: l.name, module: l.module, description: l.description,
       pricingModel: l.pricingModel, qty: Number(l.qty) || 0, months: l.effectiveMonths,
       unitPriceResolved: round2(l.unitPriceResolved), discountPct: Number(l.discountPct) || 0,
       lineTotal: round2(l.lineTotal),
     }));
     return {
       quoteNo: (editQuote?.quoteNo || "New quote") + " (preview)", status: needsApproval ? "Approval Required" : "Draft",
+      approvalStatus: needsApproval ? "Pending" : "Not Required", paymentTerms: billing.paymentTerms || "",
+      billingContactName: billing.billingContactName || "",
       hosting, legalName: billing.legalName || party.name || "", pan: billing.pan || "", gstin: party.gstin || "", billingAddressSnapshot: party.address || "",
       createdDate: today(), preparedBy: me?.name || currentUser, notes,
       items,
       hans: {
-        party, currency, intraState: summary.intraState,
+        party, currency, intraState: summary.intraState, overallDiscountPct, showDiscount, prepaymentDiscountPct,
         oneTimeSubtotal: round2(summary.oneTimeSubtotal), recurringSubtotal: round2(summary.recurringSubtotal),
         overallDiscount: round2(summary.overallDiscount), prepaymentDisc: round2(summary.prepaymentDisc),
         taxableBase: round2(summary.taxableBase), cgst: round2(summary.cgst), sgst: round2(summary.sgst),
@@ -427,7 +431,8 @@ export default function HansQuoteBuilder({
       },
     };
   };
-  const previewPrint = () => printHansQuote(buildPrintPayload(), { config });
+  const docOpts = { config, priceRows: catalogue, catalog, preparedBy: { name: me?.name || "", title: me?.designation || "", phone: me?.phone || me?.mobile || "", email: me?.email || "" } };
+  const previewPrint = () => printHansQuote(buildPrintPayload(), docOpts);
 
   // ── Render ──────────────────────────────────────────────────────────
   const planPreset = (key) => {
@@ -470,7 +475,7 @@ export default function HansQuoteBuilder({
             <div style={{ fontSize: 18, fontWeight: 800, marginTop: 10 }}>Quote {saved.quoteNo} saved</div>
             <div style={{ color: "var(--text3)", fontSize: 13, marginTop: 4 }}>It's in the Quote Register{needsApproval ? " — flagged Approval Required (discount over policy)." : "."}</div>
             <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 18 }}>
-              <button className="btn btn-sec" onClick={() => printHansQuote(saved, { config })}>Print / PDF</button>
+              <button className="btn btn-sec" onClick={() => printHansQuote(saved, docOpts)}>Print / PDF</button>
               <button className="btn btn-primary" onClick={onClose}>Back to Register</button>
             </div>
           </div>
@@ -675,6 +680,10 @@ export default function HansQuoteBuilder({
                   <input type="number" min={0} max={100} value={prepaymentDiscountPct} disabled={!prepaymentApplicable} onChange={e => setPrepaymentDiscountPct(+e.target.value)} style={{ width: 52, marginLeft: "auto" }} />%
                 </label>
                 {summary.prepaymentDisc > 0 && sumRow("Prepayment discount", "− " + inr(summary.prepaymentDisc), { color: "#B91C1C" })}
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, margin: "6px 0 2px", cursor: "pointer" }} title="On: the customer sees list rate, discount % and net. Off: only the net rates are printed.">
+                  <input type="checkbox" checked={showDiscount} onChange={e => setShowDiscount(e.target.checked)} />
+                  Show discount on the customer quote
+                </label>
                 {sumRow("Taxable value", inr(summary.taxableBase), { bold: true, divide: true })}
                 {summary.cgst > 0 && sumRow(`CGST ${config.gstRatePct / 2}%`, inr(summary.cgst))}
                 {summary.sgst > 0 && sumRow(`SGST ${config.gstRatePct / 2}%`, inr(summary.sgst))}
