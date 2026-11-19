@@ -1536,7 +1536,7 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
       if(!tok){ tok=generateAcceptToken(); setQuotes(p=>p.map(r=>r.id===q.id?{...r,acceptToken:tok}:r)); }
       const owner=(orgUsers||[]).find(u=>u.id===q.owner)||{};
       printHansQuote(q,{
-        config:quoteConfig, priceRows:resolveQuotationMasters(masters,catalog).catalogue, catalog:catalog||[],
+        config:quoteConfig, priceRows:resolveQuotationMasters(masters,catalog).catalogue, catalog:catalog||[], termSets:resolveQuotationMasters(masters,catalog).termSets,
         preparedBy:{name:owner.name||q.preparedBy||"",title:owner.designation||"",phone:owner.phone||owner.mobile||"",email:owner.email||""},
         acceptUrl:acceptLink(customerBase,tok),
         extraPagesHtml: template==="pack"?documentPagesHtml(q,resolveDocuments(masters),{today}):"",

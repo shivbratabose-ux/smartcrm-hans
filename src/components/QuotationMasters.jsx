@@ -12,6 +12,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import QuoteDocumentsMaster from "./QuoteDocumentsMaster";
+import QuoteTermsMaster from "./QuoteTermsMaster";
+import { resolveTermSets } from "../lib/quotation/termSets";
 import { useState, useRef } from "react";
 import { AlertTriangle, RotateCcw, Clock, Plus, Trash2, X, Tag, Globe, Download, Upload } from "lucide-react";
 import {
@@ -132,6 +134,7 @@ export function resolveQuotationMasters(masters, catalog) {
     editions: qm.editions && qm.editions.length ? qm.editions : ICAFFE_EDITIONS,
     rateCards: Array.isArray(qm.rateCards) ? qm.rateCards : [],
     terms: qm.terms && qm.terms.length ? qm.terms : QUOTE_TERMS,
+    termSets: resolveTermSets(masters),
   };
 }
 
@@ -361,7 +364,7 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
     { id: "bands", label: "Pricing Bands" },
     { id: "icaffe", label: "iCAFFE Rate Card" },
     { id: "ratecards", label: "Rate Cards" },
-    { id: "terms", label: "Terms" },
+    { id: "terms", label: "Terms & EULA" },
     { id: "documents", label: "Documents (ULA / Agreement)" },
   ];
 
@@ -952,8 +955,11 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
       {/* ── Terms ── */}
       {sub === "documents" && <QuoteDocumentsMaster masters={masters} setMasters={setMasters} />}
 
+      {sub === "terms" && <QuoteTermsMaster masters={masters} setMasters={setMasters} catalog={catalog} />}
       {sub === "terms" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 720 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 720, marginTop: 22 }}>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>Commercial notes: the starting text of every new quote (all products)</div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginTop: -6 }}>Printed as "Commercial notes"; the rep can edit them on each quote.</div>
           {cur.terms.map(t => (
             <div className="form-group" key={t.key}>
               <label>{t.key}</label>

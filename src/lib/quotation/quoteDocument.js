@@ -23,7 +23,8 @@ import { isOneTimeModel } from "./pricingEngine.js";
 import { companyOf } from "./company.js";
 import { groupOf, SERVICES_GROUP } from "./productGroups.js";
 import { HOSTING_LABEL } from "./handover.js";
-import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS, governingTermsFor, CONFIDENTIAL_NOTE } from "../../data/quoteContent.js";
+import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS, CONFIDENTIAL_NOTE } from "../../data/quoteContent.js";
+import { resolveTermSets, termSetFor, eulaLinkOf, fillTerms, tcLines } from "./termSets.js";
 import { getQuoteTemplate } from "../../data/quoteTemplates.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -121,7 +122,8 @@ export function quoteDocModel(quote, opts = {}) {
   const notes = String(h.termsText || quote.terms || "").split(/\n+/).map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean);
 
   const netOneTime = sum(oneTime, "net"), netSubs = sum(subs, "net");
-  const governing = governingTermsFor(product?.id || (mainRow?.productId) || "", cfg);
+  const termSet = termSetFor(product?.id || mainRow?.productId || "", opts.termSets || resolveTermSets(null));
+  const fillCtx = { product: brand, company: company.name, customer, validUntil: longDate(validUntil) };
   return {
     company, quote, customer, brand, planName, product, hosted, showDiscount, overallPct, gstPct,
     pending: awaitingApproval(quote),
@@ -143,8 +145,9 @@ export function quoteDocModel(quote, opts = {}) {
     implementation: STANDARD_SECTIONS.implementation(ctx),
     payment: STANDARD_SECTIONS.payment(ctx),
     requirements: STANDARD_SECTIONS.requirements(ctx),
-    terms: STANDARD_SECTIONS.terms(ctx),
-    governing: { ...governing, text: governing.text(ctx) },
+    terms: tcLines(termSet, fillCtx),
+    termSetId: termSet?.id || "",
+    governing: { label: termSet?.eulaTitle || "terms of use", url: eulaLinkOf(termSet, opts.siteUrl), text: fillTerms(termSet?.governing || "", fillCtx) },
     confidential: CONFIDENTIAL_NOTE({ company: company.name, customer }),
     preparedBy: { name: opts.preparedBy?.name || quote.preparedBy || "", title: opts.preparedBy?.title || "", phone: opts.preparedBy?.phone || "", email: opts.preparedBy?.email || "" },
   };
@@ -256,7 +259,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
     ${H("Implementation, training and support")}${kv(m.implementation)}
     ${H("Payment terms")}${kv(m.payment)}
     ${H("What you need")}${kv(m.requirements)}
-    ${H("Terms and conditions")}<ol class="n"><li>Governing terms. ${esc(m.governing.text)} Read them at <a href="${esc(m.governing.url)}">${esc(m.governing.url)}</a>.</li>${m.terms.map(([k, v]) => `<li>${esc(k)}. ${esc(v)}</li>`).join("")}</ol>
+    ${H("Terms and conditions")}<ol class="n">${m.governing.text || m.governing.url ? `<li>Governing terms. ${esc(m.governing.text)}${m.governing.url ? ` Read them at <a href="${esc(m.governing.url)}">${esc(m.governing.url)}</a>.` : ""}</li>` : ""}${m.terms.map((t) => `<li>${esc(t)}</li>`).join("")}</ol>
 
     <div class="sign">
       <p>We look forward to working with ${esc(m.customer || "you")}. For any question, or a demonstration on your own shipments, please contact us.</p>
@@ -273,7 +276,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
     </div>
     <div class="footnotes">
       ${m.pending ? `<p><sup>*</sup> ${PENDING_NOTE}</p>` : ""}
-      <p><b>Terms:</b> this quotation is subject to the ${esc(m.governing.label)}: <a href="${esc(m.governing.url)}">${esc(m.governing.url)}</a></p>
+      ${m.governing.url ? `<p><b>Terms:</b> this quotation is subject to the ${esc(m.governing.label)}: <a href="${esc(m.governing.url)}">${esc(m.governing.url)}</a></p>` : ""}
       <p>${esc(m.confidential)}</p>
     </div>
     ${opts.extraPagesHtml || ""}

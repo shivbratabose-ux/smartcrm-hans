@@ -36,6 +36,7 @@ import Dashboards from "./components/Dashboards";
 import MyPerformance from "./components/MyPerformance";
 import PublicQuoteAccept from "./components/PublicQuoteAccept";
 import PublicBillConfirm from "./components/PublicBillConfirm";
+import PublicTerms from "./components/PublicTerms";
 import { becameDelivered, handoverOf } from "./lib/quotation/handover";
 import Masters from "./components/Masters";
 import AiSettings from "./components/AiSettings";
@@ -2723,6 +2724,12 @@ export default function SmartCRM() {
   if (publicBillToken) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><PublicBillConfirm token={publicBillToken}/></>
   );
+  // EULA / terms written in the CRM, linked from quotations. Public, with or without a session.
+  const publicTermsId = (() => {
+    const m = /^#\/?terms\/([A-Za-z0-9_-]+)/.exec(window.location.hash || "");
+    return m ? m[1] : null;
+  })();
+  if (publicTermsId) return <PublicTerms id={publicTermsId}/>;
 
   if(!currentUser) return (
     <><style dangerouslySetInnerHTML={{__html:CSS}}/><ToastContainer /><Login onLogin={login} orgUsers={orgUsers}/></>
