@@ -29,7 +29,7 @@ import { TC_TEMPLATES, STANDARD_TERMS } from "../data/constants";
 import { printHansQuote } from "../lib/quotation/printQuote";
 import { toLocalISODate } from "../utils/helpers";
 import { allocateDocNo } from "../lib/db";
-import { newQuoteId, nextQuoteNo } from "../lib/quotation/docNumbers";
+import { newQuoteId, nextQuoteNo, officeOf } from "../lib/quotation/docNumbers";
 import { HOSTING_OPTIONS, HOSTING_LABEL } from "../lib/quotation/handover";
 
 const today = () => toLocalISODate();
@@ -310,7 +310,7 @@ export default function HansQuoteBuilder({
     const opp = opps.find(o => o.id === oppId);
     const isEdit = !!editQuote;
     const quoteNo = isEdit && editQuote.quoteNo ? editQuote.quoteNo
-      : (await nextQuoteNo(allocateDocNo, config, quotes)).quoteNo;
+      : (await nextQuoteNo(allocateDocNo, config, quotes, new Date(), { office: officeOf(me, config) })).quoteNo;
     const id = isEdit ? editQuote.id : newQuoteId();
     const items = pricedLines.filter(l => !l._empty).map((l, idx) => ({
       lineNo: idx + 1, productCode: l.productCode, name: l.name, module: l.module,
@@ -427,7 +427,7 @@ export default function HansQuoteBuilder({
       },
     };
   };
-  const previewPrint = () => printHansQuote(buildPrintPayload());
+  const previewPrint = () => printHansQuote(buildPrintPayload(), { config });
 
   // ── Render ──────────────────────────────────────────────────────────
   const planPreset = (key) => {
@@ -470,7 +470,7 @@ export default function HansQuoteBuilder({
             <div style={{ fontSize: 18, fontWeight: 800, marginTop: 10 }}>Quote {saved.quoteNo} saved</div>
             <div style={{ color: "var(--text3)", fontSize: 13, marginTop: 4 }}>It's in the Quote Register{needsApproval ? " — flagged Approval Required (discount over policy)." : "."}</div>
             <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 18 }}>
-              <button className="btn btn-sec" onClick={() => printHansQuote(saved)}>Print / PDF</button>
+              <button className="btn btn-sec" onClick={() => printHansQuote(saved, { config })}>Print / PDF</button>
               <button className="btn btn-primary" onClick={onClose}>Back to Register</button>
             </div>
           </div>

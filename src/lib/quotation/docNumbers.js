@@ -17,9 +17,32 @@ export const newContractId = () => `ct_${rand()}`;
 
 const seqOf = (s, re) => { const m = typeof s === "string" && s.match(re); return m ? parseInt(m[1], 10) : 0; };
 
-/** Next quote number, e.g. SQ/M000013/26-27. Returns { quoteNo, provisional }. */
-export async function nextQuoteNo(allocate, config, knownQuotes = [], date = new Date()) {
+// Office-wise numbers, as on Hans' own quotations: DEL/SQ/0005/2627 =
+// office / SQ / 4-digit number / financial year 2026-27. Each office counts
+// separately per year. "Continue from" (Quotation Rules) lets numbering
+// carry on from the old system instead of restarting at 0001.
+export const OFFICE_CODES_DEFAULT = { br1: "BOM", br2: "DEL", br3: "CPT", br4: "BLR", br5: "DXB", br6: "CCU" };
+export const officeFormat = (config) => (config?.quoteNumberFormat || "office") === "office";
+export function officeOf(user, config = {}) {
+  const map = { ...OFFICE_CODES_DEFAULT, ...(config.quoteOfficeCodes || {}) };
+  const code = String((user && map[user.branchId]) || config.quoteDefaultOffice || "DEL").toUpperCase().replace(/[^A-Z]/g, "");
+  return code.slice(0, 5) || "DEL";
+}
+export const fyCompact = (fy) => fy.replace("-", "");            // "26-27" → "2627"
+export const formatOfficeQuoteNo = (office, seq, fy) => `${office}/SQ/${String(seq).padStart(4, "0")}/${fyCompact(fy)}`;
+
+/** Next quote number. Returns { quoteNo, provisional }. */
+export async function nextQuoteNo(allocate, config, knownQuotes = [], date = new Date(), { office } = {}) {
   const fy = fiscalYearSuffix(date);
+  if (officeFormat(config)) {
+    const off = office || officeOf(null, config);
+    const floor = Number(config?.quoteOfficeStart?.[`${off}:${fy}`]) || 1;
+    const n = await allocate(`quote:${off}:${fy}`, floor);
+    if (n) return { quoteNo: formatOfficeQuoteNo(off, n, fy), provisional: false };
+    const re = new RegExp(`^${off}/SQ/(\\d+)/${fyCompact(fy)}$`);
+    const max = knownQuotes.reduce((m, q) => Math.max(m, seqOf(q.quoteNo, re)), floor - 1);
+    return { quoteNo: formatOfficeQuoteNo(off, max + 1, fy), provisional: true };
+  }
   const n = await allocate(`quote:${fy}`);
   if (n) return { quoteNo: formatQuoteNumber(n, date, config), provisional: false };
   // Offline fallback: highest number this browser knows about (may collide; flagged).

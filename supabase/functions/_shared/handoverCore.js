@@ -149,7 +149,7 @@ const rand = () => Math.random().toString(36).slice(2, 10);
  * quote's own (PI-<quote no>), so the same quote can never be billed twice
  * under two numbers; Accounts replaces it with the tax-invoice number.
  */
-export function billFromQuote(q, { today, by, productId = "" }) {
+export function billFromQuote(q, { today, by, productId = "", sac = "" }) {
   const a = quoteAmounts(q);
   const ref = q.quoteNo || q.id;
   const lines = scopeLines(q);
@@ -170,6 +170,7 @@ export function billFromQuote(q, { today, by, productId = "" }) {
     owner: by,
     remarks: [
       `Raised from FINAL quote ${ref} (v${q.version || 1}).`,
+      sac ? `SAC ${sac}.` : "",
       `Bill to: ${clean(q.legalName)} · PAN ${clean(q.pan)} · GSTIN ${clean(q.gstin)}.`,
       `Hosting: ${q.hosting || "—"}.`,
       lines.length ? `Lines: ${lines.join("; ")}.` : "",
@@ -413,7 +414,7 @@ export function accountsPackEmail(q, { crmUrl, finalByName = "", accountName = "
 }
 
 /** To the customer when Accounts sends the bill. */
-export function customerBillPackEmail(q, { link, bill = null, docs = [], sellerName = "Hans Infomatic Pvt. Ltd.", contactName = "" } = {}) {
+export function customerBillPackEmail(q, { link, bill = null, docs = [], sellerName = "Hans Infomatic Pvt. Ltd.", contactName = "", paymentHtml = "", billNote = "" } = {}) {
   const a = quoteAmounts(q);
   const h = handoverOf(q);
   const billNo = bill?.invoiceNo || h.billNo || "";
@@ -428,6 +429,8 @@ export function customerBillPackEmail(q, { link, bill = null, docs = [], sellerN
       ${bill?.dueDate ? mrow("Due by", esc(longDate(bill.dueDate))) : ""}
     </table>
     <p style="margin:0 0 14px"><a href="${esc(link)}" style="background:#1B6B5A;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px">Review &amp; confirm</a></p>
+    ${paymentHtml ? `<div style="margin:0 0 12px"><div style="font-size:12px;font-weight:700;margin-bottom:4px">Payment details</div>${paymentHtml}</div>` : ""}
+    ${billNote ? `<p style="margin:0 0 8px;font-size:11.5px;color:#64748b">${esc(billNote)}</p>` : ""}
     <p style="margin:0;font-size:11.5px;color:#64748b">Confirming online is treated as signing the documents, and our implementation team starts as soon as you confirm. If anything is wrong, reply to this e-mail before confirming.</p>`);
   return { subject, html };
 }

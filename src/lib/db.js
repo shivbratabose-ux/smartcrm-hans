@@ -1336,10 +1336,12 @@ const lsSaveViews = (userId, module, views) => {
  * kind: "quote:26-27" | "contract". Returns a number, or null when the
  * database can't be reached (callers fall back to a local guess).
  */
-export async function allocateDocNo(kind) {
+export async function allocateDocNo(kind, min) {
   if (!isSupabaseConfigured) return null;
   try {
-    const { data, error } = await supabase.rpc("allocate_doc_no", { p_kind: kind });
+    // p_min: the number may not be lower than this (office "continue from").
+    const args = Number(min) > 1 ? { p_kind: kind, p_min: Number(min) } : { p_kind: kind };
+    const { data, error } = await supabase.rpc("allocate_doc_no", args);
     if (error || data == null) { dbLog("warn", "[DB] allocate_doc_no:", error); return null; }
     return Number(data);
   } catch (e) {

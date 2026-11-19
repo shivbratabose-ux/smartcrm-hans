@@ -99,6 +99,22 @@ export default function PublicBillConfirm({ token, api: apiProp = callBill }) {
           {row("Items", b.lines?.length ? <div>{b.lines.map((l, i) => <div key={i}>• {l}</div>)}</div> : "")}
         </tbody></table>
 
+        {b.seller && (b.seller.payTo || b.seller.sac || b.seller.msme) && (
+          <div style={{ border: "1px solid #E2E9EF", borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontSize: 12.5 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Payment details</div>
+            <table style={{ borderCollapse: "collapse" }}><tbody>
+              {[
+                b.seller.payTo && ["Account name", b.seller.payTo.accountName], b.seller.payTo && ["Account no.", b.seller.payTo.account],
+                b.seller.payTo && ["Bank", b.seller.payTo.bankName], b.seller.payTo && ["RTGS / NEFT / IFSC", b.seller.payTo.ifsc],
+                b.seller.payTo && ["MICR", b.seller.payTo.micr], b.seller.payTo && ["Bank address", b.seller.payTo.branch],
+                ["SAC code", b.seller.sac], ["Our GSTIN", b.seller.gstin], ["MSME Reg. no.", b.seller.msme],
+              ].filter((r) => r && r[1]).map(([k, v]) => (
+                <tr key={k}><td style={{ padding: "2px 12px 2px 0", color: "#8BA3B4", whiteSpace: "nowrap" }}>{k}</td><td>{v}</td></tr>
+              ))}
+            </tbody></table>
+          </div>
+        )}
+        {b.seller?.note && <div style={{ fontSize: 11.5, color: "#8BA3B4", marginBottom: 12 }}>{b.seller.note}</div>}
         {(b.documents || []).map((d, i) => (
           <details key={i} open={i === 0 && !b.confirmed} style={{ border: "1px solid #E2E9EF", borderRadius: 8, marginBottom: 10 }}>
             <summary style={{ cursor: "pointer", padding: "10px 12px", fontWeight: 700, fontSize: 13 }}><FileText size={13} style={{ verticalAlign: -2, marginRight: 6 }} />{d.title}</summary>

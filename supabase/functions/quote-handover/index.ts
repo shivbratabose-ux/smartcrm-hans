@@ -25,6 +25,7 @@ import {
   accountsIds, accountsPackEmail, customerBillPackEmail, customerBillEmail, billConfirmLink,
   resolveDocuments, handoverOf, SMART_CRM_URL,
 } from "../_shared/handoverCore.js";
+import { companyOf, paymentBlockHtml } from "../_shared/company.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -112,7 +113,9 @@ serve(async (req) => {
     recipients = [to];
     const { data: bill } = await admin.from("collections").select("invoice_no, net_payable, due_date").eq("id", h.billId).maybeSingle();
     const link = billConfirmLink(crmUrl, h.billToken);
-    mail = customerBillPackEmail(q, { link, docs, contactName, bill: bill ? { invoiceNo: bill.invoice_no, netPayable: bill.net_payable, dueDate: bill.due_date } : null });
+    const co = companyOf(qc);
+    mail = customerBillPackEmail(q, { link, docs, contactName, sellerName: co.name, paymentHtml: paymentBlockHtml(co), billNote: co.billNote,
+      bill: bill ? { invoiceNo: bill.invoice_no, netPayable: bill.net_payable, dueDate: bill.due_date } : null });
     extra = { link };
   }
 

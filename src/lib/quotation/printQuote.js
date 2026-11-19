@@ -8,6 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { kycPageHtml } from "./handover.js";
+import { companyOf, letterheadHtml } from "./company.js";
 
 const inr = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -15,11 +16,9 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": 
 export function printHansQuote(quote, opts = {}) {
   const h = quote.hans || {};
   const party = h.party || {};
-  const seller = opts.seller || {
-    name: "Hans Infomatic Pvt. Ltd.",
-    line: "A-1023, Surya Bhawan, Road No. 6, Mahipalpur, New Delhi 110037",
-    extra: "CIN: 55-74674 · GST 18% as applicable",
-  };
+  // Letterhead from Quotation Rules → Company & bank details.
+  const company = companyOf(opts.config || {});
+  const seller = { name: company.name };
   const items = quote.items || [];
 
   const lineRows = items.map((it) => `
@@ -63,7 +62,7 @@ export function printHansQuote(quote, opts = {}) {
     @media print{body{padding:0}}
   </style></head><body>
     <div class="head">
-      <div><h1>${esc(seller.name)}</h1><div class="muted">${esc(seller.line)}<br>${esc(seller.extra)}</div></div>
+      <div>${letterheadHtml(company)}</div>
       <div class="meta"><b>QUOTATION</b><div>${esc(quote.quoteNo || "")}</div><div class="muted">${esc(quote.createdDate || "")}</div>
         <div class="badge">${esc(quote.status || "Draft")}</div></div>
     </div>
@@ -93,6 +92,8 @@ export function printHansQuote(quote, opts = {}) {
     <h3 style="font-size:12px;margin:18px 0 4px">Terms &amp; Conditions</h3>
     ${termsBlock}
     ${quote.notes ? `<div class="muted" style="margin-top:10px"><b>Notes:</b> ${esc(quote.notes)}</div>` : ""}
+    <div style="margin-top:22px;font-size:12px">Yours sincerely,<br><b>For ${esc(String(company.name).toUpperCase())}</b>
+      <div style="height:34px"></div><b>${esc(company.signatoryName)}</b>${company.signatoryTitle ? `<div class="muted">${esc(company.signatoryTitle)}</div>` : ""}</div>
     ${kycPageHtml({ ...quote, legalName: quote.legalName || party.name, gstin: quote.gstin || party.gstin, billingAddressSnapshot: quote.billingAddressSnapshot || party.address }, { acceptUrl: opts.acceptUrl || "", seller: seller.name })}
     <script>window.onload=function(){window.print();}</script>
   </body></html>`;
