@@ -2,6 +2,7 @@
 // Run: node scripts/test-quote-document.mjs
 import { quoteDocModel, quoteDocumentHtml, awaitingApproval, featuresOf } from "../src/lib/quotation/quoteDocument.js";
 import { HANS_CATALOGUE } from "../src/data/quotationMasters.js";
+import { resolveTermSets, termSetFor, eulaLinkOf, assignProducts, makeDefault, unknownPlaceholders, DEFAULT_TC, eulaBlocks } from "../src/lib/quotation/termSets.js";
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -70,7 +71,34 @@ check("Orbis product → OrbisOne terms link", [html.includes('href="https://orb
 const ic = { ...base, items: [{ productCode: "IC08", name: "iCAFFE registration", pricingModel: "Implementation", qty: 1, months: 1, unitPriceResolved: 25000, discountPct: 0, lineTotal: 25000 }] };
 const icHtml = quoteDocumentHtml(ic, { ...opts, catalog: [...catalog, { id: "iCAFFE", name: "iCAFFE", modules: [] }] });
 check("iCAFFE product → MSA & EULA link (not the full text)", [icHtml.includes('href="https://smartcrm-hans.vercel.app/legal/msa-eula-icaffe.html"'), icHtml.includes("orbisone.in/terms"), icHtml.includes("Grant of License")], [true, false, false]);
-check("link can be changed in config", quoteDocumentHtml(ic, { ...opts, config: { termsUrlEula: "https://hansinfomatic.com/eula" } }).includes('href="https://hansinfomatic.com/eula"'), true);
+const icOpts = { ...opts, catalog: [...catalog, { id: "iCAFFE", name: "iCAFFE", modules: [] }] };
+
+console.log("\nTerms sets (Masters → Terms & EULA)");
+const masters = { quotation: { termSets: [
+  { id: "hans", eulaMode: "link", eulaUrl: "https://hansinfomatic.com/eula", tc: "1. Payment. Within 15 days.\n2. Law. Courts of {{company}} city.", governing: "{{product}} is licensed under the EULA." },
+  { id: "t_ic", name: "iCAFFE only", productIds: ["iCAFFE"], eulaTitle: "iCAFFE EULA", eulaMode: "text", eulaBody: "1. Definitions\n\nText.", tc: "Only iCAFFE term for {{customer}}.", governing: "" },
+] } };
+const sets = resolveTermSets(masters);
+check("built-ins first, then custom", sets.map((s) => s.id), ["orbis", "hans", "t_ic"]);
+check("a product belongs to one set (first wins)", [sets[1].productIds.includes("iCAFFE"), sets[2].productIds.includes("iCAFFE")], [true, false]);
+const sets2 = resolveTermSets({ quotation: { termSets: [{ id: "hans", productIds: [] }, { id: "t_ic", productIds: ["iCAFFE"], eulaMode: "text", eulaBody: "1. Definitions\n\nText.", tc: "Only iCAFFE term for {{customer}}." }] } });
+check("product moved to a custom set", termSetFor("iCAFFE", sets2).id, "t_ic");
+check("unlisted product → default set", termSetFor("WiseCargo", sets2).id, "hans");
+check("Orbis product → orbis set", termSetFor("OrbisEDI", sets2).id, "orbis");
+check("text mode → CRM public link", eulaLinkOf(termSetFor("iCAFFE", sets2)), "https://smartcrm-hans.vercel.app/#/terms/t_ic");
+check("text mode without text → keeps the saved link", [eulaLinkOf({ id: "x", eulaMode: "text", eulaBody: " ", eulaUrl: "https://a" }), eulaLinkOf({ id: "x", eulaMode: "text", eulaBody: "", eulaUrl: "" })], ["https://a", ""]);
+const icCustom = quoteDocumentHtml(ic, { ...icOpts, termSets: sets2 });
+check("quote prints that set's T&C", [text(icCustom).includes("Only iCAFFE term for Sai Asta Logistics."), text(icCustom).includes("Intellectual property.")], [true, false]);
+check("quote links that set's EULA", icCustom.includes('href="https://smartcrm-hans.vercel.app/#/terms/t_ic"'), true);
+const icHans = quoteDocumentHtml(ic, { ...icOpts, catalog: [...catalog, { id: "WiseCargo", name: "WiseCargo" }], termSets: sets });
+check("edited default set: link + T&C + governing", [icHans.includes('href="https://hansinfomatic.com/eula"'), text(icHans).includes("Payment. Within 15 days."), text(icHans).includes("Law. Courts of Hans Infomatic Pvt. Ltd. city.")], [true, true, true]);
+check("T&C numbering not doubled", /<li>\d+\./.test(icHans), false);
+check("one default only", resolveTermSets({ quotation: { termSets: [{ id: "orbis", isDefault: true }] } }).filter((s) => s.isDefault).map((s) => s.id), ["orbis"]);
+check("assign moves a product between sets", assignProducts(sets, "orbis", ["OrbisOne", "OrbisEDI", "iCAFFE"]).find((s) => s.id === "hans").productIds, []);
+check("make default", makeDefault(sets, "t_ic").filter((s) => s.isDefault).map((s) => s.id), ["t_ic"]);
+check("unknown placeholders flagged", unknownPlaceholders({ tc: "{{product}} {{custmer}}", governing: "{{quote.no}}" }), ["quote.no", "custmer"]);
+check("standard T&C uses placeholders", [DEFAULT_TC.includes("{{product}}"), DEFAULT_TC.split("\n").length], [true, 7]);
+check("EULA text → headings and paragraphs", eulaBlocks("1. Definitions\n\n“Customer” means the user.\n\nShort heading").map((b) => b.kind), ["h", "p", "h"]);
 check("pending → no accept QR / link", [ph.includes("Scan to accept"), ph.includes("/#/accept/abc")], [false, false]);
 check("approved wins over a stale status", awaitingApproval({ status: "Approval Required", approvalStatus: "Approved" }), false);
 check("rejected is still not final", awaitingApproval({ approvalStatus: "Rejected" }), true);

@@ -93,7 +93,7 @@ export default function HansQuoteBuilder({
   // Terms & conditions (free text). Seed from the edited quote, else the
   // default Hans terms as a sensible starting block the rep can replace via
   // a template. Same field (quote.terms) the Custom Quote / print use.
-  const defaultTermsText = QUOTE_TERMS.map((t, i) => `${i + 1}. ${t.text}`).join("\n");
+  const defaultTermsText = ((masters?.terms && masters.terms.length) ? masters.terms : QUOTE_TERMS).map((t, i) => `${i + 1}. ${t.text}`).join("\n");
   const [termsText, setTermsText] = useState(
     editQuote?.terms
       ? (Array.isArray(editQuote.terms) ? editQuote.terms.join("\n") : editQuote.terms)
@@ -431,7 +431,7 @@ export default function HansQuoteBuilder({
       },
     };
   };
-  const docOpts = { config, priceRows: catalogue, catalog, preparedBy: { name: me?.name || "", title: me?.designation || "", phone: me?.phone || me?.mobile || "", email: me?.email || "" } };
+  const docOpts = { config, priceRows: catalogue, catalog, termSets: masters?.termSets, preparedBy: { name: me?.name || "", title: me?.designation || "", phone: me?.phone || me?.mobile || "", email: me?.email || "" } };
   const previewPrint = () => printHansQuote(buildPrintPayload(), docOpts);
 
   // ── Render ──────────────────────────────────────────────────────────
