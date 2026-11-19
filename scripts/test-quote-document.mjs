@@ -59,8 +59,9 @@ check("not pending → accept QR", html.includes("Scan to accept this quotation 
 const pend = { ...base, status: "Approval Required", approvalStatus: "Pending" };
 const ph = quoteDocumentHtml(pend, opts);
 check("pending → same letterhead, no watermark or banner", [ph.includes('class="wm"'), ph.includes('class="draft"'), ph.includes('alt="Hans Infomatic"')], [false, false, true]);
-check("pending → marked subject to approval", [text(ph).includes("Status Draft, subject to approval"), text(ph).includes("subject to management approval")], [true, true]);
-check("not pending → no approval note", text(html).includes("subject to approval"), false);
+check("pending → marked subject to approval", text(ph).includes("Status Draft, subject to approval *"), true);
+check("pending → footnote for the customer, after the sign-off", [ph.includes('<div class="footnote">'), ph.indexOf("footnote\">") > ph.indexOf("With warm regards"), text(ph).includes("we will send you the final quotation")], [true, true, true]);
+check("not pending → no approval note", [text(html).includes("subject to approval"), html.includes('<div class="footnote">')], [false, false]);
 check("pending → no accept QR / link", [ph.includes("Scan to accept"), ph.includes("/#/accept/abc")], [false, false]);
 check("approved wins over a stale status", awaitingApproval({ status: "Approval Required", approvalStatus: "Approved" }), false);
 check("rejected is still not final", awaitingApproval({ approvalStatus: "Rejected" }), true);

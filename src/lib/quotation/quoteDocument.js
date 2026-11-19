@@ -14,8 +14,9 @@
 //   • Discounts are shown to the customer only when the quote says so
 //     (hans.showDiscount); otherwise rates are printed net.
 //   • A quote that still needs approval prints on the same letterhead (no
-//     watermark), marked "Draft, subject to approval" in the reference table
-//     and at the sign-off, and cannot be accepted from it (no accept link).
+//     watermark), marked "Draft, subject to approval *" in the reference
+//     table with a footnote for the customer (PENDING_NOTE), and cannot be
+//     accepted from it (no accept link).
 //
 // Pure: builds an HTML string; no DOM. Tested in scripts/test-quote-document.mjs.
 import { isOneTimeModel } from "./pricingEngine.js";
@@ -33,6 +34,9 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const fmtDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${m[3]}-${MONTHS[+m[2] - 1]}-${m[1]}` : String(iso || ""); };
 const longDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${+m[3]} ${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][+m[2] - 1]} ${m[1]}` : String(iso || ""); };
 const addDays = (iso, n) => { const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`); if (Number.isNaN(d.getTime())) return ""; d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+
+/** Footnote on a quote that is still awaiting approval (customer-facing wording). */
+export const PENDING_NOTE = "Draft quotation: the prices and terms are awaiting internal approval at Hans Infomatic. Once approved, we will send you the final quotation, which you can then accept.";
 
 /** Does the quote still need approval before it can go to the customer as final? */
 export const awaitingApproval = (q) => {
@@ -169,7 +173,7 @@ const CSS = (m) => `
   ol.n { margin: 4px 0 0; padding-left: 26px; } ol.n li { padding: 1px 0; }
   .note { font-size: 8pt; color: #64748B; font-style: italic; margin-top: 6px; }
   .meta td.pend { color: #B45309; }
-  .pendnote { font-size: 8.6pt; color: #B45309; margin-top: 8px; }
+  .footnote { margin-top: 22px; padding-top: 5px; border-top: 1px solid #CBD5E1; width: 62%; font-size: 8pt; color: #64748B; break-inside: avoid; }
   .sign { margin-top: 14px; break-inside: avoid; }
 `;
 
@@ -233,7 +237,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
         <tr><td>Product</td><td>${esc(m.planName)}${m.hosted && m.subs.length ? " (web-based SaaS)" : ""}</td></tr>
         ${who.name ? `<tr><td>Prepared by</td><td>${esc(who.name)}</td></tr>` : ""}
         ${contactLine ? `<tr><td>Contact</td><td>${esc(contactLine)}</td></tr>` : ""}
-        ${m.pending ? '<tr><td>Status</td><td class="pend">Draft, subject to approval</td></tr>' : ""}
+        ${m.pending ? '<tr><td>Status</td><td class="pend">Draft, subject to approval <sup>*</sup></td></tr>' : ""}
       </tbody></table>
     </div>
     <p style="margin-top:16px"><b>Subject: Quotation for ${esc(m.planName)}</b></p>
@@ -259,11 +263,11 @@ export function quoteDocumentHtml(quote, opts = {}) {
           ${esc([who.title, c.name].filter(Boolean).join(", "))}<br>
           ${contactLine ? `<span style="color:#64748B">${esc(contactLine)}</span><br>` : ""}
           <span style="color:#64748B;font-size:8.6pt">Authorised signatory, for ${esc(String(c.name).toUpperCase())}</span>
-          ${m.pending ? '<div class="pendnote">This quotation is subject to management approval. It becomes valid for acceptance once approved.</div>' : ""}
         </div>
         ${qr ? `<div style="text-align:center;font-size:7.6pt;color:#64748B"><img src="${qr}" width="92" height="92" alt="" onerror="this.style.display='none'"><br>Scan to accept this quotation online<br><span style="word-break:break-all">${esc(opts.acceptUrl)}</span></div>` : ""}
       </div>
     </div>
+    ${m.pending ? `<div class="footnote"><sup>*</sup> ${PENDING_NOTE}</div>` : ""}
     ${opts.extraPagesHtml || ""}
     ${opts.autoPrint === false ? "" : "<script>window.onload=function(){window.print();}</script>"}
   </body></html>`;
