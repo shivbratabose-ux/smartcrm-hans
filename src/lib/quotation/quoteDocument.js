@@ -53,7 +53,8 @@ export function featuresOf(row, product) {
   const desc = String(row?.description || "").replace(/Includes [^.]*\./i, "").trim();
   const parts = desc.split(/;\s+|,\s+(?=[A-Z0-9])|\.\s+/).map((s) => s.replace(/\.$/, "").trim()).filter((s) => s.length > 2);
   if (parts.length >= 3) return parts.slice(0, 28);
-  const mods = (product?.modules || []).filter((m) => !/add-on/i.test(m.type || "")).map((m) => m.name).filter(Boolean);
+  // Product modules as features — not price items (Plan / Add-on / Pricing entries, or ones carrying a ₹ price).
+  const mods = (product?.modules || []).filter((m) => !/add-on|plan|pricing/i.test(m.type || "") && !/₹/.test(m.desc || "")).map((m) => m.name).filter(Boolean);
   return mods.slice(0, 28);
 }
 

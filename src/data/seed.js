@@ -94,8 +94,16 @@ export const INIT_PRODUCT_CATALOG = [
   // `id` is the alias the field dictionary matches on (see normProductKey);
   // `name` is what sales sees on the chip.
   { id:"EANNEX",       name:"E-Annex Ultra", color:"#0EA5E9", bg:"#F0F9FF", desc:"ICEGATE Customs Filing — BE / SB",           modules:[] },
-  { id:"AMSOcean",     name:"AMS - Ocean Consol", color:"#0369A1", bg:"#F0F9FF", desc:"Ocean Consol Manifest Filing",         modules:[] },
-  { id:"AMSAir",       name:"AMS - Air Consol",   color:"#0284C7", bg:"#F0F9FF", desc:"Air Consol Manifest Filing",           modules:[] },
+  // AMS (web-based Advanced Manifest System) — Cargomar pricing sheet. Price
+  // rows AMS01–AMS04 in src/data/quotationMasters.js (ocean consol by slab).
+  { id:"AMSOcean",     name:"AMS - Ocean Consol", color:"#0369A1", bg:"#F0F9FF", desc:"Ocean Consol Manifest Filing",         modules:[
+      {id:"m_amo1", name:"One-time Registration",              type:"Core",    desc:"₹5,000 one time (covers Air and Ocean consol)", mrp:5000, unit:"One time", currency:"INR"},
+      {id:"m_amo2", name:"Ocean Consol Filing (SCMTR), per HBL", type:"Core",    desc:"Slab on the month's HBL count: up to 200 ₹800 · 201–500 ₹700 · 501–699 ₹500 · 700 and above ₹400 (whole month at its slab's rate)", mrp:800, unit:"HBL", currency:"INR"},
+    ] },
+  { id:"AMSAir",       name:"AMS - Air Consol",   color:"#0284C7", bg:"#F0F9FF", desc:"Air Consol Manifest Filing",           modules:[
+      {id:"m_ama1", name:"One-time Registration",  type:"Core",    desc:"₹5,000 one time (covers Air and Ocean consol)", mrp:5000, unit:"One time", currency:"INR"},
+      {id:"m_ama2", name:"Air Consol Filing, per HAWB", type:"Core",    desc:"₹30 per HAWB", mrp:30, unit:"HAWB", currency:"INR"},
+    ] },
   { id:"AMSIGM",       name:"AMS - IGM-EGM Filing", color:"#075985", bg:"#F0F9FF", desc:"IGM / EGM Filing to Customs",        modules:[] },
   { id:"WiseGSA",      name:"WiseGSA",      color:"#9333EA", bg:"#FAF5FF", desc:"GSA / Airline Representation Management",    modules:[] },
   { id:"WiseStox",     name:"WiseStox",     color:"#CA8A04", bg:"#FEFCE8", desc:"Warehouse & Inventory Management",           modules:[] },
@@ -185,10 +193,20 @@ export function mergeCatalogSeed(stored) {
   const missing = INIT_PRODUCT_CATALOG.filter(
     p => !seen.has(normProductKey(p.id)) && !seen.has(normProductKey(p.name))
   );
+  // A stored product with NO modules picks up the built-in list (e.g. AMS
+  // pricing added Nov 2026). A product the org has given modules is untouched.
+  let filled = false;
+  const withModules = next.map(p => {
+    if (!p?.id || (Array.isArray(p.modules) && p.modules.length)) return p;
+    const seed = INIT_PRODUCT_CATALOG.find(s => s.id === p.id);
+    if (!seed || !seed.modules?.length) return p;
+    filled = true;
+    return { ...p, modules: seed.modules.map(m => ({ ...m })) };
+  });
   // Return the original array when nothing changed, so callers that diff on
   // identity (setCatalog → the debounced app_settings push) don't see a write.
-  if (!renamed && missing.length === 0) return stored;
-  return [...next, ...missing];
+  if (!renamed && !filled && missing.length === 0) return stored;
+  return [...withModules, ...missing];
 }
 
 // ── Org Hierarchy: Market -> Company -> Division -> Country -> Branch -> Department (structural — keep) ──
