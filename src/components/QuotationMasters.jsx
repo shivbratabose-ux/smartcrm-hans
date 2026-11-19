@@ -22,6 +22,10 @@ import {
 const RATE_SOURCES = ["Flat", "Band", "iCAFFE"];
 import { validateCcsRule } from "../lib/quotation/pricingEngine";
 import { groupRates, groupOf, productsToAdd, SERVICES_GROUP, SERVICES_LABEL } from "../lib/quotation/productGroups";
+import { COMPANY_DEFAULTS } from "../lib/quotation/company";
+import { OFFICE_CODES_DEFAULT, fyCompact } from "../lib/quotation/docNumbers";
+import { fiscalYearSuffix } from "../lib/quotation/pricingEngine";
+import { INIT_ORG } from "../data/seed";
 import { exportCSV, parseCSV } from "../utils/csv";
 
 // Columns for catalogue CSV round-trip (identifiers + the simple editable
@@ -41,6 +45,9 @@ const CATALOGUE_CSV_COLS = [
 // always come from the seed/code, so new products and rate-source changes
 // ship without an admin reset; entered rates/overrides are preserved.
 const CATALOGUE_OVERLAY_FIELDS = [
+  // Descriptors an admin edits here must survive a reload too (they used to
+  // fall back to the built-in list — e.g. E-Annex set to One-time Licence).
+  "name", "module", "description", "pricingModel", "unit", "rateSource",
   "listPrice", "costPrice", "minMonthFloor", "minQty", "maxDiscountPct", "active", "notes",
   "productId", // which Product Catalogue product the row belongs to (one product master)
   "amcPct",    // AMC % for a one-time licence row (blank = the default in Quotation Rules)
@@ -434,6 +441,76 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
               <option value="list">Listed licence fee, before any discount</option>
             </select>
           </div>
+          {/* ── Quote numbers ── */}
+          {(() => {
+            const fy = fiscalYearSuffix(new Date());
+            const codes = { ...OFFICE_CODES_DEFAULT, ...(cur.quoteConfig.quoteOfficeCodes || {}) };
+            const branchIds = [...new Set([...(orgUsers || []).map(u => u.branchId).filter(Boolean), ...Object.keys(codes)])];
+            const nameOf = (id) => INIT_ORG.branches.find(b => b.id === id)?.name || id;
+            const office = cur.quoteConfig.quoteNumberFormat !== "classic";
+            const starts = cur.quoteConfig.quoteOfficeStart || {};
+            return (
+              <div className="form-group" style={{ gridColumn: "1 / -1", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }}>
+                <label>Quote numbers</label>
+                <select value={office ? "office" : "classic"} onChange={e => setConfig("quoteNumberFormat", e.target.value)} style={{ maxWidth: 420 }}>
+                  <option value="office">Office-wise — {codes.br2 || "DEL"}/SQ/0001/{fyCompact(fy)}</option>
+                  <option value="classic">Company-wide — {cur.quoteConfig.quoteNumberPrefix}000001/{fy}</option>
+                </select>
+                {office && (
+                  <table style={{ borderCollapse: "collapse", marginTop: 8, fontSize: 12 }}>
+                    <thead><tr>{["Branch", "Office code", `Continue from (FY ${fy})`].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textAlign: "left", color: "var(--text3)" }}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {branchIds.map(id => (
+                        <tr key={id}>
+                          <td style={cell}>{nameOf(id)}{(orgUsers || []).some(u => u.branchId === id) ? "" : <span style={{ color: "var(--text3)" }}> · no users</span>}</td>
+                          <td style={cell}><input style={{ ...numInput, width: 70, textAlign: "left", textTransform: "uppercase" }} value={codes[id] || ""} maxLength={5}
+                            onChange={e => setConfig("quoteOfficeCodes", { ...(cur.quoteConfig.quoteOfficeCodes || {}), [id]: e.target.value.toUpperCase().replace(/[^A-Z]/g, "") })} /></td>
+                          <td style={cell}><input style={{ ...numInput, width: 90 }} type="number" min={1} placeholder="1" title="The next quote number for this office will be at least this — use it to carry on from the old system"
+                            value={starts[`${codes[id]}:${fy}`] ?? ""} onChange={e => { const v = e.target.value; const k = `${codes[id]}:${fy}`; const nx = { ...starts }; if (v === "") delete nx[k]; else nx[k] = Number(v); setConfig("quoteOfficeStart", nx); }} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>A quote takes the office of the rep who creates it (Team &amp; Users → branch). Each office counts separately per financial year.</div>
+              </div>
+            );
+          })()}
+
+          {/* ── Company & bank details (letterhead, bills) ── */}
+          {(() => {
+            const co = cur.quoteConfig.company || {};
+            const setCo = (k, v) => setConfig("company", { ...co, [k]: v });
+            const F = [
+              ["name", "Company name"], ["regdOffice", "Registered office"], ["headOffice", "Head office"], ["otherOffices", "Other offices"],
+              ["email", "E-mail"], ["website", "Website"], ["certifications", "Certifications line"], ["signatoryName", "Signatory on quotes"],
+              ["signatoryTitle", "Signatory designation"], ["cin", "CIN"], ["gstin", "GSTIN"], ["pan", "PAN"], ["msme", "MSME Reg. no."], ["sac", "SAC code (software)"],
+              ["bankAccountName", "Bank A/c name"], ["bankName", "Bank"], ["bankAccount", "Bank A/c no."], ["bankIfsc", "RTGS / NEFT / IFSC"], ["bankMicr", "MICR"], ["bankBranch", "Bank address"],
+            ];
+            return (
+              <div style={{ gridColumn: "1 / -1", border: "1px solid var(--border)", borderRadius: 8, padding: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 2 }}>Company &amp; bank details</div>
+                <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 8 }}>Printed on quotes, the Accounts pack and the customer's bill page. Empty boxes use the standard wording; CIN, GSTIN, PAN and bank details print only once entered here.</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8 }}>
+                  {F.map(([k, label]) => (
+                    <div className="form-group" key={k} style={{ margin: 0 }}>
+                      <label>{label}</label>
+                      <input value={co[k] ?? ""} placeholder={COMPANY_DEFAULTS[k] || ""} onChange={e => setCo(k, e.target.value)} />
+                    </div>
+                  ))}
+                  <div className="form-group" style={{ margin: 0, gridColumn: "1 / -1" }}>
+                    <label>Cover letter (first page of a quote)</label>
+                    <textarea rows={3} value={co.coverLetter ?? ""} placeholder={COMPANY_DEFAULTS.coverLetter} onChange={e => setCo("coverLetter", e.target.value)} />
+                  </div>
+                  <div className="form-group" style={{ margin: 0, gridColumn: "1 / -1" }}>
+                    <label>Note on bills</label>
+                    <input value={co.billNote ?? ""} placeholder={COMPANY_DEFAULTS.billNote} onChange={e => setCo("billNote", e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           <PeoplePicker label="Quote approvers" orgUsers={orgUsers} value={cur.quoteConfig.approverIds || []}
             onChange={(ids) => setConfig("approverIds", ids)}
             hint="Who approves a quote whose discount or value is above the limit. They get a bell alert and a task. Nobody approves their own quote unless they are the only approver. Leave empty and every Admin / MD / Director / VP approves (the old rule)." />

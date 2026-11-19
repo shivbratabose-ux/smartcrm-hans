@@ -15,11 +15,12 @@ import HansQuoteBuilder from './HansQuoteBuilder';
 import { resolveQuotationMasters } from './QuotationMasters';
 import { allocateDocNo } from '../lib/db';
 import { QUOTE_CONFIG } from '../data/quotationMasters';
-import { newQuoteId, newContractId, nextQuoteNo, nextContractNo, revisionOf, sendBlockedReason } from '../lib/quotation/docNumbers';
+import { newQuoteId, newContractId, nextQuoteNo, nextContractNo, revisionOf, sendBlockedReason, officeOf } from '../lib/quotation/docNumbers';
 import GuidedTour from './GuidedTour';
 import QuoteHandoverPanel from './QuoteHandoverPanel';
 import QuoteAssistant from './QuoteAssistant';
 import { isAiFeatureOn } from '../utils/ai';
+import { companyOf, registrationLine } from '../lib/quotation/company';
 import { approverIds, accountsIds, approvalNoticeDue, finalBlockers, handoverOf, kycPageHtml, customerBaseUrl, acceptLink, billFromQuote, projectFromQuote, nextProjectNo, GST_UNREGISTERED, billConfirmLink, resolveDocuments, documentPagesHtml, customerBillEmail } from '../lib/quotation/handover';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -1301,7 +1302,7 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
     if(!q.accountId){alert("Link the customer account to this quote first.");return;}
     if(!setCollections){alert("Collections is not available here.");return;}
     const productId=(Array.isArray(q.productSelection)&&q.productSelection[0]?.productId)||q.product||"";
-    const bill=billFromQuote(q,{today,by:currentUser,productId});
+    const bill=billFromQuote(q,{today,by:currentUser,productId,sac:companyOf(quoteConfig).sac});
     setCollections(p=>[...p,bill]);
     // billToken = the customer's confirm link (#/bill-confirm/<token>).
     patchQuote(q,{handover:{...h,billId:bill.id,billNo:bill.invoiceNo,billAt:new Date().toISOString(),billBy:currentUser,billToken:h.billToken||generateAcceptToken()}},hEntry("FINAL","Billed",`Bill ${bill.invoiceNo} raised from the quote (₹${bill.netPayable}L incl. GST)`));
@@ -1508,7 +1509,7 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
     const clean=sanitizeObj({...resolvedForm,...totals});
     if(modal.mode==="add"){
       // The quote number customers see comes from the shared DB counter.
-      const {quoteNo,provisional}=clean.quoteNo?{quoteNo:clean.quoteNo,provisional:false}:await nextQuoteNo(allocateDocNo,quoteConfig,quotes);
+      const {quoteNo,provisional}=clean.quoteNo?{quoteNo:clean.quoteNo,provisional:false}:await nextQuoteNo(allocateDocNo,quoteConfig,quotes,new Date(),{office:officeOf((orgUsers||[]).find(u=>u.id===currentUser),quoteConfig)});
       const created={...clean,quoteNo,changeLog:[{id:uid(),at:new Date().toISOString(),by:currentUser,field:"",from:"",to:"created",note:provisional?"Quote number assigned offline — check it is unique":""}]};
       setQuotes(p=>[...p,created]);
     } else {
@@ -1667,6 +1668,7 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
     const acceptUrl = acceptLink(customerBase,printToken);
     const qrUrl     = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(acceptUrl)}`;
     const logoUrl   = `${window.location.origin}/hans-logo.png`;
+    const co        = companyOf(quoteConfig); // Quotation Rules → Company & bank details
 
     // ── Billing address display ──
     const billAddr  = q.billingAddressSnapshot || (acc?.billingAddress||"") || "";
@@ -1749,14 +1751,16 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
       <div style="display:flex;align-items:center;gap:14px">
         <img src="${logoUrl}" height="70" alt="Hans Infomatic" onerror="this.style.display='none'"/>
         <div>
-          <div class="company-name">HANS INFOMATIC PVT. LTD.</div>
-          <div class="company-tagline">Technology Solutions for India&#x2019;s Logistics &amp; Customs Industry</div>
-          <div style="font-size:8.5pt;color:#94a3b8;margin-top:2px">New Delhi · Mumbai · Bangalore · Chennai · Kolkata · www.hansinfomatic.com</div>
+          <div class="company-name">${co.name.toUpperCase()}</div>
+          <div style="font-size:8pt;color:#64748b;margin-top:2px"><b>Regd. office:</b> ${co.regdOffice}</div>
+          <div style="font-size:8pt;color:#64748b"><b>Head Office:</b> ${co.headOffice}${co.otherOffices?` · ${co.otherOffices}`:""}</div>
+          <div style="font-size:8pt;color:#64748b">${[co.email&&`Email: ${co.email}`,co.website&&`Website: ${co.website}`,registrationLine(co)].filter(Boolean).join(" · ")}</div>
+          ${co.certifications?`<div style="font-size:8pt;font-weight:700;color:#334155">${co.certifications}</div>`:""}
         </div>
       </div>
       <div class="quote-ref">
         <div class="q-label">Software Quotation</div>
-        <div class="q-num">${q.id}</div>
+        <div class="q-num">${q.quoteNo||q.id}</div>
         ${isInternal?'<div style="background:#DC2626;color:#fff;font-size:8pt;font-weight:700;padding:2px 8px;border-radius:3px;margin-top:4px;letter-spacing:1px">INTERNAL COPY</div>':""}
         ${isProforma?'<div style="background:#F59E0B;color:#fff;font-size:8pt;font-weight:700;padding:2px 8px;border-radius:3px;margin-top:4px;letter-spacing:1px">PROFORMA INVOICE</div>':""}
       </div>
@@ -1843,11 +1847,11 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
       <div style="display:flex;align-items:center;gap:10px">
         <img src="${logoUrl}" height="50" alt="Hans Infomatic" onerror="this.style.display='none'"/>
         <div>
-          <div style="font-size:11pt;font-weight:700;color:${accent}">HANS INFOMATIC PVT. LTD.</div>
-          <div style="font-size:8.5pt;color:#94a3b8">Continued — ${q.id}</div>
+          <div style="font-size:11pt;font-weight:700;color:${accent}">${co.name.toUpperCase()}</div>
+          <div style="font-size:8.5pt;color:#94a3b8">Continued — ${q.quoteNo||q.id}</div>
         </div>
       </div>
-      <div class="quote-ref"><div class="q-num" style="font-size:11pt">${q.id}</div></div>
+      <div class="quote-ref"><div class="q-num" style="font-size:11pt">${q.quoteNo||q.id}</div></div>
     </div>
 
     <h2>4. Implementation, Training &amp; Support</h2>
@@ -1889,9 +1893,8 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
         <p style="font-size:10pt;margin:0">Thanking you.</p>
         <p style="font-size:10pt;font-weight:600;margin:8px 0 0">With warm regards,</p>
         <img src="${window.location.origin}/hans-sign.png" height="40" alt="Signature" style="display:block;margin:8px 0" onerror="this.style.display='none'"/>
-        <div class="sig-line">Authorised Signatory</div>
-        <div style="font-size:10pt;font-weight:700;margin-top:6px">For HANS INFOMATIC PVT. LTD.</div>
-        <div style="font-size:9pt;color:#64748b">Freight &amp; Customs Technology Solutions · New Delhi</div>
+        <div class="sig-line">${co.signatoryName||"Authorised Signatory"}${co.signatoryTitle?` · ${co.signatoryTitle}`:""}</div>
+        <div style="font-size:10pt;font-weight:700;margin-top:6px">For ${co.name.toUpperCase()}</div>
       </div>
       <div style="text-align:right">
         ${!isInternal?`<div style="text-align:center;display:inline-block">
@@ -1904,8 +1907,8 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
 
     <!-- ═══ DOCUMENT FOOTER ═══ -->
     <div class="doc-footer">
-      <span>Hans Infomatic Pvt. Ltd. · New Delhi · www.hansinfomatic.com</span>
-      <span>${q.id} · v${q.version||1} · Generated ${new Date().toLocaleString("en-IN")} · ${template.toUpperCase()}</span>
+      <span>${co.name} · ${co.website}</span>
+      <span>${q.quoteNo||q.id} · v${q.version||1} · Generated ${new Date().toLocaleString("en-IN")} · ${template.toUpperCase()}</span>
     </div>
 
     ${template==="pack"?documentPagesHtml(q,resolveDocuments(masters),{today}):""}

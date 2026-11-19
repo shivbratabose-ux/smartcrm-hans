@@ -55,6 +55,7 @@ import {
   handoverOf, quoteAmounts, scopeLines, kycOf, resolveDocuments, docContext, fillTemplate,
   projectFromQuote, accountsIds, HOSTING_LABEL, GST_UNREGISTERED,
 } from "../_shared/handoverCore.js";
+import { companyOf, paymentDetails } from "../_shared/company.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -306,6 +307,10 @@ async function billStep(admin: any, token: string, action: string, body: any) {
     lines: scopeLines(q),
     documents: docs.filter((d: any) => d.body.trim()).map((d: any) => ({ title: d.title, html: fillTemplate(d.body, ctx).html })),
     confirmed: !!h.confirmedAt, confirmedAt: h.confirmedAt || "", confirmedName: h.confirmedName || "",
+    seller: (() => {
+      const co = companyOf(settings?.masters?.quotation?.quoteConfig || {});
+      return { name: co.name, gstin: co.gstin, pan: co.pan, sac: co.sac, msme: co.msme, note: co.billNote, payTo: paymentDetails(co) };
+    })(),
   };
   if (action === "bill-view") return json({ ok: true, bill: summary });
 

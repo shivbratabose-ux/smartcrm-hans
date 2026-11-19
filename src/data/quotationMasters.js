@@ -31,6 +31,12 @@ export const QUOTE_CONFIG = {
   amcEscalationEvery: 2,         // years between increases
   amcScheduleYears: 5,           // AMC years shown on the quote
   amcBase: "net",                // "net" = after discount · "list" = listed fee before discount (invoice wording)
+  // Quote numbers as on Hans' quotations: DEL/SQ/0005/2627 (office/SQ/no./FY).
+  quoteNumberFormat: "office",   // "office" | "classic" (SQ/M000013/26-27)
+  quoteDefaultOffice: "DEL",     // when the rep's branch has no office code
+  quoteOfficeCodes: {},          // branchId → office code (defaults in docNumbers.js)
+  quoteOfficeStart: {},          // "DEL:26-27" → continue numbering from
+  company: {},                   // letterhead / registration / bank (lib/quotation/company.js)
   prepaymentDiscountPctDefault: 5,
   fx: 1,                         // INR base; divisor on resolved unit price
   // Multi-currency stub (Config sheet) — FX only, no live feeds.
@@ -92,7 +98,8 @@ export const HANS_CATALOGUE = [
   // Bills of Entry + monthly Shipping Bills). Flat rate — one price at any
   // volume; if this ever needs to tier by monthly filing count it becomes a
   // rate card (matrixId) like iCAFFE, not a listPrice change.
-  { code: "P18", name: "E-Annex Ultra", module: "ICEGATE Customs Filing", description: "ICEGATE customs filing — Bills of Entry & Shipping Bills", pricingModel: "Per-transaction", unit: "Transaction", listPrice: 250, rateSource: "Flat", minMonthFloor: null, notes: "Per filing (BoE / SB)", active: true },
+  { code: "P18", name: "E-Annex Ultra", module: "ICEGATE Customs Filing", description: "E-Annex Ultra licence per location / branch, up to 1+4 users — Export & Import documentation", pricingModel: "One-time Licence", unit: "Branch", listPrice: 55000, rateSource: "Flat", minMonthFloor: null, amcFixed: 10000, productId: "EANNEX", notes: "Multi-location 100% extra · ALR ₹10,000 per branch per year after 365 days", active: true },
+  { code: "EA02", name: "E-Annex Ultra — CHA Licence Change", module: "ICEGATE Customs Filing", description: "Change of CHA licence on an existing E-Annex Ultra installation", pricingModel: "Implementation", unit: "Fixed", listPrice: 20000, rateSource: "Flat", minMonthFloor: null, productId: "EANNEX", notes: "One-time (as quoted DEL/SQ/0005/2627)", active: true },
 
   // Orbis One — freight forwarding & customs clearance (OB01–OB18).
   // Source: Orbis One Sales Pricing and Feature Guide, 27 Oct 2026. Plans are
@@ -186,6 +193,8 @@ export const HANS_CATALOGUE = [
   { code: "IC04", name: "EDI + Billing", module: "iCAFFE Edition", description: "EDI/ICEGATE + Billing", pricingModel: "SaaS Subscription", unit: "User", listPrice: null, rateSource: "iCAFFE", minMonthFloor: null, notes: "Per-user/month from iCAFFE rate card (edition × band)", active: true },
   { code: "IC05", name: "EDI", module: "iCAFFE Edition", description: "EDI/ICEGATE customs filing", pricingModel: "SaaS Subscription", unit: "User", listPrice: null, rateSource: "iCAFFE", minMonthFloor: null, notes: "Per-user/month from iCAFFE rate card (edition × band)", active: true },
   { code: "IC06", name: "EDI - Export Only", module: "iCAFFE Edition", description: "EDI export only", pricingModel: "SaaS Subscription", unit: "User", listPrice: null, rateSource: "iCAFFE", minMonthFloor: null, notes: "Per-user/month from iCAFFE rate card (edition × band)", active: true },
+  { code: "IC08", name: "iCAFFE One-time Registration (per branch)", module: "iCAFFE Edition", description: "One-time registration charges per branch — SaaS", pricingModel: "Implementation", unit: "Branch", listPrice: 25000, rateSource: "Flat", minMonthFloor: null, productId: "iCAFFE", notes: "Non-refundable", active: true },
+  { code: "IC09", name: "iCAFFE EDI One-time Set-up", module: "iCAFFE Edition", description: "One-time set-up for the iCAFFE EDI (custom clearance) SaaS module", pricingModel: "Implementation", unit: "Branch", listPrice: 40000, rateSource: "Flat", minMonthFloor: null, productId: "iCAFFE", notes: "As quoted DEL/SQ/0077/2526", active: true },
   { code: "IC07", name: "EDI - Import Only", module: "iCAFFE Edition", description: "EDI import only", pricingModel: "SaaS Subscription", unit: "User", listPrice: null, rateSource: "iCAFFE", minMonthFloor: null, notes: "Per-user/month from iCAFFE rate card (edition × band). Independent of Export-Only by design.", active: true },
 ];
 
