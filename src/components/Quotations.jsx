@@ -18,6 +18,7 @@ import { QUOTE_CONFIG } from '../data/quotationMasters';
 import { newQuoteId, newContractId, nextQuoteNo, nextContractNo, revisionOf, sendBlockedReason, officeOf } from '../lib/quotation/docNumbers';
 import GuidedTour from './GuidedTour';
 import QuoteHandoverPanel from './QuoteHandoverPanel';
+import { printHansQuote } from '../lib/quotation/printQuote';
 import QuoteAssistant from './QuoteAssistant';
 import { isAiFeatureOn } from '../utils/ai';
 import { companyOf, registrationLine } from '../lib/quotation/company';
@@ -1529,6 +1530,19 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
        System Requirements · Payment Terms · T&C · Signature · Footer
      template: "customer" | "proforma" | "internal" | "government"    */
   const printQuote=(q,template="customer")=>{
+    // Pricing-engine quotes print in the approved quotation format.
+    if(q.hans&&(template==="customer"||template==="pack")){
+      let tok=q.acceptToken;
+      if(!tok){ tok=generateAcceptToken(); setQuotes(p=>p.map(r=>r.id===q.id?{...r,acceptToken:tok}:r)); }
+      const owner=(orgUsers||[]).find(u=>u.id===q.owner)||{};
+      printHansQuote(q,{
+        config:quoteConfig, priceRows:resolveQuotationMasters(masters,catalog).catalogue, catalog:catalog||[],
+        preparedBy:{name:owner.name||q.preparedBy||"",title:owner.designation||"",phone:owner.phone||owner.mobile||"",email:owner.email||""},
+        acceptUrl:acceptLink(customerBase,tok),
+        extraPagesHtml: template==="pack"?documentPagesHtml(q,resolveDocuments(masters),{today}):"",
+      });
+      return;
+    }
     const acc     = accounts.find(a=>a.id===q.accountId);
     const con     = contacts.find(c=>c.id===q.contactId);
     const isInternal = template==="internal";
@@ -2125,6 +2139,7 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
           opps={opps} leads={leads} accounts={accounts} contacts={contacts}
           quotes={quotes} setQuotes={setQuotes} currentUser={currentUser} orgUsers={orgUsers}
           masters={resolveQuotationMasters(masters, catalog)}
+          catalog={catalog||[]}
           editQuote={hansEdit}
           draft={hansDraft}
           onClose={()=>{setHansBuilder(false);setHansEdit(null);setHansDraft(null);}}
