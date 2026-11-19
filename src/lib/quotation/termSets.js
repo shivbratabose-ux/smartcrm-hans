@@ -25,12 +25,32 @@ export const TERMS_PLACEHOLDERS = [
 export const DEFAULT_TC = STANDARD_SECTIONS.terms({ product: "{{product}}", company: "{{company}}", validUntil: "{{validUntil}}" })
   .map(([k, v]) => `${k}. ${v}`).join("\n");
 
+/** Terms for the AMS filing services (from the GMR Airport AMS quotation, Jul 2025). */
+export const AMS_TC = [
+  "Billing. Usage charges are billed on the 1st day of each month, on the actual volume filed in the previous month.",
+  "Escalation. Rates escalate by 10% every year.",
+  "Taxes. GST and government levies are charged extra; any statutory change, new duty or tax is billed additionally. Other than TDS, no other deductions are allowed.",
+  "Customs charges. Customs receipted charges, bank challans, penalties and levies are on the customer's account.",
+  "Payment. Invoices are payable as per the Master MSA, or else within 7 days of the invoice date. Delayed payments attract interest on the outstanding amount as per MSME guidelines.",
+  "DSC. The customer provides the DSC of its authorised person registered at ICEGATE; it is used only for the customer's filings.",
+  "ICEGATE. Filing, acknowledgement and approval of IGM, EGM, amendments, CTM and TP are subject to ICEGATE.",
+  "Liability. {{company}} is not liable for indirect, incidental or consequential loss, including loss of profit, business or data. Liability, if any, is limited to the total value of the quoted services, except for gross negligence or wilful misconduct.",
+  "Data retention. Transactional records are kept as per the standard policy or the master agreement; extended retention can be agreed in the final agreement.",
+  "Validity. This quotation is valid until {{validUntil}}; after that the rates may be renegotiated. Once accepted, the rates are firm for the contract period under normal business conditions, subject to the yearly escalation.",
+].join("\n");
+
 export const BUILTIN_TERM_SETS = [
   {
     id: "orbis", name: "OrbisOne products", productIds: ["OrbisOne", "OrbisEDI"], isDefault: false,
     eulaTitle: "OrbisOne terms of use", eulaMode: "link", eulaUrl: "https://orbisone.in/terms.html", eulaBody: "",
     governing: "Use of {{product}} is governed by the OrbisOne terms of use and the subscription agreement and data processing addendum signed on order. The accepted quotation serves as the order.",
     tc: DEFAULT_TC,
+  },
+  {
+    id: "ams", name: "AMS filing services", productIds: ["AMSOcean", "AMSAir", "AMSIGM"], isDefault: false,
+    eulaTitle: "Hans Infomatic Master Services Agreement & EULA", eulaMode: "link", eulaUrl: `${SMART_CRM_SITE}/legal/msa-eula-icaffe.html`, eulaBody: "",
+    governing: "The {{product}} services are provided under the Hans Infomatic Master Services Agreement (MSA). The accepted quotation serves as the Order Form under it.",
+    tc: AMS_TC,
   },
   {
     id: "hans", name: "Hans products (iCAFFE and others)", productIds: ["iCAFFE"], isDefault: true,

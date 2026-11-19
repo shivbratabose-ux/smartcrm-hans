@@ -125,7 +125,7 @@ export function quoteDocModel(quote, opts = {}) {
 
   const template = product ? getQuoteTemplate(product.id) : null;
   const about = pContent.about || (template?.overview?.description ? [template.overview.description] : []);
-  const ctx = { product: brand, customer, validUntil: longDate(validUntil), hosted, billing: h.billingFrequency, company: company.name, city: opts.city || "", paymentTerms: quote.paymentTerms || "", hasSubscription: subs.length > 0 };
+  const ctx = { product: brand, customer, validUntil: longDate(validUntil), hosted, billing: h.billingFrequency, company: company.name, city: opts.city || "", paymentTerms: quote.paymentTerms || "", hasSubscription: subs.length > 0, hasOneTime: oneTime.length > 0 };
   const notes = String(h.termsText || quote.terms || "").split(/\n+/).map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean);
 
   const netOneTime = sum(oneTime, "net"), netSubs = sum(subs, "net");
@@ -149,9 +149,9 @@ export function quoteDocModel(quote, opts = {}) {
     },
     amc: h.amc && h.amc.applies ? h.amc : null,
     notes,
-    implementation: STANDARD_SECTIONS.implementation(ctx),
-    payment: STANDARD_SECTIONS.payment(ctx),
-    requirements: STANDARD_SECTIONS.requirements(ctx),
+    implementation: (pContent.sections?.implementation || STANDARD_SECTIONS.implementation)(ctx),
+    payment: (pContent.sections?.payment || STANDARD_SECTIONS.payment)(ctx),
+    requirements: (pContent.sections?.requirements || STANDARD_SECTIONS.requirements)(ctx),
     terms: tcLines(termSet, fillCtx),
     termSetId: termSet?.id || "",
     governing: { label: termSet?.eulaTitle || "terms of use", url: eulaLinkOf(termSet, opts.siteUrl), text: fillTerms(termSet?.governing || "", fillCtx) },
@@ -206,12 +206,14 @@ export function quoteDocumentHtml(quote, opts = {}) {
   let n = 0;
   const hasCode = (code) => (quote.items || []).some((l) => l.productCode === code);
 
+  const hansHosted = m.hosted && quote.hosting === "Hans";
+  const hasMain = m.oneTime.length > 0 || m.subs.length > 0 || !!m.amc;
   const prices = `
-    <table class="pr"><thead><tr><th style="width:26px"></th><th>Description</th><th>Basis</th><th class="r">Rate (₹)</th>${D ? '<th class="r">Discount</th>' : ""}<th class="r">Users / qty</th><th class="r">Amount (₹)</th></tr></thead><tbody>
-      ${m.oneTime.length || m.hosted ? `<tr class="sec"><td>A</td><td colspan="${cols}">One-time charges</td></tr>` : ""}
+    ${hasMain ? `<table class="pr"><thead><tr><th style="width:26px"></th><th>Description</th><th>Basis</th><th class="r">Rate (₹)</th>${D ? '<th class="r">Discount</th>' : ""}<th class="r">Users / qty</th><th class="r">Amount (₹)</th></tr></thead><tbody>
+      ${m.oneTime.length || hansHosted ? `<tr class="sec"><td>A</td><td colspan="${cols}">One-time charges</td></tr>` : ""}
       ${m.oneTime.map((l) => priceRow(++n, l)).join("")}
-      ${m.hosted && quote.hosting === "Hans" && !hasCode("AS01") ? noteRow(++n, "Server setup: not applicable, hosted by Hans Infomatic") : ""}
-      ${m.hosted && quote.hosting === "Hans" && !hasCode("AS02") ? noteRow(++n, "DSC server licence: not applicable, hosted by Hans Infomatic") : ""}
+      ${hansHosted && !hasCode("AS01") ? noteRow(++n, "Server setup: not applicable, hosted by Hans Infomatic") : ""}
+      ${hansHosted && !hasCode("AS02") ? noteRow(++n, "DSC server licence: not applicable, hosted by Hans Infomatic") : ""}
       ${m.oneTime.length ? totRow("Total one-time charges", inr(t.oneTimeShown)) : ""}
       ${D && t.overallOneTime > 0.5 ? totRow(`Less: discount ${m.overallPct}%`, "− " + inr(t.overallOneTime), "") + totRow("One-time charges after discount", inr(t.netOneTime)) : ""}
       ${m.subs.length ? `<tr class="sec"><td>B</td><td colspan="${cols}">Subscription</td></tr>` : ""}
@@ -223,7 +225,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
       <tr class="sec"><td></td><td colspan="${cols}">GST at ${m.gstPct}% (charged in addition, as applicable)</td></tr>
       ${m.oneTime.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on one-time charges</td><td class="r">${inr(t.gstOneTime)}</td></tr>` : ""}
       ${m.subs.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on the subscription, per month</td><td class="r">${inr(t.gstSubs)}</td></tr>` : ""}
-    </tbody></table>
+    </tbody></table>` : ""}
     ${m.usage.length ? `<p style="font-weight:800;color:#1F2F6B;margin:12px 0 2px">${m.mainIsUsage ? "Usage charges (billed monthly on the actual volume)" : "Add-on services (pay per use, activated on request)"}</p>
     <table class="pr pr2"><thead><tr><th style="width:26px"></th><th>Service</th><th>Basis</th><th class="r">Rate (₹)</th></tr></thead><tbody>
       ${m.usage.map((l, i) => {
@@ -234,7 +236,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
         }
         return `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${l.listRate ? inr(fx(l.listRate)) : "On request"}</td></tr>`;
       }).join("")}
-    </tbody></table>` : ""}`;
+    </tbody></table>${hasMain ? "" : `<div class="note" style="font-style:normal">GST at ${m.gstPct}% is charged in addition, as applicable.</div>`}` : ""}`;
 
   const who = m.preparedBy;
   const contactLine = [who.phone, who.email].filter(Boolean).join(" · ");
