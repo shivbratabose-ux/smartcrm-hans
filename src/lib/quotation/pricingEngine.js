@@ -23,6 +23,7 @@
 //     workbook's reliance on the user typing Months = 1)
 // ═══════════════════════════════════════════════════════════════════
 
+import { slabRate } from "./slabs.js";
 import {
   QUOTE_CONFIG, ONE_TIME_MODELS, FLOOR_MODELS,
   PRICING_BANDS, ICAFFE_BAND_FROM, ICAFFE_EDITIONS,
@@ -189,6 +190,11 @@ export function resolveUnitPrice(product, opts = {}) {
       raw = r != null ? num(r) : null;
       break;
     }
+    case "Slab": {
+      // Volume slab: the whole month's volume at the rate of its slab (lib/quotation/slabs.js).
+      raw = slabRate(qty, product.slabs).rate;
+      break;
+    }
     case "iCAFFE": {
       const ed = editions.find((e) => e.name === product.name);
       if (ed) {
@@ -206,7 +212,7 @@ export function resolveUnitPrice(product, opts = {}) {
 
   // An explicitly-zero rate (e.g. WiseHandling Inclusive / "at actuals"
   // modules) is a deliberate 0, not a missing rate.
-  const explicitZero = product.rateSource !== "iCAFFE" && product.rateSource !== "Band" && raw === 0;
+  const explicitZero = product.rateSource !== "iCAFFE" && product.rateSource !== "Band" && product.rateSource !== "Slab" && raw === 0;
   if (raw == null && !explicitZero) {
     return { unitPrice: 0, missingRate: true };
   }

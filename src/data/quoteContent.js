@@ -23,6 +23,31 @@ export const PRODUCT_CONTENT = {
   },
 };
 
+// AMS® (Advanced Manifest System): web-based filing services, billed on use.
+const AMS_ABOUT = [
+  "AMS® Version 2.0 is Hans Infomatic's web-based Advanced Manifest System for filing with Indian Customs (ICEGATE): IGM and EGM, consol manifests (air and ocean, including SCMTR), FWB and FHL messages, Cargo Transfer Manifests (CTM) and Transshipment Permits (TP).",
+  "There is nothing to install: your team files from a browser, or sends the data and Hans staff enter it for you. Acknowledgements and status are kept with each filing.",
+];
+const AMS_SECTIONS = {
+  implementation: () => [
+    ["Implementation", "Immediate, once registration and the DSC details are received."],
+    ["Data entry", "Done by Hans staff if the data is not received online."],
+    ["Support", "Helpdesk from 9:30 am to 6:30 pm, Monday to Saturday, except public holidays."],
+  ],
+  payment: (p) => [
+    p.hasOneTime && ["One-time charges", "Payable with the order."],
+    ["Usage charges", "Billed on the 1st day of each month, on the actual volume filed in the previous month. Payment is due as per the Master MSA, or else within 7 days of the invoice date."],
+    ["Taxes and levies", "GST and government levies are charged extra. Other than TDS, no other deductions are allowed. Customs receipted charges, bank challans, penalties and levies are on the customer's account."],
+    ["How to pay", `Account-payee cheque, RTGS or NEFT in favour of ${p.company}, payable at New Delhi.`],
+  ].filter(Boolean),
+  requirements: () => [
+    ["DSC", "The Digital Signature Certificate of your authorised person, registered at ICEGATE, used only for your filings."],
+    ["Users", "A recent browser (Chrome recommended) and a stable internet connection."],
+    ["Server", "Not needed: AMS® is hosted by Hans Infomatic."],
+  ],
+};
+for (const id of ["AMSOcean", "AMSAir", "AMSIGM"]) PRODUCT_CONTENT[id] = { brand: "AMS®", about: AMS_ABOUT, sections: AMS_SECTIONS };
+
 // Keyed by price-row code. `features` replaces the list derived from the row's description.
 export const PLAN_CONTENT = {
   OE02: {

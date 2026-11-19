@@ -25,6 +25,7 @@ import { groupOf, SERVICES_GROUP } from "./productGroups.js";
 import { HOSTING_LABEL } from "./handover.js";
 import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS, CONFIDENTIAL_NOTE } from "../../data/quoteContent.js";
 import { resolveTermSets, termSetFor, eulaLinkOf, fillTerms, tcLines } from "./termSets.js";
+import { slabTable } from "./slabs.js";
 import { getQuoteTemplate } from "../../data/quoteTemplates.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -52,7 +53,8 @@ export function featuresOf(row, product) {
   const desc = String(row?.description || "").replace(/Includes [^.]*\./i, "").trim();
   const parts = desc.split(/;\s+|,\s+(?=[A-Z0-9])|\.\s+/).map((s) => s.replace(/\.$/, "").trim()).filter((s) => s.length > 2);
   if (parts.length >= 3) return parts.slice(0, 28);
-  const mods = (product?.modules || []).filter((m) => !/add-on/i.test(m.type || "")).map((m) => m.name).filter(Boolean);
+  // Product modules as features — not price items (Plan / Add-on / Pricing entries, or ones carrying a ₹ price).
+  const mods = (product?.modules || []).filter((m) => !/add-on|plan|pricing/i.test(m.type || "") && !/₹/.test(m.desc || "")).map((m) => m.name).filter(Boolean);
   return mods.slice(0, 28);
 }
 
@@ -77,9 +79,11 @@ export function quoteDocModel(quote, opts = {}) {
     const afterLine = num(l.lineTotal) / months;                     // per month for recurring
     const net = afterLine * (1 - overallPct / 100);                  // after overall discount too
     const unit = String(l.unit || row?.unit || "").trim();
-    const basis = oneTime ? "One time" : usage ? `Per ${unit.toLowerCase() || "use"}` : `Per ${unit.toLowerCase() || "unit"} per month`;
+    const u = /^[A-Z/]{2,}$/.test(unit) ? unit : unit.toLowerCase();   // HBL, HAWB stay upper case
+    const basis = oneTime ? "One time" : usage ? `Per ${u || "use"}` : `Per ${u || "unit"} per month`;
     return {
-      code: l.productCode, name: l.name || row?.name || l.productCode, oneTime, usage, basis, qty,
+      code: l.productCode, name: l.name || row?.name || l.productCode, oneTime, usage, basis, qty, unit,
+      slabs: row?.rateSource === "Slab" ? slabTable(row.slabs, `${unit || "units"} per month`) : null,
       listRate: num(l.unitPriceResolved), discountPct: num(l.discountPct),
       // What the customer sees: list rate + discount when shown; otherwise the net rate.
       rate: showDiscount ? num(l.unitPriceResolved) : (qty ? net / qty : net),
@@ -92,13 +96,16 @@ export function quoteDocModel(quote, opts = {}) {
   const usage = lines.filter((l) => l.usage);
   const sum = (arr, k) => arr.reduce((s, l) => s + l[k], 0);
 
-  const main = subs[0] || oneTime[0] || lines[0] || null;
+  // The line the quotation is "for": a subscription, else a licence, else a
+  // pay-per-use service (e.g. AMS filing), else whatever is there.
+  const main = subs[0] || oneTime.find((l) => /licen/i.test(String((quote.items || []).find((it) => it.productCode === l.code)?.pricingModel || ""))) || usage[0] || oneTime[0] || lines[0] || null;
+  const mainIsPlan = !!main && (subs.includes(main) || (!usage.includes(main) && /licen/i.test(String((quote.items || []).find((it) => it.productCode === main.code)?.pricingModel || ""))));
   const mainRow = main ? rowOf(main.code) : null;
   const gid = mainRow ? groupOf(mainRow, catalog) : "";
   const product = gid && gid !== SERVICES_GROUP ? catalog.find((p) => p.id === gid) || null : null;
   const pContent = (product && PRODUCT_CONTENT[product.id]) || {};
   const brand = pContent.brand || product?.name || main?.name || "the software";
-  const planName = main?.name || product?.name || "Software";
+  const planName = (mainIsPlan ? main?.name : "") || product?.name || main?.name || "Software";
   const hosted = quote.hosting !== "Client";
   const validUntil = quote.expiryDate || addDays(quote.createdDate, num(cfg.quoteValidityDays) || 7);
   const customer = h.party?.name || quote.legalName || "";
@@ -118,14 +125,14 @@ export function quoteDocModel(quote, opts = {}) {
 
   const template = product ? getQuoteTemplate(product.id) : null;
   const about = pContent.about || (template?.overview?.description ? [template.overview.description] : []);
-  const ctx = { product: brand, customer, validUntil: longDate(validUntil), hosted, billing: h.billingFrequency, company: company.name, city: opts.city || "", paymentTerms: quote.paymentTerms || "", hasSubscription: subs.length > 0 };
+  const ctx = { product: brand, customer, validUntil: longDate(validUntil), hosted, billing: h.billingFrequency, company: company.name, city: opts.city || "", paymentTerms: quote.paymentTerms || "", hasSubscription: subs.length > 0, hasOneTime: oneTime.length > 0 };
   const notes = String(h.termsText || quote.terms || "").split(/\n+/).map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean);
 
   const netOneTime = sum(oneTime, "net"), netSubs = sum(subs, "net");
   const termSet = termSetFor(product?.id || mainRow?.productId || "", opts.termSets || resolveTermSets(null));
   const fillCtx = { product: brand, company: company.name, customer, validUntil: longDate(validUntil) };
   return {
-    company, quote, customer, brand, planName, product, hosted, showDiscount, overallPct, gstPct,
+    company, quote, customer, brand, planName, product, hosted, showDiscount, overallPct, gstPct, mainIsUsage: !!main && usage.includes(main),
     pending: awaitingApproval(quote),
     validUntil,
     to: { contact: h.billing?.billingContactName || quote.billingContactName || "", company: customer, address: String(h.party?.address || quote.billingAddressSnapshot || "").split(/\n|,\s*/).map((s) => s.trim()).filter(Boolean) },
@@ -142,9 +149,9 @@ export function quoteDocModel(quote, opts = {}) {
     },
     amc: h.amc && h.amc.applies ? h.amc : null,
     notes,
-    implementation: STANDARD_SECTIONS.implementation(ctx),
-    payment: STANDARD_SECTIONS.payment(ctx),
-    requirements: STANDARD_SECTIONS.requirements(ctx),
+    implementation: (pContent.sections?.implementation || STANDARD_SECTIONS.implementation)(ctx),
+    payment: (pContent.sections?.payment || STANDARD_SECTIONS.payment)(ctx),
+    requirements: (pContent.sections?.requirements || STANDARD_SECTIONS.requirements)(ctx),
     terms: tcLines(termSet, fillCtx),
     termSetId: termSet?.id || "",
     governing: { label: termSet?.eulaTitle || "terms of use", url: eulaLinkOf(termSet, opts.siteUrl), text: fillTerms(termSet?.governing || "", fillCtx) },
@@ -199,12 +206,14 @@ export function quoteDocumentHtml(quote, opts = {}) {
   let n = 0;
   const hasCode = (code) => (quote.items || []).some((l) => l.productCode === code);
 
+  const hansHosted = m.hosted && quote.hosting === "Hans";
+  const hasMain = m.oneTime.length > 0 || m.subs.length > 0 || !!m.amc;
   const prices = `
-    <table class="pr"><thead><tr><th style="width:26px"></th><th>Description</th><th>Basis</th><th class="r">Rate (₹)</th>${D ? '<th class="r">Discount</th>' : ""}<th class="r">Users / qty</th><th class="r">Amount (₹)</th></tr></thead><tbody>
-      ${m.oneTime.length || m.hosted ? `<tr class="sec"><td>A</td><td colspan="${cols}">One-time charges</td></tr>` : ""}
+    ${hasMain ? `<table class="pr"><thead><tr><th style="width:26px"></th><th>Description</th><th>Basis</th><th class="r">Rate (₹)</th>${D ? '<th class="r">Discount</th>' : ""}<th class="r">Users / qty</th><th class="r">Amount (₹)</th></tr></thead><tbody>
+      ${m.oneTime.length || hansHosted ? `<tr class="sec"><td>A</td><td colspan="${cols}">One-time charges</td></tr>` : ""}
       ${m.oneTime.map((l) => priceRow(++n, l)).join("")}
-      ${m.hosted && quote.hosting === "Hans" && !hasCode("AS01") ? noteRow(++n, "Server setup: not applicable, hosted by Hans Infomatic") : ""}
-      ${m.hosted && quote.hosting === "Hans" && !hasCode("AS02") ? noteRow(++n, "DSC server licence: not applicable, hosted by Hans Infomatic") : ""}
+      ${hansHosted && !hasCode("AS01") ? noteRow(++n, "Server setup: not applicable, hosted by Hans Infomatic") : ""}
+      ${hansHosted && !hasCode("AS02") ? noteRow(++n, "DSC server licence: not applicable, hosted by Hans Infomatic") : ""}
       ${m.oneTime.length ? totRow("Total one-time charges", inr(t.oneTimeShown)) : ""}
       ${D && t.overallOneTime > 0.5 ? totRow(`Less: discount ${m.overallPct}%`, "− " + inr(t.overallOneTime), "") + totRow("One-time charges after discount", inr(t.netOneTime)) : ""}
       ${m.subs.length ? `<tr class="sec"><td>B</td><td colspan="${cols}">Subscription</td></tr>` : ""}
@@ -216,11 +225,18 @@ export function quoteDocumentHtml(quote, opts = {}) {
       <tr class="sec"><td></td><td colspan="${cols}">GST at ${m.gstPct}% (charged in addition, as applicable)</td></tr>
       ${m.oneTime.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on one-time charges</td><td class="r">${inr(t.gstOneTime)}</td></tr>` : ""}
       ${m.subs.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on the subscription, per month</td><td class="r">${inr(t.gstSubs)}</td></tr>` : ""}
-    </tbody></table>
-    ${m.usage.length ? `<p style="font-weight:800;color:#1F2F6B;margin:12px 0 2px">Add-on services (pay per use, activated on request)</p>
+    </tbody></table>` : ""}
+    ${m.usage.length ? `<p style="font-weight:800;color:#1F2F6B;margin:12px 0 2px">${m.mainIsUsage ? "Usage charges (billed monthly on the actual volume)" : "Add-on services (pay per use, activated on request)"}</p>
     <table class="pr pr2"><thead><tr><th style="width:26px"></th><th>Service</th><th>Basis</th><th class="r">Rate (₹)</th></tr></thead><tbody>
-      ${m.usage.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${l.listRate ? inr(D ? l.listRate : l.listRate * (1 - l.discountPct / 100)) : "On request"}</td></tr>`).join("")}
-    </tbody></table>` : ""}`;
+      ${m.usage.map((l, i) => {
+        const fx = (r) => (D ? r : r * (1 - l.discountPct / 100));
+        if (l.slabs && l.slabs.length) {
+          return `<tr><td>${i + 1}</td><td colspan="3"><b>${esc(l.name)}</b>, ${esc(l.basis.replace(/^Per /, "per "))}: rate by the month's volume (the whole month is billed at its slab's rate)${D && l.discountPct ? `, less ${l.discountPct}% discount` : ""}</td></tr>`
+            + l.slabs.map((s) => `<tr><td></td><td style="padding-left:18px">${esc(s.label)}</td><td>${esc(l.basis)}</td><td class="r">${s.rate != null ? inr(fx(s.rate)) : "On request"}</td></tr>`).join("");
+        }
+        return `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${l.listRate ? inr(fx(l.listRate)) : "On request"}</td></tr>`;
+      }).join("")}
+    </tbody></table>${hasMain ? "" : `<div class="note" style="font-style:normal">GST at ${m.gstPct}% is charged in addition, as applicable.</div>`}` : ""}`;
 
   const who = m.preparedBy;
   const contactLine = [who.phone, who.email].filter(Boolean).join(" · ");

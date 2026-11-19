@@ -13,6 +13,7 @@
 // toolbar) without touching the legacy per-line-GST builder.
 // ═══════════════════════════════════════════════════════════════════
 
+import { slabLabel, slabIndex } from "../lib/quotation/slabs";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Plus, Trash2, X, AlertTriangle, Check, Info } from "lucide-react";
 import {
@@ -252,7 +253,8 @@ export default function HansQuoteBuilder({
     // rep sees where the unit price came from.
     const card = p.matrixId ? rateCards.find(c => c.id === p.matrixId) : null;
     const cb = card && Array.isArray(card.bands) && card.bands.length ? card.bands : null;
-    const tierLabel = card ? (cb ? cb[cardBandIndex(l.qty, cb.map(b => Number(b.from) || 0))]?.label : null) : null;
+    const tierLabel = card ? (cb ? cb[cardBandIndex(l.qty, cb.map(b => Number(b.from) || 0))]?.label : null)
+      : p.rateSource === "Slab" ? `Slab: ${slabLabel(p.slabs, slabIndex(l.qty, p.slabs), `${p.unit || "units"}/month`)}` : null;
     return {
       ...l,
       productCode: p.code, name: p.name, module: p.module, description: p.description,
@@ -634,7 +636,7 @@ export default function HansQuoteBuilder({
                           {l.minMonthFloor ? <span>· floor {inr(l.minMonthFloor)}/mo</span> : null}
                           {l.minQty ? <span style={{ color: (Number(l.qty) || 0) < l.minQty ? "#DC2626" : undefined, fontWeight: (Number(l.qty) || 0) < l.minQty ? 700 : 400 }}>· minimum {l.minQty} {String(l.unit || "unit").toLowerCase()}s{(Number(l.qty) || 0) < l.minQty ? ` — billed for ${l.minQty}` : ""}</span> : null}
                           {l.maxDiscountPct === 0 ? <span>· list price; discount needs approval</span> : null}
-                          {l.rateCardLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.rateCardLabel}{l.tierLabel ? ` · tier ${l.tierLabel}` : ""}</span> : null}
+                          {l.rateCardLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.rateCardLabel}{l.tierLabel ? ` · tier ${l.tierLabel}` : ""}</span> : l.tierLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.tierLabel}</span> : null}
                         </div>
                       )}
                     </div>

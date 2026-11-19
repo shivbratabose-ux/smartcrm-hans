@@ -79,8 +79,8 @@ const masters = { quotation: { termSets: [
   { id: "t_ic", name: "iCAFFE only", productIds: ["iCAFFE"], eulaTitle: "iCAFFE EULA", eulaMode: "text", eulaBody: "1. Definitions\n\nText.", tc: "Only iCAFFE term for {{customer}}.", governing: "" },
 ] } };
 const sets = resolveTermSets(masters);
-check("built-ins first, then custom", sets.map((s) => s.id), ["orbis", "hans", "t_ic"]);
-check("a product belongs to one set (first wins)", [sets[1].productIds.includes("iCAFFE"), sets[2].productIds.includes("iCAFFE")], [true, false]);
+check("built-ins first, then custom", sets.map((s) => s.id), ["orbis", "ams", "hans", "t_ic"]);
+check("a product belongs to one set (first wins)", [sets[2].productIds.includes("iCAFFE"), sets[3].productIds.includes("iCAFFE")], [true, false]);
 const sets2 = resolveTermSets({ quotation: { termSets: [{ id: "hans", productIds: [] }, { id: "t_ic", productIds: ["iCAFFE"], eulaMode: "text", eulaBody: "1. Definitions\n\nText.", tc: "Only iCAFFE term for {{customer}}." }] } });
 check("product moved to a custom set", termSetFor("iCAFFE", sets2).id, "t_ic");
 check("unlisted product → default set", termSetFor("WiseCargo", sets2).id, "hans");
