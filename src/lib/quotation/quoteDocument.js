@@ -25,6 +25,7 @@ import { groupOf, SERVICES_GROUP } from "./productGroups.js";
 import { HOSTING_LABEL } from "./handover.js";
 import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS, CONFIDENTIAL_NOTE } from "../../data/quoteContent.js";
 import { resolveTermSets, termSetFor, eulaLinkOf, fillTerms, tcLines } from "./termSets.js";
+import { slabTable } from "./slabs.js";
 import { getQuoteTemplate } from "../../data/quoteTemplates.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -77,9 +78,11 @@ export function quoteDocModel(quote, opts = {}) {
     const afterLine = num(l.lineTotal) / months;                     // per month for recurring
     const net = afterLine * (1 - overallPct / 100);                  // after overall discount too
     const unit = String(l.unit || row?.unit || "").trim();
-    const basis = oneTime ? "One time" : usage ? `Per ${unit.toLowerCase() || "use"}` : `Per ${unit.toLowerCase() || "unit"} per month`;
+    const u = /^[A-Z/]{2,}$/.test(unit) ? unit : unit.toLowerCase();   // HBL, HAWB stay upper case
+    const basis = oneTime ? "One time" : usage ? `Per ${u || "use"}` : `Per ${u || "unit"} per month`;
     return {
-      code: l.productCode, name: l.name || row?.name || l.productCode, oneTime, usage, basis, qty,
+      code: l.productCode, name: l.name || row?.name || l.productCode, oneTime, usage, basis, qty, unit,
+      slabs: row?.rateSource === "Slab" ? slabTable(row.slabs, `${unit || "units"} per month`) : null,
       listRate: num(l.unitPriceResolved), discountPct: num(l.discountPct),
       // What the customer sees: list rate + discount when shown; otherwise the net rate.
       rate: showDiscount ? num(l.unitPriceResolved) : (qty ? net / qty : net),
@@ -92,13 +95,16 @@ export function quoteDocModel(quote, opts = {}) {
   const usage = lines.filter((l) => l.usage);
   const sum = (arr, k) => arr.reduce((s, l) => s + l[k], 0);
 
-  const main = subs[0] || oneTime[0] || lines[0] || null;
+  // The line the quotation is "for": a subscription, else a licence, else a
+  // pay-per-use service (e.g. AMS filing), else whatever is there.
+  const main = subs[0] || oneTime.find((l) => /licen/i.test(String((quote.items || []).find((it) => it.productCode === l.code)?.pricingModel || ""))) || usage[0] || oneTime[0] || lines[0] || null;
+  const mainIsPlan = !!main && (subs.includes(main) || (!usage.includes(main) && /licen/i.test(String((quote.items || []).find((it) => it.productCode === main.code)?.pricingModel || ""))));
   const mainRow = main ? rowOf(main.code) : null;
   const gid = mainRow ? groupOf(mainRow, catalog) : "";
   const product = gid && gid !== SERVICES_GROUP ? catalog.find((p) => p.id === gid) || null : null;
   const pContent = (product && PRODUCT_CONTENT[product.id]) || {};
   const brand = pContent.brand || product?.name || main?.name || "the software";
-  const planName = main?.name || product?.name || "Software";
+  const planName = (mainIsPlan ? main?.name : "") || product?.name || main?.name || "Software";
   const hosted = quote.hosting !== "Client";
   const validUntil = quote.expiryDate || addDays(quote.createdDate, num(cfg.quoteValidityDays) || 7);
   const customer = h.party?.name || quote.legalName || "";
@@ -125,7 +131,7 @@ export function quoteDocModel(quote, opts = {}) {
   const termSet = termSetFor(product?.id || mainRow?.productId || "", opts.termSets || resolveTermSets(null));
   const fillCtx = { product: brand, company: company.name, customer, validUntil: longDate(validUntil) };
   return {
-    company, quote, customer, brand, planName, product, hosted, showDiscount, overallPct, gstPct,
+    company, quote, customer, brand, planName, product, hosted, showDiscount, overallPct, gstPct, mainIsUsage: !!main && usage.includes(main),
     pending: awaitingApproval(quote),
     validUntil,
     to: { contact: h.billing?.billingContactName || quote.billingContactName || "", company: customer, address: String(h.party?.address || quote.billingAddressSnapshot || "").split(/\n|,\s*/).map((s) => s.trim()).filter(Boolean) },
@@ -217,9 +223,16 @@ export function quoteDocumentHtml(quote, opts = {}) {
       ${m.oneTime.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on one-time charges</td><td class="r">${inr(t.gstOneTime)}</td></tr>` : ""}
       ${m.subs.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on the subscription, per month</td><td class="r">${inr(t.gstSubs)}</td></tr>` : ""}
     </tbody></table>
-    ${m.usage.length ? `<p style="font-weight:800;color:#1F2F6B;margin:12px 0 2px">Add-on services (pay per use, activated on request)</p>
+    ${m.usage.length ? `<p style="font-weight:800;color:#1F2F6B;margin:12px 0 2px">${m.mainIsUsage ? "Usage charges (billed monthly on the actual volume)" : "Add-on services (pay per use, activated on request)"}</p>
     <table class="pr pr2"><thead><tr><th style="width:26px"></th><th>Service</th><th>Basis</th><th class="r">Rate (₹)</th></tr></thead><tbody>
-      ${m.usage.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${l.listRate ? inr(D ? l.listRate : l.listRate * (1 - l.discountPct / 100)) : "On request"}</td></tr>`).join("")}
+      ${m.usage.map((l, i) => {
+        const fx = (r) => (D ? r : r * (1 - l.discountPct / 100));
+        if (l.slabs && l.slabs.length) {
+          return `<tr><td>${i + 1}</td><td colspan="3"><b>${esc(l.name)}</b>, ${esc(l.basis.replace(/^Per /, "per "))}: rate by the month's volume (the whole month is billed at its slab's rate)${D && l.discountPct ? `, less ${l.discountPct}% discount` : ""}</td></tr>`
+            + l.slabs.map((s) => `<tr><td></td><td style="padding-left:18px">${esc(s.label)}</td><td>${esc(l.basis)}</td><td class="r">${s.rate != null ? inr(fx(s.rate)) : "On request"}</td></tr>`).join("");
+        }
+        return `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${l.listRate ? inr(fx(l.listRate)) : "On request"}</td></tr>`;
+      }).join("")}
     </tbody></table>` : ""}`;
 
   const who = m.preparedBy;

@@ -21,8 +21,9 @@ import {
   ICAFFE_BAND_LABELS, ICAFFE_BAND_FROM, QUOTE_TERMS, QUOTE_SEGMENTS, PRICING_MODELS, QUOTE_UNITS,
 } from "../data/quotationMasters";
 
-const RATE_SOURCES = ["Flat", "Band", "iCAFFE"];
+const RATE_SOURCES = ["Flat", "Band", "iCAFFE", "Slab"];
 import { validateCcsRule } from "../lib/quotation/pricingEngine";
+import { normalizeSlabs, slabLabel, slabProblems } from "../lib/quotation/slabs";
 import { groupRates, groupOf, productsToAdd, SERVICES_GROUP, SERVICES_LABEL } from "../lib/quotation/productGroups";
 import { COMPANY_DEFAULTS } from "../lib/quotation/company";
 import { OFFICE_CODES_DEFAULT, fyCompact } from "../lib/quotation/docNumbers";
@@ -56,6 +57,7 @@ const CATALOGUE_OVERLAY_FIELDS = [
   "amcFixed",  // or a fixed AMC in ₹ per unit per year (e.g. E-Annex ₹10,000 per branch)
   "rateSchedule", "segmentPrices", "currencyPrices", "bandRates",
   "matrixId", "matrixRow", // rate-card attachment (Phase 2e)
+  "slabs",     // volume slabs for rateSource "Slab" [{ from, rate }]
   // Structural fields are now admin-editable too, so they overlay the seed.
   "name", "module", "pricingModel", "unit", "rateSource",
 ];
@@ -155,6 +157,7 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
   const prodFilter = setFocusProduct ? focusProduct : prodFilterState;
   const setProdFilter = setFocusProduct || setProdFilterState;
   const [schedFor, setSchedFor] = useState(null); // {kind,key} whose rate schedule is open
+  const [slabFor, setSlabFor] = useState(null);   // price-row code whose slabs are open
   const [segFor, setSegFor] = useState(null); // product code whose segment prices are open
   const [curFor, setCurFor] = useState(null); // product code whose currency prices are open
   const [bandProd, setBandProd] = useState(""); // Band product for per-product/country rates
@@ -620,7 +623,13 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
                               </button>
                             ); })()}
                           </span>
-                        : <span style={{ color: "var(--text3)", fontSize: 11 }}>— {p.matrixId ? "rate card" : p.rateSource} —</span>}
+                        : p.rateSource === "Slab" && !p.matrixId
+                          ? (() => { const sl = normalizeSlabs(p.slabs); const bad = slabProblems(sl).length > 0; return (
+                              <button type="button" onClick={() => setSlabFor(p.code)} title="Edit the volume slabs"
+                                style={{ border: `1px solid ${bad ? "#FCA5A5" : "var(--border)"}`, background: bad ? "#FEF2F2" : "#EFF6FF", color: bad ? "#B91C1C" : "#1E40AF", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, whiteSpace: "nowrap" }}>
+                                {sl.length ? `${sl.length} slabs · ₹${sl.map(s => s.rate ?? "?").join(" / ")}` : "Set slabs"}
+                              </button>); })()
+                          : <span style={{ color: "var(--text3)", fontSize: 11 }}>— {p.matrixId ? "rate card" : p.rateSource} —</span>}
                     </td>
                     <td style={cell}>
                       <input style={numInput} type="number" placeholder="—" title="Per-unit cost — drives the margin guardrail" value={p.costPrice ?? ""} onChange={e => setCatRow(p.code, "costPrice", numOrNull(e.target.value))} />
@@ -968,6 +977,46 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
           ))}
         </div>
       )}
+
+      {/* ── Volume slab editor (rateSource "Slab") ── */}
+      {slabFor && (() => {
+        const p = cur.catalogue.find(x => x.code === slabFor);
+        if (!p) return null;
+        const sl = Array.isArray(p.slabs) && p.slabs.length ? p.slabs : [{ from: 0, rate: p.listPrice ?? null }];
+        const setSl = (arr) => setCatRow(p.code, "slabs", arr);
+        const shown = normalizeSlabs(sl);
+        const probs = slabProblems(sl);
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSlabFor(null)}>
+            <div style={{ width: 520, maxWidth: "96vw", background: "var(--surface)", borderRadius: 12, boxShadow: "0 20px 50px rgba(0,0,0,0.25)", maxHeight: "90vh", overflow: "auto" }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Volume slabs · {p.code} {p.name}</div>
+                <button className="icon-btn" onClick={() => setSlabFor(null)}><X size={16} /></button>
+              </div>
+              <div style={{ padding: 16 }}>
+                <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 10 }}>
+                  The month's whole volume is billed at the rate of the slab it falls in. On a quote, the quantity is the expected volume per month. Enter where each slab <b>starts</b>; the first slab starts at 0.
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr>{["From (per month)", `Rate per ${p.unit || "unit"} (₹)`, "Covers", ""].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)", textAlign: "left" }}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {sl.map((s, i) => (
+                      <tr key={i}>
+                        <td style={cell}><input style={numInput} type="number" min={0} disabled={i === 0} value={i === 0 ? 0 : (s.from ?? "")} onChange={e => setSl(sl.map((x, j) => j === i ? { ...x, from: numOrNull(e.target.value) } : x))} /></td>
+                        <td style={cell}><input style={numInput} type="number" min={0} placeholder="rate" value={s.rate ?? ""} onChange={e => setSl(sl.map((x, j) => j === i ? { ...x, rate: numOrNull(e.target.value) } : x))} /></td>
+                        <td style={{ ...cell, fontSize: 12, color: "var(--text2)" }}>{(() => { const k = shown.findIndex(r => r.from === (i === 0 ? 0 : Math.floor(Number(s.from) || 0))); return k >= 0 ? slabLabel(shown, k, p.unit || "") : "—"; })()}</td>
+                        <td style={cell}>{i > 0 && <button className="icon-btn" title="Remove slab" onClick={() => setSl(sl.filter((_, j) => j !== i))}><Trash2 size={13} /></button>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <button className="btn btn-sec btn-xs" style={{ marginTop: 10 }} onClick={() => setSl([...sl, { from: (shown[shown.length - 1]?.from || 0) + 100, rate: null }])}><Plus size={12} /> Add slab</button>
+                {probs.length > 0 && <div style={{ fontSize: 12, color: "#B91C1C", marginTop: 8 }}>{probs.join(" ")}</div>}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Rate schedule editor (effective-dated rates · Phase 2a) ── */}
       {schedFor && (() => {

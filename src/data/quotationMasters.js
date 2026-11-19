@@ -62,7 +62,7 @@ export const PRICING_MODELS = [
 ];
 export const QUOTE_UNITS = [
   "User", "Site", "Transaction", "Month", "Year", "Fixed", "Flight",
-  "Page", "Container", "AWB", "GB", "HBL/MBL", "Man-Day", "Branch", "MB",
+  "Page", "Container", "AWB", "GB", "HBL/MBL", "Man-Day", "Branch", "MB", "HAWB", "HBL",
 ];
 
 // Which pricing models are billed as one-time (everything else recurring).
@@ -98,6 +98,12 @@ export const HANS_CATALOGUE = [
   // Bills of Entry + monthly Shipping Bills). Flat rate — one price at any
   // volume; if this ever needs to tier by monthly filing count it becomes a
   // rate card (matrixId) like iCAFFE, not a listPrice change.
+  // Advanced Manifest System (web-based) — Cargomar AMS pricing sheet. Ocean
+  // consol bills per HBL at the slab of the month's volume (rateSource "Slab").
+  { code: "AMS01", name: "Advanced Manifest System — One-time Registration", module: "AMS - Ocean Consol", description: "One-time registration for the web-based Advanced Manifest System", pricingModel: "Implementation", unit: "Fixed", listPrice: 5000, rateSource: "Flat", minMonthFloor: null, productId: "AMSOcean", notes: "Once per customer (covers Air and Ocean consol)", active: true },
+  { code: "AMS02", name: "Ocean Consol Filing (SCMTR)", module: "AMS - Ocean Consol", description: "Ocean consol manifest filing to SCMTR, per HBL. Rate by the month's HBL volume", pricingModel: "Per-transaction", unit: "HBL", listPrice: null, rateSource: "Slab", slabs: [{ from: 0, rate: 800 }, { from: 201, rate: 700 }, { from: 501, rate: 500 }, { from: 700, rate: 400 }], minMonthFloor: null, productId: "AMSOcean", notes: "Slab on monthly HBL count: up to 200 ₹800 · 201–500 ₹700 · 501–699 ₹500 · 700+ ₹400", active: true },
+  { code: "AMS03", name: "Advanced Manifest System — One-time Registration", module: "AMS - Air Consol", description: "One-time registration for the web-based Advanced Manifest System", pricingModel: "Implementation", unit: "Fixed", listPrice: 5000, rateSource: "Flat", minMonthFloor: null, productId: "AMSAir", notes: "Once per customer (covers Air and Ocean consol)", active: true },
+  { code: "AMS04", name: "Air Consol Filing", module: "AMS - Air Consol", description: "Air consol manifest filing, per HAWB", pricingModel: "Per-transaction", unit: "HAWB", listPrice: 30, rateSource: "Flat", minMonthFloor: null, productId: "AMSAir", notes: "Per HAWB", active: true },
   { code: "P18", name: "E-Annex Ultra", module: "ICEGATE Customs Filing", description: "E-Annex Ultra licence per location / branch, up to 1+4 users — Export & Import documentation", pricingModel: "One-time Licence", unit: "Branch", listPrice: 55000, rateSource: "Flat", minMonthFloor: null, amcFixed: 10000, productId: "EANNEX", notes: "Multi-location 100% extra · ALR ₹10,000 per branch per year after 365 days", active: true },
   { code: "EA02", name: "E-Annex Ultra — CHA Licence Change", module: "ICEGATE Customs Filing", description: "Change of CHA licence on an existing E-Annex Ultra installation", pricingModel: "Implementation", unit: "Fixed", listPrice: 20000, rateSource: "Flat", minMonthFloor: null, productId: "EANNEX", notes: "One-time (as quoted DEL/SQ/0005/2627)", active: true },
 
