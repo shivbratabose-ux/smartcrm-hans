@@ -13,8 +13,9 @@
 //     rows (struck out on the approved sample).
 //   • Discounts are shown to the customer only when the quote says so
 //     (hans.showDiscount); otherwise rates are printed net.
-//   • A quote that still needs approval prints as a DRAFT and cannot be
-//     accepted from it (no accept link).
+//   • A quote that still needs approval prints on the same letterhead (no
+//     watermark), marked "Draft, subject to approval" in the reference table
+//     and at the sign-off, and cannot be accepted from it (no accept link).
 //
 // Pure: builds an HTML string; no DOM. Tested in scripts/test-quote-document.mjs.
 import { isOneTimeModel } from "./pricingEngine.js";
@@ -167,8 +168,8 @@ const CSS = (m) => `
   .pr2 th { background: #5B6B80; }
   ol.n { margin: 4px 0 0; padding-left: 26px; } ol.n li { padding: 1px 0; }
   .note { font-size: 8pt; color: #64748B; font-style: italic; margin-top: 6px; }
-  .draft { border: 2px solid #B45309; background: #FFFBEB; color: #92400E; font-weight: 700; padding: 7px 10px; border-radius: 4px; margin: 8px 0; font-size: 9.6pt; }
-  .wm { position: fixed; top: 42%; left: 0; right: 0; text-align: center; font-size: 46pt; font-weight: 800; color: rgba(180,83,9,.11); transform: rotate(-24deg); pointer-events: none; z-index: 0; letter-spacing: 2px; white-space: nowrap; }
+  .meta td.pend { color: #B45309; }
+  .pendnote { font-size: 8.6pt; color: #B45309; margin-top: 8px; }
   .sign { margin-top: 14px; break-inside: avoid; }
 `;
 
@@ -215,7 +216,6 @@ export function quoteDocumentHtml(quote, opts = {}) {
   const qr = opts.acceptUrl && !m.pending ? `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(opts.acceptUrl)}` : "";
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(quote.quoteNo || "Quotation")}</title><style>${CSS(m)}</style></head><body>
-    ${m.pending ? '<div class="wm">DRAFT · APPROVAL PENDING</div>' : ""}
     <div class="lh">
       <div>
         <div class="co">${esc(String(c.name).toUpperCase())}</div>
@@ -224,7 +224,6 @@ export function quoteDocumentHtml(quote, opts = {}) {
       ${opts.logoUrl ? `<img src="${esc(opts.logoUrl)}" alt="Hans Infomatic" style="height:54px" onerror="this.style.display='none'">` : ""}
     </div>
     <div class="title">QUOTATION</div>
-    ${m.pending ? '<div class="draft">DRAFT — this quotation is awaiting management approval. It is not valid for acceptance until it is approved.</div>' : ""}
     <div class="top">
       <div>To,<br>${m.to.contact ? `<b>${esc(m.to.contact)}</b><br>` : ""}<b>${esc(m.to.company)}</b>${m.to.address.slice(0, 4).map((a) => `<br>${esc(a)}`).join("")}</div>
       <table class="meta"><tbody>
@@ -234,6 +233,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
         <tr><td>Product</td><td>${esc(m.planName)}${m.hosted && m.subs.length ? " (web-based SaaS)" : ""}</td></tr>
         ${who.name ? `<tr><td>Prepared by</td><td>${esc(who.name)}</td></tr>` : ""}
         ${contactLine ? `<tr><td>Contact</td><td>${esc(contactLine)}</td></tr>` : ""}
+        ${m.pending ? '<tr><td>Status</td><td class="pend">Draft, subject to approval</td></tr>' : ""}
       </tbody></table>
     </div>
     <p style="margin-top:16px"><b>Subject: Quotation for ${esc(m.planName)}</b></p>
@@ -259,6 +259,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
           ${esc([who.title, c.name].filter(Boolean).join(", "))}<br>
           ${contactLine ? `<span style="color:#64748B">${esc(contactLine)}</span><br>` : ""}
           <span style="color:#64748B;font-size:8.6pt">Authorised signatory, for ${esc(String(c.name).toUpperCase())}</span>
+          ${m.pending ? '<div class="pendnote">This quotation is subject to management approval. It becomes valid for acceptance once approved.</div>' : ""}
         </div>
         ${qr ? `<div style="text-align:center;font-size:7.6pt;color:#64748B"><img src="${qr}" width="92" height="92" alt="" onerror="this.style.display='none'"><br>Scan to accept this quotation online<br><span style="word-break:break-all">${esc(opts.acceptUrl)}</span></div>` : ""}
       </div>
