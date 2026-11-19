@@ -23,7 +23,7 @@ import { isOneTimeModel } from "./pricingEngine.js";
 import { companyOf } from "./company.js";
 import { groupOf, SERVICES_GROUP } from "./productGroups.js";
 import { HOSTING_LABEL } from "./handover.js";
-import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS } from "../../data/quoteContent.js";
+import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS, governingTermsFor, CONFIDENTIAL_NOTE } from "../../data/quoteContent.js";
 import { getQuoteTemplate } from "../../data/quoteTemplates.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -121,6 +121,7 @@ export function quoteDocModel(quote, opts = {}) {
   const notes = String(h.termsText || quote.terms || "").split(/\n+/).map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean);
 
   const netOneTime = sum(oneTime, "net"), netSubs = sum(subs, "net");
+  const governing = governingTermsFor(product?.id || (mainRow?.productId) || "", cfg);
   return {
     company, quote, customer, brand, planName, product, hosted, showDiscount, overallPct, gstPct,
     pending: awaitingApproval(quote),
@@ -143,13 +144,15 @@ export function quoteDocModel(quote, opts = {}) {
     payment: STANDARD_SECTIONS.payment(ctx),
     requirements: STANDARD_SECTIONS.requirements(ctx),
     terms: STANDARD_SECTIONS.terms(ctx),
+    governing: { ...governing, text: governing.text(ctx) },
+    confidential: CONFIDENTIAL_NOTE({ company: company.name, customer }),
     preparedBy: { name: opts.preparedBy?.name || quote.preparedBy || "", title: opts.preparedBy?.title || "", phone: opts.preparedBy?.phone || "", email: opts.preparedBy?.email || "" },
   };
 }
 
 const CSS = (m) => `
   @page { size: A4; margin: 13mm 14mm 16mm;
-    @bottom-left { content: "${String(m.company.name).replace(/"/g, "")}${m.company.cin ? ` · CIN ${String(m.company.cin).replace(/"/g, "")}` : ""}"; font: 7pt 'Segoe UI', Arial, sans-serif; color: #475569; }
+    @bottom-left { content: "${String(m.company.name).replace(/"/g, "")}${m.company.cin ? ` · CIN ${String(m.company.cin).replace(/"/g, "")}` : ""} · Confidential"; font: 7pt 'Segoe UI', Arial, sans-serif; color: #475569; }
     @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 7pt 'Segoe UI', Arial, sans-serif; color: #475569; } }
   * { box-sizing: border-box; }
   body { font-family: 'Segoe UI', Arial, sans-serif; color: #111827; font-size: 9.6pt; line-height: 1.38; margin: 0; padding: 18px 22px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -173,7 +176,8 @@ const CSS = (m) => `
   ol.n { margin: 4px 0 0; padding-left: 26px; } ol.n li { padding: 1px 0; }
   .note { font-size: 8pt; color: #64748B; font-style: italic; margin-top: 6px; }
   .meta td.pend { color: #B45309; }
-  .footnote { margin-top: 22px; padding-top: 5px; border-top: 1px solid #CBD5E1; width: 62%; font-size: 8pt; color: #64748B; break-inside: avoid; }
+  .footnotes { margin-top: 22px; padding-top: 5px; border-top: 1px solid #CBD5E1; font-size: 7.8pt; color: #64748B; break-inside: avoid; }
+  .footnotes p { margin: 3px 0; } .footnotes a, ol.n a { color: #1F2F6B; }
   .sign { margin-top: 14px; break-inside: avoid; }
 `;
 
@@ -252,7 +256,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
     ${H("Implementation, training and support")}${kv(m.implementation)}
     ${H("Payment terms")}${kv(m.payment)}
     ${H("What you need")}${kv(m.requirements)}
-    ${H("Terms and conditions")}<ol class="n">${m.terms.map(([k, v]) => `<li>${esc(k)}. ${esc(v)}</li>`).join("")}</ol>
+    ${H("Terms and conditions")}<ol class="n"><li>Governing terms. ${esc(m.governing.text)} Read them at <a href="${esc(m.governing.url)}">${esc(m.governing.url)}</a>.</li>${m.terms.map(([k, v]) => `<li>${esc(k)}. ${esc(v)}</li>`).join("")}</ol>
 
     <div class="sign">
       <p>We look forward to working with ${esc(m.customer || "you")}. For any question, or a demonstration on your own shipments, please contact us.</p>
@@ -267,7 +271,11 @@ export function quoteDocumentHtml(quote, opts = {}) {
         ${qr ? `<div style="text-align:center;font-size:7.6pt;color:#64748B"><img src="${qr}" width="92" height="92" alt="" onerror="this.style.display='none'"><br>Scan to accept this quotation online<br><span style="word-break:break-all">${esc(opts.acceptUrl)}</span></div>` : ""}
       </div>
     </div>
-    ${m.pending ? `<div class="footnote"><sup>*</sup> ${PENDING_NOTE}</div>` : ""}
+    <div class="footnotes">
+      ${m.pending ? `<p><sup>*</sup> ${PENDING_NOTE}</p>` : ""}
+      <p><b>Terms:</b> this quotation is subject to the ${esc(m.governing.label)}: <a href="${esc(m.governing.url)}">${esc(m.governing.url)}</a></p>
+      <p>${esc(m.confidential)}</p>
+    </div>
     ${opts.extraPagesHtml || ""}
     ${opts.autoPrint === false ? "" : "<script>window.onload=function(){window.print();}</script>"}
   </body></html>`;

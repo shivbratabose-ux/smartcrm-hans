@@ -39,6 +39,27 @@ export const PLAN_CONTENT = {
   },
 };
 
+// Which terms govern the product quoted (linked from the quotation, not printed in full).
+// Orbis products → the OrbisOne terms; everything else → the Hans MSA & EULA.
+// Links can be changed in Quotation Rules config: termsUrlOrbis / termsUrlEula.
+export const SMART_CRM_SITE = "https://smartcrm-hans.vercel.app";
+export const GOVERNING_TERMS = {
+  orbis: { key: "orbis", label: "OrbisOne terms of use", url: "https://orbisone.in/terms.html",
+    text: (p) => `Use of ${p.product} is governed by the OrbisOne terms of use and the subscription agreement and data processing addendum signed on order. The accepted quotation serves as the order.` },
+  eula: { key: "eula", label: "Hans Infomatic Master Services Agreement & EULA", url: `${SMART_CRM_SITE}/legal/msa-eula-icaffe.html`,
+    text: (p) => `Use of ${p.product} is governed by the Hans Infomatic Master Services Agreement and End-User Licence Agreement (MSA & EULA). The accepted quotation serves as the Order Form under it.` },
+};
+const ORBIS_PRODUCTS = ["OrbisOne", "OrbisEDI"];
+/** Governing terms for a Product Catalogue id, with links overridable from config. */
+export function governingTermsFor(productId, config = {}) {
+  const t = ORBIS_PRODUCTS.includes(productId) ? GOVERNING_TERMS.orbis : GOVERNING_TERMS.eula;
+  const url = String((t.key === "orbis" ? config.termsUrlOrbis : config.termsUrlEula) || "").trim() || t.url;
+  return { ...t, url };
+}
+
+/** Footnote on every quotation. `p` = { company, customer }. */
+export const CONFIDENTIAL_NOTE = (p) => `Confidential. This quotation, including its prices, rates, discounts, product scope, plan details and terms, is confidential and proprietary information of ${p.company}, shared only with ${p.customer || "the addressee"} to evaluate this proposal. Please do not disclose, copy, publish or forward it, in whole or in part, to any third party (including other vendors, consultants or competitors) without our prior written consent, except to your own employees and advisers who need to know it for this evaluation and are bound by confidentiality obligations no less strict than these. If you have received it in error, please let us know and delete it. These obligations continue whether or not an order is placed, in line with the confidentiality clause of the governing terms.`;
+
 /** Standard sections, used unless a product overrides them. `p` = { product, customer, validUntil, hosted, billing, company, city }. */
 export const STANDARD_SECTIONS = {
   implementation: (p) => [
