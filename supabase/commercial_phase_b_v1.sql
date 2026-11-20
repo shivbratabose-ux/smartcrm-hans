@@ -47,7 +47,9 @@ DROP POLICY IF EXISTS "pricing_history_read" ON public.pricing_master_history;
 CREATE POLICY "pricing_history_read" ON public.pricing_master_history
   FOR SELECT TO authenticated USING (true);
 -- No INSERT / UPDATE / DELETE policy: only the trigger below writes.
-REVOKE ALL ON public.pricing_master_history FROM anon;
+-- Supabase grants ALL on new tables by default: take everything back, then
+-- give signed-in users read only. (Row-level security already blocks writes.)
+REVOKE ALL ON public.pricing_master_history FROM anon, authenticated;
 GRANT SELECT ON public.pricing_master_history TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.log_pricing_master_changes()
