@@ -25,7 +25,7 @@ import { groupOf, SERVICES_GROUP } from "./productGroups.js";
 import { HOSTING_LABEL } from "./handover.js";
 import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS, CONFIDENTIAL_NOTE } from "../../data/quoteContent.js";
 import { resolveTermSets, termSetFor, eulaLinkOf, fillTerms, tcLines } from "./termSets.js";
-import { slabTable, usagePrice, usageRuleText, poolVolumes, escalatedRates, hasUsageRules } from "./slabs.js";
+import { slabTable, usageRuleText, poolVolumes, escalatedRates, hasUsageRules } from "./slabs.js";
 import { getQuoteTemplate } from "../../data/quoteTemplates.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -235,12 +235,11 @@ export function quoteDocumentHtml(quote, opts = {}) {
         // Usage rules (slab type, pack, minimum, pool, escalation) and a worked estimate.
         const mates = row?.pool ? m.usage.filter((o) => o !== l && String(o.row?.pool || "").trim() === String(row.pool).trim()).map((o) => o.name) : [];
         const rules = hasUsageRules(row) ? usageRuleText(row, { unit: l.unit, poolMates: mates }).filter((t) => !/^Volume slabs: the month's/.test(t) || row.slabMode === "graduated" || row.slabPeriod === "year") : [];
-        const up = row && l.qty ? usagePrice(row, l.qty, { poolQty: row.pool ? m.pools[String(row.pool).trim()] : undefined }) : null;
-        const est = up && !up.missing ? fx(Math.max(up.amount, up.floor)) : 0;
+        // No "estimate at N a month" on the customer document: consumption is billed
+        // on actual volume, so an expected volume is never shown as a charge.
         const esc3 = row && Number(row.escalationPct) > 0 && !(l.slabs && l.slabs.length) && l.listRate ? escalatedRates(fx(Number(row.listPrice ?? l.listRate)), row.escalationPct, 3) : null;
         const extra = [...rules,
           esc3 ? `Year 1 ₹${esc3[0].toLocaleString("en-IN")} · Year 2 ₹${esc3[1].toLocaleString("en-IN")} · Year 3 ₹${esc3[2].toLocaleString("en-IN")} per ${l.unit || "unit"}.` : "",
-          est && hasUsageRules(row) ? `Estimate at ${Number(l.qty).toLocaleString("en-IN")} ${l.unit || "units"} a month: ${inr(est)} a month${Number(row?.escalationPct) > 0 ? " in year 1" : ""}.` : "",
         ].filter(Boolean);
         const notes = extra.length ? `<tr><td></td><td colspan="3" style="font-size:8.4pt;color:#475569;padding-top:0">${extra.map(esc).join("<br>")}</td></tr>` : "";
         const shownRate = row && Number(row.packQty) > 0 ? Number(row.listPrice ?? l.listRate) : l.listRate;

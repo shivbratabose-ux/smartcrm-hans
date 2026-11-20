@@ -86,10 +86,9 @@ const items = [
 ];
 const t = text(quoteDocumentHtml({ quoteNo: "Q1", createdDate: "2026-11-20", items, hans: { party: { name: "C" } } }, { priceRows, catalog: [], autoPrint: false }));
 check("graduated explained", t.includes("(each band at its own rate)"), true);
-check("graduated estimate", t.includes("Estimate at 300 HBL a month: ₹2,30,000 a month."), true);
+check("no estimated charge on the customer quote (billed on actual volume)", /Estimate at/.test(t), false);
 check("pack explained, rate is the overage rate", [t.includes("Prepaid pack: 10,000 Page a month for ₹80,000; beyond that, the rate per Page."), t.includes("Per page beyond the pack ₹10")], [true, true]);
 check("pool explained on both lines", [t.includes("Volume counted together with: EGM."), t.includes("Volume counted together with: IGM.")], [true, true]);
-check("pooled estimate uses the pool's slab", t.includes("Estimate at 300 Flight a month: ₹45,000 a month."), true);
 check("escalation by year", [t.includes("Rates increase by 10% each year from year 2."), t.includes("Year 1 ₹10 · Year 2 ₹11 · Year 3 ₹12.1 per Page.")], [true, true]);
 check("rule flags", [hasUsageRules(pack), hasUsageRules({ listPrice: 5 }), usageRuleText(minRow)], [true, false, ["Minimum billing: ₹15,000 a month."]]);
 
