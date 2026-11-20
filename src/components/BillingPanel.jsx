@@ -54,7 +54,7 @@ function InvoiceView({ inv }) {
               </div>
             </td>
             <td style={{ ...td, textAlign: "right" }}>{l.qty ? Number(l.qty).toLocaleString("en-IN") : ""}</td>
-            <td style={{ ...td, textAlign: "right" }}>{l.rate ? `₹${Number(l.rate).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : ""}</td>
+            <td style={{ ...td, textAlign: "right" }}>{l.rate ? `₹${Number(l.rate).toLocaleString("en-IN", { minimumFractionDigits: Number.isInteger(Math.round(Number(l.rate) * 100) / 100) ? 0 : 2, maximumFractionDigits: 2 })}` : ""}</td>
             <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{inr(l.amount)}</td>
           </tr>
         ))}
