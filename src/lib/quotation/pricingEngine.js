@@ -23,7 +23,7 @@
 //     workbook's reliance on the user typing Months = 1)
 // ═══════════════════════════════════════════════════════════════════
 
-import { slabRate } from "./slabs.js";
+import { usagePrice, escalationMonths } from "./slabs.js";
 import {
   QUOTE_CONFIG, ONE_TIME_MODELS, FLOOR_MODELS,
   PRICING_BANDS, ICAFFE_BAND_FROM, ICAFFE_EDITIONS,
@@ -191,8 +191,9 @@ export function resolveUnitPrice(product, opts = {}) {
       break;
     }
     case "Slab": {
-      // Volume slab: the whole month's volume at the rate of its slab (lib/quotation/slabs.js).
-      raw = slabRate(qty, product.slabs).rate;
+      // Volume or graduated slab, on the month's (or the pool's / year's) volume — lib/quotation/slabs.js.
+      const up = usagePrice({ ...product, packQty: 0 }, qty, { poolQty: opts.poolQty });
+      raw = up.missing ? null : up.unitPrice;
       break;
     }
     case "iCAFFE": {
@@ -213,6 +214,13 @@ export function resolveUnitPrice(product, opts = {}) {
   // An explicitly-zero rate (e.g. WiseHandling Inclusive / "at actuals"
   // modules) is a deliberate 0, not a missing rate.
   const explicitZero = product.rateSource !== "iCAFFE" && product.rateSource !== "Band" && product.rateSource !== "Slab" && raw === 0;
+  // Prepaid pack: packQty units a month for packPrice, beyond that the rate.
+  // Returned as the average unit price; the pack price is also the monthly
+  // floor (line.monthlyMinimum), so a quantity below the pack bills the pack.
+  const packQty = num(product.packQty);
+  if (packQty > 0 && raw != null && qty > 0) {
+    raw = (num(product.packPrice) + Math.max(0, qty - packQty) * num(raw)) / qty;
+  }
   if (raw == null && !explicitZero) {
     return { unitPrice: 0, missingRate: true };
   }
@@ -233,7 +241,9 @@ export function computeLine(line) {
   const oneTime = isOneTimeModel(pricingModel);
   const months = num(line.months);
   const effectiveMonths = oneTime ? 1 : months;
-  const floor = hasFloor(pricingModel) ? num(line.minMonthFloor) : 0;
+  // Floor: per-flight/platform models' minimum, and any row's monthly
+  // minimum or prepaid pack (line.monthlyMinimum, usage pricing).
+  const floor = Math.max(hasFloor(pricingModel) ? num(line.minMonthFloor) : 0, oneTime ? 0 : num(line.monthlyMinimum));
   const qty = num(line.qty);
   // Minimum commitment (e.g. Orbis One plans: 5 / 10 / 20 users). Billed on
   // max(qty, minQty) — a quote can never price below the committed minimum.
@@ -244,7 +254,9 @@ export function computeLine(line) {
   const discountPct = num(line.discountPct);
 
   const grossPerPeriod = Math.max(billedQty * unitPrice, floor);
-  const lineTotal = grossPerPeriod * effectiveMonths * (1 - discountPct / 100);
+  // Yearly escalation (usage pricing): year 2 at +x%, year 3 at +x% again…
+  const billedMonths = !oneTime && num(line.escalationPct) > 0 ? escalationMonths(effectiveMonths, line.escalationPct) : effectiveMonths;
+  const lineTotal = grossPerPeriod * billedMonths * (1 - discountPct / 100);
 
   return {
     isOneTime: oneTime,

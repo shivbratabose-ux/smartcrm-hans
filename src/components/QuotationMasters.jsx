@@ -23,7 +23,8 @@ import {
 
 const RATE_SOURCES = ["Flat", "Band", "iCAFFE", "Slab"];
 import { validateCcsRule } from "../lib/quotation/pricingEngine";
-import { normalizeSlabs, slabLabel, slabProblems } from "../lib/quotation/slabs";
+import { normalizeSlabs, slabLabel, slabProblems, usagePrice, hasUsageRules, escalatedRates } from "../lib/quotation/slabs";
+import { isOneTimeModel } from "../lib/quotation/pricingEngine";
 import { groupRates, groupOf, productsToAdd, SERVICES_GROUP, SERVICES_LABEL } from "../lib/quotation/productGroups";
 import { COMPANY_DEFAULTS } from "../lib/quotation/company";
 import { OFFICE_CODES_DEFAULT, fyCompact } from "../lib/quotation/docNumbers";
@@ -58,6 +59,9 @@ const CATALOGUE_OVERLAY_FIELDS = [
   "rateSchedule", "segmentPrices", "currencyPrices", "bandRates",
   "matrixId", "matrixRow", // rate-card attachment (Phase 2e)
   "slabs",     // volume slabs for rateSource "Slab" [{ from, rate }]
+  // usage pricing (lib/quotation/slabs.js): slab type / period, prepaid pack,
+  // monthly minimum, pooled volume, yearly escalation
+  "slabMode", "slabPeriod", "packQty", "packPrice", "monthlyMinimum", "pool", "escalationPct",
   // Structural fields are now admin-editable too, so they overlay the seed.
   "name", "module", "pricingModel", "unit", "rateSource",
 ];
@@ -77,7 +81,15 @@ function mergeCatalogue(saved, appCatalog) {
   };
   const merged = HANS_CATALOGUE.map(overlay);
   // Saved-only custom products not in the seed.
-  (saved || []).forEach(sv => { if (!HANS_CATALOGUE.some(s => s.code === sv.code)) merged.push(overlay(sv)); });
+  // A saved placeholder for a Product Catalogue product (code = product id)
+  // is superseded once built-in rows price that product (e.g. AMSOcean after
+  // AMS01–AMS04): it stays for old quotes but is never active again.
+  const seededProducts = new Set(HANS_CATALOGUE.map(s => s.productId).filter(Boolean));
+  (saved || []).forEach(sv => {
+    if (HANS_CATALOGUE.some(s => s.code === sv.code)) return;
+    const row = overlay(sv);
+    merged.push(seededProducts.has(sv.code) && !sv.productId ? { ...row, active: false, _superseded: true } : row);
+  });
   // Union in Product Catalogue master products not already represented
   // (by code or name) — adding once in Product Catalogue surfaces it here.
   const norm = (s) => (s || "").trim().toLowerCase();
@@ -157,7 +169,8 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
   const prodFilter = setFocusProduct ? focusProduct : prodFilterState;
   const setProdFilter = setFocusProduct || setProdFilterState;
   const [schedFor, setSchedFor] = useState(null); // {kind,key} whose rate schedule is open
-  const [slabFor, setSlabFor] = useState(null);   // price-row code whose slabs are open
+  const [slabFor, setSlabFor] = useState(null);   // price-row code whose usage pricing is open
+  const [usageQty, setUsageQty] = useState(300);   // preview volume in the usage-pricing editor
   const [segFor, setSegFor] = useState(null); // product code whose segment prices are open
   const [curFor, setCurFor] = useState(null); // product code whose currency prices are open
   const [bandProd, setBandProd] = useState(""); // Band product for per-product/country rates
@@ -622,6 +635,12 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
                                 <Globe size={11} />{n || ""}
                               </button>
                             ); })()}
+                            {!isOneTimeModel(p.pricingModel) && (
+                              <button type="button" title="Usage pricing: prepaid pack, monthly minimum, pooled volume, yearly escalation" onClick={() => setSlabFor(p.code)}
+                                style={{ display: "inline-flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: hasUsageRules(p) ? "#EEF2FF" : "transparent", color: hasUsageRules(p) ? "#4338CA" : "var(--text3)", borderRadius: 5, padding: "1px 5px", cursor: "pointer", fontSize: 10, flexShrink: 0, fontWeight: 700 }}>
+                                ≡{hasUsageRules(p) ? " usage" : ""}
+                              </button>
+                            )}
                           </span>
                         : p.rateSource === "Slab" && !p.matrixId
                           ? (() => { const sl = normalizeSlabs(p.slabs); const bad = slabProblems(sl).length > 0; return (
@@ -978,40 +997,90 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
         </div>
       )}
 
-      {/* ── Volume slab editor (rateSource "Slab") ── */}
+      {/* ── Usage pricing editor: slabs (volume / graduated, monthly / yearly),
+          prepaid pack, monthly minimum, pooled volume, yearly escalation ── */}
       {slabFor && (() => {
         const p = cur.catalogue.find(x => x.code === slabFor);
         if (!p) return null;
+        const isSlab = p.rateSource === "Slab";
         const sl = Array.isArray(p.slabs) && p.slabs.length ? p.slabs : [{ from: 0, rate: p.listPrice ?? null }];
         const setSl = (arr) => setCatRow(p.code, "slabs", arr);
         const shown = normalizeSlabs(sl);
-        const probs = slabProblems(sl);
+        const probs = isSlab ? slabProblems(sl) : [];
+        const u = p.unit || "unit";
+        const per = p.slabPeriod === "year" ? "year" : "month";
+        const pools = [...new Set(cur.catalogue.map(r => String(r.pool || "").trim()).filter(Boolean))];
+        const poolRows = p.pool ? cur.catalogue.filter(r => r.code !== p.code && String(r.pool || "").trim() === String(p.pool).trim()) : [];
+        const prev = usagePrice({ ...p, slabs: sl }, usageQty);
+        const monthly = Math.max(prev.amount, prev.floor);
+        const field = (label, key, hint, extra = {}) => (
+          <div className="form-group" style={{ marginBottom: 8 }}>
+            <label style={{ fontSize: 11 }}>{label}</label>
+            <input style={{ ...numInput, textAlign: "left" }} type="number" min={0} placeholder={hint} value={p[key] ?? ""} onChange={e => setCatRow(p.code, key, numOrNull(e.target.value))} {...extra} />
+          </div>);
+        const radio = (key, val, label, def) => (
+          <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer", fontSize: 12.5 }}>
+            <input type="radio" checked={(p[key] || def) === val} onChange={() => setCatRow(p.code, key, val)} />{label}
+          </label>);
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSlabFor(null)}>
-            <div style={{ width: 520, maxWidth: "96vw", background: "var(--surface)", borderRadius: 12, boxShadow: "0 20px 50px rgba(0,0,0,0.25)", maxHeight: "90vh", overflow: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: 640, maxWidth: "96vw", background: "var(--surface)", borderRadius: 12, boxShadow: "0 20px 50px rgba(0,0,0,0.25)", maxHeight: "90vh", overflow: "auto" }} onClick={e => e.stopPropagation()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>Volume slabs · {p.code} {p.name}</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Usage pricing · {p.code} {p.name}</div>
                 <button className="icon-btn" onClick={() => setSlabFor(null)}><X size={16} /></button>
               </div>
               <div style={{ padding: 16 }}>
-                <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 10 }}>
-                  The month's whole volume is billed at the rate of the slab it falls in. On a quote, the quantity is the expected volume per month. Enter where each slab <b>starts</b>; the first slab starts at 0.
+                <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 10, flexWrap: "wrap", fontSize: 12.5 }}>
+                  <b>Rate</b>
+                  <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={!isSlab} onChange={() => setCatRow(p.code, "rateSource", "Flat")} />One rate (list price ₹{p.listPrice ?? "—"} per {u})</label>
+                  <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={isSlab} onChange={() => { if (!Array.isArray(p.slabs) || !p.slabs.length) setSl(sl); setCatRow(p.code, "rateSource", "Slab"); }} />Slabs by volume</label>
                 </div>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead><tr>{["From (per month)", `Rate per ${p.unit || "unit"} (₹)`, "Covers", ""].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)", textAlign: "left" }}>{h}</th>)}</tr></thead>
-                  <tbody>
-                    {sl.map((s, i) => (
-                      <tr key={i}>
-                        <td style={cell}><input style={numInput} type="number" min={0} disabled={i === 0} value={i === 0 ? 0 : (s.from ?? "")} onChange={e => setSl(sl.map((x, j) => j === i ? { ...x, from: numOrNull(e.target.value) } : x))} /></td>
-                        <td style={cell}><input style={numInput} type="number" min={0} placeholder="rate" value={s.rate ?? ""} onChange={e => setSl(sl.map((x, j) => j === i ? { ...x, rate: numOrNull(e.target.value) } : x))} /></td>
-                        <td style={{ ...cell, fontSize: 12, color: "var(--text2)" }}>{(() => { const k = shown.findIndex(r => r.from === (i === 0 ? 0 : Math.floor(Number(s.from) || 0))); return k >= 0 ? slabLabel(shown, k, p.unit || "") : "—"; })()}</td>
-                        <td style={cell}>{i > 0 && <button className="icon-btn" title="Remove slab" onClick={() => setSl(sl.filter((_, j) => j !== i))}><Trash2 size={13} /></button>}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <button className="btn btn-sec btn-xs" style={{ marginTop: 10 }} onClick={() => setSl([...sl, { from: (shown[shown.length - 1]?.from || 0) + 100, rate: null }])}><Plus size={12} /> Add slab</button>
-                {probs.length > 0 && <div style={{ fontSize: 12, color: "#B91C1C", marginTop: 8 }}>{probs.join(" ")}</div>}
+
+                {isSlab && (<div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+                  <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 8 }}>
+                    <div style={{ display: "flex", gap: 10 }}>{radio("slabMode", "volume", "Volume: whole volume at its slab's rate", "volume")}{radio("slabMode", "graduated", "Graduated: each band at its own rate", "volume")}</div>
+                    <div style={{ display: "flex", gap: 10 }}>{radio("slabPeriod", "month", "Slab on monthly volume", "month")}{radio("slabPeriod", "year", "on yearly volume", "month")}</div>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr>{[`From (per ${per})`, `Rate per ${u} (₹)`, "Covers", ""].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)", textAlign: "left" }}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {sl.map((x, i) => (
+                        <tr key={i}>
+                          <td style={cell}><input style={numInput} type="number" min={0} disabled={i === 0} value={i === 0 ? 0 : (x.from ?? "")} onChange={e => setSl(sl.map((y, j) => j === i ? { ...y, from: numOrNull(e.target.value) } : y))} /></td>
+                          <td style={cell}><input style={numInput} type="number" min={0} placeholder="rate" value={x.rate ?? ""} onChange={e => setSl(sl.map((y, j) => j === i ? { ...y, rate: numOrNull(e.target.value) } : y))} /></td>
+                          <td style={{ ...cell, fontSize: 12, color: "var(--text2)" }}>{(() => { const k = shown.findIndex(r => r.from === (i === 0 ? 0 : Math.floor(Number(x.from) || 0))); return k >= 0 ? slabLabel(shown, k, u) : "—"; })()}</td>
+                          <td style={cell}>{i > 0 && <button className="icon-btn" title="Remove slab" onClick={() => setSl(sl.filter((_, j) => j !== i))}><Trash2 size={13} /></button>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <button className="btn btn-sec btn-xs" style={{ marginTop: 8 }} onClick={() => setSl([...sl, { from: (shown[shown.length - 1]?.from || 0) + 100, rate: null }])}><Plus size={12} /> Add slab</button>
+                  {probs.length > 0 && <div style={{ fontSize: 12, color: "#B91C1C", marginTop: 6 }}>{probs.join(" ")}</div>}
+                </div>)}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  {field(`Prepaid pack: ${u} a month`, "packQty", "none")}
+                  {field("Pack price ₹ a month", "packPrice", "—", { disabled: !(Number(p.packQty) > 0) })}
+                  {field("Minimum billing ₹ a month", "monthlyMinimum", "none")}
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <label style={{ fontSize: 11 }}>Pool: count volume together with</label>
+                    <input style={{ ...numInput, textAlign: "left" }} list="usage-pools" placeholder="none (e.g. AMS manifests)" value={p.pool ?? ""} onChange={e => setCatRow(p.code, "pool", e.target.value || null)} />
+                    <datalist id="usage-pools">{pools.map(x => <option key={x} value={x} />)}</datalist>
+                  </div>
+                  {field("Yearly escalation %", "escalationPct", "none")}
+                </div>
+                {poolRows.length > 0 && <div style={{ fontSize: 11.5, color: "var(--text3)", marginTop: -2 }}>Same pool: {poolRows.map(r => `${r.code} ${r.name}`).join(", ")}. On a quote their monthly volumes add up to pick the slab.</div>}
+
+                <div style={{ marginTop: 12, background: "var(--s2)", borderRadius: 10, padding: "10px 12px", fontSize: 12.5 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <b>Try it:</b> at
+                    <input style={{ ...numInput, width: 90 }} type="number" min={0} value={usageQty} onChange={e => setUsageQty(Number(e.target.value) || 0)} />
+                    {u} a month{p.pool ? " (this row alone)" : ""} →
+                    <b style={{ color: "#1E40AF" }}>{prev.missing ? "rate missing" : `₹${Math.round(monthly).toLocaleString("en-IN")} a month`}</b>
+                    {!prev.missing && usageQty > 0 && <span style={{ color: "var(--text3)" }}>(average ₹{(monthly / usageQty).toFixed(2)} per {u}{prev.floor > prev.amount ? ", minimum applied" : ""})</span>}
+                  </div>
+                  {Number(p.escalationPct) > 0 && !prev.missing && <div style={{ marginTop: 4, color: "var(--text3)" }}>Monthly at this volume: {escalatedRates(monthly, p.escalationPct, 3).map((v, y) => `year ${y + 1} ₹${Math.round(v).toLocaleString("en-IN")}`).join(" · ")}</div>}
+                </div>
               </div>
             </div>
           </div>
