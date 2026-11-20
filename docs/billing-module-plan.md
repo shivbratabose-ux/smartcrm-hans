@@ -172,3 +172,29 @@ Each phase is deployed only on your "merge", and database migrations only on you
 1. Who approves a plan with no discount: any Line Manager, or the account owner's own line manager?
 2. Should sales see plans for all accounts (as quotes today), or only their own?
 3. ERP: which system (Tally, SAP, other), and the export format it imports?
+
+## 7. Phase 2 as built
+
+Decisions (20 Nov 2026): a plan with no discount is approved by the **account owner**; sales see **only their own** plans; invoices are printed by **iCAFFE**, keyed in by hand from an **Excel** export (Phase 4).
+
+- **Version 1** is the accepted quote's agreement; it is written to `billing_plans` the first time the plan is amended.
+- **Amend the plan** (Quotations → Agreements → an agreement → Billing plan) opens a six-step builder: products (only the models, units and modules the product's profile allows; sites), rates (agreed rate, users, monthly minimum; one-time lines are billed by milestone, so changes there are added as fees), fees (one-time with milestone, recurring per month or year), terms (effective date, lock-in, renewal, escalation none / fixed / index / step-up, frequency, advance or arrears, credit days, currency, legal entity, taxes), discounts and more (volume, multi-site, multi-product, multi-year, early payment; revenue share with floor, collector and settlement cycle; SLA credits; late-payment interest; termination), and review (live monthly estimate, changes from the previous version, approval route, reason).
+- **Checks** before sending: the version takes effect on the 1st of a month, after the one it replaces; the legal entity is verified by Finance; required fees present (WiseHandling SaaS/PaaS → setup); revenue share complete; amounts and percentages valid.
+- **Approval**: within the rep's discount authority → the account owner; above → Line Manager (to 20%) or Management Committee. The maker of a discounted version cannot approve it. Approving ends the previous version the day before (one step in the database, `decide_billing_plan`); sending back records the reason.
+- **Billing reads every approved version as one timeline** (`mergedAgreement`): each version's recurring and usage lines bill from its date until the next version starts, under the same agreement number; fixed escalation keeps the contract anniversary.
+- **Visibility**: sales see their own accounts' agreements and plans; managers their team's; the billing desk and management all.
+- Database: `supabase/billing_phase2_v1.sql` (undo `billing_phase2_v1_down.sql`). Tests: `scripts/test-billing-plans.mjs` (31 checks).
+
+### How to test Phase 2
+
+Before anything can be sent for approval, Hans Infomatic's GSTIN must be in Quotation Rules → Company and Finance must verify the entity (Masters → Billing → Legal entities).
+
+1. As the account owner: Quotations → Agreements → open an agreement → Amend the plan → Rates: change users → Review: give a reason → Send for approval. It routes to the account owner; Approve. The agreement shows the old and new periods; Billing for the new month bills the new quantity.
+2. Amend again with a rate 15% below list: it routes to the Line Manager; its maker has no Approve button; a Line Manager approves.
+3. Try an effective date mid-month: refused.
+
+### Open questions for Phase 3
+
+1. Usage push API: which systems send usage first (AMS filing, WiseCCS?), and who keeps their keys?
+2. Revenue share: where does the "gross collected" figure come from each month (operator report upload, or entered by Finance)?
+3. Index-linked escalation: which index (CPI India, WPI), and who enters its value each year?

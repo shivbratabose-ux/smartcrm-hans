@@ -82,7 +82,8 @@ export function activeFraction(term, period, prorate = true) {
 export function escalationFactor(line, period) {
   const pct = n(line.escalationPct);
   if (!pct) return 1;
-  const years = Math.floor(Math.max(0, monthsBetween(periodOf(line.effectiveFrom), period)) / 12);
+  // A plan amendment keeps the contract's anniversary (escalationFrom); otherwise the line's own start.
+  const years = Math.floor(Math.max(0, monthsBetween(periodOf(line.escalationFrom || line.effectiveFrom), period)) / 12);
   return Math.pow(1 + pct / 100, years);
 }
 

@@ -24,6 +24,10 @@ import { engineLineView, engineGst, engineProductIds } from '../lib/quotation/en
 import { groupOf } from '../lib/quotation/productGroups';
 import { needsAgreement, buildAgreement, listAgreements } from '../lib/quotation/agreements';
 import AgreementsPanel from './AgreementsPanel';
+import { withPlans } from '../lib/billing/plans';
+import { loadPlans, loadEntityChecks } from '../lib/billing/store';
+import { resolveBillingMasters } from '../lib/billing/masters';
+import { getScopedUserIds } from '../utils/helpers';
 import BillingPanel from './BillingPanel';
 import CommercialReports from './CommercialReports';
 import QuoteAssistant from './QuoteAssistant';
@@ -1298,6 +1302,19 @@ Reason for approving (kept on the quote):`,"");
   const [showAgreements,setShowAgreements]=useState(false);
   const [showBilling,setShowBilling]=useState(false);
   const [showReports,setShowReports]=useState(false);
+  // Billing plans (versioned agreements). Billing and reports read every
+  // approved version merged into one timeline (lib/billing/plans.js).
+  const [plans,setPlans]=useState([]);
+  const [entityChecks,setEntityChecks]=useState([]);
+  useEffect(()=>{
+    if(!showAgreements&&!showBilling&&!showReports) return;
+    let live=true;
+    Promise.all([loadPlans(),loadEntityChecks()]).then(([p,c])=>{ if(!live) return; setPlans(p.plans||[]); setEntityChecks(c.checks||[]); });
+    return ()=>{live=false;};
+  },[showAgreements,showBilling,showReports]);
+  const billingQuotes=useMemo(()=>withPlans(quotes,plans),[quotes,plans]);
+  const billingMasters=useMemo(()=>resolveBillingMasters(masters),[masters]);
+  const planCtx=useMemo(()=>({priceRows:resolveQuotationMasters(masters,catalog).catalogue,catalog:catalog||[],profiles:billingMasters.profiles,checks:entityChecks,company:companyOf(quoteConfig)}),[masters,catalog,billingMasters,entityChecks,quoteConfig]);
   const agreementCount=useMemo(()=>listAgreements(quotes,today).filter(a=>a.status==="Active").length,[quotes,today]);
 
   /* ── Quote → Accounts → Implementation (flow approved 14 Nov 2026) ── */
@@ -2182,9 +2199,11 @@ Reason for approving (kept on the quote):`,"");
         </div>
       </div>
 
-      {showReports && <CommercialReports quotes={quotes} accounts={accounts} orgUsers={orgUsers||[]} priceRows={resolveQuotationMasters(masters,catalog).catalogue} catalog={catalog||[]} today={today} onClose={()=>setShowReports(false)}/>}
-      {showBilling && <BillingPanel quotes={quotes} setQuotes={setQuotes} accounts={accounts} setCollections={setCollections} config={quoteConfig} currentUser={currentUser} orgUsers={orgUsers||[]} today={today} onClose={()=>setShowBilling(false)} onOpenQuote={(id)=>{const q=enriched.find(e=>e.id===id); if(q){setShowBilling(false); setDetail(q);}}}/>}
-      {showAgreements && <AgreementsPanel quotes={quotes} accounts={accounts} today={today} onClose={()=>setShowAgreements(false)} onOpenQuote={(q)=>{setShowAgreements(false);setDetail(q);}}/>}
+      {showReports && <CommercialReports quotes={billingQuotes}accounts={accounts} orgUsers={orgUsers||[]} priceRows={resolveQuotationMasters(masters,catalog).catalogue} catalog={catalog||[]} today={today} onClose={()=>setShowReports(false)}/>}
+      {showBilling && <BillingPanel quotes={billingQuotes} setQuotes={setQuotes} accounts={accounts} setCollections={setCollections} config={quoteConfig} currentUser={currentUser} orgUsers={orgUsers||[]} today={today} onClose={()=>setShowBilling(false)} onOpenQuote={(id)=>{const q=enriched.find(e=>e.id===id); if(q){setShowBilling(false); setDetail(q);}}}/>}
+      {showAgreements && <AgreementsPanel quotes={billingQuotes} originalQuotes={quotes} accounts={accounts} today={today} onClose={()=>setShowAgreements(false)} onOpenQuote={(q)=>{setShowAgreements(false);setDetail(q);}}
+        plans={plans} setPlans={setPlans} bm={billingMasters} planCtx={planCtx} currentUser={currentUser} orgUsers={orgUsers||[]} config={quoteConfig}
+        billingDesk={canBill} downline={[...getScopedUserIds(currentUser,orgUsers||[])]}/>}
       {hansBuilder && (
         <HansQuoteBuilder
           opps={opps} leads={leads} accounts={accounts} contacts={contacts}
