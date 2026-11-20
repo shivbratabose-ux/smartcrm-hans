@@ -19,6 +19,7 @@ import { newQuoteId, newContractId, nextQuoteNo, nextContractNo, revisionOf, sen
 import GuidedTour from './GuidedTour';
 import QuoteHandoverPanel from './QuoteHandoverPanel';
 import { printHansQuote } from '../lib/quotation/printQuote';
+import { levelApproverIds } from '../lib/quotation/commercial';
 import QuoteAssistant from './QuoteAssistant';
 import { isAiFeatureOn } from '../utils/ai';
 import { companyOf, registrationLine } from '../lib/quotation/company';
@@ -1045,7 +1046,18 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
   const approvers=approverIds(quoteConfig,orgUsers||[],GLOBAL_ROLES);
   const accountsTeam=accountsIds(quoteConfig,orgUsers||[]);
   // Nobody approves their own quote — unless they are the only approver.
-  const canApproveQuote=(q)=>approvers.includes(currentUser)&&(q.owner!==currentUser||approvers.every(id=>id===currentUser));
+  // Approval levels (Masters → Quotation Rules → Config): a quote that needs a
+  // level is approved by that level's people or a higher level's. Quotes saved
+  // before levels existed use the general approver list.
+  const liveUserIds=(orgUsers||[]).filter(u=>u&&u.active!==false&&!u.isDeleted&&String(u.status||"Active").toLowerCase()!=="inactive").map(u=>u.id);
+  const topRoleUserIds=(orgUsers||[]).filter(u=>liveUserIds.includes(u.id)&&["admin","md","director"].includes(u.role)).map(u=>u.id);
+  const approversFor=(q)=>{
+    const lvl=q?.hans?.approvalLevel;
+    if(!lvl||!Number.isInteger(lvl.index)) return approvers;
+    const ids=levelApproverIds(lvl.index,quoteConfig,{liveUserIds,generalApproverIds:approvers,topRoleUserIds});
+    return ids.length?ids:approvers;
+  };
+  const canApproveQuote=(q)=>{ const ids=approversFor(q); return ids.includes(currentUser)&&(q.owner!==currentUser||ids.every(id=>id===currentUser)); };
   const canBill=isFinance||accountsTeam.includes(currentUser)||isManager;
   const customerBase=customerBaseUrl(import.meta.env.VITE_PUBLIC_APP_URL,window.location);
   const openAdd=()=>{
@@ -1221,11 +1233,20 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
     setActivities&&setActivities(p=>[...p,{id:`act_${uid()}`,type:"Follow-up",status:"Planned",date:today,title,notes:body,accountId:refs.accountId||"",contactId:"",oppId:refs.oppId||"",owner:uidTo,createdBy:currentUser,assignedBy:currentUser,duration:15,files:[],outcome:""}]);
   };
   const approveQuote=(q)=>{
-    if(!canApproveQuote(q)){alert("Only the quote approvers set in Masters → Quotation can approve this quote.");return;}
-    tellUser(q.owner,`Quote ${q.quoteNo||q.id} approved`,`${userName(currentUser)} approved "${q.title||""}". You can send it to the customer now.`,{accountId:q.accountId,oppId:q.oppId});
+    if(!canApproveQuote(q)){alert(q?.hans?.approvalLevel?`This quote needs ${q.hans.approvalLevel.label} approval. Only that level (or a higher one) set in Masters → Quotation Rules can approve it.`:"Only the quote approvers set in Masters → Quotation can approve this quote.");return;}
+    // An exception is approved with a reason, kept on the quote.
+    const why=(q?.hans?.approvalReasons||[]).join("; ");
+    const note=window.prompt(`Approve ${q.quoteNo||q.id}?${why?`
+
+Exception: ${why}`:""}
+
+Reason for approving (kept on the quote):`,"");
+    if(note===null) return;
+    if(!note.trim()){alert("Please give a reason for approving this exception.");return;}
+    tellUser(q.owner,`Quote ${q.quoteNo||q.id} approved`,`${userName(currentUser)} approved "${q.title||""}": ${note.trim()}. You can send it to the customer now.`,{accountId:q.accountId,oppId:q.oppId});
     const at=new Date().toISOString();
-    const ce={id:uid(),at,by:currentUser,field:"approvalStatus",from:q.approvalStatus||"Pending",to:"Approved",note:""};
-    setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Approved",approvedBy:currentUser,approvedAt:at,rejectedReason:"",changeLog:[...(r.changeLog||[]),ce]}:r));
+    const ce={id:uid(),at,by:currentUser,field:"approvalStatus",from:q.approvalStatus||"Pending",to:"Approved",note:`${q?.hans?.approvalLevel?.label?`${q.hans.approvalLevel.label} approval. `:""}${note.trim()}`};
+    setQuotes(p=>p.map(r=>r.id===q.id?{...r,approvalStatus:"Approved",approvedBy:currentUser,approvedAt:at,rejectedReason:"",approvalNotes:note.trim(),changeLog:[...(r.changeLog||[]),ce]}:r));
   };
   const rejectQuote=(q)=>setRejectModal({quote:q});
   const _doRejectQuote=(q,reason)=>{
@@ -1246,9 +1267,10 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
     if(!due.length) return;
     due.forEach(q=>noticedRef.current.add(key(q)));
     const at=new Date().toISOString();
-    const others=approvers.filter(a=>a!==currentUser);
-    due.forEach(q=>others.forEach(a=>tellUser(a,`Approve quote ${q.quoteNo||q.id}`,
-      `${userName(currentUser)} needs approval for "${q.title||""}" — ${approvalReason(q)||"discount above the allowed limit"}. Total ₹${q.total||0}L. Open Quotations to approve or reject.`,
+    const othersOf=(q)=>approversFor(q).filter(a=>a!==currentUser);
+    const others=[...new Set(due.flatMap(othersOf))];
+    due.forEach(q=>othersOf(q).forEach(a=>tellUser(a,`Approve quote ${q.quoteNo||q.id}`,
+      `${userName(currentUser)} needs ${q?.hans?.approvalLevel?.label?`${q.hans.approvalLevel.label} `:""}approval for "${q.title||""}" — ${approvalReason(q)||"discount above the allowed limit"}. Total ₹${q.total||0}L. Open Quotations to approve or reject.`,
       {accountId:q.accountId,oppId:q.oppId})));
     const ids=new Set(due.map(q=>q.id));
     setQuotes(p=>p.map(r=>ids.has(r.id)?{...r,changeLog:[...(r.changeLog||[]),{id:uid(),at,by:currentUser,field:"approvalNotice",from:"",to:"sent",note:others.length?`Approval requested from ${others.map(userName).join(", ")}`:"No other approver is set in Masters → Quotation"}]}:r));

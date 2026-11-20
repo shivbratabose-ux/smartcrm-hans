@@ -4,7 +4,8 @@
 //   PARTIAL   the calculation works; a named piece of the workflow is missing
 //   NOT BUILT nothing to run yet (needs the Billing Engine / agreements)
 // Run: node scripts/acceptance-commercial.mjs      (exit 1 only if a PASS regresses)
-import { resolveUnitPrice, computeLine } from "../src/lib/quotation/pricingEngine.js";
+import { resolveUnitPrice, computeLine, computeQuote } from "../src/lib/quotation/pricingEngine.js";
+import { billingClassOf, requiredApprovalLevel, rowConfigIssues } from "../src/lib/quotation/commercial.js";
 import { usagePrice, graduatedCost } from "../src/lib/quotation/slabs.js";
 import { quoteDocumentHtml } from "../src/lib/quotation/quoteDocument.js";
 import { HANS_CATALOGUE } from "../src/data/quotationMasters.js";
@@ -26,7 +27,7 @@ const impl = { code: "T-IMPL", name: "Implementation", pricingModel: "Implementa
 const orbis = HANS_CATALOGUE.find((r) => r.code === "OB01");
 const line = (row, qty, months = 12) => {
   const unit = resolveUnitPrice(row, { qty }).unitPrice;
-  return { productCode: row.code, name: row.name, pricingModel: row.pricingModel, unit: row.unit, qty, months, unitPriceResolved: unit, discountPct: 0, ...computeLine({ pricingModel: row.pricingModel, unitPriceResolved: unit, qty, months, minQty: row.minQty }) };
+  return { productCode: row.code, name: row.name, pricingModel: row.pricingModel, billingClass: billingClassOf(row), unit: row.unit, qty, months, unitPriceResolved: unit, discountPct: 0, monthlyMinimum: row.monthlyMinimum || 0, ...computeLine({ pricingModel: row.pricingModel, unitPriceResolved: unit, qty, months, minQty: row.minQty, monthlyMinimum: row.monthlyMinimum }) };
 };
 
 // 1. SaaS quotation: Orbis One, 10 users, rate from the Pricing Master.
@@ -45,8 +46,9 @@ const line = (row, qty, months = 12) => {
 {
   const t = text(quoteDocumentHtml({ quoteNo: "A3", createdDate: "2026-11-20", items: [{ ...line(wisedox, 25000), }], hans: { party: { name: "C" } } },
     { priceRows: [wisedox], catalog: INIT_PRODUCT_CATALOG, autoPrint: false }));
-  scenario(3, "Transaction quotation shows the rate only", "PARTIAL", [t.includes("Per document ₹2"), !t.includes("50,000"), !/Estimate at/.test(t)],
-    "Customer document: rate and unit only, no 25,000 × ₹2. Gap: the quote's internal total / TCV still adds expected volume × rate.");
+  const q3 = computeQuote([line(wisedox, 25000)], {}, { gstRatePct: 18 });
+  scenario(3, "Transaction quotation shows the rate only", "PASS", [t.includes("Per document ₹2 On actual use"), !t.includes("50,000"), !/Estimate at/.test(t), q3.grandTotal === 0, q3.variableEstimateMonthly === 50000],
+    "Customer document: ₹2 per document, 'on actual use', no 25,000 × ₹2. Quote total and TCV: ₹0 committed; the ₹50,000 a month is an internal estimate only.");
 }
 // 4. Monthly billing on actual usage.
 scenario(4, "Monthly billing on actual usage (25,000 documents)", "PARTIAL", [usagePrice(wisedox, 25000).amount === 50000],
@@ -59,10 +61,11 @@ scenario(6, "Volume slab (20,000 transactions)", "PASS", [usagePrice(txnVolume, 
   "20,000 × ₹2 = ₹40,000");
 // 7. One-time project with milestones.
 {
-  const t = text(quoteDocumentHtml({ quoteNo: "A7", createdDate: "2026-11-20", paymentTerms: "40% advance, 40% on UAT, 20% on go-live", items: [line(impl, 1, 1)], hans: { party: { name: "C" } } },
+  const ms = [{ name: "Advance with the order", pct: 40 }, { name: "On UAT sign-off", pct: 40 }, { name: "On go-live", pct: 20 }];
+  const t = text(quoteDocumentHtml({ quoteNo: "A7", createdDate: "2026-11-20", items: [line(impl, 1, 1)], hans: { party: { name: "C" }, milestones: ms } },
     { priceRows: [impl], catalog: INIT_PRODUCT_CATALOG, autoPrint: false }));
-  scenario(7, "One-time project with milestone terms", "PARTIAL", [t.includes("One-time charges"), t.includes("₹1,00,000"), t.includes("40% advance, 40% on UAT, 20% on go-live")],
-    "Amount and the milestone wording print. Gap: milestones are free text, not a schedule the billing can invoice stage by stage.");
+  scenario(7, "One-time project with milestone terms", "PASS", [t.includes("One-time charges"), t.includes("₹1,00,000"), t.includes("40% (₹40,000) advance with the order; 40% (₹40,000) on UAT sign-off; 20% (₹20,000) on go-live.")],
+    "₹1,00,000 one time; milestones 40 / 40 / 20% are a schedule on the quote, printed with their amounts. (Invoicing each stage comes with the Billing Engine.)");
 }
 // 8. Hybrid quotation keeps the classifications apart.
 {
@@ -71,8 +74,11 @@ scenario(6, "Volume slab (20,000 transactions)", "PASS", [usagePrice(txnVolume, 
   const html = quoteDocumentHtml({ quoteNo: "A8", createdDate: "2026-11-20", hosting: "Hans", items, hans: { party: { name: "C" } } },
     { priceRows: [...HANS_CATALOGUE, wisedox, impl], catalog: INIT_PRODUCT_CATALOG, autoPrint: false });
   const t = text(html);
-  scenario(8, "Hybrid quotation (SaaS + two usage services + one-time)", "PARTIAL", [t.includes("One-time charges"), t.includes("Subscription"), t.includes("WiseDox Document Processing Per document ₹2"), t.includes("Air Consol Filing Per HAWB ₹30"), !t.includes("50,000")],
-    "One document, three separate sections; usage is never added to the subscription. Gap: the variable section is titled 'Add-on services', and the billing class is not stored on each line.");
+  const q8 = computeQuote(items, {}, { gstRatePct: 18 });
+  scenario(8, "Hybrid quotation (SaaS + two usage services + one-time)", "PASS",
+    [t.includes("A Fixed recurring charges"), t.includes("B Variable charges, billed on actual consumption"), t.includes("C One-time charges"), t.includes("WiseDox Document Processing Per document ₹2"), t.includes("Air Consol Filing Per HAWB ₹30"), !t.includes("50,000"),
+      eq(items.map((i) => i.billingClass), ["subscription", "transaction", "transaction", "one_time"]), q8.commercialModel.label === "Hybrid", q8.subtotal === 10 * orbis.listPrice * 12 + 100000],
+    "One document; each line keeps its class (fixed recurring, variable, variable, one-time); sections A / B / C; the total is subscription + one-time only.");
 }
 // 9. Minimum commitment.
 {
@@ -94,15 +100,18 @@ scenario(11, "Customer-specific rates", "NOT BUILT", [true],
 // 12. Usage reconciliation.
 scenario(12, "Usage reconciliation (duplicate / missing / corrected)", "NOT BUILT", [true], "Needs usage records (Billing Engine).");
 // 13. Discount approval.
-scenario(13, "Discount over authority goes for approval", "PASS", [true],
-  "Live: per-product and company discount caps, margin guardrail, approvers, approve / reject with reason, DRAFT marking until approved. One approval level today (see the assessment for tiers).");
+{
+  const lv = (d) => requiredApprovalLevel({ needsApproval: d > 10, lines: [{ discountPct: d }], overallDiscountPct: 0 }, { maxUserDiscountPct: 10 })?.label || "no approval";
+  scenario(13, "Discount over authority goes for approval", "PASS", [eq([lv(8), lv(15), lv(25)], ["no approval", "Sales Head", "Management"])],
+    "8% within the rep's 10% → no approval · 15% → Sales Head · 25% → Management. Levels, ceilings and people are set in Quotation Rules; approving records the approver, date and reason.");
+}
 // 14. Mixed billing frequency.
 scenario(14, "Mixed billing frequency (monthly SaaS + separate usage cycle)", "NOT BUILT", [true], "Needs billing schedules per component (Billing Engine).");
 // 15. Missing product configuration.
 {
   const blank = { code: "T-NONE", name: "Unpriced product", pricingModel: "SaaS Subscription", unit: "User", rateSource: "Flat", listPrice: null };
-  scenario(15, "Missing pricing configuration is flagged", "PARTIAL", [resolveUnitPrice(blank, { qty: 5 }).missingRate === true, resolveUnitPrice({ ...txnVolume, slabs: [] }, { qty: 5 }).missingRate === true],
-    "A missing rate is flagged on the line and in Masters. Gap: it does not yet block the quote from being issued as final.");
+  scenario(15, "Missing pricing configuration is flagged", "PASS", [resolveUnitPrice(blank, { qty: 5 }).missingRate === true, resolveUnitPrice({ ...txnVolume, slabs: [] }, { qty: 5 }).missingRate === true, rowConfigIssues({ pricingModel: "SaaS Subscription", unit: "" }).length === 1],
+    "No rate → the quote cannot be saved. Incomplete configuration (no unit / model) → the quote needs an approver's sign-off with a reason, and stays a draft until then.");
 }
 
 const icon = { PASS: "✅", PARTIAL: "🟡", "NOT BUILT": "⬜" };

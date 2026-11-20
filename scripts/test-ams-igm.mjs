@@ -43,7 +43,7 @@ check("AMS terms printed", [t.includes("Escalation. Rates escalate by 10% every 
 check("no software IP / data-handover terms", [t.includes("Intellectual property."), t.includes("500 rupees per GB")], [false, false]);
 check("features section skipped (price lines are not features)", t.includes("Features included"), false);
 check("no one-time row in payment when there is none", t.includes("Payable with the order"), false);
-check("all-usage quote: no empty price table, GST note instead", [t.includes("One-time charges"), t.includes("GST at 18% (charged in addition"), t.includes("GST at 18% is charged in addition, as applicable.")], [false, false, true]);
+check("all-usage quote: one variable section, no empty one-time section, nothing committed", [t.includes("One-time charges"), t.includes("A Variable charges, billed on actual consumption"), t.includes("GST on variable charges On each invoice"), t.includes("No volume is committed.")], [false, true, true, true]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

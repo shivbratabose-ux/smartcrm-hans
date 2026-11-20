@@ -25,14 +25,14 @@ const price = (row, qty, months = 1, extra = {}) => {
 
 console.log("\n1. Volume slab (whole month at its slab's rate)");
 check("300/month → all at ₹700", usagePrice(base, 300).amount, 210000);
-check("engine agrees", price(base, 300).lineTotal, 210000);
+check("engine agrees", price(base, 300).lineEstimate, 210000);
 
 console.log("\n2. Graduated slab (each band at its own rate)");
 const grad = { ...base, slabMode: "graduated" };
 check("cost of 300 = 200×800 + 100×700", graduatedCost(300, SLABS), 200 * 800 + 100 * 700);
 check("cost of 800 = 200×800 + 300×700 + 199×500 + 101×400", graduatedCost(800, SLABS), 200 * 800 + 300 * 700 + 199 * 500 + 101 * 400);
 check("monthly amount (graduated)", usagePrice(grad, 300).amount, 230000);
-check("engine: average unit price × qty = graduated total", r2(price(grad, 300).lineTotal), 230000);
+check("engine: average unit price × qty = graduated total", r2(price(grad, 300).lineEstimate), 230000);
 check("below the first band", usagePrice(grad, 50).amount, 40000);
 
 console.log("\n3. Slab on yearly volume");
@@ -44,18 +44,20 @@ console.log("\n4. Prepaid pack + overage");
 const pack = { code: "P1", name: "Document reading", pricingModel: "Per-transaction", unit: "Page", rateSource: "Flat", listPrice: 10, packQty: 10000, packPrice: 80000 };
 check("within the pack → pack price", usagePrice(pack, 6000).amount, 80000);
 check("over the pack → pack + overage", usagePrice(pack, 12500).amount, 80000 + 2500 * 10);
-check("engine: within pack", price(pack, 6000).lineTotal, 80000);
-check("engine: over pack", price(pack, 12500).lineTotal, 105000);
-check("engine: no usage still bills the pack", price(pack, 0).lineTotal, 80000);
+check("engine: within pack", price(pack, 6000).lineEstimate, 80000);
+check("engine: over pack", price(pack, 12500).lineEstimate, 105000);
+check("engine: no usage still bills the pack", price(pack, 0).lineEstimate, 80000);
 check("pack + slab overage", usagePrice({ ...pack, rateSource: "Slab", slabs: [{ from: 0, rate: 10 }, { from: 12000, rate: 6 }] }, 12500).amount, 80000 + 2500 * 6);
 
 console.log("\n5. Monthly minimum");
 const minRow = { ...pack, packQty: 0, packPrice: 0, monthlyMinimum: 15000 };
-check("low usage → minimum", price(minRow, 1000).lineTotal, 15000);
-check("high usage → actual", price(minRow, 2000).lineTotal, 20000);
-check("12 months at the minimum", price(minRow, 100, 12).lineTotal, 180000);
+check("low usage → minimum", price(minRow, 1000).lineEstimate, 15000);
+check("high usage → actual", price(minRow, 2000).lineEstimate, 20000);
+check("12 months at the minimum", price(minRow, 100, 12).lineEstimate, 180000);
 check("one-time rows ignore the minimum", computeLine({ pricingModel: "Implementation", unitPriceResolved: 100, qty: 1, months: 1, monthlyMinimum: 5000 }).lineTotal, 100);
-check("existing rows unchanged (no minimum)", computeLine({ pricingModel: "Per-transaction", unitPriceResolved: 30, qty: 10, months: 12 }).lineTotal, 3600);
+check("usage row with no minimum: estimate only, nothing committed", (({ lineEstimate, lineTotal }) => [lineEstimate, lineTotal])(computeLine({ pricingModel: "Per-transaction", unitPriceResolved: 30, qty: 10, months: 12 })), [3600, 0]);
+check("minimum is the committed part", [price(minRow, 1000, 12).lineTotal, price(minRow, 5000, 12).lineTotal, price(pack, 12500).lineTotal], [180000, 180000, 80000]);
+check("subscription rows unchanged", computeLine({ pricingModel: "SaaS Subscription", unitPriceResolved: 1000, qty: 10, months: 12 }).lineTotal, 120000);
 
 console.log("\n6. Pooled volume");
 const igm = { code: "A5", name: "IGM", pricingModel: "Per-transaction", unit: "Flight", rateSource: "Slab", pool: "AMS manifests", slabs: [{ from: 0, rate: 185 }, { from: 500, rate: 150 }] };
@@ -71,9 +73,9 @@ check("36 months = 12 + 13.2 + 14.52 month-equivalents", r2(escalationMonths(36,
 check("18 months = 12 + 6×1.1", r2(escalationMonths(18, 10)), 18.6);
 check("12 months: no effect", escalationMonths(12, 10), 12);
 const esc = { ...minRow, monthlyMinimum: 0, escalationPct: 10 };
-check("engine: 1,000 pages × ₹10 for 24 months at +10% from year 2", r2(price(esc, 1000, 24).lineTotal), 10000 * 12 + 11000 * 12);
+check("engine: 1,000 pages × ₹10 for 24 months at +10% from year 2", r2(price(esc, 1000, 24).lineEstimate), 10000 * 12 + 11000 * 12);
 const q = computeQuote([{ ...esc, unitPriceResolved: 10, qty: 1000, months: 24, escalationPct: 10 }], {});
-check("quote total carries the escalation", r2(q.recurringSubtotal ?? q.subtotal ?? q.netTotal ?? 0) > 240000, true);
+check("escalation is in the estimate; the committed total stays 0", [r2(q.variableEstimate), q.grandTotal], [252000, 0]);
 
 console.log("\n8. On the quotation");
 const priceRows = [grad, pack, igm, egm, minRow, esc].map((r, i) => ({ ...r, code: ["G1", "P1", "A5", "A6", "M1", "E1"][i] }));

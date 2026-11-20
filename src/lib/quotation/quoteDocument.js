@@ -26,12 +26,12 @@ import { HOSTING_LABEL } from "./handover.js";
 import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS, CONFIDENTIAL_NOTE } from "../../data/quoteContent.js";
 import { resolveTermSets, termSetFor, eulaLinkOf, fillTerms, tcLines } from "./termSets.js";
 import { slabTable, usageRuleText, poolVolumes, escalatedRates, hasUsageRules } from "./slabs.js";
+import { billingClassOf } from "./commercial.js";
 import { getQuoteTemplate } from "../../data/quoteTemplates.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const inr = (n) => "₹" + Math.round(num(n)).toLocaleString("en-IN");
-const USAGE_MODELS = ["Per-transaction", "PaaS Per-Flight", "PaaS Per-Transaction"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${m[3]}-${MONTHS[+m[2] - 1]}-${m[1]}` : String(iso || ""); };
 const longDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${+m[3]} ${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][+m[2] - 1]} ${m[1]}` : String(iso || ""); };
@@ -72,8 +72,9 @@ export function quoteDocModel(quote, opts = {}) {
 
   const lines = (quote.items || []).filter((l) => l && (l.productCode || l.name)).map((l) => {
     const row = rowOf(l.productCode);
-    const oneTime = isOneTimeModel(l.pricingModel);
-    const usage = USAGE_MODELS.includes(l.pricingModel);
+    const cls = billingClassOf({ pricingModel: l.pricingModel, billingClass: l.billingClass || row?.billingClass });
+    const oneTime = cls === "one_time";
+    const usage = cls === "transaction";   // variable: billed on actual consumption, rate only
     const months = oneTime ? 1 : Math.max(1, num(l.months) || 1);
     const qty = Math.max(num(l.qty), num(row?.minQty));
     const afterLine = num(l.lineTotal) / months;                     // per month for recurring
@@ -82,7 +83,10 @@ export function quoteDocModel(quote, opts = {}) {
     const u = /^[A-Z/]{2,}$/.test(unit) ? unit : unit.toLowerCase();   // HBL, HAWB stay upper case
     const basis = oneTime ? "One time" : usage ? `Per ${u || "use"}` : `Per ${u || "unit"} per month`;
     return {
-      code: l.productCode, name: l.name || row?.name || l.productCode, oneTime, usage, basis, qty, unit,
+      code: l.productCode, name: l.name || row?.name || l.productCode, oneTime, usage, billingClass: cls, basis, qty, unit,
+      // Contractual minimum per month (committed): the usage minimum / pack, or a platform floor.
+      minimum: usage ? Math.max(num(l.monthlyMinimum), /^PaaS/.test(String(l.pricingModel || "")) ? num(l.minMonthFloor) : 0) : 0,
+      included: usage && num(l.unitPriceResolved) === 0 && row && row.rateSource !== "Slab" && num(row.listPrice) === 0 && row.listPrice != null,
       slabs: row?.rateSource === "Slab" ? slabTable(row.slabs, `${unit || "units"} per ${row.slabPeriod === "year" ? "year" : "month"}`) : null,
       row,
       listRate: num(l.unitPriceResolved), discountPct: num(l.discountPct),
@@ -126,7 +130,11 @@ export function quoteDocModel(quote, opts = {}) {
 
   const template = product ? getQuoteTemplate(product.id) : null;
   const about = pContent.about || (template?.overview?.description ? [template.overview.description] : []);
-  const ctx = { product: brand, customer, validUntil: longDate(validUntil), hosted, billing: h.billingFrequency, company: company.name, city: opts.city || "", paymentTerms: quote.paymentTerms || "", hasSubscription: subs.length > 0, hasOneTime: oneTime.length > 0 };
+  const ctx = { product: brand, customer, validUntil: longDate(validUntil), hosted, billing: h.billingFrequency, company: company.name, city: opts.city || "", paymentTerms: quote.paymentTerms || "", hasSubscription: subs.length > 0, hasOneTime: oneTime.length > 0,
+    // Structured milestones (name + % of the one-time total), with amounts.
+    milestoneText: Array.isArray(h.milestones) && h.milestones.length && oneTime.length
+      ? h.milestones.map((ms) => `${num(ms.pct)}% (${inr(sum(oneTime, "net") * num(ms.pct) / 100)}) ${String(ms.name || "").replace(/^./, (c) => c.toLowerCase())}`).join("; ") + "."
+      : "" };
   const notes = String(h.termsText || quote.terms || "").split(/\n+/).map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean);
 
   const netOneTime = sum(oneTime, "net"), netSubs = sum(subs, "net");
@@ -146,7 +154,8 @@ export function quoteDocModel(quote, opts = {}) {
       overallOneTime: sum(oneTime, "amount") - netOneTime, overallSubs: sum(subs, "amount") - netSubs,
       netOneTime, netSubs,
       prepaymentDisc: num(h.prepaymentDisc), prepaymentPct: num(h.prepaymentDiscountPct),
-      gstOneTime: netOneTime * gstPct / 100, gstSubs: netSubs * gstPct / 100,
+      minimums: sum(usage, "minimum"),
+      gstOneTime: netOneTime * gstPct / 100, gstSubs: (netSubs + sum(usage, "minimum")) * gstPct / 100,
     },
     amc: h.amc && h.amc.applies ? h.amc : null,
     notes,
@@ -208,48 +217,59 @@ export function quoteDocumentHtml(quote, opts = {}) {
   const hasCode = (code) => (quote.items || []).some((l) => l.productCode === code);
 
   const hansHosted = m.hosted && quote.hosting === "Hans";
-  const hasMain = m.oneTime.length > 0 || m.subs.length > 0 || !!m.amc;
+  const minimums = m.usage.filter((l) => l.minimum > 0);
+  const hasFixed = m.subs.length > 0 || minimums.length > 0;
+  const hasOneTimeSec = m.oneTime.length > 0 || hansHosted;
+  let letter = 0; const L = () => String.fromCharCode(65 + letter++);
+  const secRow = (title) => `<tr class="sec"><td>${L()}</td><td colspan="${cols}">${esc(title)}</td></tr>`;
+  const dCell = (l) => (D ? `<td class="r">${l.discountPct ? `${l.discountPct}%` : "—"}</td>` : "");
+  const onUse = '<td class="r" colspan="2" style="color:#475569">On actual use</td>';
+
+  // B. Variable charges: the agreed rate and unit only. Never volume × rate.
+  const variableRows = m.usage.map((l) => {
+    const fx = (r) => (D ? r : r * (1 - l.discountPct / 100));
+    const row = l.row;
+    const mates = row?.pool ? m.usage.filter((o) => o !== l && String(o.row?.pool || "").trim() === String(row.pool).trim()).map((o) => o.name) : [];
+    const rules = hasUsageRules(row) ? usageRuleText(row, { unit: l.unit, poolMates: mates }).filter((x) => !/^Volume slabs: the month's/.test(x) || row.slabMode === "graduated" || row.slabPeriod === "year") : [];
+    const esc3 = row && Number(row.escalationPct) > 0 && !(l.slabs && l.slabs.length) && l.listRate ? escalatedRates(fx(Number(row.listPrice ?? l.listRate)), row.escalationPct, 3) : null;
+    const extra = [...rules, esc3 ? `Year 1 ₹${esc3[0].toLocaleString("en-IN")} · Year 2 ₹${esc3[1].toLocaleString("en-IN")} · Year 3 ₹${esc3[2].toLocaleString("en-IN")} per ${l.unit || "unit"}.` : ""].filter(Boolean);
+    const notes = extra.length ? `<tr><td></td><td colspan="${cols}" style="font-size:8.4pt;color:#475569;padding-top:0">${extra.map(esc).join("<br>")}</td></tr>` : "";
+    const shownRate = row && Number(row.packQty) > 0 ? Number(row.listPrice ?? l.listRate) : l.listRate;
+    if (l.slabs && l.slabs.length) {
+      return `<tr><td>${++n}</td><td colspan="${cols}"><b>${esc(l.name)}</b>, ${esc(l.basis.replace(/^Per /, "per "))}: rate by the ${row?.slabPeriod === "year" ? "year's" : "month's"} volume${row?.slabMode === "graduated" ? " (each band at its own rate)" : " (the whole month is billed at its slab's rate)"}${D && l.discountPct ? `, less ${l.discountPct}% discount` : ""}</td></tr>`
+        + l.slabs.map((sl) => `<tr><td></td><td style="padding-left:18px">${esc(sl.label)}</td><td>${esc(l.basis)}</td><td class="r">${sl.rate != null ? inr(fx(sl.rate)) : "On request"}</td>${D ? "<td></td>" : ""}${onUse}</tr>`).join("") + notes;
+    }
+    return `<tr><td>${++n}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}${row && Number(row.packQty) > 0 ? " beyond the pack" : ""}</td><td class="r">${l.included ? "Included" : shownRate ? inr(fx(shownRate)) : "On request"}</td>${dCell(l)}${l.included ? '<td colspan="2"></td>' : onUse}</tr>${notes}`;
+  });
+
+  const fixedRows = hasFixed ? [
+    secRow("Fixed recurring charges"),
+    ...m.subs.map((l) => priceRow(++n, l)),
+    ...minimums.map((l) => `<tr><td>${++n}</td><td>Minimum billing: ${esc(l.name)}</td><td>Per month</td><td></td>${D ? "<td></td>" : ""}<td></td><td class="r">${inr(l.minimum)}</td></tr>`),
+    m.subs.length + minimums.length > 1 ? totRow("Total fixed recurring charges per month", inr(t.subsShown + t.minimums)) : "",
+    D && t.overallSubs > 0.5 ? totRow(`Less: discount ${m.overallPct}%`, "− " + inr(t.overallSubs), "") + totRow("Fixed recurring charges per month after discount", inr(t.netSubs + t.minimums)) : "",
+    t.prepaymentDisc > 0.5 ? totRow(`Prepayment discount ${t.prepaymentPct}% when the subscription term is paid in advance`, "− " + inr(t.prepaymentDisc), "") : "",
+  ].join("") : "";
+  const variableSec = m.usage.length ? secRow("Variable charges, billed on actual consumption") + variableRows.join("") : "";
+  const oneTimeSec = hasOneTimeSec ? [
+    secRow("One-time charges"),
+    ...m.oneTime.map((l) => priceRow(++n, l)),
+    hansHosted && !hasCode("AS01") ? noteRow(++n, "Server setup: not applicable, hosted by Hans Infomatic") : "",
+    hansHosted && !hasCode("AS02") ? noteRow(++n, "DSC server licence: not applicable, hosted by Hans Infomatic") : "",
+    m.oneTime.length ? totRow("Total one-time charges", inr(t.oneTimeShown)) : "",
+    D && t.overallOneTime > 0.5 ? totRow(`Less: discount ${m.overallPct}%`, "− " + inr(t.overallOneTime), "") + totRow("One-time charges after discount", inr(t.netOneTime)) : "",
+  ].join("") : "";
+  const amcSec = m.amc ? secRow("Annual maintenance (AMC), billed annually in advance") + m.amc.schedule.map((y) => `<tr><td>${++n}</td><td colspan="${cols - 1}">AMC, contract year ${y.contractYear}</td><td class="r">${inr(y.amount)}</td></tr>`).join("") : "";
+
   const prices = `
-    ${hasMain ? `<table class="pr"><thead><tr><th style="width:26px"></th><th>Description</th><th>Basis</th><th class="r">Rate (₹)</th>${D ? '<th class="r">Discount</th>' : ""}<th class="r">Users / qty</th><th class="r">Amount (₹)</th></tr></thead><tbody>
-      ${m.oneTime.length || hansHosted ? `<tr class="sec"><td>A</td><td colspan="${cols}">One-time charges</td></tr>` : ""}
-      ${m.oneTime.map((l) => priceRow(++n, l)).join("")}
-      ${hansHosted && !hasCode("AS01") ? noteRow(++n, "Server setup: not applicable, hosted by Hans Infomatic") : ""}
-      ${hansHosted && !hasCode("AS02") ? noteRow(++n, "DSC server licence: not applicable, hosted by Hans Infomatic") : ""}
-      ${m.oneTime.length ? totRow("Total one-time charges", inr(t.oneTimeShown)) : ""}
-      ${D && t.overallOneTime > 0.5 ? totRow(`Less: discount ${m.overallPct}%`, "− " + inr(t.overallOneTime), "") + totRow("One-time charges after discount", inr(t.netOneTime)) : ""}
-      ${m.subs.length ? `<tr class="sec"><td>B</td><td colspan="${cols}">Subscription</td></tr>` : ""}
-      ${m.subs.map((l) => priceRow(++n, l)).join("")}
-      ${m.subs.length > 1 ? totRow("Total subscription per month", inr(t.subsShown)) : ""}
-      ${D && t.overallSubs > 0.5 ? totRow(`Less: discount ${m.overallPct}%`, "− " + inr(t.overallSubs), "") + totRow("Subscription per month after discount", inr(t.netSubs)) : ""}
-      ${t.prepaymentDisc > 0.5 ? totRow(`Prepayment discount ${t.prepaymentPct}% when the subscription term is paid in advance`, "− " + inr(t.prepaymentDisc), "") : ""}
-      ${m.amc ? `<tr class="sec"><td>${m.subs.length ? "C" : "B"}</td><td colspan="${cols}">Annual maintenance (AMC), billed annually in advance</td></tr>${m.amc.schedule.map((y) => `<tr><td>${++n}</td><td colspan="${cols - 1}">AMC, contract year ${y.contractYear}</td><td class="r">${inr(y.amount)}</td></tr>`).join("")}` : ""}
+    <table class="pr"><thead><tr><th style="width:26px"></th><th>Description</th><th>Basis</th><th class="r">Rate (₹)</th>${D ? '<th class="r">Discount</th>' : ""}<th class="r">Users / qty</th><th class="r">Amount (₹)</th></tr></thead><tbody>
+      ${fixedRows}${variableSec}${oneTimeSec}${amcSec}
       <tr class="sec"><td></td><td colspan="${cols}">GST at ${m.gstPct}% (charged in addition, as applicable)</td></tr>
+      ${hasFixed ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on fixed recurring charges, per month</td><td class="r">${inr(t.gstSubs)}</td></tr>` : ""}
+      ${m.usage.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on variable charges</td><td class="r" style="color:#475569">On each invoice</td></tr>` : ""}
       ${m.oneTime.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on one-time charges</td><td class="r">${inr(t.gstOneTime)}</td></tr>` : ""}
-      ${m.subs.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on the subscription, per month</td><td class="r">${inr(t.gstSubs)}</td></tr>` : ""}
-    </tbody></table>` : ""}
-    ${m.usage.length ? `<p style="font-weight:800;color:#1F2F6B;margin:12px 0 2px">${m.mainIsUsage ? "Usage charges (billed monthly on the actual volume)" : "Add-on services (pay per use, activated on request)"}</p>
-    <table class="pr pr2"><thead><tr><th style="width:26px"></th><th>Service</th><th>Basis</th><th class="r">Rate (₹)</th></tr></thead><tbody>
-      ${m.usage.map((l, i) => {
-        const fx = (r) => (D ? r : r * (1 - l.discountPct / 100));
-        const row = l.row;
-        // Usage rules (slab type, pack, minimum, pool, escalation) and a worked estimate.
-        const mates = row?.pool ? m.usage.filter((o) => o !== l && String(o.row?.pool || "").trim() === String(row.pool).trim()).map((o) => o.name) : [];
-        const rules = hasUsageRules(row) ? usageRuleText(row, { unit: l.unit, poolMates: mates }).filter((t) => !/^Volume slabs: the month's/.test(t) || row.slabMode === "graduated" || row.slabPeriod === "year") : [];
-        // No "estimate at N a month" on the customer document: consumption is billed
-        // on actual volume, so an expected volume is never shown as a charge.
-        const esc3 = row && Number(row.escalationPct) > 0 && !(l.slabs && l.slabs.length) && l.listRate ? escalatedRates(fx(Number(row.listPrice ?? l.listRate)), row.escalationPct, 3) : null;
-        const extra = [...rules,
-          esc3 ? `Year 1 ₹${esc3[0].toLocaleString("en-IN")} · Year 2 ₹${esc3[1].toLocaleString("en-IN")} · Year 3 ₹${esc3[2].toLocaleString("en-IN")} per ${l.unit || "unit"}.` : "",
-        ].filter(Boolean);
-        const notes = extra.length ? `<tr><td></td><td colspan="3" style="font-size:8.4pt;color:#475569;padding-top:0">${extra.map(esc).join("<br>")}</td></tr>` : "";
-        const shownRate = row && Number(row.packQty) > 0 ? Number(row.listPrice ?? l.listRate) : l.listRate;
-        if (l.slabs && l.slabs.length) {
-          return `<tr><td>${i + 1}</td><td colspan="3"><b>${esc(l.name)}</b>, ${esc(l.basis.replace(/^Per /, "per "))}: rate by the ${row?.slabPeriod === "year" ? "year's" : "month's"} volume${row?.slabMode === "graduated" ? " (each band at its own rate)" : " (the whole month is billed at its slab's rate)"}${D && l.discountPct ? `, less ${l.discountPct}% discount` : ""}</td></tr>`
-            + l.slabs.map((sl) => `<tr><td></td><td style="padding-left:18px">${esc(sl.label)}</td><td>${esc(l.basis)}</td><td class="r">${sl.rate != null ? inr(fx(sl.rate)) : "On request"}</td></tr>`).join("") + notes;
-        }
-        return `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}${row && Number(row.packQty) > 0 ? " beyond the pack" : ""}</td><td class="r">${shownRate ? inr(fx(shownRate)) : "On request"}</td></tr>${notes}`;
-      }).join("")}
-    </tbody></table>${hasMain ? "" : `<div class="note" style="font-style:normal">GST at ${m.gstPct}% is charged in addition, as applicable.</div>`}` : ""}`;
+    </tbody></table>
+    ${m.usage.length ? `<div class="note" style="font-style:normal">Variable charges are invoiced on the actual ${m.usage.length > 1 ? "volumes" : "volume"} used in each billing period at the rates above. No volume is committed${minimums.length ? " beyond the minimum billing shown" : ""}.</div>` : ""}`;
 
   const who = m.preparedBy;
   const contactLine = [who.phone, who.email].filter(Boolean).join(" · ");

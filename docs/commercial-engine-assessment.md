@@ -146,29 +146,30 @@ Usage arrives first by entry or spreadsheet upload by Accounts, later by a feed 
 - Statuses stay; "Internal review" is added. Approved and accepted quotes are frozen.
 - **Amendment** = a revision that changes agreement lines from an effective date (users, modules, rates, renewal) and keeps the earlier lines as history.
 
-## 11. Acceptance tests today
+## 11. Acceptance tests
 
 `node scripts/acceptance-commercial.mjs` runs all 15 scenarios against the real code.
+"Start" is the position on 20 Nov 2026 before any change; "After Phase A" is the position once Phase A is merged.
 
-| # | Scenario | Today | Closes in |
-|---|---|---|---|
-| 1 | SaaS quotation | ✅ Pass | — |
-| 2 | SaaS volume slab | ✅ Pass | — |
-| 3 | Transaction quote shows the rate | 🟡 Document passes; internal total includes expected volume | Phase A |
-| 4 | Monthly billing on actual usage | 🟡 Calculation only | Phase C |
-| 5 | Progressive slab | ✅ Pass | — |
-| 6 | Volume slab | ✅ Pass | — |
-| 7 | One-time with milestones | 🟡 Text, not a schedule | Phase A (schedule), C (invoicing) |
-| 8 | Hybrid quotation | 🟡 Separate sections; class not stored | Phase A |
-| 9 | Minimum commitment | 🟡 On quotes, not invoices | Phase C |
-| 10 | Pricing revision | 🟡 Stored lines keep rates; no agreement | Phase B |
-| 11 | Customer-specific rates | ⬜ | Phase B |
-| 12 | Usage reconciliation | ⬜ | Phase C |
-| 13 | Discount approval | ✅ Pass (one level) | Levels in Phase A |
-| 14 | Mixed billing frequency | ⬜ | Phase C |
-| 15 | Missing configuration | 🟡 Flagged, not blocked | Phase A |
+| # | Scenario | Start | After Phase A | Remaining |
+|---|---|---|---|---|
+| 1 | SaaS quotation | ✅ | ✅ | — |
+| 2 | SaaS volume slab | ✅ | ✅ | — |
+| 3 | Transaction quote shows the rate | 🟡 | ✅ Rate only on the document; nothing in the total; estimate internal | — |
+| 4 | Monthly billing on actual usage | 🟡 | 🟡 Calculation only | Phase C |
+| 5 | Progressive slab | ✅ | ✅ | — |
+| 6 | Volume slab | ✅ | ✅ | — |
+| 7 | One-time with milestones | 🟡 | ✅ Milestone schedule on the quote, printed with amounts | Stage invoicing in Phase C |
+| 8 | Hybrid quotation | 🟡 | ✅ Class stored per line; sections A / B / C | — |
+| 9 | Minimum commitment | 🟡 | 🟡 Committed on the quote; not yet on invoices | Phase C |
+| 10 | Pricing revision | 🟡 | 🟡 Approved, sent and accepted quotes keep their rates on edit; no agreement record yet | Phase B |
+| 11 | Customer-specific rates | ⬜ | ⬜ | Phase B |
+| 12 | Usage reconciliation | ⬜ | ⬜ | Phase C |
+| 13 | Discount approval | ✅ one level | ✅ Levels: Sales Head, Management, configurable | — |
+| 14 | Mixed billing frequency | ⬜ | ⬜ | Phase C |
+| 15 | Missing configuration | 🟡 | ✅ No rate: cannot save. Incomplete configuration: approver's sign-off | — |
 
-5 pass, 7 partial, 3 not built.
+Start: 5 pass, 7 partial, 3 not built. After Phase A: 9 pass, 3 partial, 3 not built.
 
 ## 12. Implementation plan
 
@@ -182,8 +183,17 @@ Usage arrives first by entry or spreadsheet upload by Accounts, later by a feed 
 
 Each phase ends with the acceptance script showing its scenarios as Pass.
 
-## Decisions needed before Phase A
+## Decisions taken (20 Nov 2026)
 
-1. Conflict 1: agree that usage leaves the quote total, with expected volume kept as an internal estimate.
-2. Approval levels: the roles and percentages for each level.
-3. Conflict 2: agree that approved and accepted quotes are frozen and re-pricing is an explicit action.
+1. Usage leaves the quote total; expected volume is an internal estimate, shown separately. Quotes saved earlier keep their stored totals until they are next saved.
+2. Approval levels start as: rep up to 10%, Sales Head up to 20%, Management above. They are edited in Quotation Rules → Config.
+3. Approved, sent and accepted quotes are frozen; "Re-price from the price list" is an explicit action recorded on the quote.
+
+## Phase A as built
+
+- `src/lib/quotation/commercial.js`: billing class (`subscription` | `transaction` | `one_time`), commercial model (SaaS / Transaction / One-time / Hybrid), approval levels.
+- Price list: a "Billed as" column per component; each product shows its commercial model.
+- Engine: `computeLine` / `computeQuote` keep variable lines out of every total; only a contractual minimum is committed; `variableEstimate` is reported separately.
+- Builder: variable lines show "on actual use" and an internal estimate; milestone schedule for one-time charges; approval level on the banner; frozen rates with an explicit re-price.
+- Document: A Fixed recurring · B Variable, billed on actual consumption · C One-time; milestones with amounts; GST on variable charges "on each invoice".
+- Approval: level-based approvers; a reason is required to approve and is stored with approver and date.

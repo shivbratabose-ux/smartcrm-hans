@@ -24,6 +24,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { usagePrice, escalationMonths } from "./slabs.js";
+import { billingClassOf, commercialModelOf } from "./commercial.js";
 import {
   QUOTE_CONFIG, ONE_TIME_MODELS, FLOOR_MODELS,
   PRICING_BANDS, ICAFFE_BAND_FROM, ICAFFE_EDITIONS,
@@ -256,17 +257,34 @@ export function computeLine(line) {
   const grossPerPeriod = Math.max(billedQty * unitPrice, floor);
   // Yearly escalation (usage pricing): year 2 at +x%, year 3 at +x% again…
   const billedMonths = !oneTime && num(line.escalationPct) > 0 ? escalationMonths(effectiveMonths, line.escalationPct) : effectiveMonths;
-  const lineTotal = grossPerPeriod * billedMonths * (1 - discountPct / 100);
+  const fullTotal = grossPerPeriod * billedMonths * (1 - discountPct / 100);
+  const billingClass = billingClassOf(line);
+
+  // Variable (transaction) lines are billed on ACTUAL consumption: the quote
+  // agrees a rate, not volume × rate. Only a contractual minimum is committed.
+  // The expected volume gives an internal estimate (lineEstimate), which is
+  // never part of the quote total, the contract value or the bill.
+  if (billingClass === "transaction") {
+    const committed = floor * billedMonths;
+    return {
+      isOneTime: false, billingClass, isVariable: true,
+      effectiveMonths, billedQty, minQtyApplied: billedQty > qty,
+      grossPerPeriod, committedPerPeriod: floor,
+      lineEstimate: fullTotal,
+      lineTotal: committed, lineOneTime: 0, lineRecurring: committed,
+    };
+  }
 
   return {
-    isOneTime: oneTime,
+    isOneTime: oneTime, billingClass, isVariable: false,
     effectiveMonths,
     billedQty,
     minQtyApplied: billedQty > qty,
-    grossPerPeriod,
-    lineTotal,
-    lineOneTime: oneTime ? lineTotal : 0,
-    lineRecurring: oneTime ? 0 : lineTotal,
+    grossPerPeriod, committedPerPeriod: oneTime ? 0 : grossPerPeriod,
+    lineEstimate: 0,
+    lineTotal: fullTotal,
+    lineOneTime: oneTime ? fullTotal : 0,
+    lineRecurring: oneTime ? 0 : fullTotal,
   };
 }
 
@@ -319,8 +337,15 @@ export function computeQuote(lines = [], header = {}, config = QUOTE_CONFIG) {
     .reduce((s, l) => s + l.lineTotal, 0);
   const alrAnnual = licenceBase * (num(config.alrPctOfLicence) / 100);
 
-  // TCV — workbook basis: Grand Total incl GST (L44 = L43).
+  // TCV — workbook basis: Grand Total incl GST (L44 = L43). Committed only.
   const tcv = grandTotal;
+
+  // Variable (consumption) lines: an internal estimate from the expected
+  // volume, after the overall discount, before GST. Not in any total above.
+  const variableLines = computed.filter((l) => l.isVariable);
+  const variableEstimate = variableLines.reduce((s, l) => s + l.lineEstimate, 0) * (1 - overallDiscountPct / 100);
+  const variableEstimateMonthly = variableLines.reduce((s, l) => s + (l.effectiveMonths > 0 ? l.lineEstimate / l.effectiveMonths : 0), 0) * (1 - overallDiscountPct / 100);
+  const commercialModel = commercialModelOf(computed.map((l) => l.billingClass));
 
   return {
     lines: computed,
@@ -332,6 +357,9 @@ export function computeQuote(lines = [], header = {}, config = QUOTE_CONFIG) {
     grandTotal,
     licenceBase, alrAnnual,
     tcv,
+    committedTotal: taxableBase,
+    variableEstimate, variableEstimateMonthly, variableLineCount: variableLines.length,
+    commercialModel,
   };
 }
 
