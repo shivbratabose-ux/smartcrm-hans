@@ -1,6 +1,9 @@
 // Commercial classification, committed vs variable totals, approval levels and
 // the A / B / C quotation layout (Phase A). Run: node scripts/test-commercial.mjs
-import { billingClassOf, commercialModelOf, productCommercialModel, rowConfigIssues, approvalLevels, maxEffectiveDiscount, requiredApprovalLevel, levelApproverIds, DEFAULT_APPROVAL_LEVELS } from "../src/lib/quotation/commercial.js";
+import { billingClassOf, commercialModelOf, productCommercialModel, rowConfigIssues, approvalLevels, maxEffectiveDiscount, requiredApprovalLevel, levelApproverIds, DEFAULT_APPROVAL_LEVELS, needsHostingChoice, discountForRate, rateAfterDiscount } from "../src/lib/quotation/commercial.js";
+import { buildAgreement } from "../src/lib/quotation/agreements.js";
+import { previewInvoices } from "../src/lib/billing/engine.js";
+import { evaluateDiscountGuardrail } from "../src/lib/quotation/pricingEngine.js";
 import { computeLine, computeQuote } from "../src/lib/quotation/pricingEngine.js";
 import { quoteDocumentHtml } from "../src/lib/quotation/quoteDocument.js";
 import { HANS_CATALOGUE } from "../src/data/quotationMasters.js";
@@ -42,6 +45,33 @@ check("internal estimate of variable revenue", [q.variableEstimate, q.variableEs
 check("quote is hybrid", q.commercialModel.label, "Hybrid");
 check("a subscription-only quote is unchanged", computeQuote([lines[0]], {}, { gstRatePct: 18 }).subtotal, 300000);
 check("overall discount applies to the estimate too", computeQuote([lines[1]], { overallDiscountPct: 10 }, { gstRatePct: 18 }).variableEstimate, 540000);
+
+console.log("\nTransaction quotes: agreed rate, no term, no hosting question");
+check("agreed rate and discount convert both ways", [discountForRate(30, 30), discountForRate(30, 27.5), rateAfterDiscount(30, discountForRate(30, 27.5)), discountForRate(30, 45), discountForRate(0, 5), rateAfterDiscount(185, 10)], [0, 8.3333, 27.5, 0, 0, 166.5]);
+check("a rate below the rep's limit needs approval, in plain numbers", evaluateDiscountGuardrail([{ name: "Air Consol Filing", discountPct: discountForRate(30, 25) }], {}, { maxUserDiscountPct: 10 }).reasons, ["Line discount 16.67% exceeds policy 10%"]);
+check("the list rate, or up to the rep's limit, needs none", [evaluateDiscountGuardrail([{ discountPct: 0 }], {}, { maxUserDiscountPct: 10 }).breached, evaluateDiscountGuardrail([{ discountPct: discountForRate(30, 27) }], {}, { maxUserDiscountPct: 10 }).breached], [false, false]);
+const openLine = computeLine({ pricingModel: "Per-transaction", unitPriceResolved: 30, qty: 0, months: 0, discountPct: 0 });
+check("no quantity and no months: nothing committed, nothing estimated", [openLine.lineTotal, openLine.lineEstimate, openLine.isVariable, openLine.effectiveMonths], [0, 0, true, 0]);
+const openQuote = computeQuote([{ pricingModel: "Per-transaction", unitPriceResolved: 30, qty: 500, months: 0, discountPct: 10 }], {}, { gstRatePct: 18 });
+check("an optional expected volume gives a monthly estimate without any term", [openQuote.grandTotal, openQuote.variableEstimate, openQuote.variableEstimateMonthly], [0, 0, 13500]);
+check("hosting is asked for self-hostable software only", [
+  needsHostingChoice([{ billingClass: "transaction", productId: "AMSAir" }]),
+  needsHostingChoice([{ billingClass: "one_time", productId: "AMSOcean" }, { billingClass: "transaction", productId: "AMSOcean" }]),
+  needsHostingChoice([{ billingClass: "subscription", productId: "OrbisOne" }]),
+  needsHostingChoice([{ billingClass: "transaction", productId: "OrbisOne" }]),
+  needsHostingChoice([{ billingClass: "subscription", productId: "OrbisOne" }, { billingClass: "transaction", productId: "AMSAir" }]),
+  needsHostingChoice([{ billingClass: "subscription", productId: "WiseDox" }], { hansHostedProductIds: ["WiseDox"] }),
+  needsHostingChoice([{ billingClass: "one_time", productId: "AMSOcean" }], { hansHostedProductIds: [] })],
+  [false, false, true, false, true, false, true]);
+const amsQuote = { id: "ams1", quoteNo: "DEL/SQ/0070/2627", version: 1, status: "Accepted", acceptedDate: "2026-12-01", accountId: "accX", hosting: "Hans",
+  items: [{ productCode: "AMS04", name: "Air Consol Filing", pricingModel: "Per-transaction", billingClass: "transaction", unit: "HAWB", qty: 0, months: 0, unitPriceResolved: 30, discountPct: discountForRate(30, 27.5), lineTotal: 0 }],
+  hans: { party: { name: "Excel Worldwide", state: "Delhi" }, hostingAsked: false } };
+const amsAgr = buildAgreement(amsQuote, { priceRows: HANS_CATALOGUE, now: "2026-12-01T00:00:00Z" });
+check("agreement: the agreed rate, open-ended (no end date)", [amsAgr.lines[0].netRate, amsAgr.lines[0].listRate, amsAgr.lines[0].months, amsAgr.lines[0].effectiveTo, amsAgr.endDate, amsAgr.commercialModel.label], [27.5, 30, 0, "", "", "Transaction-Based"]);
+const amsInv = (period, qty) => previewInvoices({ ...amsQuote, agreement: amsAgr }, period, { [`ams1|AMS04|${period}`]: qty }, { config: { gstRatePct: 18, homeState: "Delhi" } })[0];
+check("billed every month on actual volume at the agreed rate, for as long as it runs", [amsInv("2026-12", 400).taxable, amsInv("2028-06", 1000).taxable], [11000, 27500]);
+const amsDoc = text(quoteDocumentHtml(amsQuote, { priceRows: HANS_CATALOGUE, catalog: [{ id: "AMSAir", name: "AMS - Air Consol" }], autoPrint: false }));
+check("quotation: the agreed rate per HAWB on actual use; no hosting or server rows", [amsDoc.includes("Air Consol Filing Per HAWB ₹27.50 On actual use"), amsDoc.includes("Server setup"), amsDoc.includes("Hans-hosted"), amsDoc.includes("One-time charges")], [true, false, false, false]);
 
 console.log("\nApproval levels");
 const cfg = { maxUserDiscountPct: 10 };

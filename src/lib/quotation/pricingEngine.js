@@ -344,7 +344,9 @@ export function computeQuote(lines = [], header = {}, config = QUOTE_CONFIG) {
   // volume, after the overall discount, before GST. Not in any total above.
   const variableLines = computed.filter((l) => l.isVariable);
   const variableEstimate = variableLines.reduce((s, l) => s + l.lineEstimate, 0) * (1 - overallDiscountPct / 100);
-  const variableEstimateMonthly = variableLines.reduce((s, l) => s + (l.effectiveMonths > 0 ? l.lineEstimate / l.effectiveMonths : 0), 0) * (1 - overallDiscountPct / 100);
+  // Per month, from the expected volume. A variable line may have no term
+  // (billed monthly until cancelled), so this does not divide by months.
+  const variableEstimateMonthly = variableLines.reduce((s, l) => s + num(l.grossPerPeriod) * (1 - num(l.discountPct) / 100), 0) * (1 - overallDiscountPct / 100);
   const commercialModel = commercialModelOf(computed.map((l) => l.billingClass));
 
   return {
@@ -377,10 +379,10 @@ export function evaluateDiscountGuardrail(lines = [], header = {}, config = QUOT
   const reasons = [];
   // Ordinary lines: one message for the largest breach (unchanged wording).
   const maxLine = lines.filter(l => capOf(l) === cap).reduce((m, l) => Math.max(m, num(l.discountPct)), 0);
-  if (maxLine > cap) reasons.push(`Line discount ${maxLine}% exceeds policy ${cap}%`);
+  if (maxLine > cap) reasons.push(`Line discount ${+maxLine.toFixed(2)}% exceeds policy ${cap}%`);
   // Lines with a stricter product cap: named, so the approver sees which.
   for (const l of lines) {
-    const d = num(l.discountPct), c = capOf(l);
+    const d = +num(l.discountPct).toFixed(2), c = capOf(l);
     if (c < cap && d > c) reasons.push(c === 0
       ? `${l.name || l.productCode || "Line"}: priced ${d}% below list — any discount needs management approval`
       : `${l.name || l.productCode || "Line"}: discount ${d}% exceeds this product's cap ${c}%`);

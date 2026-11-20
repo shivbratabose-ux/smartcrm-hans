@@ -32,6 +32,8 @@ import { getQuoteTemplate } from "../../data/quoteTemplates.js";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const inr = (n) => "₹" + Math.round(num(n)).toLocaleString("en-IN");
+// A unit rate keeps its paise (₹27.50, ₹2.50); whole rupees print without decimals.
+const inrRate = (n) => { const v = Math.round(num(n) * 100) / 100; return "₹" + v.toLocaleString("en-IN", { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }); };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${m[3]}-${MONTHS[+m[2] - 1]}-${m[1]}` : String(iso || ""); };
 const longDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${+m[3]} ${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][+m[2] - 1]} ${m[1]}` : String(iso || ""); };
@@ -47,15 +49,83 @@ export const awaitingApproval = (q) => {
 };
 
 /** Feature list for a plan: written content, else the price row's own description, else the product's modules. */
-export function featuresOf(row, product) {
+// ── Features of a plan ───────────────────────────────────────────────
+// A plan's description lists what it adds ("Everything in Business, plus CCR,
+// Customs Status Update, …"). The quotation shows the COMPLETE list: the
+// features of the plan it builds on (and of the plan that one builds on), then
+// its own. The "Includes 5 GB storage and 100 WhatsApp messages" sentence is
+// plan data (shown under Your plan), not a feature.
+
+/** Split on a separator, but never inside brackets: "normal EDI (BoE, SB), reports" stays two items. */
+function splitOutsideBrackets(text, isSeparator) {
+  const out = []; let cur = "", depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(" || ch === "[") depth++;
+    if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
+    const len = depth === 0 ? isSeparator(text, i) : 0;
+    if (len) { out.push(cur); cur = ""; i += len - 1; } else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+/** A description sentence into features. */
+export function splitFeatures(text) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return [];
+  const sentences = splitOutsideBrackets(clean, (t, i) => (t[i] === "." && (t[i + 1] === " " || i === t.length - 1) ? (t[i + 1] === " " ? 2 : 1) : 0));
+  const out = [];
+  for (const raw of sentences) {
+    const sentence = raw.trim().replace(/\.$/, "");
+    if (!sentence) continue;
+    // "Import: Bill of Entry job creation, invoice entry, …" is one feature, kept whole.
+    if (/^[A-Z][A-Za-z ]{1,24}:\s/.test(sentence)) { out.push(sentence); continue; }
+    for (const part of splitOutsideBrackets(sentence, (t, i) => (t[i] === ";" ? 1 : 0))) {
+      // Commas, and a closing "and" before a capitalised name ("PGA Auto Compliance and AI assistance").
+      const items = splitOutsideBrackets(part, (t, i) => (t[i] === "," && t[i + 1] === " " ? 2 : t.startsWith(" and ", i) && /[A-Z0-9]/.test(t[i + 5] || "") ? 5 : 0));
+      // A run of short codes ("AWB, BL, CAN, DO") reads better as one feature than as four ticks.
+      const isCode = (x) => /^[A-Z0-9]{2,5}$/.test(x);
+      const cleaned = items.map((it) => it.trim().replace(/^and\s+/i, "")).filter((f) => f.length > 1);
+      for (let i = 0; i < cleaned.length; i++) {
+        if (isCode(cleaned[i]) && isCode(cleaned[i + 1] || "")) {
+          const run = [cleaned[i]];
+          while (isCode(cleaned[i + 1] || "")) run.push(cleaned[++i]);
+          out.push(run.join(", "));
+        } else out.push(cleaned[i]);
+      }
+    }
+  }
+  return out.map((f) => f.charAt(0).toUpperCase() + f.slice(1));
+}
+
+/** The plan a description says it builds on ("Everything in Business, plus …"), or null. */
+function basePlanOf(row, priceRows = []) {
+  const m = /^\s*Everything in (?:the )?(.+?)(?: plan)?,? plus\b/i.exec(String(row?.description || ""));
+  if (!m) return null;
+  const want = m[1].trim().toLowerCase();
+  const siblings = (priceRows || []).filter((r) => r && r.code !== row.code && (row.productId ? r.productId === row.productId : r.module === row.module));
+  return siblings.find((r) => String(r.name || "").toLowerCase() === want)
+    || siblings.find((r) => String(r.name || "").toLowerCase().endsWith(` ${want}`))
+    || siblings.find((r) => String(r.name || "").toLowerCase().includes(want)) || null;
+}
+
+/** Feature list for a plan: written content, else the complete list from its description (with the plans it builds on), else the product's modules. */
+export function featuresOf(row, product, priceRows = [], seen = new Set()) {
   const pc = row && PLAN_CONTENT[row.code];
   if (pc?.features?.length) return pc.features;
-  const desc = String(row?.description || "").replace(/Includes [^.]*\./i, "").trim();
-  const parts = desc.split(/;\s+|,\s+(?=[A-Z0-9])|\.\s+/).map((s) => s.replace(/\.$/, "").trim()).filter((s) => s.length > 2);
-  if (parts.length >= 3) return parts.slice(0, 28);
+  const own = splitFeatures(String(row?.description || "").replace(/Includes [^.]*\.?/gi, "").replace(/^\s*Everything in (?:the )?.+?(?: plan)?,? plus\s+/i, ""));
+  const base = row && !seen.has(row.code) ? basePlanOf(row, priceRows) : null;
+  if (base) {
+    seen.add(row.code);
+    const inherited = featuresOf(base, product, priceRows, seen);
+    const have = new Set(inherited.map((f) => f.toLowerCase()));
+    return [...inherited, ...own.filter((f) => !have.has(f.toLowerCase()))].slice(0, 60);
+  }
+  if (own.length >= 3) return own.slice(0, 60);
   // Product modules as features — not price items (Plan / Add-on / Pricing entries, or ones carrying a ₹ price).
   const mods = (product?.modules || []).filter((m) => !/add-on|plan|pricing/i.test(m.type || "") && !/₹/.test(m.desc || "")).map((m) => m.name).filter(Boolean);
-  return mods.slice(0, 28);
+  return mods.slice(0, 60);
 }
 
 /** Everything the page needs, worked out from the quote (also what the tests check). */
@@ -125,7 +195,7 @@ export function quoteDocModel(quote, opts = {}) {
     const d = String(mainRow?.description || "");
     const gb = /(\d+)\s*GB document storage/i.exec(d); if (gb) plan.push(["Included storage", `${gb[1]} GB, shared by all users of your company`]);
     const wa = /(\d+)\s*WhatsApp messages/i.exec(d); if (wa) plan.push(["WhatsApp messages included", `${wa[1]} messages a month, shared by all users of your company`]);
-    if (quote.hosting) plan.push(["Hosting", HOSTING_LABEL[quote.hosting] || quote.hosting]);
+    if (quote.hosting && h.hostingAsked !== false) plan.push(["Hosting", HOSTING_LABEL[quote.hosting] || quote.hosting]);
   }
 
   const template = product ? getQuoteTemplate(product.id) : null;
@@ -146,7 +216,7 @@ export function quoteDocModel(quote, opts = {}) {
     validUntil,
     to: { contact: h.billing?.billingContactName || quote.billingContactName || "", company: customer, address: String(h.party?.address || quote.billingAddressSnapshot || "").split(/\n|,\s*/).map((s) => s.trim()).filter(Boolean) },
     about, plan,
-    features: main ? featuresOf(mainRow, product) : [],
+    features: main ? featuresOf(mainRow, product, priceRows) : [],
     featureNote: (main && PLAN_CONTENT[main.code]?.featureNote) || "",
     oneTime, subs, usage, pools: poolVolumes(quote.items || [], rowOf),
     totals: {
@@ -175,7 +245,9 @@ const CSS = (m) => `
     @bottom-left { content: "${String(m.company.name).replace(/"/g, "")}${m.company.cin ? ` · CIN ${String(m.company.cin).replace(/"/g, "")}` : ""} · Confidential"; font: 7pt 'Segoe UI', Arial, sans-serif; color: #475569; }
     @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 7pt 'Segoe UI', Arial, sans-serif; color: #475569; } }
   * { box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #111827; font-size: 9.6pt; line-height: 1.38; margin: 0; padding: 18px 22px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  :root { color-scheme: light; }
+  html { background: #fff; }
+  body { background: #fff; font-family: 'Segoe UI', Arial, sans-serif; color: #111827; font-size: 9.6pt; line-height: 1.38; margin: 0; padding: 18px 22px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   @media print { body { padding: 0; } .noprint { display: none !important; } }
   .lh { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1F2F6B; padding-bottom: 6px; }
   .lh .co { font-size: 12.5pt; font-weight: 800; color: #1F2F6B; letter-spacing: .2px; }
@@ -187,7 +259,7 @@ const CSS = (m) => `
   p { margin: 5px 0; }
   table { border-collapse: collapse; width: 100%; }
   .kv td { border-bottom: 1px solid #CBD5E1; padding: 3px 4px; vertical-align: top; } .kv td:first-child { width: 46%; font-weight: 700; color: #1F2F6B; }
-  .feat { columns: 1; margin: 4px 0 0; padding: 0; list-style: none; } .feat li { padding: 1.5px 0 1.5px 22px; position: relative; break-inside: avoid; }
+  .feat { columns: 1; margin: 4px 0 0; padding: 0; list-style: none; } .feat.two { columns: 2; column-gap: 28px; } .feat li { padding: 1.5px 0 1.5px 22px; position: relative; break-inside: avoid; }
   .feat li::before { content: "✓"; color: #3DAE49; font-weight: 800; position: absolute; left: 6px; }
   .pr th { background: #1F2F6B; color: #fff; font-size: 9pt; text-align: left; padding: 4px 6px; } .pr th.r, .pr td.r { text-align: right; }
   .pr td { border-bottom: 1px solid #CBD5E1; padding: 4px 6px; vertical-align: top; }
@@ -210,19 +282,20 @@ export function quoteDocumentHtml(quote, opts = {}) {
   let sec = 0; const H = (title) => `<h2>${++sec}. ${esc(title)}</h2>`;
   const D = m.showDiscount;
   const cols = D ? 6 : 5;
-  const priceRow = (n, l) => `<tr><td>${n}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${inr(l.rate)}</td>${D ? `<td class="r">${l.discountPct ? `${l.discountPct}%` : "—"}</td>` : ""}<td class="r">${l.qty || ""}</td><td class="r">${inr(l.amount)}</td></tr>`;
+  const priceRow = (n, l) => `<tr><td>${n}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${inrRate(l.rate)}</td>${D ? `<td class="r">${l.discountPct ? `${l.discountPct}%` : "—"}</td>` : ""}<td class="r">${l.qty || ""}</td><td class="r">${inr(l.amount)}</td></tr>`;
   const noteRow = (n, text) => `<tr><td>${n}</td><td>${esc(text)}</td><td>One time</td><td></td>${D ? "<td></td>" : ""}<td></td><td></td></tr>`;
   const totRow = (label, value, cls = "tot") => `<tr class="${cls}"><td></td><td colspan="${cols - 1}">${esc(label)}</td><td class="r">${value}</td></tr>`;
   let n = 0;
   const hasCode = (code) => (quote.items || []).some((l) => l.productCode === code);
 
-  const hansHosted = m.hosted && quote.hosting === "Hans";
+  // "Server setup: not applicable" rows only where hosting was a real choice.
+  const hansHosted = m.hosted && quote.hosting === "Hans" && quote.hans?.hostingAsked !== false;
   const minimums = m.usage.filter((l) => l.minimum > 0);
   const hasFixed = m.subs.length > 0 || minimums.length > 0;
   const hasOneTimeSec = m.oneTime.length > 0 || hansHosted;
   let letter = 0; const L = () => String.fromCharCode(65 + letter++);
   const secRow = (title) => `<tr class="sec"><td>${L()}</td><td colspan="${cols}">${esc(title)}</td></tr>`;
-  const dCell = (l) => (D ? `<td class="r">${l.discountPct ? `${l.discountPct}%` : "—"}</td>` : "");
+  const dCell = (l) => (D ? `<td class="r">${l.discountPct ? `${+Number(l.discountPct).toFixed(2)}%` : "—"}</td>` : "");
   const onUse = '<td class="r" colspan="2" style="color:#475569">On actual use</td>';
 
   // B. Variable charges: the agreed rate and unit only. Never volume × rate.
@@ -236,10 +309,10 @@ export function quoteDocumentHtml(quote, opts = {}) {
     const notes = extra.length ? `<tr><td></td><td colspan="${cols}" style="font-size:8.4pt;color:#475569;padding-top:0">${extra.map(esc).join("<br>")}</td></tr>` : "";
     const shownRate = row && Number(row.packQty) > 0 ? Number(row.listPrice ?? l.listRate) : l.listRate;
     if (l.slabs && l.slabs.length) {
-      return `<tr><td>${++n}</td><td colspan="${cols}"><b>${esc(l.name)}</b>, ${esc(l.basis.replace(/^Per /, "per "))}: rate by the ${row?.slabPeriod === "year" ? "year's" : "month's"} volume${row?.slabMode === "graduated" ? " (each band at its own rate)" : " (the whole month is billed at its slab's rate)"}${D && l.discountPct ? `, less ${l.discountPct}% discount` : ""}</td></tr>`
-        + l.slabs.map((sl) => `<tr><td></td><td style="padding-left:18px">${esc(sl.label)}</td><td>${esc(l.basis)}</td><td class="r">${sl.rate != null ? inr(fx(sl.rate)) : "On request"}</td>${D ? "<td></td>" : ""}${onUse}</tr>`).join("") + notes;
+      return `<tr><td>${++n}</td><td colspan="${cols}"><b>${esc(l.name)}</b>, ${esc(l.basis.replace(/^Per /, "per "))}: rate by the ${row?.slabPeriod === "year" ? "year's" : "month's"} volume${row?.slabMode === "graduated" ? " (each band at its own rate)" : " (the whole month is billed at its slab's rate)"}${D && l.discountPct ? `, less ${+Number(l.discountPct).toFixed(2)}% discount` : ""}</td></tr>`
+        + l.slabs.map((sl) => `<tr><td></td><td style="padding-left:18px">${esc(sl.label)}</td><td>${esc(l.basis)}</td><td class="r">${sl.rate != null ? inrRate(fx(sl.rate)) : "On request"}</td>${D ? "<td></td>" : ""}${onUse}</tr>`).join("") + notes;
     }
-    return `<tr><td>${++n}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}${row && Number(row.packQty) > 0 ? " beyond the pack" : ""}</td><td class="r">${l.included ? "Included" : shownRate ? inr(fx(shownRate)) : "On request"}</td>${dCell(l)}${l.included ? '<td colspan="2"></td>' : onUse}</tr>${notes}`;
+    return `<tr><td>${++n}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}${row && Number(row.packQty) > 0 ? " beyond the pack" : ""}</td><td class="r">${l.included ? "Included" : shownRate ? inrRate(fx(shownRate)) : "On request"}</td>${dCell(l)}${l.included ? '<td colspan="2"></td>' : onUse}</tr>${notes}`;
   });
 
   const fixedRows = hasFixed ? [
@@ -275,7 +348,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
   const contactLine = [who.phone, who.email].filter(Boolean).join(" · ");
   const qr = opts.acceptUrl && !m.pending ? `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(opts.acceptUrl)}` : "";
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(quote.quoteNo || "Quotation")}</title><style>${CSS(m)}</style></head><body>
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light"><title>${esc(quote.quoteNo || "Quotation")}</title><style>${CSS(m)}</style></head><body>
     <div class="lh">
       <div>
         <div class="co">${esc(String(c.name).toUpperCase())}</div>
@@ -302,7 +375,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
 
     ${m.about.length ? H(`About ${m.brand}`) + m.about.map((p) => `<p>${esc(p)}</p>`).join("") : ""}
     ${m.plan.length ? H("Your plan") + kv(m.plan) : ""}
-    ${m.features.length ? H("Features included") + `<ul class="feat">${m.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>${m.featureNote ? `<div class="note">${esc(m.featureNote)}</div>` : ""}` : ""}
+    ${m.features.length ? H("Features included") + `<ul class="feat${m.features.length > 10 ? " two" : ""}">${m.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>${m.featureNote ? `<div class="note">${esc(m.featureNote)}</div>` : ""}` : ""}
     ${H("Prices")}${prices}
     ${m.notes.length ? H("Commercial notes") + `<ol class="n">${m.notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>` : ""}
     ${H("Implementation, training and support")}${kv(m.implementation)}
