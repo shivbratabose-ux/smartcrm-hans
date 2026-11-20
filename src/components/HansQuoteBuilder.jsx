@@ -36,6 +36,7 @@ import { toLocalISODate } from "../utils/helpers";
 import { allocateDocNo } from "../lib/db";
 import { newQuoteId, nextQuoteNo, officeOf } from "../lib/quotation/docNumbers";
 import { HOSTING_OPTIONS, HOSTING_LABEL } from "../lib/quotation/handover";
+import { quoteProductOptions, rowSections, productsFromOpp, productsFromLines, productIdOfRow, lineForRow, chipLabel, rowPriceHint } from "../lib/quotation/quoteProducts";
 
 const today = () => toLocalISODate();
 const inr = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
@@ -141,6 +142,10 @@ export default function HansQuoteBuilder({
           frozenRate: Number.isFinite(Number(it.unitPriceResolved)) ? Number(it.unitPriceResolved) : undefined }))
       : [{ ...BLANK_LINE }]
   );
+  // Product-led building: the products being quoted. The screen shows only
+  // their items (fixed recurring / variable / one-time) and the controls they need.
+  const productOptions = useMemo(() => quoteProductOptions(catalogue, catalog), [catalogue, catalog]);
+  const [productIds, setProductIds] = useState(() => productsFromLines(editQuote?.items || [], (c) => catByCode[c], catalog));
   // A quote that was approved, sent or accepted is a commercial record: its
   // rates do not follow the price list. Re-pricing is an explicit, logged act.
   const startsFrozen = !!editQuote && (editQuote.approvalStatus === "Approved" || ["Sent", "Under Review", "Accepted"].includes(editQuote.status) || !!editQuote.isFinal);
@@ -159,6 +164,7 @@ export default function HansQuoteBuilder({
   const onPickOpp = (id) => {
     setOppId(id);
     const opp = opps.find(o => o.id === id);
+    if (opp) setProductIds(cur => (cur.length ? cur : productsFromOpp(opp, productOptions)));
     if (!opp) { setParty({ name: "", address: "", state: "", gstin: "", country: "" }); setBilling({ ...blankBilling }); return; }
     const acc = accounts.find(a => a.id === opp.accountId);
     const lead = leads.find(l => l.id === opp.sourceLeadId || (Array.isArray(opp.sourceLeadIds) && opp.sourceLeadIds.includes(l.id)));
@@ -215,6 +221,8 @@ export default function HansQuoteBuilder({
     if (draft.notes) setNotes(draft.notes);
     if (Array.isArray(draft.lines) && draft.lines.length) {
       setLines(draft.lines.map(l => ({ productCode: l.productCode, qty: Number(l.qty) || 1, months: Number(l.months) || 12, discountPct: Number(l.discountPct) || 0 })));
+      const fromLines = productsFromLines(draft.lines, (c) => catByCode[c], catalog);
+      setProductIds(cur => [...new Set([...cur, ...fromLines])]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft]);
@@ -258,7 +266,18 @@ export default function HansQuoteBuilder({
   };
 
   // ── Line helpers ────────────────────────────────────────────────────
-  const addLine = () => setLines(ls => [...ls, { ...BLANK_LINE }]);
+  // An item button adds the item (or removes it when it is already on the quote).
+  const toggleRow = (row) => setLines(ls => ls.some(l => l.productCode === row.code)
+    ? ls.filter(l => l.productCode !== row.code)
+    : [...ls.filter(l => catByCode[l.productCode]), lineForRow(row)]);
+  const toggleProduct = (id) => {
+    if (!productIds.includes(id)) { setProductIds(ids => [...ids, id]); return; }
+    const theirs = lines.filter(l => catByCode[l.productCode] && productIdOfRow(catByCode[l.productCode], catalog) === id);
+    const name = productOptions.find(o => o.id === id)?.name || id;
+    if (theirs.length && !window.confirm(`Remove ${name} and its ${theirs.length} item${theirs.length === 1 ? "" : "s"} from this quote?`)) return;
+    setLines(ls => ls.filter(l => !theirs.includes(l)));
+    setProductIds(ids => ids.filter(x => x !== id));
+  };
   const removeLine = (i) => setLines(ls => ls.filter((_, idx) => idx !== i));
   // Changing the product drops the frozen rate: a new product prices from the price list.
   const updateLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch, ...("productCode" in patch && patch.productCode !== l.productCode ? { frozenRate: undefined } : {}) } : l));
@@ -550,6 +569,106 @@ export default function HansQuoteBuilder({
     </div>
   );
 
+  // Column headings for a set of lines (an all-usage set agrees rates, not quantities).
+  const renderHeader = (ls) => (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, padding: "7px 10px", background: "var(--s2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--text3)" }}>
+      <span>Product<Req /></span>
+      {ls.length > 0 && ls.every(l => l.isVariable)
+        ? <span style={{ gridColumn: "span 2", textAlign: "right" }}>Agreed rate</span>
+        : <><span style={{ textAlign: "right" }}>{ls.some(l => l.isVariable) ? "Qty / rate" : "Qty"}</span><span style={{ textAlign: "right" }}>Months</span></>}
+      <span style={{ textAlign: "right" }}>Disc%</span><span style={{ textAlign: "right" }}>{ls.length > 0 && ls.every(l => l.isVariable) ? "Billing" : "Line total"}</span><span />
+    </div>
+  );
+  // One quote line. pickRows: the items its product offers (null = every item).
+  const renderLine = (l, i, pickRows) => {
+    const oneTime = isOneTimeModel(l.pricingModel);
+    return (
+      <div key={`line-${i}`} style={{ padding: "7px 10px", borderTop: "1px solid var(--border)", background: l.missingRate ? "#FEF2F2" : "transparent" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, alignItems: "center" }}>
+          <select value={l.productCode} onChange={e => {
+            // A product with a minimum commitment starts at that minimum.
+            const min = Number(catByCode[e.target.value]?.minQty) || 0;
+            const isVar = billingClassOf(catByCode[e.target.value] || {}) === "transaction";
+            updateLine(i, { productCode: e.target.value, rateText: undefined, ...(isVar ? { qty: 0 } : (Number(l.qty) || 0) < 1 ? { qty: Math.max(1, min) } : min > (Number(l.qty) || 0) ? { qty: min } : {}) });
+          }} style={{ ...fieldStyle, cursor: "pointer" }}>
+            <option value="">— Pick product —</option>
+            {pickRows ? pickRows.map(p => <option key={p.code} value={p.code}>{p.name}</option>) : <>
+            {productGroups.general.length > 0 && (
+              <optgroup label="Catalogue">
+                {productGroups.general.map(p => <option key={p.code} value={p.code}>{p.code} · {p.name}</option>)}
+              </optgroup>
+            )}
+            {productGroups.cards.map(([label, items]) => (
+              <optgroup key={label} label={`Rate card · ${label}`}>
+                {items.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
+              </optgroup>
+            ))}
+            </>}
+          </select>
+          {l.isVariable ? (
+            l.slabRates
+              ? <span style={{ gridColumn: "span 2", fontSize: 11, color: "#4338CA", fontWeight: 600, textAlign: "right" }} title="Priced by slab: give a discount % to agree lower slab rates">slab rates</span>
+              : <input type="number" min={0} step="any" style={{ ...fieldStyle, gridColumn: "span 2", textAlign: "right", borderColor: "#A5B4FC" }}
+                  title={`Agreed rate per ${l.unit || "unit"}: the list rate (${inr2(l.unitPriceResolved)}) or a lower one`}
+                  placeholder="Agreed rate"
+                  value={l.rateText ?? rateAfterDiscount(l.unitPriceResolved, l.discountPct)}
+                  onChange={e => updateLine(i, { rateText: e.target.value, discountPct: e.target.value === "" ? 0 : discountForRate(l.unitPriceResolved, e.target.value) })}
+                  onBlur={() => updateLine(i, { rateText: undefined })} />
+          ) : (<>
+          <input type="number" min={l.minQty || 0} value={l.qty} onChange={e => updateLine(i, { qty: Math.max(0, Number(e.target.value) || 0) })}
+            onBlur={() => { if (l.minQty && (Number(l.qty) || 0) < l.minQty) updateLine(i, { qty: l.minQty }); }}
+            title={l.isVariable ? `Expected ${String(l.unit || "unit").toLowerCase()}s per month: an internal estimate only. The customer is billed on actual use.` : l.minQty ? `Minimum ${l.minQty} ${String(l.unit || "unit").toLowerCase()}s` : ""}
+            style={{ ...fieldStyle, textAlign: "right", border: (Number(l.qty) || 0) < (l.minQty || 0) ? "1.5px solid #DC2626" : fieldStyle.border }} />
+          <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })}
+            onBlur={() => { if (!oneTime && !(Number(l.months) >= 1)) updateLine(i, { months: 1 }); }} style={{ ...fieldStyle, textAlign: "right", opacity: oneTime ? 0.5 : 1 }} />
+          </>)}
+          <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: pct0to100(e.target.value), rateText: undefined })} title={l.maxDiscountPct === 0 ? "Any discount on this product needs management approval" : ""}
+            style={{ ...fieldStyle, textAlign: "right", color: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? "#DC2626" : "var(--text)", fontWeight: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? 700 : 400 }} />
+          <span style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, fontFamily: "'Outfit',sans-serif" }}>
+            {l._empty ? "—" : l.isVariable
+              ? <span title="Billed on actual consumption: not part of the quote total" style={{ fontSize: 11, fontWeight: 600, color: "#4338CA" }}>{l.lineTotal > 0 ? `min ${inr(l.lineTotal)}` : "on actual use"}</span>
+              : inr(l.lineTotal)}
+          </span>
+          <button className="icon-btn" onClick={() => removeLine(i)} title="Remove"><Trash2 size={13} /></button>
+        </div>
+        {!l._empty && (
+          <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <span>{l.module}</span>·<span>{l.pricingModel}</span>·<span style={{ fontWeight: 700, color: l.isVariable ? "#4338CA" : undefined }}>{billingClassLabel(l.billingClass)}</span>·
+            <span>{l.missingRate ? <span style={{ color: "#DC2626", fontWeight: 700 }}>Enter rate in master</span> : l.isVariable ? null : `unit ${inr2(l.unitPriceResolved)}/${l.unit}`}</span>
+            {l.minMonthFloor ? <span>· floor {inr(l.minMonthFloor)}/mo</span> : null}
+            {l.isVariable ? <span style={{ color: "#4338CA", display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              · {l.slabRates
+                ? <>agreed slabs: {l.slabRates.map(sl => `${sl.label} ${inr2(rateAfterDiscount(sl.rate, l.discountPct))}`).join(" · ")}</>
+                : <>agreed <b>{inr2(rateAfterDiscount(l.unitPriceResolved, l.discountPct))}</b> per {l.unit}{Number(l.discountPct) > 0 ? ` (list ${inr2(l.unitPriceResolved)}, ${+Number(l.discountPct).toFixed(2)}% off)` : " (list rate)"}</>}
+              · billed monthly on actual use
+              <span style={{ color: "var(--text3)", display: "inline-flex", gap: 4, alignItems: "center" }}>· expected per month (optional, internal)
+                <input type="number" min={0} value={l.qty || ""} placeholder="—" onChange={e => updateLine(i, { qty: +e.target.value || 0 })} style={{ width: 70, fontSize: 10.5, padding: "1px 5px", border: "1px solid var(--border)", borderRadius: 5, textAlign: "right" }} />
+                {Number(l.qty) > 0 ? `≈ ${inr(l.grossPerPeriod * (1 - (Number(l.discountPct) || 0) / 100))}/mo, not in the total` : ""}
+              </span>
+              {!l.variableOpen ? <span style={{ color: "var(--text3)", display: "inline-flex", gap: 4, alignItems: "center" }}>· minimum {inr(l.committedPerPeriod)}/mo committed for
+                <input type="number" min={1} value={l.months || 12} onChange={e => updateLine(i, { months: +e.target.value || 1 })} style={{ width: 46, fontSize: 10.5, padding: "1px 5px", border: "1px solid var(--border)", borderRadius: 5, textAlign: "right" }} /> months</span> : null}
+            </span> : null}
+            {l.agreedNo ? <span style={{ color: "#047857", fontWeight: 600 }}>· customer's agreed rate ({l.agreedNo}){Math.abs((l.liveRate || 0) - l.unitPriceResolved) > 0.005 ? `; price list ${inr2(l.liveRate)}` : ""}</span> : null}
+            {l.rateFrozen ? <span style={{ color: "#B45309", fontWeight: 600 }}>· agreed rate kept{Math.abs((l.liveRate || 0) - l.unitPriceResolved) > 0.005 ? ` (price list now ${inr2(l.liveRate)})` : ""}</span> : null}
+            {l.minQty ? <span style={{ color: (Number(l.qty) || 0) < l.minQty ? "#DC2626" : undefined, fontWeight: (Number(l.qty) || 0) < l.minQty ? 700 : 400 }}>· minimum {l.minQty} {String(l.unit || "unit").toLowerCase()}s{(Number(l.qty) || 0) < l.minQty ? ` — billed for ${l.minQty}` : ""}</span> : null}
+            {l.maxDiscountPct === 0 ? <span>· list price; discount needs approval</span> : null}
+            {l.rateCardLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.rateCardLabel}{l.tierLabel ? ` · tier ${l.tierLabel}` : ""}</span> : l.tierLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.tierLabel}</span> : null}
+          </div>
+        )}
+      </div>
+    );
+  };
+  const lineEntries = pricedLines.map((l, i) => ({ l, i })).filter(e => !e.l._empty);
+  const productPanels = [
+    ...productIds.map(id => productOptions.find(o => o.id === id)).filter(Boolean).map(o => ({
+      id: o.id, name: o.name, model: o.model, rows: o.rows, sections: rowSections(o.rows),
+      lines: lineEntries.filter(e => productIdOfRow(catByCode[e.l.productCode], catalog) === o.id),
+    })),
+  ];
+  // Lines whose product is not among the picked ones (older quotes): shown, never hidden.
+  const strays = lineEntries.filter(e => !productIds.includes(productIdOfRow(catByCode[e.l.productCode], catalog)));
+  if (strays.length) productPanels.push({ id: "_lines", name: "Other items on this quote", model: null, rows: null, sections: [], lines: strays });
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: 20 }} onClick={onClose}>
       <div style={{ width: 1080, maxWidth: "98vw", background: "var(--surface)", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", margin: "auto" }} onClick={e => e.stopPropagation()}>
@@ -662,6 +781,18 @@ export default function HansQuoteBuilder({
                 )}
               </div>
 
+              {/* Products on this quote */}
+              <div style={{ margin: "4px 0 10px" }}>
+                <div style={{ ...lbl, marginBottom: 6 }}>Products on this quote<Req /></div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {productOptions.map(o => {
+                    const on = productIds.includes(o.id);
+                    return <button key={o.id} type="button" className={`btn btn-xs ${on ? "btn-primary" : "btn-sec"}`} title={o.model?.label || ""} onClick={() => toggleProduct(o.id)}>{on && <Check size={11} />}{o.name}</button>;
+                  })}
+                </div>
+                {productIds.length === 0 && <div style={{ fontSize: 11.5, color: "var(--text3)", marginTop: 6 }}>Pick the product, or products, you are quoting. The screen then shows only their plans, services and charges{oppId ? "" : " (picking an opportunity fills in the products on the deal)"}.</div>}
+              </div>
+
               {/* Plan presets */}
               {picked.length > 0 && !hasSubscription && (
                 <div style={{ fontSize: 11.5, color: "#4338CA", background: "#EEF2FF", borderRadius: 8, padding: "6px 10px", margin: "6px 0 10px" }}>
@@ -669,12 +800,14 @@ export default function HansQuoteBuilder({
                   {!hostingNeeded ? " Hosted by Hans Infomatic." : ""}
                 </div>
               )}
-              <div style={{ display: picked.length > 0 && !hasSubscription && !hostingNeeded ? "none" : "flex", gap: 8, alignItems: "center", margin: "6px 0 10px", flexWrap: "wrap" }}>
-                {(picked.length === 0 || hasSubscription) && <>
+              <div style={{ display: hasSubscription || (picked.length > 0 && hostingNeeded) ? "flex" : "none", gap: 8, alignItems: "center", margin: "6px 0 10px", flexWrap: "wrap" }}>
+                {hasSubscription && <>
+                {productIds.includes("iCAFFE") && <>
                 <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>iCAFFE plan:</span>
                 <button className={`btn btn-xs ${selectedPlan === "saasMonthly" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("saasMonthly")}>{selectedPlan === "saasMonthly" && <Check size={11} />}SaaS Monthly (12mo)</button>
                 <button className={`btn btn-xs ${selectedPlan === "saasAdvance" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("saasAdvance")}>{selectedPlan === "saasAdvance" && <Check size={11} />}SaaS Advance (12mo, 10% prepay)</button>
                 <button className={`btn btn-xs ${selectedPlan === "otpArr" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("otpArr")}>{selectedPlan === "otpArr" && <Check size={11} />}OTP+ARR (42mo, 45% disc)</button>
+                </>}
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
                   <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>Billed</span>
                   <select value={billingFrequency} onChange={e => setBillingFrequency(e.target.value)} style={{ fontSize: 11, padding: "3px 6px", borderRadius: 6, border: "1px solid var(--border)" }}>
@@ -682,7 +815,7 @@ export default function HansQuoteBuilder({
                   </select>
                 </span>
                 </>}
-                {hostingNeeded && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
+                {picked.length > 0 && hostingNeeded && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
                   <span style={{ fontSize: 11, color: hosting ? "var(--text3)" : "#B45309", fontWeight: 600 }}>Hosting<Req /></span>
                   <select value={hosting} onChange={e => setHosting(e.target.value)} style={{ fontSize: 11, padding: "3px 6px", borderRadius: 6, border: `1px solid ${hosting ? "var(--border)" : "#F59E0B"}` }}>
                     <option value="">— Select —</option>
@@ -691,93 +824,37 @@ export default function HansQuoteBuilder({
                 </span>}
               </div>
 
-              {/* Line grid */}
-              <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, padding: "7px 10px", background: "var(--s2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--text3)" }}>
-                  <span>Product<Req /></span>
-                  {picked.length > 0 && picked.every(l => l.isVariable)
-                    ? <span style={{ gridColumn: "span 2", textAlign: "right" }}>Agreed rate</span>
-                    : <><span style={{ textAlign: "right" }}>{picked.some(l => l.isVariable) ? "Qty / rate" : "Qty"}</span><span style={{ textAlign: "right" }}>Months</span></>}
-                  <span style={{ textAlign: "right" }}>Disc%</span><span style={{ textAlign: "right" }}>{picked.length > 0 && picked.every(l => l.isVariable) ? "Billing" : "Line total"}</span><span />
-                </div>
-                {pricedLines.map((l, i) => {
-                  const oneTime = isOneTimeModel(l.pricingModel);
-                  return (
-                    <div key={i} style={{ padding: "7px 10px", borderTop: "1px solid var(--border)", background: l.missingRate ? "#FEF2F2" : "transparent" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, alignItems: "center" }}>
-                        <select value={l.productCode} onChange={e => {
-                          // A product with a minimum commitment starts at that minimum.
-                          const min = Number(catByCode[e.target.value]?.minQty) || 0;
-                          const isVar = billingClassOf(catByCode[e.target.value] || {}) === "transaction";
-                          updateLine(i, { productCode: e.target.value, rateText: undefined, ...(isVar ? { qty: 0 } : (Number(l.qty) || 0) < 1 ? { qty: Math.max(1, min) } : min > (Number(l.qty) || 0) ? { qty: min } : {}) });
-                        }} style={{ ...fieldStyle, cursor: "pointer" }}>
-                          <option value="">— Pick product —</option>
-                          {productGroups.general.length > 0 && (
-                            <optgroup label="Catalogue">
-                              {productGroups.general.map(p => <option key={p.code} value={p.code}>{p.code} · {p.name}</option>)}
-                            </optgroup>
-                          )}
-                          {productGroups.cards.map(([label, items]) => (
-                            <optgroup key={label} label={`Rate card · ${label}`}>
-                              {items.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
-                            </optgroup>
-                          ))}
-                        </select>
-                        {l.isVariable ? (
-                          l.slabRates
-                            ? <span style={{ gridColumn: "span 2", fontSize: 11, color: "#4338CA", fontWeight: 600, textAlign: "right" }} title="Priced by slab: give a discount % to agree lower slab rates">slab rates</span>
-                            : <input type="number" min={0} step="any" style={{ ...fieldStyle, gridColumn: "span 2", textAlign: "right", borderColor: "#A5B4FC" }}
-                                title={`Agreed rate per ${l.unit || "unit"}: the list rate (${inr2(l.unitPriceResolved)}) or a lower one`}
-                                placeholder="Agreed rate"
-                                value={l.rateText ?? rateAfterDiscount(l.unitPriceResolved, l.discountPct)}
-                                onChange={e => updateLine(i, { rateText: e.target.value, discountPct: e.target.value === "" ? 0 : discountForRate(l.unitPriceResolved, e.target.value) })}
-                                onBlur={() => updateLine(i, { rateText: undefined })} />
-                        ) : (<>
-                        <input type="number" min={l.minQty || 0} value={l.qty} onChange={e => updateLine(i, { qty: Math.max(0, Number(e.target.value) || 0) })}
-                          onBlur={() => { if (l.minQty && (Number(l.qty) || 0) < l.minQty) updateLine(i, { qty: l.minQty }); }}
-                          title={l.isVariable ? `Expected ${String(l.unit || "unit").toLowerCase()}s per month: an internal estimate only. The customer is billed on actual use.` : l.minQty ? `Minimum ${l.minQty} ${String(l.unit || "unit").toLowerCase()}s` : ""}
-                          style={{ ...fieldStyle, textAlign: "right", border: (Number(l.qty) || 0) < (l.minQty || 0) ? "1.5px solid #DC2626" : fieldStyle.border }} />
-                        <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })}
-                          onBlur={() => { if (!oneTime && !(Number(l.months) >= 1)) updateLine(i, { months: 1 }); }} style={{ ...fieldStyle, textAlign: "right", opacity: oneTime ? 0.5 : 1 }} />
-                        </>)}
-                        <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: pct0to100(e.target.value), rateText: undefined })} title={l.maxDiscountPct === 0 ? "Any discount on this product needs management approval" : ""}
-                          style={{ ...fieldStyle, textAlign: "right", color: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? "#DC2626" : "var(--text)", fontWeight: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? 700 : 400 }} />
-                        <span style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, fontFamily: "'Outfit',sans-serif" }}>
-                          {l._empty ? "—" : l.isVariable
-                            ? <span title="Billed on actual consumption: not part of the quote total" style={{ fontSize: 11, fontWeight: 600, color: "#4338CA" }}>{l.lineTotal > 0 ? `min ${inr(l.lineTotal)}` : "on actual use"}</span>
-                            : inr(l.lineTotal)}
-                        </span>
-                        <button className="icon-btn" onClick={() => removeLine(i)} title="Remove"><Trash2 size={13} /></button>
-                      </div>
-                      {!l._empty && (
-                        <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <span>{l.module}</span>·<span>{l.pricingModel}</span>·<span style={{ fontWeight: 700, color: l.isVariable ? "#4338CA" : undefined }}>{billingClassLabel(l.billingClass)}</span>·
-                          <span>{l.missingRate ? <span style={{ color: "#DC2626", fontWeight: 700 }}>Enter rate in master</span> : l.isVariable ? null : `unit ${inr2(l.unitPriceResolved)}/${l.unit}`}</span>
-                          {l.minMonthFloor ? <span>· floor {inr(l.minMonthFloor)}/mo</span> : null}
-                          {l.isVariable ? <span style={{ color: "#4338CA", display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                            · {l.slabRates
-                              ? <>agreed slabs: {l.slabRates.map(sl => `${sl.label} ${inr2(rateAfterDiscount(sl.rate, l.discountPct))}`).join(" · ")}</>
-                              : <>agreed <b>{inr2(rateAfterDiscount(l.unitPriceResolved, l.discountPct))}</b> per {l.unit}{Number(l.discountPct) > 0 ? ` (list ${inr2(l.unitPriceResolved)}, ${+Number(l.discountPct).toFixed(2)}% off)` : " (list rate)"}</>}
-                            · billed monthly on actual use
-                            <span style={{ color: "var(--text3)", display: "inline-flex", gap: 4, alignItems: "center" }}>· expected per month (optional, internal)
-                              <input type="number" min={0} value={l.qty || ""} placeholder="—" onChange={e => updateLine(i, { qty: +e.target.value || 0 })} style={{ width: 70, fontSize: 10.5, padding: "1px 5px", border: "1px solid var(--border)", borderRadius: 5, textAlign: "right" }} />
-                              {Number(l.qty) > 0 ? `≈ ${inr(l.grossPerPeriod * (1 - (Number(l.discountPct) || 0) / 100))}/mo, not in the total` : ""}
-                            </span>
-                            {!l.variableOpen ? <span style={{ color: "var(--text3)", display: "inline-flex", gap: 4, alignItems: "center" }}>· minimum {inr(l.committedPerPeriod)}/mo committed for
-                              <input type="number" min={1} value={l.months || 12} onChange={e => updateLine(i, { months: +e.target.value || 1 })} style={{ width: 46, fontSize: 10.5, padding: "1px 5px", border: "1px solid var(--border)", borderRadius: 5, textAlign: "right" }} /> months</span> : null}
-                          </span> : null}
-                          {l.agreedNo ? <span style={{ color: "#047857", fontWeight: 600 }}>· customer's agreed rate ({l.agreedNo}){Math.abs((l.liveRate || 0) - l.unitPriceResolved) > 0.005 ? `; price list ${inr2(l.liveRate)}` : ""}</span> : null}
-                          {l.rateFrozen ? <span style={{ color: "#B45309", fontWeight: 600 }}>· agreed rate kept{Math.abs((l.liveRate || 0) - l.unitPriceResolved) > 0.005 ? ` (price list now ${inr2(l.liveRate)})` : ""}</span> : null}
-                          {l.minQty ? <span style={{ color: (Number(l.qty) || 0) < l.minQty ? "#DC2626" : undefined, fontWeight: (Number(l.qty) || 0) < l.minQty ? 700 : 400 }}>· minimum {l.minQty} {String(l.unit || "unit").toLowerCase()}s{(Number(l.qty) || 0) < l.minQty ? ` — billed for ${l.minQty}` : ""}</span> : null}
-                          {l.maxDiscountPct === 0 ? <span>· list price; discount needs approval</span> : null}
-                          {l.rateCardLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.rateCardLabel}{l.tierLabel ? ` · tier ${l.tierLabel}` : ""}</span> : l.tierLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.tierLabel}</span> : null}
+              {/* Items, product by product */}
+              {productPanels.map(pn => (
+                <div key={pn.id} style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--s2)", borderBottom: "1px solid var(--border)" }}>
+                    <span style={{ fontWeight: 800, fontSize: 13 }}>{pn.name}</span>
+                    {pn.model?.label && pn.model.key && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#4338CA", background: "#EEF2FF", padding: "1px 8px", borderRadius: 10 }}>{pn.model.label}</span>}
+                    {pn.id !== "_lines" && <button className="icon-btn" style={{ marginLeft: "auto" }} title={`Remove ${pn.name} from this quote`} onClick={() => toggleProduct(pn.id)}><X size={13} /></button>}
+                  </div>
+                  {pn.sections.length > 0 && (
+                    <div style={{ padding: "8px 10px 4px" }}>
+                      {pn.sections.map(sec => (
+                        <div key={sec.key} style={{ display: "flex", gap: 6, alignItems: "baseline", flexWrap: "wrap", marginBottom: 6 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: sec.key === "transaction" ? "#4338CA" : "var(--text3)", flexBasis: "100%" }}>{sec.label}</span>
+                          {sec.rows.map(r => {
+                            const on = lines.some(l => l.productCode === r.code);
+                            const hint = rowPriceHint(r);
+                            return (
+                              <button key={r.code} type="button" className={`btn btn-xs ${on ? "btn-primary" : "btn-sec"}`} title={`${r.code} · ${r.name}${r.description ? `\n${r.description}` : ""}`} onClick={() => toggleRow(r)}>
+                                {on ? <Check size={11} /> : <Plus size={11} />}{chipLabel(r, pn.name)}{hint ? <span style={{ opacity: 0.75, fontWeight: 500 }}>&nbsp;· {hint}</span> : null}
+                              </button>
+                            );
+                          })}
                         </div>
-                      )}
+                      ))}
                     </div>
-                  );
-                })}
-                <button className="btn btn-sec btn-xs" style={{ margin: 8 }} onClick={addLine}><Plus size={12} /> Add line</button>
-              </div>
+                  )}
+                  {pn.lines.length > 0
+                    ? <>{renderHeader(pn.lines.map(e => e.l))}{pn.lines.map(e => renderLine(e.l, e.i, pn.rows))}</>
+                    : pn.sections.length > 0 && <div style={{ padding: "0 10px 8px", fontSize: 11.5, color: "var(--text3)" }}>Click an item above to add it.</div>}
+                </div>
+              ))}
 
               <div className="form-group" style={{ marginTop: 12 }}><label>Notes</label><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>
 
