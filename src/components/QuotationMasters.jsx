@@ -586,7 +586,7 @@ export default function QuotationMasters({ masters, setMasters: setMastersProp, 
             })}
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               <button type="button" className="btn btn-xs btn-sec" onClick={() => { const arr = approvalLevels(cur.quoteConfig); setConfig("approvalLevels", [...arr, { key: `level_${Date.now().toString(36)}`, label: "New level", maxDiscountPct: 100, userIds: [] }]); }}><Plus size={11} /> Add level</button>
-              <button type="button" className="btn btn-xs btn-sec" onClick={() => setConfig("approvalLevels", DEFAULT_APPROVAL_LEVELS)}><RotateCcw size={11} /> Standard levels (Sales Head 20%, Management above)</button>
+              <button type="button" className="btn btn-xs btn-sec" onClick={() => setConfig("approvalLevels", DEFAULT_APPROVAL_LEVELS)}><RotateCcw size={11} /> Standard levels (Line Manager 20%, Management Committee above)</button>
             </div>
           </div>
           <PeoplePicker label="Accounts team (raises bills)" orgUsers={orgUsers} value={cur.quoteConfig.accountsUserIds || []}

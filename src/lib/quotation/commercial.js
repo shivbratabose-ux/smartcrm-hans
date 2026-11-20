@@ -82,8 +82,9 @@ export const rateAfterDiscount = (listRate, discountPct) => Math.round((Number(l
 // Config: maxUserDiscountPct = what a rep may give alone; then
 // approvalLevels = [{ key, label, maxDiscountPct, userIds[] }] ascending.
 export const DEFAULT_APPROVAL_LEVELS = [
-  { key: "sales_head", label: "Sales Head", maxDiscountPct: 20, userIds: [] },
-  { key: "management", label: "Management", maxDiscountPct: 100, userIds: [] },
+  // Keys stay as first saved (quotes record them); labels as agreed 20 Nov 2026.
+  { key: "sales_head", label: "Line Manager", maxDiscountPct: 20, userIds: [] },
+  { key: "management", label: "Management Committee", maxDiscountPct: 100, userIds: [] },
 ];
 const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 

@@ -46,6 +46,30 @@ export async function saveUsage(records) {
   return { error: error ? (/duplicate|unique/i.test(error.message) ? "That reference is already recorded for this component and month (duplicate)." : error.message) : "" };
 }
 
+// ── Legal-entity verification (billing_entity_checks; insert only) ─────
+// Finance verifies an entity's details; a check records a fingerprint of the
+// details it saw, so any later change shows the entity as unverified again.
+const CHECK_MAP = { id: "id", entityId: "entity_id", fingerprint: "fingerprint", note: "note", by: "checked_by", at: "checked_at" };
+
+/** All entity checks: { checks, error }. A missing table (migration not applied yet) reads as none. */
+export async function loadEntityChecks() {
+  if (!isSupabaseConfigured) return { checks: readLocal().entityChecks || [], error: "" };
+  const { data, error } = await supabase.from("billing_entity_checks").select("*").order("checked_at", { ascending: false }).limit(1000);
+  if (error) return { checks: [], error: /does not exist|relation/i.test(error.message) ? "" : error.message };
+  return { checks: (data || []).map((r) => fromDb(r, CHECK_MAP)), error: "" };
+}
+
+/** Record a verification. Returns { error }. */
+export async function saveEntityCheck(check) {
+  if (!isSupabaseConfigured) {
+    const d = readLocal();
+    writeLocal({ ...d, entityChecks: [check, ...(d.entityChecks || [])] });
+    return { error: "" };
+  }
+  const { error } = await supabase.from("billing_entity_checks").insert({ ...toDb(check, CHECK_MAP), checked_at: check.at || new Date().toISOString() });
+  return { error: error ? (/does not exist|relation/i.test(error.message) ? "Verification needs the billing database update (Phase 1 migration)." : error.message) : "" };
+}
+
 /** Store a final invoice or credit note. Insert only: an invoice that exists is never overwritten. Returns { error }. */
 export async function saveInvoice(invoice) {
   if (!isSupabaseConfigured) {

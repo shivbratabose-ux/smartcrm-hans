@@ -68,7 +68,7 @@ function InvoiceView({ inv }) {
   );
 }
 
-export default function BillingPanel({ quotes = [], setQuotes, accounts = [], setCollections, config = {}, currentUser = "", orgUsers = [], today = "", onClose }) {
+export default function BillingPanel({ quotes = [], setQuotes, accounts = [], setCollections, config = {}, currentUser = "", orgUsers = [], today = "", onClose, onOpenQuote }) {
   const [tab, setTab] = useState("run");
   const [period, setPeriod] = useState(periodOf(today) ? addMonths(periodOf(today), -1) : "");
   const [data, setData] = useState({ phase: "loading", usage: [], invoices: [], error: "" });
@@ -181,7 +181,8 @@ export default function BillingPanel({ quotes = [], setQuotes, accounts = [], se
               return (
                 <div key={quote.id} style={{ border: "1px solid var(--border)", borderRadius: 10, marginBottom: 14, overflow: "hidden" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center", background: "var(--s2)", padding: "8px 12px" }}>
-                    <div><b>{accName(a.accountId, a.customer)}</b> <span style={{ fontFamily: "monospace", color: "var(--text3)", fontSize: 12 }}>· {a.agreementNo}</span></div>
+                    <div><b>{accName(a.accountId, a.customer)}</b> <span style={{ fontFamily: "monospace", color: "var(--text3)", fontSize: 12 }}>· {a.agreementNo}</span>
+                      {onOpenQuote && a.quoteId && <button className="btn btn-sec btn-xs" style={{ marginLeft: 8 }} title="Open the accepted quotation (read only)" onClick={() => onOpenQuote(a.quoteId)}><FileText size={11} />Open quote</button>}</div>
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 11.5 }}>
                       <label>Subscription <select style={inp} value={s.subscriptionFrequency} onChange={(e) => setBilling(quote, { subscriptionFrequency: e.target.value })}>{Object.keys(FREQUENCY_MONTHS).map((f) => <option key={f}>{f}</option>)}</select></label>
                       <label>Usage <select style={inp} value={s.usageFrequency} onChange={(e) => setBilling(quote, { usageFrequency: e.target.value })}>{Object.keys(FREQUENCY_MONTHS).map((f) => <option key={f}>{f}</option>)}</select></label>
