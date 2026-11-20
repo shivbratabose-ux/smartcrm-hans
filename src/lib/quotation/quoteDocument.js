@@ -25,7 +25,7 @@ import { groupOf, SERVICES_GROUP } from "./productGroups.js";
 import { HOSTING_LABEL } from "./handover.js";
 import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS, CONFIDENTIAL_NOTE } from "../../data/quoteContent.js";
 import { resolveTermSets, termSetFor, eulaLinkOf, fillTerms, tcLines } from "./termSets.js";
-import { slabTable } from "./slabs.js";
+import { slabTable, usagePrice, usageRuleText, poolVolumes, escalatedRates, hasUsageRules } from "./slabs.js";
 import { getQuoteTemplate } from "../../data/quoteTemplates.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -83,7 +83,8 @@ export function quoteDocModel(quote, opts = {}) {
     const basis = oneTime ? "One time" : usage ? `Per ${u || "use"}` : `Per ${u || "unit"} per month`;
     return {
       code: l.productCode, name: l.name || row?.name || l.productCode, oneTime, usage, basis, qty, unit,
-      slabs: row?.rateSource === "Slab" ? slabTable(row.slabs, `${unit || "units"} per month`) : null,
+      slabs: row?.rateSource === "Slab" ? slabTable(row.slabs, `${unit || "units"} per ${row.slabPeriod === "year" ? "year" : "month"}`) : null,
+      row,
       listRate: num(l.unitPriceResolved), discountPct: num(l.discountPct),
       // What the customer sees: list rate + discount when shown; otherwise the net rate.
       rate: showDiscount ? num(l.unitPriceResolved) : (qty ? net / qty : net),
@@ -139,7 +140,7 @@ export function quoteDocModel(quote, opts = {}) {
     about, plan,
     features: main ? featuresOf(mainRow, product) : [],
     featureNote: (main && PLAN_CONTENT[main.code]?.featureNote) || "",
-    oneTime, subs, usage,
+    oneTime, subs, usage, pools: poolVolumes(quote.items || [], rowOf),
     totals: {
       oneTimeShown: sum(oneTime, "amount"), subsShown: sum(subs, "amount"),
       overallOneTime: sum(oneTime, "amount") - netOneTime, overallSubs: sum(subs, "amount") - netSubs,
@@ -230,11 +231,24 @@ export function quoteDocumentHtml(quote, opts = {}) {
     <table class="pr pr2"><thead><tr><th style="width:26px"></th><th>Service</th><th>Basis</th><th class="r">Rate (₹)</th></tr></thead><tbody>
       ${m.usage.map((l, i) => {
         const fx = (r) => (D ? r : r * (1 - l.discountPct / 100));
+        const row = l.row;
+        // Usage rules (slab type, pack, minimum, pool, escalation) and a worked estimate.
+        const mates = row?.pool ? m.usage.filter((o) => o !== l && String(o.row?.pool || "").trim() === String(row.pool).trim()).map((o) => o.name) : [];
+        const rules = hasUsageRules(row) ? usageRuleText(row, { unit: l.unit, poolMates: mates }).filter((t) => !/^Volume slabs: the month's/.test(t) || row.slabMode === "graduated" || row.slabPeriod === "year") : [];
+        const up = row && l.qty ? usagePrice(row, l.qty, { poolQty: row.pool ? m.pools[String(row.pool).trim()] : undefined }) : null;
+        const est = up && !up.missing ? fx(Math.max(up.amount, up.floor)) : 0;
+        const esc3 = row && Number(row.escalationPct) > 0 && !(l.slabs && l.slabs.length) && l.listRate ? escalatedRates(fx(Number(row.listPrice ?? l.listRate)), row.escalationPct, 3) : null;
+        const extra = [...rules,
+          esc3 ? `Year 1 ₹${esc3[0].toLocaleString("en-IN")} · Year 2 ₹${esc3[1].toLocaleString("en-IN")} · Year 3 ₹${esc3[2].toLocaleString("en-IN")} per ${l.unit || "unit"}.` : "",
+          est && hasUsageRules(row) ? `Estimate at ${Number(l.qty).toLocaleString("en-IN")} ${l.unit || "units"} a month: ${inr(est)} a month${Number(row?.escalationPct) > 0 ? " in year 1" : ""}.` : "",
+        ].filter(Boolean);
+        const notes = extra.length ? `<tr><td></td><td colspan="3" style="font-size:8.4pt;color:#475569;padding-top:0">${extra.map(esc).join("<br>")}</td></tr>` : "";
+        const shownRate = row && Number(row.packQty) > 0 ? Number(row.listPrice ?? l.listRate) : l.listRate;
         if (l.slabs && l.slabs.length) {
-          return `<tr><td>${i + 1}</td><td colspan="3"><b>${esc(l.name)}</b>, ${esc(l.basis.replace(/^Per /, "per "))}: rate by the month's volume (the whole month is billed at its slab's rate)${D && l.discountPct ? `, less ${l.discountPct}% discount` : ""}</td></tr>`
-            + l.slabs.map((s) => `<tr><td></td><td style="padding-left:18px">${esc(s.label)}</td><td>${esc(l.basis)}</td><td class="r">${s.rate != null ? inr(fx(s.rate)) : "On request"}</td></tr>`).join("");
+          return `<tr><td>${i + 1}</td><td colspan="3"><b>${esc(l.name)}</b>, ${esc(l.basis.replace(/^Per /, "per "))}: rate by the ${row?.slabPeriod === "year" ? "year's" : "month's"} volume${row?.slabMode === "graduated" ? " (each band at its own rate)" : " (the whole month is billed at its slab's rate)"}${D && l.discountPct ? `, less ${l.discountPct}% discount` : ""}</td></tr>`
+            + l.slabs.map((sl) => `<tr><td></td><td style="padding-left:18px">${esc(sl.label)}</td><td>${esc(l.basis)}</td><td class="r">${sl.rate != null ? inr(fx(sl.rate)) : "On request"}</td></tr>`).join("") + notes;
         }
-        return `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${l.listRate ? inr(fx(l.listRate)) : "On request"}</td></tr>`;
+        return `<tr><td>${i + 1}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}${row && Number(row.packQty) > 0 ? " beyond the pack" : ""}</td><td class="r">${shownRate ? inr(fx(shownRate)) : "On request"}</td></tr>${notes}`;
       }).join("")}
     </tbody></table>${hasMain ? "" : `<div class="note" style="font-style:normal">GST at ${m.gstPct}% is charged in addition, as applicable.</div>`}` : ""}`;
 

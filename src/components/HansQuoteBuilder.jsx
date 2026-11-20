@@ -13,7 +13,7 @@
 // toolbar) without touching the legacy per-line-GST builder.
 // ═══════════════════════════════════════════════════════════════════
 
-import { slabLabel, slabIndex } from "../lib/quotation/slabs";
+import { slabLabel, slabIndex, poolVolumes, usagePrice } from "../lib/quotation/slabs";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Plus, Trash2, X, AlertTriangle, Check, Info } from "lucide-react";
 import {
@@ -244,17 +244,22 @@ export default function HansQuoteBuilder({
   const fxForCurrency = (config.currencies || []).find(c => c.code === currency)?.fxToInr || Number(config.fx) || 1;
   // Enrich each line with its catalogue snapshot + resolved unit price,
   // shaped exactly as the engine expects.
-  const pricedLines = useMemo(() => lines.map(l => {
+  const pricedLines = useMemo(() => { const pools = poolVolumes(lines, (c) => catByCode[c]); return lines.map(l => {
     const p = catByCode[l.productCode];
     if (!p) return { ...l, _empty: true, pricingModel: "", unitPriceResolved: 0, missingRate: false };
-    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, bands, editions, bandFrom, rateCards, config, fx: fxForCurrency, asOf: quoteDate, segment, currency, country: party.country });
+    // Usage pricing: rows sharing a pool count their volume together for the slab.
+    const poolQty = String(p.pool || "").trim() ? pools[String(p.pool).trim()] : undefined;
+    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, poolQty, bands, editions, bandFrom, rateCards, config, fx: fxForCurrency, asOf: quoteDate, segment, currency, country: party.country });
+    const usage = usagePrice(p, l.qty, { poolQty });
+    const monthlyMinimum = usage.floor / fxForCurrency;
     const oneTime = isOneTimeModel(p.pricingModel);
     // Rate-card lines: surface the card + the tier the qty resolves to, so the
     // rep sees where the unit price came from.
     const card = p.matrixId ? rateCards.find(c => c.id === p.matrixId) : null;
     const cb = card && Array.isArray(card.bands) && card.bands.length ? card.bands : null;
     const tierLabel = card ? (cb ? cb[cardBandIndex(l.qty, cb.map(b => Number(b.from) || 0))]?.label : null)
-      : p.rateSource === "Slab" ? `Slab: ${slabLabel(p.slabs, slabIndex(l.qty, p.slabs), `${p.unit || "units"}/month`)}` : null;
+      : p.rateSource === "Slab" ? `${p.slabMode === "graduated" ? "Graduated, top band" : "Slab"}: ${slabLabel(p.slabs, slabIndex(usage.slabVolume, p.slabs), `${p.unit || "units"}/${p.slabPeriod === "year" ? "year" : "month"}`)}${poolQty != null && poolQty !== Number(l.qty) ? ` (pool ${p.pool}: ${poolQty}/month)` : ""}`
+      : Number(p.packQty) > 0 ? `Pack: ${p.packQty} ${p.unit || "units"} for ₹${Number(p.packPrice || 0).toLocaleString("en-IN")}/month` : null;
     return {
       ...l,
       productCode: p.code, name: p.name, module: p.module, description: p.description,
@@ -266,9 +271,10 @@ export default function HansQuoteBuilder({
       // guardrail — only present when the product has a cost in masters.
       costPerUnit: p.costPrice != null ? (Number(p.costPrice) || 0) / fxForCurrency : null,
       months: oneTime ? 1 : l.months,
-      ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty }),
+      monthlyMinimum, escalationPct: Number(p.escalationPct) || 0,
+      ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty, monthlyMinimum, escalationPct: p.escalationPct }),
     };
-  }), [lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
+  }); }, [lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
 
   const summary = useMemo(() => computeQuote(
     pricedLines.filter(l => !l._empty),
