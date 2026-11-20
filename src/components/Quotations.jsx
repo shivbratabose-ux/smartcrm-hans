@@ -20,6 +20,8 @@ import GuidedTour from './GuidedTour';
 import QuoteHandoverPanel from './QuoteHandoverPanel';
 import { printHansQuote } from '../lib/quotation/printQuote';
 import { levelApproverIds } from '../lib/quotation/commercial';
+import { needsAgreement, buildAgreement, listAgreements } from '../lib/quotation/agreements';
+import AgreementsPanel from './AgreementsPanel';
 import QuoteAssistant from './QuoteAssistant';
 import { isAiFeatureOn } from '../utils/ai';
 import { companyOf, registrationLine } from '../lib/quotation/company';
@@ -1277,6 +1279,21 @@ Reason for approving (kept on the quote):`,"");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[quotes,currentUser]);
 
+  /* ── Accepted quote → the customer's commercial agreement ──
+     Every accepted pricing-engine quote carries its frozen terms as
+     quote.agreement (lib/quotation/agreements.js). Created here by whoever
+     may write the quote; refreshed only if the accepted terms change. */
+  useEffect(()=>{
+    const due=quotes.filter(q=>needsAgreement(q)&&(q.owner===currentUser||isManager||isFinance));
+    if(!due.length) return;
+    const rows=resolveQuotationMasters(masters,catalog).catalogue;
+    const ids=new Set(due.map(q=>q.id));
+    setQuotes(p=>p.map(r=>ids.has(r.id)&&needsAgreement(r)?{...r,agreement:buildAgreement(r,{priceRows:rows,today})}:r));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[quotes,currentUser]);
+  const [showAgreements,setShowAgreements]=useState(false);
+  const agreementCount=useMemo(()=>listAgreements(quotes,today).filter(a=>a.status==="Active").length,[quotes,today]);
+
   /* ── Quote → Accounts → Implementation (flow approved 14 Nov 2026) ── */
   const hEntry=(from,to,note)=>({id:uid(),at:new Date().toISOString(),by:currentUser,field:"handover",from,to,note});
   const patchQuote=(q,patch,entry)=>setQuotes(p=>p.map(r=>r.id===q.id?{...r,...patch,changeLog:entry?[...(r.changeLog||[]),entry]:(r.changeLog||[])}:r));
@@ -2152,10 +2169,12 @@ Reason for approving (kept on the quote):`,"");
           <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"quotations")}><Download size={14}/>Export</button>
           <button data-tour="custom-quote-btn" className="btn btn-sec" onClick={openAdd} title="Manual / ad-hoc quote — type your own line items and pricing (no catalogue engine)"><Plus size={14}/>Custom Quote</button>
           {isAiFeatureOn(aiConfig,"quoteAssistant")&&<button className="btn btn-sec" onClick={()=>setShowAssistant(true)} title="Describe the requirement in a chat — the assistant fills the pricing builder for you"><Sparkles size={14}/>Quote Assistant</button>}
+          <button className="btn btn-sec" onClick={()=>setShowAgreements(true)} title="The agreed rates of every accepted quotation"><ShieldCheck size={14}/>Agreements{agreementCount?` (${agreementCount})`:""}</button>
           <button data-tour="new-quote-btn" className="btn btn-primary" onClick={()=>{setHansEdit(null);setHansDraft(null);setHansBuilder(true);}} title="Recommended — CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment, guardrails)"><FileText size={14}/>New Quote (Pricing Engine)</button>
         </div>
       </div>
 
+      {showAgreements && <AgreementsPanel quotes={quotes} accounts={accounts} today={today} onClose={()=>setShowAgreements(false)} onOpenQuote={(q)=>{setShowAgreements(false);setDetail(q);}}/>}
       {hansBuilder && (
         <HansQuoteBuilder
           opps={opps} leads={leads} accounts={accounts} contacts={contacts}

@@ -26,6 +26,8 @@ import { validateCcsRule } from "../lib/quotation/pricingEngine";
 import { normalizeSlabs, slabLabel, slabProblems, usagePrice, hasUsageRules, escalatedRates } from "../lib/quotation/slabs";
 import { isOneTimeModel } from "../lib/quotation/pricingEngine";
 import { billingClassOf, productCommercialModel, approvalLevels, DEFAULT_APPROVAL_LEVELS } from "../lib/quotation/commercial";
+import { canEditPricing } from "../lib/quotation/priceHistory";
+import PriceHistory from "./PriceHistory";
 import { groupRates, groupOf, productsToAdd, SERVICES_GROUP, SERVICES_LABEL } from "../lib/quotation/productGroups";
 import { COMPANY_DEFAULTS } from "../lib/quotation/company";
 import { OFFICE_CODES_DEFAULT, fyCompact } from "../lib/quotation/docNumbers";
@@ -161,7 +163,14 @@ const numInput = { width: "100%", border: "1.5px solid var(--border)", borderRad
 
 // mode "rules": Quotation Rules (config, bands, rate cards, terms, documents).
 // mode "rates": the price rows, grouped by product, shown on Products & Pricing.
-export default function QuotationMasters({ masters, setMasters, catalog = [], orgUsers = [], mode = "rules", onOpenRates, onAddProducts, focusProduct = "", setFocusProduct }) {
+export default function QuotationMasters({ masters, setMasters: setMastersProp, catalog = [], orgUsers = [], currentUser = null, mode = "rules", onOpenRates, onAddProducts, focusProduct = "", setFocusProduct }) {
+  // Pricing owners (Quotation Rules → Config): when named, only they, Admin and
+  // MD change prices and rules. The database enforces the same rule
+  // (supabase/commercial_phase_b_v1.sql); here the screen is simply read-only.
+  const meUser = orgUsers.find(u => u.id === currentUser) || null;
+  const pricingAllowed = !currentUser || canEditPricing(resolveQuotationMasters(masters, catalog).quoteConfig, meUser);
+  const setMasters = pricingAllowed ? setMastersProp : () => {};
+  const [showHistory, setShowHistory] = useState(false);
   const cur = resolveQuotationMasters(masters, catalog);
   const [subState, setSub] = useState("config");
   const sub = mode === "rates" ? "catalogue" : subState;
@@ -388,6 +397,12 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
 
   return (
     <div>
+      {showHistory && <PriceHistory orgUsers={orgUsers} onClose={() => setShowHistory(false)} />}
+      {!pricingAllowed && (
+        <div style={{ fontSize: 12.5, color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>
+          <AlertTriangle size={13} style={{ verticalAlign: -2 }} /> Prices and quotation rules are read-only for you. Pricing owners: {(cur.quoteConfig.pricingOwnerIds || []).map(id => orgUsers.find(u => u.id === id)?.name || id).join(", ")} (and Admin / MD). Changes you make here are not saved.
+        </div>
+      )}
       {/* Secondary (underline) tabs — visually subordinate to the top group
           tabs so the two rows don't read as duplicate tab bars. */}
       {mode === "rules" && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap", gap: 8, borderBottom: "1px solid var(--border)" }}>
@@ -532,6 +547,9 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
             );
           })()}
 
+          <PeoplePicker label="Pricing owners (who may change prices and quotation rules)" orgUsers={orgUsers} value={cur.quoteConfig.pricingOwnerIds || []}
+            onChange={(ids) => setConfig("pricingOwnerIds", ids)}
+            hint="Leave empty and everyone who can edit Masters can change prices (as before). Once you name owners, only they, Admin and MD can; for everyone else prices are read-only, and the database refuses their price changes. Every change is kept in Price history." />
           <PeoplePicker label="Quote approvers" orgUsers={orgUsers} value={cur.quoteConfig.approverIds || []}
             onChange={(ids) => setConfig("approverIds", ids)}
             hint="Who approves a quote whose discount or value is above the limit. They get a bell alert and a task. Nobody approves their own quote unless they are the only approver. Leave empty and every Admin / MD / Director / VP approves (the old rule)." />
@@ -575,6 +593,7 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span style={{ fontSize: 11, color: "var(--text3)" }}>Prices for each product. Band / iCAFFE items price from Quotation Rules.</span>
+              <button type="button" className="btn btn-xs btn-sec" onClick={() => setShowHistory(true)} title="Every change to prices and rules: who, when, before and after"><Clock size={12} /> Price history</button>
               <select value={prodFilter} onChange={e => setProdFilter(e.target.value)} style={{ ...numInput, width: "auto", textAlign: "left", cursor: "pointer" }}>
                 <option value="">All products</option>
                 {catalog.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
