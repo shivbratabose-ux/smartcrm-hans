@@ -107,6 +107,22 @@ check("normal quote", awaitingApproval({ status: "Sent", approvalStatus: "Not Re
 console.log("\nFallbacks");
 const row = HANS_CATALOGUE.find((r) => r.code === "OE01");
 check("features from the row description", featuresOf(row, null).length >= 3, true);
+const plan = (c) => HANS_CATALOGUE.find((r) => r.code === c);
+const feats = (c) => featuresOf(plan(c), null, HANS_CATALOGUE);
+check("Essential: its own features", feats("OB01"), ["Shipment & job management", "AWB, BL, CAN, DO", "Freight certificate", "Manual status update & sending", "Normal EDI (Bill of Entry / Shipping Bill) with standard checklist & reports", "Billing", "Invoicing & basic accounting", "Quotations", "Standard reports & basic dashboard"]);
+check("Professional = Essential + advanced accounting", [feats("OB02").length, feats("OB02").slice(-1)], [10, ["Advanced accounting"]]);
+const ent = feats("OB04");
+check("Enterprise lists everything: Essential, Professional, Business and its own", [ent.length, ent[0], ent.includes("Advanced accounting"), ent.includes("Quick Entry"), ent.includes("User Performance"), ent.slice(-8)],
+  [30, "Shipment & job management", true, true, true, ["CCR", "Customs Status Update", "PGA Auto Compliance", "AI Assistance for Compliance & Duty Check", "CENTCOM", "Orbis360 dashboard", "WMS", "Transport"]]);
+check("no 'Everything in …, plus' line and no storage sentence among the features", [ent.some((f) => /everything in|plus /i.test(f)), ent.some((f) => /storage|whatsapp/i.test(f))], [false, false]);
+check("nothing listed twice", new Set(ent.map((f) => f.toLowerCase())).size, ent.length);
+check("labelled sentences stay whole; brackets are not split", featuresOf(plan("OE01"), null, HANS_CATALOGUE).slice(0, 2).map((f) => f.slice(0, 34)), ["Import: Bill of Entry job creation", "Export: Shipping Bill job creation"]);
+check("written feature lists still win", featuresOf(plan("OE02"), null, HANS_CATALOGUE)[0], "Manual shipment and job status update");
+check("a plan that names an unknown base keeps its own features", featuresOf({ code: "Z1", productId: "Zed", description: "Everything in Nothing, plus Alpha, Beta, Gamma." }, null, HANS_CATALOGUE), ["Alpha", "Beta", "Gamma"]);
+const entQuote = { quoteNo: "E1", createdDate: "2026-11-20", hosting: "Hans", items: [{ productCode: "OB04", name: "Orbis One Enterprise", pricingModel: "SaaS Subscription", billingClass: "subscription", unit: "User", qty: 20, months: 12, unitPriceResolved: 4199, discountPct: 0, lineTotal: 4199 * 20 * 12 }], hans: { party: { name: "Big Forwarder" } } };
+const entHtml = quoteDocumentHtml(entQuote, { ...opts, catalog: [{ id: "OrbisOne", name: "Orbis One", modules: [] }] });
+check("quotation: complete list, same ticks, two columns when long", [(entHtml.match(/<li>/g) || []).length >= 30, entHtml.includes('<ul class="feat two">'), text(entHtml).includes("Everything in Business"), html.includes('<ul class="feat two">')], [true, true, false, true]);
+check("always a light page, whatever the viewer's theme", [html.includes('<meta name="color-scheme" content="light">'), html.includes("body { background: #fff;")], [true, true]);
 check("escapes customer text", quoteDocumentHtml({ ...base, hans: { ...base.hans, party: { name: "<b>X</b>" } } }, opts).includes("&lt;b&gt;X&lt;/b&gt;"), true);
 check("no accidental 'undefined' / 'NaN'", /undefined|NaN/.test(t), false);
 

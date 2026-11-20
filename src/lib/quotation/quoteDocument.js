@@ -49,15 +49,83 @@ export const awaitingApproval = (q) => {
 };
 
 /** Feature list for a plan: written content, else the price row's own description, else the product's modules. */
-export function featuresOf(row, product) {
+// ── Features of a plan ───────────────────────────────────────────────
+// A plan's description lists what it adds ("Everything in Business, plus CCR,
+// Customs Status Update, …"). The quotation shows the COMPLETE list: the
+// features of the plan it builds on (and of the plan that one builds on), then
+// its own. The "Includes 5 GB storage and 100 WhatsApp messages" sentence is
+// plan data (shown under Your plan), not a feature.
+
+/** Split on a separator, but never inside brackets: "normal EDI (BoE, SB), reports" stays two items. */
+function splitOutsideBrackets(text, isSeparator) {
+  const out = []; let cur = "", depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(" || ch === "[") depth++;
+    if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
+    const len = depth === 0 ? isSeparator(text, i) : 0;
+    if (len) { out.push(cur); cur = ""; i += len - 1; } else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+/** A description sentence into features. */
+export function splitFeatures(text) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return [];
+  const sentences = splitOutsideBrackets(clean, (t, i) => (t[i] === "." && (t[i + 1] === " " || i === t.length - 1) ? (t[i + 1] === " " ? 2 : 1) : 0));
+  const out = [];
+  for (const raw of sentences) {
+    const sentence = raw.trim().replace(/\.$/, "");
+    if (!sentence) continue;
+    // "Import: Bill of Entry job creation, invoice entry, …" is one feature, kept whole.
+    if (/^[A-Z][A-Za-z ]{1,24}:\s/.test(sentence)) { out.push(sentence); continue; }
+    for (const part of splitOutsideBrackets(sentence, (t, i) => (t[i] === ";" ? 1 : 0))) {
+      // Commas, and a closing "and" before a capitalised name ("PGA Auto Compliance and AI assistance").
+      const items = splitOutsideBrackets(part, (t, i) => (t[i] === "," && t[i + 1] === " " ? 2 : t.startsWith(" and ", i) && /[A-Z0-9]/.test(t[i + 5] || "") ? 5 : 0));
+      // A run of short codes ("AWB, BL, CAN, DO") reads better as one feature than as four ticks.
+      const isCode = (x) => /^[A-Z0-9]{2,5}$/.test(x);
+      const cleaned = items.map((it) => it.trim().replace(/^and\s+/i, "")).filter((f) => f.length > 1);
+      for (let i = 0; i < cleaned.length; i++) {
+        if (isCode(cleaned[i]) && isCode(cleaned[i + 1] || "")) {
+          const run = [cleaned[i]];
+          while (isCode(cleaned[i + 1] || "")) run.push(cleaned[++i]);
+          out.push(run.join(", "));
+        } else out.push(cleaned[i]);
+      }
+    }
+  }
+  return out.map((f) => f.charAt(0).toUpperCase() + f.slice(1));
+}
+
+/** The plan a description says it builds on ("Everything in Business, plus …"), or null. */
+function basePlanOf(row, priceRows = []) {
+  const m = /^\s*Everything in (?:the )?(.+?)(?: plan)?,? plus\b/i.exec(String(row?.description || ""));
+  if (!m) return null;
+  const want = m[1].trim().toLowerCase();
+  const siblings = (priceRows || []).filter((r) => r && r.code !== row.code && (row.productId ? r.productId === row.productId : r.module === row.module));
+  return siblings.find((r) => String(r.name || "").toLowerCase() === want)
+    || siblings.find((r) => String(r.name || "").toLowerCase().endsWith(` ${want}`))
+    || siblings.find((r) => String(r.name || "").toLowerCase().includes(want)) || null;
+}
+
+/** Feature list for a plan: written content, else the complete list from its description (with the plans it builds on), else the product's modules. */
+export function featuresOf(row, product, priceRows = [], seen = new Set()) {
   const pc = row && PLAN_CONTENT[row.code];
   if (pc?.features?.length) return pc.features;
-  const desc = String(row?.description || "").replace(/Includes [^.]*\./i, "").trim();
-  const parts = desc.split(/;\s+|,\s+(?=[A-Z0-9])|\.\s+/).map((s) => s.replace(/\.$/, "").trim()).filter((s) => s.length > 2);
-  if (parts.length >= 3) return parts.slice(0, 28);
+  const own = splitFeatures(String(row?.description || "").replace(/Includes [^.]*\.?/gi, "").replace(/^\s*Everything in (?:the )?.+?(?: plan)?,? plus\s+/i, ""));
+  const base = row && !seen.has(row.code) ? basePlanOf(row, priceRows) : null;
+  if (base) {
+    seen.add(row.code);
+    const inherited = featuresOf(base, product, priceRows, seen);
+    const have = new Set(inherited.map((f) => f.toLowerCase()));
+    return [...inherited, ...own.filter((f) => !have.has(f.toLowerCase()))].slice(0, 60);
+  }
+  if (own.length >= 3) return own.slice(0, 60);
   // Product modules as features — not price items (Plan / Add-on / Pricing entries, or ones carrying a ₹ price).
   const mods = (product?.modules || []).filter((m) => !/add-on|plan|pricing/i.test(m.type || "") && !/₹/.test(m.desc || "")).map((m) => m.name).filter(Boolean);
-  return mods.slice(0, 28);
+  return mods.slice(0, 60);
 }
 
 /** Everything the page needs, worked out from the quote (also what the tests check). */
@@ -148,7 +216,7 @@ export function quoteDocModel(quote, opts = {}) {
     validUntil,
     to: { contact: h.billing?.billingContactName || quote.billingContactName || "", company: customer, address: String(h.party?.address || quote.billingAddressSnapshot || "").split(/\n|,\s*/).map((s) => s.trim()).filter(Boolean) },
     about, plan,
-    features: main ? featuresOf(mainRow, product) : [],
+    features: main ? featuresOf(mainRow, product, priceRows) : [],
     featureNote: (main && PLAN_CONTENT[main.code]?.featureNote) || "",
     oneTime, subs, usage, pools: poolVolumes(quote.items || [], rowOf),
     totals: {
@@ -177,7 +245,9 @@ const CSS = (m) => `
     @bottom-left { content: "${String(m.company.name).replace(/"/g, "")}${m.company.cin ? ` · CIN ${String(m.company.cin).replace(/"/g, "")}` : ""} · Confidential"; font: 7pt 'Segoe UI', Arial, sans-serif; color: #475569; }
     @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 7pt 'Segoe UI', Arial, sans-serif; color: #475569; } }
   * { box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #111827; font-size: 9.6pt; line-height: 1.38; margin: 0; padding: 18px 22px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  :root { color-scheme: light; }
+  html { background: #fff; }
+  body { background: #fff; font-family: 'Segoe UI', Arial, sans-serif; color: #111827; font-size: 9.6pt; line-height: 1.38; margin: 0; padding: 18px 22px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   @media print { body { padding: 0; } .noprint { display: none !important; } }
   .lh { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1F2F6B; padding-bottom: 6px; }
   .lh .co { font-size: 12.5pt; font-weight: 800; color: #1F2F6B; letter-spacing: .2px; }
@@ -189,7 +259,7 @@ const CSS = (m) => `
   p { margin: 5px 0; }
   table { border-collapse: collapse; width: 100%; }
   .kv td { border-bottom: 1px solid #CBD5E1; padding: 3px 4px; vertical-align: top; } .kv td:first-child { width: 46%; font-weight: 700; color: #1F2F6B; }
-  .feat { columns: 1; margin: 4px 0 0; padding: 0; list-style: none; } .feat li { padding: 1.5px 0 1.5px 22px; position: relative; break-inside: avoid; }
+  .feat { columns: 1; margin: 4px 0 0; padding: 0; list-style: none; } .feat.two { columns: 2; column-gap: 28px; } .feat li { padding: 1.5px 0 1.5px 22px; position: relative; break-inside: avoid; }
   .feat li::before { content: "✓"; color: #3DAE49; font-weight: 800; position: absolute; left: 6px; }
   .pr th { background: #1F2F6B; color: #fff; font-size: 9pt; text-align: left; padding: 4px 6px; } .pr th.r, .pr td.r { text-align: right; }
   .pr td { border-bottom: 1px solid #CBD5E1; padding: 4px 6px; vertical-align: top; }
@@ -278,7 +348,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
   const contactLine = [who.phone, who.email].filter(Boolean).join(" · ");
   const qr = opts.acceptUrl && !m.pending ? `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(opts.acceptUrl)}` : "";
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(quote.quoteNo || "Quotation")}</title><style>${CSS(m)}</style></head><body>
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light"><title>${esc(quote.quoteNo || "Quotation")}</title><style>${CSS(m)}</style></head><body>
     <div class="lh">
       <div>
         <div class="co">${esc(String(c.name).toUpperCase())}</div>
@@ -305,7 +375,7 @@ export function quoteDocumentHtml(quote, opts = {}) {
 
     ${m.about.length ? H(`About ${m.brand}`) + m.about.map((p) => `<p>${esc(p)}</p>`).join("") : ""}
     ${m.plan.length ? H("Your plan") + kv(m.plan) : ""}
-    ${m.features.length ? H("Features included") + `<ul class="feat">${m.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>${m.featureNote ? `<div class="note">${esc(m.featureNote)}</div>` : ""}` : ""}
+    ${m.features.length ? H("Features included") + `<ul class="feat${m.features.length > 10 ? " two" : ""}">${m.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>${m.featureNote ? `<div class="note">${esc(m.featureNote)}</div>` : ""}` : ""}
     ${H("Prices")}${prices}
     ${m.notes.length ? H("Commercial notes") + `<ol class="n">${m.notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>` : ""}
     ${H("Implementation, training and support")}${kv(m.implementation)}
