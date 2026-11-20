@@ -181,7 +181,7 @@ export const CSS = `
   .pg-head { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px; gap:16px; }
   .pg-title { font-family:'Outfit',sans-serif; font-size:20px; font-weight:700; color:var(--text); line-height:1.2; }
   .pg-sub   { font-size:13px; color:var(--text3); margin-top:2px; }
-  .pg-actions { display:flex; gap:8px; flex-shrink:0; align-items:center; }
+  .pg-actions { display:flex; gap:8px; flex-shrink:1; min-width:0; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
 
   /* ── BUTTONS ── */
   .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:var(--r); font-size:13px; font-weight:500; border:none; cursor:pointer; font-family:inherit; transition:background 0.12s, box-shadow 0.12s; white-space:nowrap; }

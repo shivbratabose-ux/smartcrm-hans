@@ -40,6 +40,8 @@ import { HOSTING_OPTIONS, HOSTING_LABEL } from "../lib/quotation/handover";
 const today = () => toLocalISODate();
 const inr = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
 const inr2 = (n) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Discount / prepayment boxes declare min 0, max 100; typed values are held to that range.
+const pct0to100 = (v) => Math.min(100, Math.max(0, Number(v) || 0));
 
 const BLANK_LINE = { productCode: "", qty: 1, months: 12, discountPct: 0 };
 
@@ -731,13 +733,14 @@ export default function HansQuoteBuilder({
                                 onChange={e => updateLine(i, { rateText: e.target.value, discountPct: e.target.value === "" ? 0 : discountForRate(l.unitPriceResolved, e.target.value) })}
                                 onBlur={() => updateLine(i, { rateText: undefined })} />
                         ) : (<>
-                        <input type="number" min={l.minQty || 0} value={l.qty} onChange={e => updateLine(i, { qty: +e.target.value })}
+                        <input type="number" min={l.minQty || 0} value={l.qty} onChange={e => updateLine(i, { qty: Math.max(0, Number(e.target.value) || 0) })}
                           onBlur={() => { if (l.minQty && (Number(l.qty) || 0) < l.minQty) updateLine(i, { qty: l.minQty }); }}
                           title={l.isVariable ? `Expected ${String(l.unit || "unit").toLowerCase()}s per month: an internal estimate only. The customer is billed on actual use.` : l.minQty ? `Minimum ${l.minQty} ${String(l.unit || "unit").toLowerCase()}s` : ""}
                           style={{ ...fieldStyle, textAlign: "right", border: (Number(l.qty) || 0) < (l.minQty || 0) ? "1.5px solid #DC2626" : fieldStyle.border }} />
-                        <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })} style={{ ...fieldStyle, textAlign: "right", opacity: oneTime ? 0.5 : 1 }} />
+                        <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })}
+                          onBlur={() => { if (!oneTime && !(Number(l.months) >= 1)) updateLine(i, { months: 1 }); }} style={{ ...fieldStyle, textAlign: "right", opacity: oneTime ? 0.5 : 1 }} />
                         </>)}
-                        <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: +e.target.value, rateText: undefined })} title={l.maxDiscountPct === 0 ? "Any discount on this product needs management approval" : ""}
+                        <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: pct0to100(e.target.value), rateText: undefined })} title={l.maxDiscountPct === 0 ? "Any discount on this product needs management approval" : ""}
                           style={{ ...fieldStyle, textAlign: "right", color: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? "#DC2626" : "var(--text)", fontWeight: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? 700 : 400 }} />
                         <span style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, fontFamily: "'Outfit',sans-serif" }}>
                           {l._empty ? "—" : l.isVariable
@@ -808,13 +811,13 @@ export default function HansQuoteBuilder({
                   ? sumRow("Variable, on actual use (estimate, not in total)", `${inr(summary.variableEstimateMonthly)}/mo`, { color: "#4338CA" })
                   : sumRow(`Variable (${summary.variableLineCount} service${summary.variableLineCount > 1 ? "s" : ""})`, "billed on actual use", { color: "#4338CA" }))}
                 <div className="form-row" style={{ margin: "6px 0", gap: 6 }}>
-                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}><label style={lbl}>Overall disc %</label><input type="number" min={0} max={100} value={overallDiscountPct} onChange={e => setOverallDiscountPct(+e.target.value)} /></div>
+                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}><label style={lbl}>Overall disc %</label><input type="number" min={0} max={100} value={overallDiscountPct} onChange={e => setOverallDiscountPct(pct0to100(e.target.value))} /></div>
                 </div>
                 {summary.overallDiscount > 0 && sumRow("Overall discount", "− " + inr(summary.overallDiscount), { color: "#B91C1C" })}
                 <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, margin: "6px 0" }}>
                   <input type="checkbox" checked={prepaymentApplicable} onChange={e => setPrepaymentApplicable(e.target.checked)} />
                   Prepayment discount
-                  <input type="number" min={0} max={100} value={prepaymentDiscountPct} disabled={!prepaymentApplicable} onChange={e => setPrepaymentDiscountPct(+e.target.value)} style={{ width: 52, marginLeft: "auto" }} />%
+                  <input type="number" min={0} max={100} value={prepaymentDiscountPct} disabled={!prepaymentApplicable} onChange={e => setPrepaymentDiscountPct(pct0to100(e.target.value))} style={{ width: 52, marginLeft: "auto" }} />%
                 </label>
                 {summary.prepaymentDisc > 0 && sumRow("Prepayment discount", "− " + inr(summary.prepaymentDisc), { color: "#B91C1C" })}
                 <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, margin: "6px 0 2px", cursor: "pointer" }} title="On: the customer sees list rate, discount % and net. Off: only the net rates are printed.">
