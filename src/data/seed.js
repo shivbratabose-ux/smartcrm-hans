@@ -159,6 +159,13 @@ export const INIT_PRODUCT_CATALOG = [
       {id:"m_oe16",name:"Air Import Consol Filing",      type:"Add-on", desc:"₹35 per transmission"},
       {id:"m_oe17",name:"Sea Import Consol Filing (SCMTR)", type:"Add-on", desc:"₹800 per transmission"},
     ]},
+  // Billing module, Phase 1 (Nov 2026): products billed through SmartCRM that
+  // had no catalogue entry. Prices are set in Masters → Billing / Pricing.
+  { id:"ACMES",         name:"ACMES",              color:"#7C3AED", bg:"#F5F3FF", desc:"Delhi air cargo community system (Carico System)", modules:[] },
+  { id:"AAIICMS",       name:"AAI ICMS",           color:"#0369A1", bg:"#F0F9FF", desc:"White-label cargo system for an airport authority", modules:[] },
+  { id:"EAWBSolutions", name:"eAWB Solutions",     color:"#0E7490", bg:"#ECFEFF", desc:"Electronic air waybill transmission", modules:[] },
+  { id:"SCMTRDesk",     name:"SCMTR Filing Desk",  color:"#9A3412", bg:"#FFF7ED", desc:"Managed SCMTR filing service", modules:[] },
+  { id:"GateMgmt",      name:"Gate Management",    color:"#4D7C0F", bg:"#F7FEE7", desc:"Gate and vehicle movement management", modules:[] },
 ];
 
 // ── Product-catalogue backfill ────────────────────────────────────────

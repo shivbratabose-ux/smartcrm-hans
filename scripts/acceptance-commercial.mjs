@@ -142,8 +142,8 @@ scenario(6, "Volume slab (20,000 transactions)", "PASS", [usagePrice(txnVolume, 
 // 13. Discount approval.
 {
   const lv = (d) => requiredApprovalLevel({ needsApproval: d > 10, lines: [{ discountPct: d }], overallDiscountPct: 0 }, { maxUserDiscountPct: 10 })?.label || "no approval";
-  scenario(13, "Discount over authority goes for approval", "PASS", [eq([lv(8), lv(15), lv(25)], ["no approval", "Sales Head", "Management"])],
-    "8% within the rep's 10% → no approval · 15% → Sales Head · 25% → Management. Levels, ceilings and people are set in Quotation Rules; approving records the approver, date and reason.");
+  scenario(13, "Discount over authority goes for approval", "PASS", [eq([lv(8), lv(15), lv(25)], ["no approval", "Line Manager", "Management Committee"])],
+    "8% within the rep's 10% → no approval · 15% → Line Manager · 25% → Management Committee. Levels, ceilings and people are set in Quotation Rules; approving records the approver, date and reason.");
 }
 // 14. Mixed billing frequency.
 {

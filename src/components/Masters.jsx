@@ -6,6 +6,7 @@ import { Modal, Confirm, HelpTooltip, PageTip } from './shared';
 import { saveSettings } from '../lib/db';
 import LeadFieldsEditor from './LeadFieldsEditor';
 import QuotationMasters, { resolveQuotationMasters } from './QuotationMasters';
+import BillingMasters from './BillingMasters';
 import { countsByProduct, groupRates } from '../lib/quotation/productGroups';
 import { productCommercialModel } from '../lib/quotation/commercial';
 import { notify } from '../utils/toast';
@@ -677,7 +678,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
       </div>
 
       <div style={{display:"flex",gap:8,marginBottom:18}}>
-        {[{id:"reference",label:"Reference Data"},{id:"products",label:"Products & Pricing"},{id:"leadfields",label:"Lead Capture Fields"},{id:"quotation",label:"Quotation Rules"}].map(t=>(
+        {[{id:"reference",label:"Reference Data"},{id:"products",label:"Products & Pricing"},{id:"leadfields",label:"Lead Capture Fields"},{id:"quotation",label:"Quotation Rules"},{id:"billing",label:"Billing"}].map(t=>(
           <button key={t.id} className={`btn btn-sm ${tab===t.id?"btn-primary":"btn-sec"}`} onClick={()=>setTab(t.id)}>{t.label}</button>
         ))}
       </div>
@@ -762,6 +763,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
       </>)}
       {tab==="leadfields" && <LeadFieldsEditor masters={masters} setMasters={setMasters} catalog={catalog}/>}
       {tab==="quotation" && <QuotationMasters masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers} currentUser={currentUser} onOpenRates={()=>setTab("products")}/>}
+      {tab==="billing" && <BillingMasters masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers} currentUser={currentUser}/>}
     </div>
   );
 }

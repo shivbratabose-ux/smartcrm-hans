@@ -2183,7 +2183,7 @@ Reason for approving (kept on the quote):`,"");
       </div>
 
       {showReports && <CommercialReports quotes={quotes} accounts={accounts} orgUsers={orgUsers||[]} priceRows={resolveQuotationMasters(masters,catalog).catalogue} catalog={catalog||[]} today={today} onClose={()=>setShowReports(false)}/>}
-      {showBilling && <BillingPanel quotes={quotes} setQuotes={setQuotes} accounts={accounts} setCollections={setCollections} config={quoteConfig} currentUser={currentUser} orgUsers={orgUsers||[]} today={today} onClose={()=>setShowBilling(false)}/>}
+      {showBilling && <BillingPanel quotes={quotes} setQuotes={setQuotes} accounts={accounts} setCollections={setCollections} config={quoteConfig} currentUser={currentUser} orgUsers={orgUsers||[]} today={today} onClose={()=>setShowBilling(false)} onOpenQuote={(id)=>{const q=enriched.find(e=>e.id===id); if(q){setShowBilling(false); setDetail(q);}}}/>}
       {showAgreements && <AgreementsPanel quotes={quotes} accounts={accounts} today={today} onClose={()=>setShowAgreements(false)} onOpenQuote={(q)=>{setShowAgreements(false);setDetail(q);}}/>}
       {hansBuilder && (
         <HansQuoteBuilder

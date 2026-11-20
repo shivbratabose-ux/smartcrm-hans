@@ -75,11 +75,11 @@ check("quotation: the agreed rate per HAWB on actual use; no hosting or server r
 
 console.log("\nApproval levels");
 const cfg = { maxUserDiscountPct: 10 };
-check("standard levels", approvalLevels(cfg).map((l) => [l.label, l.maxDiscountPct]), [["Sales Head", 20], ["Management", 100]]);
+check("standard levels", approvalLevels(cfg).map((l) => [l.label, l.maxDiscountPct]), [["Line Manager", 20], ["Management Committee", 100]]);
 check("line and overall discount combine once", [maxEffectiveDiscount([{ discountPct: 10 }], 10), maxEffectiveDiscount([{ discountPct: 15 }, { discountPct: 5 }], 0)], [19, 15]);
 const lvl = (d, extra = {}) => requiredApprovalLevel({ needsApproval: true, lines: [{ discountPct: d }], overallDiscountPct: 0, ...extra }, cfg)?.label;
-check("15% → Sales Head, 20% → Sales Head, 25% → Management", [lvl(15), lvl(20), lvl(25)], ["Sales Head", "Sales Head", "Management"]);
-check("low margin or a no-discount product → Management", lvl(12, { topLevel: true }), "Management");
+check("15% → Line Manager, 20% → Line Manager, 25% → Management Committee", [lvl(15), lvl(20), lvl(25)], ["Line Manager", "Line Manager", "Management Committee"]);
+check("low margin or a no-discount product → Management Committee", lvl(12, { topLevel: true }), "Management Committee");
 check("no approval needed → no level", requiredApprovalLevel({ needsApproval: false, lines: [{ discountPct: 5 }] }, cfg), null);
 check("configured levels are used", requiredApprovalLevel({ needsApproval: true, lines: [{ discountPct: 22 }] }, { approvalLevels: [{ key: "a", label: "Team lead", maxDiscountPct: 15 }, { key: "b", label: "VP", maxDiscountPct: 30 }, { key: "c", label: "MD", maxDiscountPct: 100 }] }).label, "VP");
 const who = { liveUserIds: ["rep", "head", "md", "appr"], generalApproverIds: ["appr"], topRoleUserIds: ["md"] };
