@@ -70,7 +70,8 @@ export function buildAgreement(quote, opts = {}) {
     const billingClass = billingClassOf({ pricingModel: l.pricingModel, billingClass: l.billingClass || row?.billingClass });
     const disc = Math.min(100, Math.max(0, n(l.discountPct)));
     const effective = r2((1 - (1 - disc / 100) * (1 - overall / 100)) * 100);
-    const months = billingClass === "one_time" ? 0 : Math.max(1, n(l.months) || 1);
+    // A variable line can be open-ended (months 0): billed monthly until cancelled.
+    const months = billingClass === "one_time" ? 0 : billingClass === "transaction" ? Math.max(0, n(l.months)) : Math.max(1, n(l.months) || 1);
     return {
       lineNo: i + 1, code: l.productCode || "", name: l.name || row?.name || l.productCode || "",
       billingClass, pricingModel: l.pricingModel || "", unit: l.unit || row?.unit || "",

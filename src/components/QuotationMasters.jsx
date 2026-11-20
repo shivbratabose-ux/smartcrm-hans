@@ -25,7 +25,7 @@ const RATE_SOURCES = ["Flat", "Band", "iCAFFE", "Slab"];
 import { validateCcsRule } from "../lib/quotation/pricingEngine";
 import { normalizeSlabs, slabLabel, slabProblems, usagePrice, hasUsageRules, escalatedRates } from "../lib/quotation/slabs";
 import { isOneTimeModel } from "../lib/quotation/pricingEngine";
-import { billingClassOf, productCommercialModel, approvalLevels, DEFAULT_APPROVAL_LEVELS } from "../lib/quotation/commercial";
+import { billingClassOf, productCommercialModel, approvalLevels, DEFAULT_APPROVAL_LEVELS, hansHostedProducts } from "../lib/quotation/commercial";
 import { canEditPricing } from "../lib/quotation/priceHistory";
 import PriceHistory from "./PriceHistory";
 import { groupRates, groupOf, productsToAdd, SERVICES_GROUP, SERVICES_LABEL } from "../lib/quotation/productGroups";
@@ -547,6 +547,17 @@ export default function QuotationMasters({ masters, setMasters: setMastersProp, 
             );
           })()}
 
+          <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+            <label>Always hosted by Hans <span style={{ color: "var(--text3)", fontWeight: 500 }}>· a quote for these products does not ask "Hans or client hosting"</span></label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: 8, border: "1.5px solid var(--border)", borderRadius: 8, background: "#fff" }}>
+              {(catalog || []).filter(p => p && p.id).map(p => { const on = hansHostedProducts(cur.quoteConfig).includes(p.id); return (
+                <button key={p.id} type="button" onClick={() => { const ids = hansHostedProducts(cur.quoteConfig); setConfig("hansHostedProductIds", on ? ids.filter(x => x !== p.id) : [...ids, p.id]); }}
+                  style={{ fontSize: 11.5, padding: "3px 10px", borderRadius: 14, cursor: "pointer", border: `1.5px solid ${on ? "#1B6B5A" : "var(--border)"}`, background: on ? "#E6F4EF" : "#fff", color: on ? "#1B6B5A" : "var(--text2)", fontWeight: on ? 700 : 500 }}>
+                  {on ? "✓ " : ""}{p.name}
+                </button>); })}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Usage-billed services never ask for hosting. Tick the products that are also always run by Hans, such as the AMS filing services.</div>
+          </div>
           <PeoplePicker label="Pricing owners (who may change prices and quotation rules)" orgUsers={orgUsers} value={cur.quoteConfig.pricingOwnerIds || []}
             onChange={(ids) => setConfig("pricingOwnerIds", ids)}
             hint="Leave empty and everyone who can edit Masters can change prices (as before). Once you name owners, only they, Admin and MD can; for everyone else prices are read-only, and the database refuses their price changes. Every change is kept in Price history." />

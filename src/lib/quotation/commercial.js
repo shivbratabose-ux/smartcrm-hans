@@ -52,6 +52,32 @@ export function rowConfigIssues(row) {
   return out;
 }
 
+// ── Hosting ──────────────────────────────────────────────────────────
+// "Hans-hosted or client-hosted?" is a question for software the customer
+// could run on their own servers. It does not apply to consumption services
+// (always run by Hans) or to products named as always Hans-hosted in
+// Quotation Rules (config.hansHostedProductIds: the AMS filing services).
+export const DEFAULT_HANS_HOSTED_PRODUCTS = ["AMSOcean", "AMSAir", "AMSIGM"];
+export const hansHostedProducts = (config) => (Array.isArray(config?.hansHostedProductIds) ? config.hansHostedProductIds : DEFAULT_HANS_HOSTED_PRODUCTS);
+/** Does this quote need the hosting choice? lines: [{ billingClass, productId }]. */
+export function needsHostingChoice(lines = [], config = {}) {
+  const hosted = hansHostedProducts(config);
+  return (lines || []).some((l) => l && l.billingClass !== "transaction" && !hosted.includes(l.productId));
+}
+
+// ── Agreed rate on a variable line ───────────────────────────────────
+// A transaction line is quoted as an agreed rate per unit: the list rate, or
+// a lower one. It is stored as the line's discount, so the discount policy
+// and the approval levels apply to it unchanged.
+/** Discount % that turns a list rate into an agreed rate (0–100, 4 decimals). */
+export function discountForRate(listRate, agreedRate) {
+  const list = Number(listRate), agreed = Number(agreedRate);
+  if (!(list > 0) || !Number.isFinite(agreed)) return 0;
+  return Math.min(100, Math.max(0, Math.round((1 - agreed / list) * 1e6) / 1e4));
+}
+/** The agreed rate for a list rate and discount %, to paise. */
+export const rateAfterDiscount = (listRate, discountPct) => Math.round((Number(listRate) || 0) * (1 - (Number(discountPct) || 0) / 100) * 100) / 100;
+
 // ── Approval levels ──────────────────────────────────────────────────
 // Config: maxUserDiscountPct = what a rep may give alone; then
 // approvalLevels = [{ key, label, maxDiscountPct, userIds[] }] ascending.

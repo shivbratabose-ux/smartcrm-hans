@@ -22,6 +22,8 @@ export const QUOTE_CONFIG = {
   homeState: "Delhi",            // intra- vs inter-state GST pivot
   gstRatePct: 18,
   maxUserDiscountPct: 10,        // above → approval required
+  // Products always hosted by Hans: a quote for them never asks "Hans or client hosting".
+  hansHostedProductIds: ["AMSOcean", "AMSAir", "AMSIGM"],
   alrPctOfLicence: 20,           // legacy name; AMC uses amcDefaultPct (falls back to this)
   // AMC on one-time licences (lib/quotation/amc.js)
   amcDefaultPct: 20,             // % of the licence fee per year (a product can set its own)

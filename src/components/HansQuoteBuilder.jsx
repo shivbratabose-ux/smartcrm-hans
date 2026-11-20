@@ -14,7 +14,9 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { slabLabel, slabIndex, poolVolumes, usagePrice } from "../lib/quotation/slabs";
-import { billingClassOf, billingClassLabel, rowConfigIssues, requiredApprovalLevel } from "../lib/quotation/commercial";
+import { billingClassOf, billingClassLabel, rowConfigIssues, requiredApprovalLevel, needsHostingChoice, discountForRate, rateAfterDiscount } from "../lib/quotation/commercial";
+import { groupOf } from "../lib/quotation/productGroups";
+import { slabTable } from "../lib/quotation/slabs";
 import { activeAgreementLines, agreedUnitPrice, pricingSnapshot } from "../lib/quotation/agreements";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Plus, Trash2, X, AlertTriangle, Check, Info } from "lucide-react";
@@ -42,6 +44,7 @@ const inr2 = (n) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { minimumFr
 const BLANK_LINE = { productCode: "", qty: 1, months: 12, discountPct: 0 };
 
 // Default payment milestones for one-time charges (% of the one-time total).
+const ORDER_MILESTONE = [{ name: "With the order", pct: 100 }];
 const DEFAULT_MILESTONES = [
   { name: "With the purchase order", pct: 50 },
   { name: "On go-live and user acceptance sign-off", pct: 50 },
@@ -131,7 +134,7 @@ export default function HansQuoteBuilder({
   const setBill = (k, v) => setBilling(b => ({ ...b, [k]: v }));
   const [lines, setLines] = useState(
     editQuote && Array.isArray(editQuote.items) && editQuote.items.length
-      ? editQuote.items.map(it => ({ productCode: it.productCode || "", qty: Number(it.qty) || 1, months: Number(it.months) || 1, discountPct: Number(it.discountPct) || 0,
+      ? editQuote.items.map(it => ({ productCode: it.productCode || "", qty: it.billingClass === "transaction" ? (Number(it.qty) || 0) : (Number(it.qty) || 1), months: Number(it.months) || (it.billingClass === "transaction" ? 12 : 1), discountPct: Number(it.discountPct) || 0,
           // The rate agreed on this quote (kept when the quote is frozen).
           frozenRate: Number.isFinite(Number(it.unitPriceResolved)) ? Number(it.unitPriceResolved) : undefined }))
       : [{ ...BLANK_LINE }]
@@ -145,6 +148,8 @@ export default function HansQuoteBuilder({
   const [useAgreed, setUseAgreed] = useState(true);
   // One-time charges: payment milestones (name + % of the one-time total).
   const [milestones, setMilestones] = useState(() => (Array.isArray(eh?.milestones) && eh.milestones.length ? eh.milestones : (config.defaultMilestones || DEFAULT_MILESTONES)).map(m => ({ ...m })));
+  // Until the rep edits the schedule, it follows the kind of quote (see the effect below).
+  const [milestonesTouched, setMilestonesTouched] = useState(Array.isArray(eh?.milestones) && eh.milestones.length > 0);
   const [saved, setSaved] = useState(null);
 
   // Resolve party from the picked opportunity. The app's opportunities
@@ -285,6 +290,10 @@ export default function HansQuoteBuilder({
     const agreedMin = useAgreed && !(frozen && l.frozenRate != null) ? agreedLines[p.code]?.line : null;
     const monthlyMinimum = agreedMin ? Math.max(Number(agreedMin.monthlyMinimum) || 0, Number(agreedMin.pricing?.packPrice) || 0) : usage.floor / fxForCurrency;
     const oneTime = isOneTimeModel(p.pricingModel);
+    // A variable line is billed monthly on actual use: no term. Only a line with
+    // a contractual minimum keeps one (the months the minimum is committed for).
+    const variableOpen = billingClass === "transaction" && !(monthlyMinimum > 0) && !(Number(p.minMonthFloor) > 0);
+    const lineMonths = oneTime ? 1 : variableOpen ? 0 : l.months;
     // Rate-card lines: surface the card + the tier the qty resolves to, so the
     // rep sees where the unit price came from.
     const card = p.matrixId ? rateCards.find(c => c.id === p.matrixId) : null;
@@ -302,13 +311,14 @@ export default function HansQuoteBuilder({
       // Per-unit cost (same scale as the resolved unit price) for the margin
       // guardrail — only present when the product has a cost in masters.
       costPerUnit: p.costPrice != null ? (Number(p.costPrice) || 0) / fxForCurrency : null,
-      months: oneTime ? 1 : l.months,
+      months: lineMonths, variableOpen, productId: groupOf(p, catalog),
+      slabRates: p.rateSource === "Slab" && !agreed ? slabTable(p.slabs, p.unit) : (agreed?.line?.pricing?.rateSource === "Slab" ? slabTable(agreed.line.pricing.slabs, p.unit) : null),
       monthlyMinimum, escalationPct: Number(p.escalationPct) || 0,
       rateFrozen, liveRate: live.unitPrice, configIssues: rowConfigIssues(p),
       agreedNo: agreed ? agreed.agreement.agreementNo : "", pricing: agreed ? (agreed.line.pricing || null) : pricingSnapshot(p),
-      ...computeLine({ pricingModel: p.pricingModel, billingClass, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty, monthlyMinimum, escalationPct: p.escalationPct }),
+      ...computeLine({ pricingModel: p.pricingModel, billingClass, unitPriceResolved: unitPrice, qty: l.qty, months: lineMonths, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty, monthlyMinimum, escalationPct: p.escalationPct }),
     };
-  }); }, [frozen, useAgreed, agreedLines, lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
+  }); }, [frozen, useAgreed, agreedLines, catalog, lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
 
   const summary = useMemo(() => computeQuote(
     pricedLines.filter(l => !l._empty),
@@ -336,11 +346,24 @@ export default function HansQuoteBuilder({
     topLevel: marginGuard.breached || pricedLines.some(l => l.maxDiscountPct === 0 && Number(l.discountPct) > 0),
   }, config);
   const hasOneTime = summary.oneTimeSubtotal > 0;
+  const picked = pricedLines.filter(l => !l._empty);
+  // Hosting is asked only for software the customer could host themselves;
+  // consumption services and always-Hans-hosted products (AMS) skip it.
+  const hostingNeeded = picked.length === 0 || needsHostingChoice(picked, config);
+  const hostingValue = hostingNeeded ? hosting : "Hans";
+  const hasSubscription = picked.some(l => l.billingClass === "subscription");
+  // Software with a subscription: 50% with the order, 50% on go-live. Services
+  // billed on use (AMS registration and the like): payable with the order.
+  useEffect(() => {
+    if (milestonesTouched || picked.length === 0) return;
+    setMilestones((hasSubscription ? (config.defaultMilestones || DEFAULT_MILESTONES) : ORDER_MILESTONE).map(m => ({ ...m })));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSubscription, picked.length, milestonesTouched]);
   const milestoneSum = milestones.reduce((t, m) => t + (Number(m.pct) || 0), 0);
   const repriced = startsFrozen && !frozen;
 
   // ── Save ────────────────────────────────────────────────────────────
-  const canSave = oppId && party.name && hosting && pricedLines.some(l => !l._empty) && missingRateLines.length === 0 && (!hasOneTime || milestoneSum === 100);
+  const canSave = oppId && party.name && (!hostingNeeded || hosting) && picked.length > 0 && missingRateLines.length === 0 && (!hasOneTime || milestoneSum === 100);
 
   // Advisory billing-completeness hint (doesn't block save — the engine only
   // needs opp + party + a priced line). Mirrors the Custom Quote's verify intent.
@@ -403,6 +426,7 @@ export default function HansQuoteBuilder({
       alrAnnual: round2(amc.annual), // kept for older readers: now the AMC per year
       amc: { ...amc, overrides: amcOverrides },
       approvalReasons, approvalLevel,
+      hostingAsked: hostingNeeded, // false: hosting was not a choice for these services
       // Commercial classification and the committed / variable split.
       commercialModel: summary.commercialModel,
       variableEstimate: round2(summary.variableEstimate), variableEstimateMonthly: round2(summary.variableEstimateMonthly),
@@ -454,7 +478,7 @@ export default function HansQuoteBuilder({
       currency, notes, preparedBy: me?.name || currentUser,
       billingFrequency, // invoicing cadence — also lives in hans for print
       segment, // also in hans
-      hosting,
+      hosting: hostingValue,
       owner: isEdit ? (editQuote.owner || currentUser) : currentUser,
       createdDate: isEdit ? (editQuote.createdDate || today()) : today(),
       terms: termsWithAmc, // legacy/register/verify read quote.terms
@@ -483,12 +507,12 @@ export default function HansQuoteBuilder({
       quoteNo: (editQuote?.quoteNo || "New quote") + " (preview)", status: needsApproval ? "Approval Required" : "Draft",
       approvalStatus: needsApproval ? "Pending" : "Not Required", paymentTerms: billing.paymentTerms || "",
       billingContactName: billing.billingContactName || "",
-      hosting, legalName: billing.legalName || party.name || "", pan: billing.pan || "", gstin: party.gstin || "", billingAddressSnapshot: party.address || "",
+      hosting: hostingValue, legalName: billing.legalName || party.name || "", pan: billing.pan || "", gstin: party.gstin || "", billingAddressSnapshot: party.address || "",
       createdDate: today(), preparedBy: me?.name || currentUser, notes,
       items,
       hans: {
         party, currency, intraState: summary.intraState, overallDiscountPct, showDiscount, prepaymentDiscountPct,
-        commercialModel: summary.commercialModel, approvalLevel, milestones: hasOneTime ? milestones.filter(m => m.name && Number(m.pct) > 0) : [],
+        commercialModel: summary.commercialModel, approvalLevel, hostingAsked: hostingNeeded, milestones: hasOneTime ? milestones.filter(m => m.name && Number(m.pct) > 0) : [],
         oneTimeSubtotal: round2(summary.oneTimeSubtotal), recurringSubtotal: round2(summary.recurringSubtotal),
         overallDiscount: round2(summary.overallDiscount), prepaymentDisc: round2(summary.prepaymentDisc),
         taxableBase: round2(summary.taxableBase), cgst: round2(summary.cgst), sgst: round2(summary.sgst),
@@ -637,7 +661,14 @@ export default function HansQuoteBuilder({
               </div>
 
               {/* Plan presets */}
-              <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 10px", flexWrap: "wrap" }}>
+              {picked.length > 0 && !hasSubscription && (
+                <div style={{ fontSize: 11.5, color: "#4338CA", background: "#EEF2FF", borderRadius: 8, padding: "6px 10px", margin: "6px 0 10px" }}>
+                  {picked.every(l => l.isVariable) ? "Billed monthly on actual usage. Enter the agreed rate for each service: the list rate or a lower one." : "One-time and usage charges only: no subscription plan or billing cycle to choose."}
+                  {!hostingNeeded ? " Hosted by Hans Infomatic." : ""}
+                </div>
+              )}
+              <div style={{ display: picked.length > 0 && !hasSubscription && !hostingNeeded ? "none" : "flex", gap: 8, alignItems: "center", margin: "6px 0 10px", flexWrap: "wrap" }}>
+                {(picked.length === 0 || hasSubscription) && <>
                 <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>iCAFFE plan:</span>
                 <button className={`btn btn-xs ${selectedPlan === "saasMonthly" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("saasMonthly")}>{selectedPlan === "saasMonthly" && <Check size={11} />}SaaS Monthly (12mo)</button>
                 <button className={`btn btn-xs ${selectedPlan === "saasAdvance" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("saasAdvance")}>{selectedPlan === "saasAdvance" && <Check size={11} />}SaaS Advance (12mo, 10% prepay)</button>
@@ -648,19 +679,24 @@ export default function HansQuoteBuilder({
                     {BILLING_FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
                   </select>
                 </span>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
+                </>}
+                {hostingNeeded && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
                   <span style={{ fontSize: 11, color: hosting ? "var(--text3)" : "#B45309", fontWeight: 600 }}>Hosting<Req /></span>
                   <select value={hosting} onChange={e => setHosting(e.target.value)} style={{ fontSize: 11, padding: "3px 6px", borderRadius: 6, border: `1px solid ${hosting ? "var(--border)" : "#F59E0B"}` }}>
                     <option value="">— Select —</option>
                     {HOSTING_OPTIONS.map(o => <option key={o} value={o}>{HOSTING_LABEL[o]}</option>)}
                   </select>
-                </span>
+                </span>}
               </div>
 
               {/* Line grid */}
               <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 52px 110px 28px", gap: 6, padding: "7px 10px", background: "var(--s2)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--text3)" }}>
-                  <span>Product<Req /></span><span style={{ textAlign: "right" }}>Qty</span><span style={{ textAlign: "right" }}>Months</span><span style={{ textAlign: "right" }}>Disc%</span><span style={{ textAlign: "right" }}>Line total</span><span />
+                  <span>Product<Req /></span>
+                  {picked.length > 0 && picked.every(l => l.isVariable)
+                    ? <span style={{ gridColumn: "span 2", textAlign: "right" }}>Agreed rate</span>
+                    : <><span style={{ textAlign: "right" }}>{picked.some(l => l.isVariable) ? "Qty / rate" : "Qty"}</span><span style={{ textAlign: "right" }}>Months</span></>}
+                  <span style={{ textAlign: "right" }}>Disc%</span><span style={{ textAlign: "right" }}>{picked.length > 0 && picked.every(l => l.isVariable) ? "Billing" : "Line total"}</span><span />
                 </div>
                 {pricedLines.map((l, i) => {
                   const oneTime = isOneTimeModel(l.pricingModel);
@@ -670,7 +706,8 @@ export default function HansQuoteBuilder({
                         <select value={l.productCode} onChange={e => {
                           // A product with a minimum commitment starts at that minimum.
                           const min = Number(catByCode[e.target.value]?.minQty) || 0;
-                          updateLine(i, { productCode: e.target.value, ...(min > (Number(l.qty) || 0) ? { qty: min } : {}) });
+                          const isVar = billingClassOf(catByCode[e.target.value] || {}) === "transaction";
+                          updateLine(i, { productCode: e.target.value, rateText: undefined, ...(isVar ? { qty: 0 } : (Number(l.qty) || 0) < 1 ? { qty: Math.max(1, min) } : min > (Number(l.qty) || 0) ? { qty: min } : {}) });
                         }} style={{ ...fieldStyle, cursor: "pointer" }}>
                           <option value="">— Pick product —</option>
                           {productGroups.general.length > 0 && (
@@ -684,12 +721,23 @@ export default function HansQuoteBuilder({
                             </optgroup>
                           ))}
                         </select>
+                        {l.isVariable ? (
+                          l.slabRates
+                            ? <span style={{ gridColumn: "span 2", fontSize: 11, color: "#4338CA", fontWeight: 600, textAlign: "right" }} title="Priced by slab: give a discount % to agree lower slab rates">slab rates</span>
+                            : <input type="number" min={0} step="any" style={{ ...fieldStyle, gridColumn: "span 2", textAlign: "right", borderColor: "#A5B4FC" }}
+                                title={`Agreed rate per ${l.unit || "unit"}: the list rate (${inr2(l.unitPriceResolved)}) or a lower one`}
+                                placeholder="Agreed rate"
+                                value={l.rateText ?? rateAfterDiscount(l.unitPriceResolved, l.discountPct)}
+                                onChange={e => updateLine(i, { rateText: e.target.value, discountPct: e.target.value === "" ? 0 : discountForRate(l.unitPriceResolved, e.target.value) })}
+                                onBlur={() => updateLine(i, { rateText: undefined })} />
+                        ) : (<>
                         <input type="number" min={l.minQty || 0} value={l.qty} onChange={e => updateLine(i, { qty: +e.target.value })}
                           onBlur={() => { if (l.minQty && (Number(l.qty) || 0) < l.minQty) updateLine(i, { qty: l.minQty }); }}
                           title={l.isVariable ? `Expected ${String(l.unit || "unit").toLowerCase()}s per month: an internal estimate only. The customer is billed on actual use.` : l.minQty ? `Minimum ${l.minQty} ${String(l.unit || "unit").toLowerCase()}s` : ""}
                           style={{ ...fieldStyle, textAlign: "right", border: (Number(l.qty) || 0) < (l.minQty || 0) ? "1.5px solid #DC2626" : fieldStyle.border }} />
                         <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })} style={{ ...fieldStyle, textAlign: "right", opacity: oneTime ? 0.5 : 1 }} />
-                        <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: +e.target.value })} title={l.maxDiscountPct === 0 ? "Any discount on this product needs management approval" : ""}
+                        </>)}
+                        <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: +e.target.value, rateText: undefined })} title={l.maxDiscountPct === 0 ? "Any discount on this product needs management approval" : ""}
                           style={{ ...fieldStyle, textAlign: "right", color: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? "#DC2626" : "var(--text)", fontWeight: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? 700 : 400 }} />
                         <span style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, fontFamily: "'Outfit',sans-serif" }}>
                           {l._empty ? "—" : l.isVariable
@@ -701,9 +749,20 @@ export default function HansQuoteBuilder({
                       {!l._empty && (
                         <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" }}>
                           <span>{l.module}</span>·<span>{l.pricingModel}</span>·<span style={{ fontWeight: 700, color: l.isVariable ? "#4338CA" : undefined }}>{billingClassLabel(l.billingClass)}</span>·
-                          <span>{l.missingRate ? <span style={{ color: "#DC2626", fontWeight: 700 }}>Enter rate in master</span> : `unit ${inr2(l.unitPriceResolved)}/${l.unit}`}</span>
+                          <span>{l.missingRate ? <span style={{ color: "#DC2626", fontWeight: 700 }}>Enter rate in master</span> : l.isVariable ? null : `unit ${inr2(l.unitPriceResolved)}/${l.unit}`}</span>
                           {l.minMonthFloor ? <span>· floor {inr(l.minMonthFloor)}/mo</span> : null}
-                          {l.isVariable ? <span style={{ color: "#4338CA" }}>· Qty = expected per month (internal): est. {inr(l.effectiveMonths > 0 ? l.lineEstimate / l.effectiveMonths : 0)}/mo, not in the total</span> : null}
+                          {l.isVariable ? <span style={{ color: "#4338CA", display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                            · {l.slabRates
+                              ? <>agreed slabs: {l.slabRates.map(sl => `${sl.label} ${inr2(rateAfterDiscount(sl.rate, l.discountPct))}`).join(" · ")}</>
+                              : <>agreed <b>{inr2(rateAfterDiscount(l.unitPriceResolved, l.discountPct))}</b> per {l.unit}{Number(l.discountPct) > 0 ? ` (list ${inr2(l.unitPriceResolved)}, ${+Number(l.discountPct).toFixed(2)}% off)` : " (list rate)"}</>}
+                            · billed monthly on actual use
+                            <span style={{ color: "var(--text3)", display: "inline-flex", gap: 4, alignItems: "center" }}>· expected per month (optional, internal)
+                              <input type="number" min={0} value={l.qty || ""} placeholder="—" onChange={e => updateLine(i, { qty: +e.target.value || 0 })} style={{ width: 70, fontSize: 10.5, padding: "1px 5px", border: "1px solid var(--border)", borderRadius: 5, textAlign: "right" }} />
+                              {Number(l.qty) > 0 ? `≈ ${inr(l.grossPerPeriod * (1 - (Number(l.discountPct) || 0) / 100))}/mo, not in the total` : ""}
+                            </span>
+                            {!l.variableOpen ? <span style={{ color: "var(--text3)", display: "inline-flex", gap: 4, alignItems: "center" }}>· minimum {inr(l.committedPerPeriod)}/mo committed for
+                              <input type="number" min={1} value={l.months || 12} onChange={e => updateLine(i, { months: +e.target.value || 1 })} style={{ width: 46, fontSize: 10.5, padding: "1px 5px", border: "1px solid var(--border)", borderRadius: 5, textAlign: "right" }} /> months</span> : null}
+                          </span> : null}
                           {l.agreedNo ? <span style={{ color: "#047857", fontWeight: 600 }}>· customer's agreed rate ({l.agreedNo}){Math.abs((l.liveRate || 0) - l.unitPriceResolved) > 0.005 ? `; price list ${inr2(l.liveRate)}` : ""}</span> : null}
                           {l.rateFrozen ? <span style={{ color: "#B45309", fontWeight: 600 }}>· agreed rate kept{Math.abs((l.liveRate || 0) - l.unitPriceResolved) > 0.005 ? ` (price list now ${inr2(l.liveRate)})` : ""}</span> : null}
                           {l.minQty ? <span style={{ color: (Number(l.qty) || 0) < l.minQty ? "#DC2626" : undefined, fontWeight: (Number(l.qty) || 0) < l.minQty ? 700 : 400 }}>· minimum {l.minQty} {String(l.unit || "unit").toLowerCase()}s{(Number(l.qty) || 0) < l.minQty ? ` — billed for ${l.minQty}` : ""}</span> : null}
@@ -745,7 +804,9 @@ export default function HansQuoteBuilder({
                 <div style={{ fontSize: 11.5, marginBottom: 4 }}><span style={{ background: "#EEF2FF", color: "#4338CA", fontWeight: 700, padding: "2px 8px", borderRadius: 10 }}>{summary.commercialModel?.label || "Not classified"}</span></div>
                 {sumRow("One-time subtotal", inr(summary.oneTimeSubtotal))}
                 {sumRow("Fixed recurring subtotal", inr(summary.recurringSubtotal))}
-                {summary.variableLineCount > 0 && sumRow("Variable, on actual use (estimate, not in total)", `${inr(summary.variableEstimateMonthly)}/mo`, { color: "#4338CA" })}
+                {summary.variableLineCount > 0 && (summary.variableEstimateMonthly > 0
+                  ? sumRow("Variable, on actual use (estimate, not in total)", `${inr(summary.variableEstimateMonthly)}/mo`, { color: "#4338CA" })
+                  : sumRow(`Variable (${summary.variableLineCount} service${summary.variableLineCount > 1 ? "s" : ""})`, "billed on actual use", { color: "#4338CA" }))}
                 <div className="form-row" style={{ margin: "6px 0", gap: 6 }}>
                   <div className="form-group" style={{ flex: 1, marginBottom: 0 }}><label style={lbl}>Overall disc %</label><input type="number" min={0} max={100} value={overallDiscountPct} onChange={e => setOverallDiscountPct(+e.target.value)} /></div>
                 </div>
@@ -832,7 +893,7 @@ export default function HansQuoteBuilder({
                 )}
                 {needsApproval && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={`Approval required${approvalLevel ? ` (${approvalLevel.label}${approvalLevel.discountPct ? `, discount ${approvalLevel.discountPct}%` : ""})` : ""} — ${approvalReasons.join("; ")}`} />}
                 {hasOneTime && (
-                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", fontSize: 12 }} onChangeCapture={() => setMilestonesTouched(true)} onClickCapture={(e) => { if (e.target.closest("button")) setMilestonesTouched(true); }}>
                     <div style={{ fontWeight: 700, marginBottom: 4 }}>One-time charges: payment milestones</div>
                     {milestones.map((m, i) => (
                       <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 58px 70px 24px", gap: 6, alignItems: "center", marginBottom: 4 }}>
@@ -860,7 +921,7 @@ export default function HansQuoteBuilder({
                   {needsApproval ? "Save (route for approval)" : "Save quote"}
                 </button>
               </div>
-              {!canSave && <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 6, textAlign: "center" }}>Pick an opportunity, a party, hosting (Hans / Client), at least one priced line (no missing rates).</div>}
+              {!canSave && <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 6, textAlign: "center" }}>Pick an opportunity, a party{hostingNeeded ? ", hosting (Hans / Client)" : ""}, at least one priced line (no missing rates).</div>}
               {canSave && billingMissing.length > 0 && (
                 <div style={{ fontSize: 10.5, color: "#B45309", marginTop: 6, textAlign: "center", cursor: "pointer" }} onClick={() => setShowBilling(true)} title="Open Billing & tax details">
                   {billingMissing.length} billing detail{billingMissing.length > 1 ? "s" : ""} missing: {billingMissing.join(", ")} — click to complete.

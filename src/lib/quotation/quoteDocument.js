@@ -32,6 +32,8 @@ import { getQuoteTemplate } from "../../data/quoteTemplates.js";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const inr = (n) => "₹" + Math.round(num(n)).toLocaleString("en-IN");
+// A unit rate keeps its paise (₹27.50, ₹2.50); whole rupees print without decimals.
+const inrRate = (n) => { const v = Math.round(num(n) * 100) / 100; return "₹" + v.toLocaleString("en-IN", { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }); };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${m[3]}-${MONTHS[+m[2] - 1]}-${m[1]}` : String(iso || ""); };
 const longDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${+m[3]} ${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][+m[2] - 1]} ${m[1]}` : String(iso || ""); };
@@ -125,7 +127,7 @@ export function quoteDocModel(quote, opts = {}) {
     const d = String(mainRow?.description || "");
     const gb = /(\d+)\s*GB document storage/i.exec(d); if (gb) plan.push(["Included storage", `${gb[1]} GB, shared by all users of your company`]);
     const wa = /(\d+)\s*WhatsApp messages/i.exec(d); if (wa) plan.push(["WhatsApp messages included", `${wa[1]} messages a month, shared by all users of your company`]);
-    if (quote.hosting) plan.push(["Hosting", HOSTING_LABEL[quote.hosting] || quote.hosting]);
+    if (quote.hosting && h.hostingAsked !== false) plan.push(["Hosting", HOSTING_LABEL[quote.hosting] || quote.hosting]);
   }
 
   const template = product ? getQuoteTemplate(product.id) : null;
@@ -210,19 +212,20 @@ export function quoteDocumentHtml(quote, opts = {}) {
   let sec = 0; const H = (title) => `<h2>${++sec}. ${esc(title)}</h2>`;
   const D = m.showDiscount;
   const cols = D ? 6 : 5;
-  const priceRow = (n, l) => `<tr><td>${n}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${inr(l.rate)}</td>${D ? `<td class="r">${l.discountPct ? `${l.discountPct}%` : "—"}</td>` : ""}<td class="r">${l.qty || ""}</td><td class="r">${inr(l.amount)}</td></tr>`;
+  const priceRow = (n, l) => `<tr><td>${n}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${inrRate(l.rate)}</td>${D ? `<td class="r">${l.discountPct ? `${l.discountPct}%` : "—"}</td>` : ""}<td class="r">${l.qty || ""}</td><td class="r">${inr(l.amount)}</td></tr>`;
   const noteRow = (n, text) => `<tr><td>${n}</td><td>${esc(text)}</td><td>One time</td><td></td>${D ? "<td></td>" : ""}<td></td><td></td></tr>`;
   const totRow = (label, value, cls = "tot") => `<tr class="${cls}"><td></td><td colspan="${cols - 1}">${esc(label)}</td><td class="r">${value}</td></tr>`;
   let n = 0;
   const hasCode = (code) => (quote.items || []).some((l) => l.productCode === code);
 
-  const hansHosted = m.hosted && quote.hosting === "Hans";
+  // "Server setup: not applicable" rows only where hosting was a real choice.
+  const hansHosted = m.hosted && quote.hosting === "Hans" && quote.hans?.hostingAsked !== false;
   const minimums = m.usage.filter((l) => l.minimum > 0);
   const hasFixed = m.subs.length > 0 || minimums.length > 0;
   const hasOneTimeSec = m.oneTime.length > 0 || hansHosted;
   let letter = 0; const L = () => String.fromCharCode(65 + letter++);
   const secRow = (title) => `<tr class="sec"><td>${L()}</td><td colspan="${cols}">${esc(title)}</td></tr>`;
-  const dCell = (l) => (D ? `<td class="r">${l.discountPct ? `${l.discountPct}%` : "—"}</td>` : "");
+  const dCell = (l) => (D ? `<td class="r">${l.discountPct ? `${+Number(l.discountPct).toFixed(2)}%` : "—"}</td>` : "");
   const onUse = '<td class="r" colspan="2" style="color:#475569">On actual use</td>';
 
   // B. Variable charges: the agreed rate and unit only. Never volume × rate.
@@ -236,10 +239,10 @@ export function quoteDocumentHtml(quote, opts = {}) {
     const notes = extra.length ? `<tr><td></td><td colspan="${cols}" style="font-size:8.4pt;color:#475569;padding-top:0">${extra.map(esc).join("<br>")}</td></tr>` : "";
     const shownRate = row && Number(row.packQty) > 0 ? Number(row.listPrice ?? l.listRate) : l.listRate;
     if (l.slabs && l.slabs.length) {
-      return `<tr><td>${++n}</td><td colspan="${cols}"><b>${esc(l.name)}</b>, ${esc(l.basis.replace(/^Per /, "per "))}: rate by the ${row?.slabPeriod === "year" ? "year's" : "month's"} volume${row?.slabMode === "graduated" ? " (each band at its own rate)" : " (the whole month is billed at its slab's rate)"}${D && l.discountPct ? `, less ${l.discountPct}% discount` : ""}</td></tr>`
-        + l.slabs.map((sl) => `<tr><td></td><td style="padding-left:18px">${esc(sl.label)}</td><td>${esc(l.basis)}</td><td class="r">${sl.rate != null ? inr(fx(sl.rate)) : "On request"}</td>${D ? "<td></td>" : ""}${onUse}</tr>`).join("") + notes;
+      return `<tr><td>${++n}</td><td colspan="${cols}"><b>${esc(l.name)}</b>, ${esc(l.basis.replace(/^Per /, "per "))}: rate by the ${row?.slabPeriod === "year" ? "year's" : "month's"} volume${row?.slabMode === "graduated" ? " (each band at its own rate)" : " (the whole month is billed at its slab's rate)"}${D && l.discountPct ? `, less ${+Number(l.discountPct).toFixed(2)}% discount` : ""}</td></tr>`
+        + l.slabs.map((sl) => `<tr><td></td><td style="padding-left:18px">${esc(sl.label)}</td><td>${esc(l.basis)}</td><td class="r">${sl.rate != null ? inrRate(fx(sl.rate)) : "On request"}</td>${D ? "<td></td>" : ""}${onUse}</tr>`).join("") + notes;
     }
-    return `<tr><td>${++n}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}${row && Number(row.packQty) > 0 ? " beyond the pack" : ""}</td><td class="r">${l.included ? "Included" : shownRate ? inr(fx(shownRate)) : "On request"}</td>${dCell(l)}${l.included ? '<td colspan="2"></td>' : onUse}</tr>${notes}`;
+    return `<tr><td>${++n}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}${row && Number(row.packQty) > 0 ? " beyond the pack" : ""}</td><td class="r">${l.included ? "Included" : shownRate ? inrRate(fx(shownRate)) : "On request"}</td>${dCell(l)}${l.included ? '<td colspan="2"></td>' : onUse}</tr>${notes}`;
   });
 
   const fixedRows = hasFixed ? [
