@@ -93,6 +93,8 @@ export function buildAgreement(quote, opts = {}) {
     commercialModel: commercialModelOf(lines.map((l) => l.billingClass)),
     overallDiscountPct: overall, milestones: Array.isArray(h.milestones) ? h.milestones : [],
     amends: quote.supersedesQuoteId || "",
+    // How it is billed (frequencies, separate usage invoice, proration): set on the Billing screen, kept across refreshes.
+    ...(quote.agreement?.billing ? { billing: quote.agreement.billing } : {}),
     lines, createdAt: quote.agreement?.createdAt || opts.now || new Date().toISOString(),
     sourceHash: agreementHash(quote),
   };

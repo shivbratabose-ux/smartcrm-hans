@@ -170,7 +170,8 @@ Usage arrives first by entry or spreadsheet upload by Accounts, later by a feed 
 | 15 | Missing configuration | 🟡 | ✅ No rate: cannot save. Incomplete configuration: approver's sign-off | — |
 
 Start: 5 pass, 7 partial, 3 not built. After Phase A: 9 pass, 3 partial, 3 not built.
-After Phase B: **11 pass** (10 Pricing revision and 11 Customer-specific rates now pass), 2 partial (4, 9), 2 not built (12, 14); all four belong to the Billing Engine.
+After Phase B: 11 pass (10 Pricing revision and 11 Customer-specific rates), 2 partial (4, 9), 2 not built (12, 14).
+After Phase C: **15 of 15 pass.** 4 Monthly billing on actual usage, 9 Minimum commitment, 12 Usage reconciliation and 14 Mixed billing frequency are proven against the Billing Engine.
 
 ## 12. Implementation plan
 
@@ -189,6 +190,20 @@ Each phase ends with the acceptance script showing its scenarios as Pass.
 1. Usage leaves the quote total; expected volume is an internal estimate, shown separately. Quotes saved earlier keep their stored totals until they are next saved.
 2. Approval levels start as: rep up to 10%, Sales Head up to 20%, Management above. They are edited in Quotation Rules → Config.
 3. Approved, sent and accepted quotes are frozen; "Re-price from the price list" is an explicit action recorded on the quote.
+
+## Phase C as built: the Billing Engine
+
+- `src/lib/billing/engine.js` (pure, 51 tests): billing periods; **fixed recurring** lines billed in advance per frequency, prorated for a part month, with yearly escalation; **variable** lines billed in arrears on approved actual usage, each month priced on the agreed rate or slabs and never below the agreed minimum; **one-time** lines by payment milestone; GST split; credit notes; the Collections record. It prices through the same `monthlyCharge` → `usagePrice` functions as the quote, so a quote and an invoice cannot disagree. A line-month is never billed twice, whatever the invoice grouping.
+- **Usage records** (`billing_usage`): per agreement line and month; a month's usage is the total of its approved entries; entries are voided or corrected, never deleted. Reconciliation before an invoice can be finalised: missing usage and unapproved entries block; the same reference twice is a duplicate (also refused by a unique index); the same quantity with no reference is flagged; corrections are reported.
+- **Invoices** (`billing_invoices`): final invoices and credit notes with their lines and the full working. Insert-only: a final invoice is never edited; a correction is a credit note with a reason. Finalising posts a proforma to Collections.
+- **Billing cycles per agreement:** subscription frequency (Monthly / Quarterly / Half-Yearly / Annual), usage frequency, a separate usage invoice or one consolidated invoice, proration on or off.
+- **Amendments:** an accepted revision takes over from its start date; earlier months bill on the earlier terms.
+- Quotations → **Billing** (Accounts, Finance, managers): Invoice run, Usage (enter, paste from a spreadsheet, approve, correct, void), Invoices (view the working, credit note).
+- Migration: `supabase/commercial_phase_c_v1.sql` (two tables, one helper function; additive).
+
+### Open point: the handover bill
+
+The earlier Quote → Accounts flow raises one proforma for the quote's whole committed total when the quote is made Final (`billFromQuote`). The Billing Engine invoices the same agreement month by month and by milestone. Using both for one customer would bill twice. Recommended: keep the handover step for the customer's confirmation of the order and the ULA, and raise amounts only from the Billing screen (the first milestone and the first period replace the single proforma). This is a process decision and is not changed in code.
 
 ## Phase B as built
 
