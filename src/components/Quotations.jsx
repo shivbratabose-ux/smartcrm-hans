@@ -23,6 +23,7 @@ import { levelApproverIds } from '../lib/quotation/commercial';
 import { needsAgreement, buildAgreement, listAgreements } from '../lib/quotation/agreements';
 import AgreementsPanel from './AgreementsPanel';
 import BillingPanel from './BillingPanel';
+import CommercialReports from './CommercialReports';
 import QuoteAssistant from './QuoteAssistant';
 import { isAiFeatureOn } from '../utils/ai';
 import { companyOf, registrationLine } from '../lib/quotation/company';
@@ -1294,6 +1295,7 @@ Reason for approving (kept on the quote):`,"");
   },[quotes,currentUser]);
   const [showAgreements,setShowAgreements]=useState(false);
   const [showBilling,setShowBilling]=useState(false);
+  const [showReports,setShowReports]=useState(false);
   const agreementCount=useMemo(()=>listAgreements(quotes,today).filter(a=>a.status==="Active").length,[quotes,today]);
 
   /* ── Quote → Accounts → Implementation (flow approved 14 Nov 2026) ── */
@@ -2171,12 +2173,14 @@ Reason for approving (kept on the quote):`,"");
           <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"quotations")}><Download size={14}/>Export</button>
           <button data-tour="custom-quote-btn" className="btn btn-sec" onClick={openAdd} title="Manual / ad-hoc quote — type your own line items and pricing (no catalogue engine)"><Plus size={14}/>Custom Quote</button>
           {isAiFeatureOn(aiConfig,"quoteAssistant")&&<button className="btn btn-sec" onClick={()=>setShowAssistant(true)} title="Describe the requirement in a chat — the assistant fills the pricing builder for you"><Sparkles size={14}/>Quote Assistant</button>}
+          <button className="btn btn-sec" onClick={()=>setShowReports(true)} title="Quotations, revenue, usage and agreement reports"><BarChart3 size={14}/>Reports</button>
           {canBill && <button className="btn btn-sec" onClick={()=>setShowBilling(true)} title="Monthly invoices from agreements and actual usage"><FileSignature size={14}/>Billing</button>}
           <button className="btn btn-sec" onClick={()=>setShowAgreements(true)} title="The agreed rates of every accepted quotation"><ShieldCheck size={14}/>Agreements{agreementCount?` (${agreementCount})`:""}</button>
           <button data-tour="new-quote-btn" className="btn btn-primary" onClick={()=>{setHansEdit(null);setHansDraft(null);setHansBuilder(true);}} title="Recommended — CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment, guardrails)"><FileText size={14}/>New Quote (Pricing Engine)</button>
         </div>
       </div>
 
+      {showReports && <CommercialReports quotes={quotes} accounts={accounts} orgUsers={orgUsers||[]} priceRows={resolveQuotationMasters(masters,catalog).catalogue} catalog={catalog||[]} today={today} onClose={()=>setShowReports(false)}/>}
       {showBilling && <BillingPanel quotes={quotes} setQuotes={setQuotes} accounts={accounts} setCollections={setCollections} config={quoteConfig} currentUser={currentUser} orgUsers={orgUsers||[]} today={today} onClose={()=>setShowBilling(false)}/>}
       {showAgreements && <AgreementsPanel quotes={quotes} accounts={accounts} today={today} onClose={()=>setShowAgreements(false)} onOpenQuote={(q)=>{setShowAgreements(false);setDetail(q);}}/>}
       {hansBuilder && (
