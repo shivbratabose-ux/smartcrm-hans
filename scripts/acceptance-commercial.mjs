@@ -7,6 +7,7 @@
 import { resolveUnitPrice, computeLine, computeQuote } from "../src/lib/quotation/pricingEngine.js";
 import { billingClassOf, requiredApprovalLevel, rowConfigIssues } from "../src/lib/quotation/commercial.js";
 import { buildAgreement, activeAgreementLines, agreedUnitPrice, monthlyCharge } from "../src/lib/quotation/agreements.js";
+import { previewInvoices, reconcileUsage, correctUsage, finaliseProblems, finalise } from "../src/lib/billing/engine.js";
 import { usagePrice, graduatedCost } from "../src/lib/quotation/slabs.js";
 import { quoteDocumentHtml } from "../src/lib/quotation/quoteDocument.js";
 import { HANS_CATALOGUE } from "../src/data/quotationMasters.js";
@@ -58,8 +59,16 @@ const accepted = (id, accountId, rows, extra = {}) => {
   return { ...q, agreement: buildAgreement(q, { priceRows: [wisedox, { ...wisedox, code: "T-DOXMIN", monthlyMinimum: 15000 }], today: "2026-12-01" }) };
 };
 const doxAgreement = accepted("a4", "custA", [line(wisedox, 25000)]);
-scenario(4, "Monthly billing on actual usage (25,000 documents)", "PARTIAL", [monthlyCharge(doxAgreement.agreement.lines[0], 25000).amount === 50000],
-  "The agreement line prices actual usage: 25,000 × the agreed ₹2 = ₹50,000. Gap: usage records and the monthly invoice run (Billing Engine).");
+const GST = { gstRatePct: 18, homeState: "Delhi" };
+const usageRec = (quoteId, lineCode, period, quantity, extra = {}) => ({ id: `${quoteId}-${lineCode}-${period}-${quantity}-${extra.externalRef || ""}`, quoteId, lineCode, period, quantity, externalRef: "", status: "approved", ...extra });
+{
+  const rec = reconcileUsage([usageRec("a4", "T-DOX", "2026-12", 25000, { externalRef: "DEC-REPORT" })], [{ quoteId: "a4", lineCode: "T-DOX", period: "2026-12" }]);
+  const inv = previewInvoices(doxAgreement, "2026-12", rec.totals, { config: GST })[0];
+  const m = inv.lines[0].calc.months[0];
+  scenario(4, "Monthly billing on actual usage (25,000 documents)", "PASS",
+    [rec.ready, inv.lines[0].qty === 25000, inv.lines[0].amount === 50000, inv.taxable === 50000, inv.gst === 9000, inv.total === 59000, inv.period === "2026-12", m.usage === 50000, inv.agreementNo === "Q-a4"],
+    "The December run takes the approved usage (25,000 documents), prices it at the agreement's ₹2 and produces the invoice: ₹50,000 + GST ₹9,000 = ₹59,000, with period, rate, quantity and working on the line.");
+}
 // 5. Progressive slab, 20,000 transactions.
 scenario(5, "Progressive slab (20,000 transactions)", "PASS", [graduatedCost(20000, TXN_SLABS) === 5000 * 3 + 10000 * 2.5 + 5000 * 2, usagePrice(txnProgressive, 20000).amount === 50000],
   "5,000 × ₹3 + 10,000 × ₹2.50 + 5,000 × ₹2 = ₹50,000");
@@ -92,8 +101,10 @@ scenario(6, "Volume slab (20,000 transactions)", "PASS", [usagePrice(txnVolume, 
   const row = { ...wisedox, monthlyMinimum: 15000 };
   const low = Math.max(usagePrice(row, 5000).amount, usagePrice(row, 5000).floor), high = Math.max(usagePrice(row, 9000).amount, usagePrice(row, 9000).floor);
   const minAgr = accepted("a9", "custA", [line({ ...row, code: "T-DOXMIN" }, 5000)]).agreement.lines[0];
-  scenario(9, "Minimum monthly commitment", "PARTIAL", [low === 15000, high === 18000, monthlyCharge(minAgr, 5000).amount === 15000, monthlyCharge(minAgr, 9000).amount === 18000],
-    "Under the agreement, 5,000 documents (₹10,000) bills the ₹15,000 minimum and 9,000 documents bills ₹18,000. Gap: the invoice run that applies it each month (Billing Engine).");
+  const minQuote = accepted("a9", "custA", [line({ ...row, code: "T-DOXMIN" }, 5000)]);
+  const bill = (qty) => previewInvoices(minQuote, "2026-12", { "a9|T-DOXMIN|2026-12": qty }, { config: GST })[0].lines[0];
+  scenario(9, "Minimum monthly commitment", "PASS", [low === 15000, high === 18000, monthlyCharge(minAgr, 5000).amount === 15000, bill(5000).amount === 15000, bill(5000).calc.months[0].minimumApplied === true, bill(9000).amount === 18000, bill(9000).calc.months[0].minimumApplied === false],
+    "On the invoice: 5,000 documents (₹10,000 at ₹2) is billed at the agreed ₹15,000 minimum and says so; 9,000 documents is billed at ₹18,000.");
 }
 // 10. Pricing revision after approval.
 {
@@ -113,7 +124,21 @@ scenario(6, "Volume slab (20,000 transactions)", "PASS", [usagePrice(txnVolume, 
     "Customer A's agreement is ₹2 per document, Customer B's is ₹1.50; a new customer gets the price list. A new quote for A or B starts from their agreed rate.");
 }
 // 12. Usage reconciliation.
-scenario(12, "Usage reconciliation (duplicate / missing / corrected)", "NOT BUILT", [true], "Needs usage records (Billing Engine).");
+{
+  const need = [{ quoteId: "a4", lineCode: "T-DOX", period: "2026-12" }];
+  const kinds = (recs) => reconcileUsage(recs, need).issues.map((i) => `${i.level}:${i.type}`);
+  const dup = [usageRec("a4", "T-DOX", "2026-12", 25000, { externalRef: "DEC-REPORT" }), usageRec("a4", "T-DOX", "2026-12", 25000, { externalRef: "DEC-REPORT", id: "second" })];
+  const orig = usageRec("a4", "T-DOX", "2026-12", 25000);
+  const { voided, correction } = correctUsage(orig, 24000, { by: "fin", at: "2027-01-03", id: "corr" });
+  const fixed = reconcileUsage([voided, { ...correction, status: "approved" }], need);
+  const blocked = previewInvoices(doxAgreement, "2026-12", {}, { config: GST })[0];
+  const inv = finalise(previewInvoices(doxAgreement, "2026-12", fixed.totals, { config: GST })[0], { by: "fin" });
+  scenario(12, "Usage reconciliation (duplicate / missing / corrected)", "PASS",
+    [eq(kinds([]), ["blocking:missing"]), eq(kinds(dup), ["blocking:duplicate"]), eq(kinds([{ ...orig, status: "draft" }]), ["blocking:missing", "blocking:unapproved"]),
+      fixed.ready, fixed.totals["a4|T-DOX|2026-12"] === 24000, eq(fixed.issues.map((i) => i.type), ["corrected"]), finaliseProblems(blocked).length === 1, inv.taxable === 48000,
+      previewInvoices(doxAgreement, "2026-12", fixed.totals, { config: GST, invoices: [inv] }).length === 0],
+    "Before an invoice can be finalised: missing usage blocks it, the same reference twice is a duplicate, an unapproved entry blocks, and a correction (25,000 → 24,000) voids the original and bills ₹48,000. Once final, the month cannot be invoiced again.");
+}
 // 13. Discount approval.
 {
   const lv = (d) => requiredApprovalLevel({ needsApproval: d > 10, lines: [{ discountPct: d }], overallDiscountPct: 0 }, { maxUserDiscountPct: 10 })?.label || "no approval";
@@ -121,7 +146,16 @@ scenario(12, "Usage reconciliation (duplicate / missing / corrected)", "NOT BUIL
     "8% within the rep's 10% → no approval · 15% → Sales Head · 25% → Management. Levels, ceilings and people are set in Quotation Rules; approving records the approver, date and reason.");
 }
 // 14. Mixed billing frequency.
-scenario(14, "Mixed billing frequency (monthly SaaS + separate usage cycle)", "NOT BUILT", [true], "Needs billing schedules per component (Billing Engine).");
+{
+  const hybrid = accepted("a14", "custA", [line(orbis, 10), line(wisedox, 25000)]);
+  const mixed = { ...hybrid, agreement: { ...hybrid.agreement, billing: { subscriptionFrequency: "Monthly", usageFrequency: "Quarterly", separateUsageInvoice: true } } };
+  const u = { "a14|T-DOX|2026-12": 25000, "a14|T-DOX|2027-01": 20000, "a14|T-DOX|2027-02": 30000 };
+  const run = (p) => previewInvoices(mixed, p, u, { config: GST }).map((i) => [i.cycle, i.taxable]);
+  const saas = 10 * orbis.listPrice;
+  scenario(14, "Mixed billing frequency (monthly SaaS + separate usage cycle)", "PASS",
+    [eq(run("2026-12"), [["subscription", saas]]), eq(run("2027-01"), [["subscription", saas]]), eq(run("2027-02"), [["subscription", saas], ["usage", 150000]])],
+    `SaaS is invoiced every month (₹${saas.toLocaleString("en-IN")}); usage is on its own quarterly cycle: nothing in December or January, then one usage invoice in February for the quarter (25,000 + 20,000 + 30,000 documents = ₹1,50,000), each month priced on its own volume.`);
+}
 // 15. Missing product configuration.
 {
   const blank = { code: "T-NONE", name: "Unpriced product", pricingModel: "SaaS Subscription", unit: "User", rateSource: "Flat", listPrice: null };
