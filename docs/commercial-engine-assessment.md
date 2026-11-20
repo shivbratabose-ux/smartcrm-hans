@@ -191,6 +191,32 @@ Each phase ends with the acceptance script showing its scenarios as Pass.
 2. Approval levels start as: rep up to 10%, Sales Head up to 20%, Management above. They are edited in Quotation Rules → Config.
 3. Approved, sent and accepted quotes are frozen; "Re-price from the price list" is an explicit action recorded on the quote.
 
+## Phase D as built: reports
+
+Quotations → **Reports**: the fifteen reports of specification §15, over a From / To month range, each downloadable as CSV. `src/lib/billing/reports.js` (pure, 32 tests); screen `CommercialReports.jsx`. No database change. Committed recurring, variable and one-time revenue are separate columns or separate reports throughout; usage never appears as committed.
+
+| # | Report | Source |
+|---|---|---|
+| 1 | Quotations by customer, product and sales owner | Quotes |
+| 2 | Quotations pending approval | Quotes (level, discount, days waiting, reason) |
+| 3 | Quotations won, lost and expired | Quotes (win rate) |
+| 4 | Product-wise quoted value | Quote lines, by billing class |
+| 5 | Fixed recurring revenue | Agreements in force + invoiced subscriptions and minimums |
+| 6 | Actual transaction-based revenue | Final invoices |
+| 7 | One-time project revenue | Agreements + milestone invoices |
+| 8 | Customer-wise monthly consumption | Approved usage |
+| 9 | Product-wise transaction volumes | Approved usage |
+| 10 | Average transaction rate | Invoiced amount ÷ volume, against list and agreed rates |
+| 11 | Slab-wise customer distribution | Agreements + usage of the last month in range |
+| 12 | Discounts and exceptions | Quotes (approver, date, reason) |
+| 13 | Quoted versus actual invoiced revenue | Agreements + invoices + credit notes |
+| 14 | Usage versus billing reconciliation | Usage against invoice lines, per line-month |
+| 15 | Contract renewals and pricing revisions | Agreement terms, amendments, re-pricing, price history |
+
+A sales user sees their own quotes and, through the database rules, only the usage and invoices of their own quotes; the billing desk sees everything.
+
+With Phase D, every section of the specification of 20 Nov 2026 is built: Product and Pricing Master (§3–4), quote workflow (§5), the four billing models and slabs (§6–9), the quotation document (§10), the Billing Engine (§11), discounts and approvals (§12), versions and amendments (§13), customer agreements (§14), reports (§15), and the 15 acceptance tests (§17).
+
 ## Phase C as built: the Billing Engine
 
 - `src/lib/billing/engine.js` (pure, 51 tests): billing periods; **fixed recurring** lines billed in advance per frequency, prorated for a part month, with yearly escalation; **variable** lines billed in arrears on approved actual usage, each month priced on the agreed rate or slabs and never below the agreed minimum; **one-time** lines by payment milestone; GST split; credit notes; the Collections record. It prices through the same `monthlyCharge` → `usagePrice` functions as the quote, so a quote and an invoice cannot disagree. A line-month is never billed twice, whatever the invoice grouping.
