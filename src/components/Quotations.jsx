@@ -20,6 +20,8 @@ import GuidedTour from './GuidedTour';
 import QuoteHandoverPanel from './QuoteHandoverPanel';
 import { printHansQuote } from '../lib/quotation/printQuote';
 import { levelApproverIds } from '../lib/quotation/commercial';
+import { engineLineView, engineGst, engineProductIds } from '../lib/quotation/engineLineView';
+import { groupOf } from '../lib/quotation/productGroups';
 import { needsAgreement, buildAgreement, listAgreements } from '../lib/quotation/agreements';
 import AgreementsPanel from './AgreementsPanel';
 import BillingPanel from './BillingPanel';
@@ -192,9 +194,9 @@ const CSV_COLS = [
   {label:"Card Rate Total",accessor:q=>(Array.isArray(q.items)?q.items:[]).reduce((s,i)=>s+(Number(i.mrp)||0)*(Number(i.qty)||0),0)},
   {label:"Subtotal (Taxable)",accessor:q=>q.subtotal||0},
   {label:"Discount",accessor:q=>q.discount||0},
-  {label:"IGST",accessor:q=>q.igstTotal!=null?q.igstTotal:sumLines(q,"igstAmount")},
-  {label:"CGST",accessor:q=>q.cgstTotal!=null?q.cgstTotal:sumLines(q,"cgstAmount")},
-  {label:"SGST",accessor:q=>q.sgstTotal!=null?q.sgstTotal:sumLines(q,"sgstAmount")},
+  {label:"IGST",accessor:q=>q.igstTotal!=null?q.igstTotal:q.hans?engineGst(q).igst:sumLines(q,"igstAmount")},
+  {label:"CGST",accessor:q=>q.cgstTotal!=null?q.cgstTotal:q.hans?engineGst(q).cgst:sumLines(q,"cgstAmount")},
+  {label:"SGST",accessor:q=>q.sgstTotal!=null?q.sgstTotal:q.hans?engineGst(q).sgst:sumLines(q,"sgstAmount")},
   {label:"Tax Total",accessor:q=>q.taxAmount||0},
   {label:"Order Value (INR)",accessor:q=>formatINR(q.total)},{label:"Prob %",accessor:q=>q._prob||0},
   {label:"Status",accessor:q=>q.status},{label:"Version",accessor:q=>`v${q.version||1}`},
@@ -2435,7 +2437,7 @@ Reason for approving (kept on the quote):`,"");
             </div>
             <div>
               <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:8}}>PRODUCTS & MODULES</div>
-              <ProductSelectionDisplay value={detail.productSelection} catalog={catalog} fallbackProducts={detail.product?[detail.product]:[]}/>
+              <ProductSelectionDisplay value={detail.productSelection} catalog={catalog} fallbackProducts={detail.product?[detail.product]:detail.hans?engineProductIds(detail,resolveQuotationMasters(masters,catalog).catalogue,catalog||[],groupOf):[]}/>
               {/* CC Contacts */}
               {(detail.ccContactIds||[]).length>0&&(
                 <div style={{marginTop:10}}>
@@ -2474,6 +2476,28 @@ Reason for approving (kept on the quote):`,"");
               </tr></thead>
               <tbody>{detail.items.map((item,i)=>{
                 const s=curSym(item.currency);
+                // Pricing-engine lines carry different fields; show them per billing class.
+                if(detail.hans){
+                  const ev=engineLineView(item);
+                  const es=curSym(item.currency||detail.currency||"INR");
+                  const r2=(v)=>{const n=Math.round((Number(v)||0)*100)/100; return `${es}${n.toLocaleString("en-IN",{minimumFractionDigits:Number.isInteger(n)?0:2,maximumFractionDigits:2})}`;};
+                  return (
+                    <tr key={i}>
+                      <td style={{fontFamily:"monospace",fontSize:11,color:"var(--text2)"}}>{ev.charge||"—"}</td>
+                      <td style={{fontSize:12.5}}>
+                        <div style={{fontWeight:600}}>{ev.name}</div>
+                        {ev.note&&<div style={{fontSize:11,color:ev.billingClass==="transaction"?"#4338CA":"var(--text3)",marginTop:2}}>{ev.note}</div>}
+                      </td>
+                      <td style={{textAlign:"right",whiteSpace:"nowrap"}}>{ev.qtyText}</td>
+                      <td style={{textAlign:"right"}}>{ev.mrp>0?r2(ev.mrp):"—"}</td>
+                      <td style={{textAlign:"right",color:ev.discountPct>0?"#B91C1C":"var(--text3)"}}>{ev.discountPct>0?`${+ev.discountPct.toFixed(2)}%`:"—"}</td>
+                      <td style={{textAlign:"right",whiteSpace:"nowrap"}}>{r2(ev.price)}{ev.priceText&&<div style={{fontSize:10,color:"var(--text3)"}}>{ev.priceText}</div>}</td>
+                      <td style={{textAlign:"right",fontWeight:600}}>{ev.billingClass==="transaction"&&!ev.taxable?<span style={{fontSize:11,color:"#4338CA",fontWeight:600}}>On actual use</span>:r2(ev.taxable)}</td>
+                      <td style={{textAlign:"right",color:"var(--text3)"}} title="GST is charged on the quote total (below)">—</td>
+                      <td style={{textAlign:"right",fontWeight:700,color:"var(--brand)"}}>{ev.billingClass==="transaction"&&!ev.total?"—":r2(ev.total)}</td>
+                    </tr>
+                  );
+                }
                 const dv=Number(item.discountValue)||0;
                 const dt=item.discountType||"pct";
                 const gst=(Number(item.igstAmount)||0)+(Number(item.cgstAmount)||0)+(Number(item.sgstAmount)||0);
@@ -2518,16 +2542,17 @@ Reason for approving (kept on the quote):`,"");
               <span>Discount</span><strong>− {fmtL(detail.discount)}</strong>
             </div>}
             {(()=>{
-              const igst=detail.igstTotal!=null?detail.igstTotal:sumLines(detail,"igstAmount");
-              const cgst=detail.cgstTotal!=null?detail.cgstTotal:sumLines(detail,"cgstAmount");
-              const sgst=detail.sgstTotal!=null?detail.sgstTotal:sumLines(detail,"sgstAmount");
+              const eg=detail.hans?engineGst(detail):null;
+              const igst=detail.igstTotal!=null?detail.igstTotal:eg?eg.igst:sumLines(detail,"igstAmount");
+              const cgst=detail.cgstTotal!=null?detail.cgstTotal:eg?eg.cgst:sumLines(detail,"cgstAmount");
+              const sgst=detail.sgstTotal!=null?detail.sgstTotal:eg?eg.sgst:sumLines(detail,"sgstAmount");
               if(igst>0||cgst>0||sgst>0) return (<>
                 {igst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>IGST</span><span>₹{igst.toLocaleString()}</span></div>}
                 {cgst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>CGST</span><span>₹{cgst.toLocaleString()}</span></div>}
                 {sgst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>SGST</span><span>₹{sgst.toLocaleString()}</span></div>}
               </>);
               return <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid var(--s3)",fontSize:12,color:"var(--text2)"}}>
-                <span>Tax ({detail.taxType})</span><span>{fmtL(detail.taxAmount)}</span>
+                <span>Tax ({detail.taxType||"GST"})</span><span>{fmtL(detail.taxAmount)}</span>
               </div>;
             })()}
             <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 0",marginTop:4,borderTop:"2px solid var(--brand)"}}>
