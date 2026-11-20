@@ -170,6 +170,7 @@ Usage arrives first by entry or spreadsheet upload by Accounts, later by a feed 
 | 15 | Missing configuration | 🟡 | ✅ No rate: cannot save. Incomplete configuration: approver's sign-off | — |
 
 Start: 5 pass, 7 partial, 3 not built. After Phase A: 9 pass, 3 partial, 3 not built.
+After Phase B: **11 pass** (10 Pricing revision and 11 Customer-specific rates now pass), 2 partial (4, 9), 2 not built (12, 14); all four belong to the Billing Engine.
 
 ## 12. Implementation plan
 
@@ -188,6 +189,19 @@ Each phase ends with the acceptance script showing its scenarios as Pass.
 1. Usage leaves the quote total; expected volume is an internal estimate, shown separately. Quotes saved earlier keep their stored totals until they are next saved.
 2. Approval levels start as: rep up to 10%, Sales Head up to 20%, Management above. They are edited in Quotation Rules → Config.
 3. Approved, sent and accepted quotes are frozen; "Re-price from the price list" is an explicit action recorded on the quote.
+
+## Phase B as built
+
+Design change from section 6: the agreement is stored **on the accepted quote's own record** (`quotations.agreement`, one new column), not in separate `commercial_agreements` / `agreement_lines` tables. Quotes already sync, carry permissions and keep a change log, so the agreement inherits all three and no new collection is added to the sync layer. Usage records (Phase C) will reference the quote id and the agreement line.
+
+- `src/lib/quotation/agreements.js`: `buildAgreement` (frozen lines: class, unit, list rate, discount, agreed rate, slab / pack / minimum snapshot, dates), status worked out on the fly (Active / Superseded / Ended / Cancelled), `activeAgreementLines` (rates in force for a customer on a date), `agreedUnitPrice`, `monthlyCharge` (what the Billing Engine will call).
+- Created automatically when a pricing-builder quote is accepted; refreshed only if the accepted terms change.
+- **Amendment** = revise the quotation and have the revision accepted: the new version is the agreement in force, the earlier one is kept as Superseded.
+- **Customer-specific rates:** a new quote for a customer starts from their agreed rates ("customer's agreed rate" on the line; a tick box switches to the price list).
+- Quotations → **Agreements**: every agreement with status, term, model, fixed monthly amount and its lines.
+- **Price history:** `pricing_master_history`, written by a database trigger on every change to the Pricing Master (one row per price row added / changed / removed, one per rules section), shown in Masters → Products & Pricing → Price history. Append-only.
+- **Pricing owners** (Quotation Rules → Config): when named, only they, Admin and MD change prices and rules. The screen is read-only for others and a database trigger keeps the Pricing Master unchanged if anyone else saves.
+- Migration: `supabase/commercial_phase_b_v1.sql` (one column, one table, two triggers; additive; both triggers swallow their own errors so they cannot block a Masters save).
 
 ## Phase A as built
 

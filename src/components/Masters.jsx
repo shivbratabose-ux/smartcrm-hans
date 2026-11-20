@@ -747,7 +747,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
         <div id="product-prices" style={{marginTop:22}}>
           <div style={{fontSize:15,fontWeight:800,marginBottom:2}}>Prices</div>
           <div style={{fontSize:12,color:"var(--text3)",marginBottom:8}}>Every price row belongs to a product above, or to the shared Services &amp; add-ons. Quotes, the pricing engine and the Quote Assistant use these rows.</div>
-          <QuotationMasters mode="rates" masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers}
+          <QuotationMasters mode="rates" masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers} currentUser={currentUser}
             focusProduct={priceFocus} setFocusProduct={setPriceFocus}
             onAddProducts={(list)=>{
               setCatalog(c=>[...c,...list.map(x=>x.product).filter(np=>!c.some(p=>p.id===np.id))]);
@@ -761,7 +761,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
         </div>
       </>)}
       {tab==="leadfields" && <LeadFieldsEditor masters={masters} setMasters={setMasters} catalog={catalog}/>}
-      {tab==="quotation" && <QuotationMasters masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers} onOpenRates={()=>setTab("products")}/>}
+      {tab==="quotation" && <QuotationMasters masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers} currentUser={currentUser} onOpenRates={()=>setTab("products")}/>}
     </div>
   );
 }

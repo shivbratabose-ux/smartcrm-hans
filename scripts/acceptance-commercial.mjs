@@ -6,6 +6,7 @@
 // Run: node scripts/acceptance-commercial.mjs      (exit 1 only if a PASS regresses)
 import { resolveUnitPrice, computeLine, computeQuote } from "../src/lib/quotation/pricingEngine.js";
 import { billingClassOf, requiredApprovalLevel, rowConfigIssues } from "../src/lib/quotation/commercial.js";
+import { buildAgreement, activeAgreementLines, agreedUnitPrice, monthlyCharge } from "../src/lib/quotation/agreements.js";
 import { usagePrice, graduatedCost } from "../src/lib/quotation/slabs.js";
 import { quoteDocumentHtml } from "../src/lib/quotation/quoteDocument.js";
 import { HANS_CATALOGUE } from "../src/data/quotationMasters.js";
@@ -51,8 +52,14 @@ const line = (row, qty, months = 12) => {
     "Customer document: ₹2 per document, 'on actual use', no 25,000 × ₹2. Quote total and TCV: ₹0 committed; the ₹50,000 a month is an internal estimate only.");
 }
 // 4. Monthly billing on actual usage.
-scenario(4, "Monthly billing on actual usage (25,000 documents)", "PARTIAL", [usagePrice(wisedox, 25000).amount === 50000],
-  "The calculation exists (25,000 × ₹2 = ₹50,000). Gap: no usage records and no invoice run; bills are raised from the quote amount.");
+// An accepted quote becomes the customer's agreement; billing reads its frozen lines.
+const accepted = (id, accountId, rows, extra = {}) => {
+  const q = { id, quoteNo: `Q-${id}`, version: 1, status: "Accepted", acceptedDate: "2026-12-01", accountId, currency: "INR", items: rows, hans: { party: { name: accountId } }, ...extra };
+  return { ...q, agreement: buildAgreement(q, { priceRows: [wisedox, { ...wisedox, code: "T-DOXMIN", monthlyMinimum: 15000 }], today: "2026-12-01" }) };
+};
+const doxAgreement = accepted("a4", "custA", [line(wisedox, 25000)]);
+scenario(4, "Monthly billing on actual usage (25,000 documents)", "PARTIAL", [monthlyCharge(doxAgreement.agreement.lines[0], 25000).amount === 50000],
+  "The agreement line prices actual usage: 25,000 × the agreed ₹2 = ₹50,000. Gap: usage records and the monthly invoice run (Billing Engine).");
 // 5. Progressive slab, 20,000 transactions.
 scenario(5, "Progressive slab (20,000 transactions)", "PASS", [graduatedCost(20000, TXN_SLABS) === 5000 * 3 + 10000 * 2.5 + 5000 * 2, usagePrice(txnProgressive, 20000).amount === 50000],
   "5,000 × ₹3 + 10,000 × ₹2.50 + 5,000 × ₹2 = ₹50,000");
@@ -84,19 +91,27 @@ scenario(6, "Volume slab (20,000 transactions)", "PASS", [usagePrice(txnVolume, 
 {
   const row = { ...wisedox, monthlyMinimum: 15000 };
   const low = Math.max(usagePrice(row, 5000).amount, usagePrice(row, 5000).floor), high = Math.max(usagePrice(row, 9000).amount, usagePrice(row, 9000).floor);
-  scenario(9, "Minimum monthly commitment", "PARTIAL", [low === 15000, high === 18000],
-    "5,000 documents (₹10,000) bills the ₹15,000 minimum; 9,000 documents bills ₹18,000. Gap: applied on quotes, not yet on invoices (no invoice run).");
+  const minAgr = accepted("a9", "custA", [line({ ...row, code: "T-DOXMIN" }, 5000)]).agreement.lines[0];
+  scenario(9, "Minimum monthly commitment", "PARTIAL", [low === 15000, high === 18000, monthlyCharge(minAgr, 5000).amount === 15000, monthlyCharge(minAgr, 9000).amount === 18000],
+    "Under the agreement, 5,000 documents (₹10,000) bills the ₹15,000 minimum and 9,000 documents bills ₹18,000. Gap: the invoice run that applies it each month (Billing Engine).");
 }
 // 10. Pricing revision after approval.
 {
   const saved = line(wisedox, 1000);
   const revised = { ...wisedox, listPrice: 3 };
-  scenario(10, "Pricing Master revised after approval", "PARTIAL", [saved.unitPriceResolved === 2, resolveUnitPrice(revised, { qty: 1000 }).unitPrice === 3],
-    "A saved quote keeps its own line rates (₹2) when the master moves to ₹3. Gap: no contract-level agreement record for billing to read the frozen rate from.");
+  const agr = accepted("a10", "custA", [saved]);
+  scenario(10, "Pricing Master revised after approval", "PASS", [saved.unitPriceResolved === 2, resolveUnitPrice(revised, { qty: 1000 }).unitPrice === 3, agreedUnitPrice(agr.agreement.lines[0], 1000) === 2,
+    activeAgreementLines([agr], "custA", "2027-01-15")["T-DOX"].line.netRate === 2],
+    "The accepted quote is kept as the customer's agreement at ₹2. The price list moves to ₹3 for new customers; this agreement, and anything billed under it, stays at ₹2.");
 }
 // 11. Customer-specific rates.
-scenario(11, "Customer-specific rates", "NOT BUILT", [true],
-  "Today a rep reaches a special rate with a discount (approval-controlled). There is no per-customer agreed rate that the next quote or the invoice picks up.");
+{
+  const a = accepted("a11a", "custA", [{ ...line(wisedox, 1000), discountPct: 0 }]);
+  const b = accepted("a11b", "custB", [{ ...line(wisedox, 1000), discountPct: 25 }]);
+  const rate = (acc) => activeAgreementLines([a, b], acc, "2027-01-15")["T-DOX"]?.line.netRate ?? null;
+  scenario(11, "Customer-specific rates", "PASS", [rate("custA") === 2, rate("custB") === 1.5, rate("custC") === null],
+    "Customer A's agreement is ₹2 per document, Customer B's is ₹1.50; a new customer gets the price list. A new quote for A or B starts from their agreed rate.");
+}
 // 12. Usage reconciliation.
 scenario(12, "Usage reconciliation (duplicate / missing / corrected)", "NOT BUILT", [true], "Needs usage records (Billing Engine).");
 // 13. Discount approval.

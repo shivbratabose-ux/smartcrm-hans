@@ -15,6 +15,7 @@
 
 import { slabLabel, slabIndex, poolVolumes, usagePrice } from "../lib/quotation/slabs";
 import { billingClassOf, billingClassLabel, rowConfigIssues, requiredApprovalLevel } from "../lib/quotation/commercial";
+import { activeAgreementLines, agreedUnitPrice, pricingSnapshot } from "../lib/quotation/agreements";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Plus, Trash2, X, AlertTriangle, Check, Info } from "lucide-react";
 import {
@@ -139,6 +140,9 @@ export default function HansQuoteBuilder({
   // rates do not follow the price list. Re-pricing is an explicit, logged act.
   const startsFrozen = !!editQuote && (editQuote.approvalStatus === "Approved" || ["Sent", "Under Review", "Accepted"].includes(editQuote.status) || !!editQuote.isFinal);
   const [frozen, setFrozen] = useState(startsFrozen);
+  // Rates this customer already agreed (their active agreements) are used
+  // for a new quote unless the rep switches them off.
+  const [useAgreed, setUseAgreed] = useState(true);
   // One-time charges: payment milestones (name + % of the one-time total).
   const [milestones, setMilestones] = useState(() => (Array.isArray(eh?.milestones) && eh.milestones.length ? eh.milestones : (config.defaultMilestones || DEFAULT_MILESTONES)).map(m => ({ ...m })));
   const [saved, setSaved] = useState(null);
@@ -260,6 +264,12 @@ export default function HansQuoteBuilder({
   const fxForCurrency = (config.currencies || []).find(c => c.code === currency)?.fxToInr || Number(config.fx) || 1;
   // Enrich each line with its catalogue snapshot + resolved unit price,
   // shaped exactly as the engine expects.
+  const agreedLines = useMemo(() => {
+    const accountId = opps.find(o => o.id === oppId)?.accountId || "";
+    const all = activeAgreementLines((quotes || []).filter(q => q.id !== editQuote?.id), accountId, quoteDate);
+    // Only agreements in the quote's currency apply.
+    return Object.fromEntries(Object.entries(all).filter(([, v]) => (v.agreement.currency || "INR") === currency));
+  }, [quotes, opps, oppId, quoteDate, currency, editQuote?.id]);
   const pricedLines = useMemo(() => { const pools = poolVolumes(lines, (c) => catByCode[c]); return lines.map(l => {
     const p = catByCode[l.productCode];
     if (!p) return { ...l, _empty: true, pricingModel: "", unitPriceResolved: 0, missingRate: false };
@@ -267,11 +277,13 @@ export default function HansQuoteBuilder({
     const poolQty = String(p.pool || "").trim() ? pools[String(p.pool).trim()] : undefined;
     const live = resolveUnitPrice(p, { qty: l.qty, poolQty, bands, editions, bandFrom, rateCards, config, fx: fxForCurrency, asOf: quoteDate, segment, currency, country: party.country });
     const rateFrozen = frozen && l.frozenRate != null;
-    const unitPrice = rateFrozen ? l.frozenRate : live.unitPrice;
-    const missingRate = rateFrozen ? false : live.missingRate;
+    const agreed = !rateFrozen && useAgreed ? agreedLines[p.code] : null;
+    const unitPrice = rateFrozen ? l.frozenRate : agreed ? agreedUnitPrice(agreed.line, l.qty, { poolQty }) : live.unitPrice;
+    const missingRate = rateFrozen || agreed ? false : live.missingRate;
     const billingClass = billingClassOf(p);
     const usage = usagePrice(p, l.qty, { poolQty });
-    const monthlyMinimum = usage.floor / fxForCurrency;
+    const agreedMin = useAgreed && !(frozen && l.frozenRate != null) ? agreedLines[p.code]?.line : null;
+    const monthlyMinimum = agreedMin ? Math.max(Number(agreedMin.monthlyMinimum) || 0, Number(agreedMin.pricing?.packPrice) || 0) : usage.floor / fxForCurrency;
     const oneTime = isOneTimeModel(p.pricingModel);
     // Rate-card lines: surface the card + the tier the qty resolves to, so the
     // rep sees where the unit price came from.
@@ -293,9 +305,10 @@ export default function HansQuoteBuilder({
       months: oneTime ? 1 : l.months,
       monthlyMinimum, escalationPct: Number(p.escalationPct) || 0,
       rateFrozen, liveRate: live.unitPrice, configIssues: rowConfigIssues(p),
+      agreedNo: agreed ? agreed.agreement.agreementNo : "", pricing: agreed ? (agreed.line.pricing || null) : pricingSnapshot(p),
       ...computeLine({ pricingModel: p.pricingModel, billingClass, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty, monthlyMinimum, escalationPct: p.escalationPct }),
     };
-  }); }, [frozen, lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
+  }); }, [frozen, useAgreed, agreedLines, lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
 
   const summary = useMemo(() => computeQuote(
     pricedLines.filter(l => !l._empty),
@@ -362,6 +375,8 @@ export default function HansQuoteBuilder({
       minMonthFloor: l.minMonthFloor ?? null,
       billingClass: l.billingClass, monthlyMinimum: +(Number(l.isVariable ? l.committedPerPeriod : l.monthlyMinimum) || 0).toFixed(2),
       escalationPct: Number(l.escalationPct) || 0,
+      // The slab / pack / minimum settings as quoted, so the agreement keeps them.
+      ...(l.pricing ? { pricing: l.pricing } : {}), ...(l.agreedNo ? { agreedNo: l.agreedNo } : {}),
       // Variable lines: lineTotal is the committed minimum only; lineEstimate is internal.
       lineEstimate: +(Number(l.lineEstimate) || 0).toFixed(2),
       lineOneTime: +l.lineOneTime.toFixed(2), lineRecurring: +l.lineRecurring.toFixed(2),
@@ -689,6 +704,7 @@ export default function HansQuoteBuilder({
                           <span>{l.missingRate ? <span style={{ color: "#DC2626", fontWeight: 700 }}>Enter rate in master</span> : `unit ${inr2(l.unitPriceResolved)}/${l.unit}`}</span>
                           {l.minMonthFloor ? <span>· floor {inr(l.minMonthFloor)}/mo</span> : null}
                           {l.isVariable ? <span style={{ color: "#4338CA" }}>· Qty = expected per month (internal): est. {inr(l.effectiveMonths > 0 ? l.lineEstimate / l.effectiveMonths : 0)}/mo, not in the total</span> : null}
+                          {l.agreedNo ? <span style={{ color: "#047857", fontWeight: 600 }}>· customer's agreed rate ({l.agreedNo}){Math.abs((l.liveRate || 0) - l.unitPriceResolved) > 0.005 ? `; price list ${inr2(l.liveRate)}` : ""}</span> : null}
                           {l.rateFrozen ? <span style={{ color: "#B45309", fontWeight: 600 }}>· agreed rate kept{Math.abs((l.liveRate || 0) - l.unitPriceResolved) > 0.005 ? ` (price list now ${inr2(l.liveRate)})` : ""}</span> : null}
                           {l.minQty ? <span style={{ color: (Number(l.qty) || 0) < l.minQty ? "#DC2626" : undefined, fontWeight: (Number(l.qty) || 0) < l.minQty ? 700 : 400 }}>· minimum {l.minQty} {String(l.unit || "unit").toLowerCase()}s{(Number(l.qty) || 0) < l.minQty ? ` — billed for ${l.minQty}` : ""}</span> : null}
                           {l.maxDiscountPct === 0 ? <span>· list price; discount needs approval</span> : null}
@@ -808,6 +824,12 @@ export default function HansQuoteBuilder({
                   <button type="button" className="btn btn-xs btn-sec" onClick={() => { if (window.confirm("Re-price every line from the current price list? The agreed rates are replaced, and the change is recorded on the quote.")) setFrozen(false); }}>Re-price from the price list</button>
                 </div>}
                 {repriced && <Banner color="#1E40AF" bg="#EFF6FF" icon={<Info size={14} />} text="Re-priced from the current price list. This is recorded on the quote when you save." />}
+                {Object.keys(agreedLines).length > 0 && !frozen && (
+                  <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: "#065F46", background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: 8, padding: "7px 10px", cursor: "pointer" }}>
+                    <input type="checkbox" checked={useAgreed} onChange={e => setUseAgreed(e.target.checked)} />
+                    This customer has agreed rates for {Object.keys(agreedLines).length} component{Object.keys(agreedLines).length > 1 ? "s" : ""} ({[...new Set(Object.values(agreedLines).map(v => v.agreement.agreementNo))].join(", ")}). Use them on this quote{pricedLines.some(l => l.agreedNo) ? `: ${pricedLines.filter(l => l.agreedNo).length} line(s) priced from the agreement` : ""}.
+                  </label>
+                )}
                 {needsApproval && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={`Approval required${approvalLevel ? ` (${approvalLevel.label}${approvalLevel.discountPct ? `, discount ${approvalLevel.discountPct}%` : ""})` : ""} — ${approvalReasons.join("; ")}`} />}
                 {hasOneTime && (
                   <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>
