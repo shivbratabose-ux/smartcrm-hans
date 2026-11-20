@@ -14,6 +14,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { slabLabel, slabIndex, poolVolumes, usagePrice } from "../lib/quotation/slabs";
+import { billingClassOf, billingClassLabel, rowConfigIssues, requiredApprovalLevel } from "../lib/quotation/commercial";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Plus, Trash2, X, AlertTriangle, Check, Info } from "lucide-react";
 import {
@@ -38,6 +39,12 @@ const inr = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
 const inr2 = (n) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const BLANK_LINE = { productCode: "", qty: 1, months: 12, discountPct: 0 };
+
+// Default payment milestones for one-time charges (% of the one-time total).
+const DEFAULT_MILESTONES = [
+  { name: "With the purchase order", pct: 50 },
+  { name: "On go-live and user acceptance sign-off", pct: 50 },
+];
 
 export default function HansQuoteBuilder({
   opps = [], leads = [], accounts = [], contacts = [],
@@ -123,9 +130,17 @@ export default function HansQuoteBuilder({
   const setBill = (k, v) => setBilling(b => ({ ...b, [k]: v }));
   const [lines, setLines] = useState(
     editQuote && Array.isArray(editQuote.items) && editQuote.items.length
-      ? editQuote.items.map(it => ({ productCode: it.productCode || "", qty: Number(it.qty) || 1, months: Number(it.months) || 1, discountPct: Number(it.discountPct) || 0 }))
+      ? editQuote.items.map(it => ({ productCode: it.productCode || "", qty: Number(it.qty) || 1, months: Number(it.months) || 1, discountPct: Number(it.discountPct) || 0,
+          // The rate agreed on this quote (kept when the quote is frozen).
+          frozenRate: Number.isFinite(Number(it.unitPriceResolved)) ? Number(it.unitPriceResolved) : undefined }))
       : [{ ...BLANK_LINE }]
   );
+  // A quote that was approved, sent or accepted is a commercial record: its
+  // rates do not follow the price list. Re-pricing is an explicit, logged act.
+  const startsFrozen = !!editQuote && (editQuote.approvalStatus === "Approved" || ["Sent", "Under Review", "Accepted"].includes(editQuote.status) || !!editQuote.isFinal);
+  const [frozen, setFrozen] = useState(startsFrozen);
+  // One-time charges: payment milestones (name + % of the one-time total).
+  const [milestones, setMilestones] = useState(() => (Array.isArray(eh?.milestones) && eh.milestones.length ? eh.milestones : (config.defaultMilestones || DEFAULT_MILESTONES)).map(m => ({ ...m })));
   const [saved, setSaved] = useState(null);
 
   // Resolve party from the picked opportunity. The app's opportunities
@@ -234,7 +249,8 @@ export default function HansQuoteBuilder({
   // ── Line helpers ────────────────────────────────────────────────────
   const addLine = () => setLines(ls => [...ls, { ...BLANK_LINE }]);
   const removeLine = (i) => setLines(ls => ls.filter((_, idx) => idx !== i));
-  const updateLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+  // Changing the product drops the frozen rate: a new product prices from the price list.
+  const updateLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch, ...("productCode" in patch && patch.productCode !== l.productCode ? { frozenRate: undefined } : {}) } : l));
 
   // The quote date drives effective-dated (scheduled) rates — an edited
   // quote keeps its original date; a new one prices as of today.
@@ -249,7 +265,11 @@ export default function HansQuoteBuilder({
     if (!p) return { ...l, _empty: true, pricingModel: "", unitPriceResolved: 0, missingRate: false };
     // Usage pricing: rows sharing a pool count their volume together for the slab.
     const poolQty = String(p.pool || "").trim() ? pools[String(p.pool).trim()] : undefined;
-    const { unitPrice, missingRate } = resolveUnitPrice(p, { qty: l.qty, poolQty, bands, editions, bandFrom, rateCards, config, fx: fxForCurrency, asOf: quoteDate, segment, currency, country: party.country });
+    const live = resolveUnitPrice(p, { qty: l.qty, poolQty, bands, editions, bandFrom, rateCards, config, fx: fxForCurrency, asOf: quoteDate, segment, currency, country: party.country });
+    const rateFrozen = frozen && l.frozenRate != null;
+    const unitPrice = rateFrozen ? l.frozenRate : live.unitPrice;
+    const missingRate = rateFrozen ? false : live.missingRate;
+    const billingClass = billingClassOf(p);
     const usage = usagePrice(p, l.qty, { poolQty });
     const monthlyMinimum = usage.floor / fxForCurrency;
     const oneTime = isOneTimeModel(p.pricingModel);
@@ -272,9 +292,10 @@ export default function HansQuoteBuilder({
       costPerUnit: p.costPrice != null ? (Number(p.costPrice) || 0) / fxForCurrency : null,
       months: oneTime ? 1 : l.months,
       monthlyMinimum, escalationPct: Number(p.escalationPct) || 0,
-      ...computeLine({ pricingModel: p.pricingModel, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty, monthlyMinimum, escalationPct: p.escalationPct }),
+      rateFrozen, liveRate: live.unitPrice, configIssues: rowConfigIssues(p),
+      ...computeLine({ pricingModel: p.pricingModel, billingClass, unitPriceResolved: unitPrice, qty: l.qty, months: oneTime ? 1 : l.months, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty, monthlyMinimum, escalationPct: p.escalationPct }),
     };
-  }); }, [lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
+  }); }, [frozen, lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
 
   const summary = useMemo(() => computeQuote(
     pricedLines.filter(l => !l._empty),
@@ -291,11 +312,22 @@ export default function HansQuoteBuilder({
   const whRule = validateWiseHandlingModules(pricedLines);
   const missingRateLines = pricedLines.filter(l => l.missingRate);
   const amc = useMemo(() => computeAmc(pricedLines, { config, catalogue, overallDiscountPct, overrides: amcOverrides }), [pricedLines, config, catalogue, overallDiscountPct, amcOverrides]);
-  const needsApproval = discGuard.breached || marginGuard.breached || amc.breached;
-  const approvalReasons = [...discGuard.reasons, ...marginGuard.reasons, ...amc.deviations];
+  // A component with incomplete configuration can only be quoted with an approver's sign-off.
+  const configReasons = pricedLines.filter(l => !l._empty && l.configIssues?.length).map(l => `${l.name || l.productCode}: ${l.configIssues.join(", ")} in the price list`);
+  const needsApproval = discGuard.breached || marginGuard.breached || amc.breached || configReasons.length > 0;
+  const approvalReasons = [...discGuard.reasons, ...marginGuard.reasons, ...amc.deviations, ...configReasons];
+  // Which level signs off: by the largest effective discount; margin breaches and
+  // "any discount needs management approval" products go to the top level.
+  const approvalLevel = requiredApprovalLevel({
+    needsApproval, lines: pricedLines.filter(l => !l._empty), overallDiscountPct,
+    topLevel: marginGuard.breached || pricedLines.some(l => l.maxDiscountPct === 0 && Number(l.discountPct) > 0),
+  }, config);
+  const hasOneTime = summary.oneTimeSubtotal > 0;
+  const milestoneSum = milestones.reduce((t, m) => t + (Number(m.pct) || 0), 0);
+  const repriced = startsFrozen && !frozen;
 
   // ── Save ────────────────────────────────────────────────────────────
-  const canSave = oppId && party.name && hosting && pricedLines.some(l => !l._empty) && missingRateLines.length === 0;
+  const canSave = oppId && party.name && hosting && pricedLines.some(l => !l._empty) && missingRateLines.length === 0 && (!hasOneTime || milestoneSum === 100);
 
   // Advisory billing-completeness hint (doesn't block save — the engine only
   // needs opp + party + a priced line). Mirrors the Custom Quote's verify intent.
@@ -328,6 +360,10 @@ export default function HansQuoteBuilder({
       unitPriceResolved: +l.unitPriceResolved.toFixed(2), qty: Number(l.qty) || 0,
       months: l.effectiveMonths, discountPct: Number(l.discountPct) || 0,
       minMonthFloor: l.minMonthFloor ?? null,
+      billingClass: l.billingClass, monthlyMinimum: +(Number(l.isVariable ? l.committedPerPeriod : l.monthlyMinimum) || 0).toFixed(2),
+      escalationPct: Number(l.escalationPct) || 0,
+      // Variable lines: lineTotal is the committed minimum only; lineEstimate is internal.
+      lineEstimate: +(Number(l.lineEstimate) || 0).toFixed(2),
       lineOneTime: +l.lineOneTime.toFixed(2), lineRecurring: +l.lineRecurring.toFixed(2),
       lineTotal: +l.lineTotal.toFixed(2),
     }));
@@ -351,7 +387,12 @@ export default function HansQuoteBuilder({
       licenceBase: round2(summary.licenceBase),
       alrAnnual: round2(amc.annual), // kept for older readers: now the AMC per year
       amc: { ...amc, overrides: amcOverrides },
-      approvalReasons,
+      approvalReasons, approvalLevel,
+      // Commercial classification and the committed / variable split.
+      commercialModel: summary.commercialModel,
+      variableEstimate: round2(summary.variableEstimate), variableEstimateMonthly: round2(summary.variableEstimateMonthly),
+      milestones: hasOneTime ? milestones.filter(m => m.name && Number(m.pct) > 0) : [],
+      ...(repriced ? { repricedAt: new Date().toISOString(), repricedBy: currentUser } : {}),
       tcv: round2(summary.tcv),
       intraState: summary.intraState,
       billingFrequency, // invoicing cadence (Monthly / Quarterly / …)
@@ -407,6 +448,7 @@ export default function HansQuoteBuilder({
     };
     // Edit → replace by id (preserving other fields like changeLog/emailLog);
     // create → append.
+    if (isEdit && repriced) quote.changeLog = [...(editQuote.changeLog || []), { id: `ce_${Date.now()}`, at: new Date().toISOString(), by: currentUser, field: "pricing", from: "rates agreed on the quote", to: "current price list", note: "Re-priced from the Pricing Master" }];
     if (isEdit) setQuotes(p => p.map(r => r.id === id ? { ...r, ...quote } : r));
     else setQuotes(p => [...p, quote]);
     setSaved(quote);
@@ -419,6 +461,7 @@ export default function HansQuoteBuilder({
       lineNo: idx + 1, productCode: l.productCode, unit: l.unit, name: l.name, module: l.module, description: l.description,
       pricingModel: l.pricingModel, qty: Number(l.qty) || 0, months: l.effectiveMonths,
       unitPriceResolved: round2(l.unitPriceResolved), discountPct: Number(l.discountPct) || 0,
+      billingClass: l.billingClass, monthlyMinimum: round2(l.isVariable ? l.committedPerPeriod : l.monthlyMinimum), lineEstimate: round2(l.lineEstimate),
       lineTotal: round2(l.lineTotal),
     }));
     return {
@@ -430,6 +473,7 @@ export default function HansQuoteBuilder({
       items,
       hans: {
         party, currency, intraState: summary.intraState, overallDiscountPct, showDiscount, prepaymentDiscountPct,
+        commercialModel: summary.commercialModel, approvalLevel, milestones: hasOneTime ? milestones.filter(m => m.name && Number(m.pct) > 0) : [],
         oneTimeSubtotal: round2(summary.oneTimeSubtotal), recurringSubtotal: round2(summary.recurringSubtotal),
         overallDiscount: round2(summary.overallDiscount), prepaymentDisc: round2(summary.prepaymentDisc),
         taxableBase: round2(summary.taxableBase), cgst: round2(summary.cgst), sgst: round2(summary.sgst),
@@ -627,19 +671,25 @@ export default function HansQuoteBuilder({
                         </select>
                         <input type="number" min={l.minQty || 0} value={l.qty} onChange={e => updateLine(i, { qty: +e.target.value })}
                           onBlur={() => { if (l.minQty && (Number(l.qty) || 0) < l.minQty) updateLine(i, { qty: l.minQty }); }}
-                          title={l.minQty ? `Minimum ${l.minQty} ${String(l.unit || "unit").toLowerCase()}s` : ""}
+                          title={l.isVariable ? `Expected ${String(l.unit || "unit").toLowerCase()}s per month: an internal estimate only. The customer is billed on actual use.` : l.minQty ? `Minimum ${l.minQty} ${String(l.unit || "unit").toLowerCase()}s` : ""}
                           style={{ ...fieldStyle, textAlign: "right", border: (Number(l.qty) || 0) < (l.minQty || 0) ? "1.5px solid #DC2626" : fieldStyle.border }} />
                         <input type="number" min={1} value={l.months} disabled={oneTime} title={oneTime ? "One-time — months forced to 1" : ""} onChange={e => updateLine(i, { months: +e.target.value })} style={{ ...fieldStyle, textAlign: "right", opacity: oneTime ? 0.5 : 1 }} />
                         <input type="number" min={0} max={100} value={l.discountPct} onChange={e => updateLine(i, { discountPct: +e.target.value })} title={l.maxDiscountPct === 0 ? "Any discount on this product needs management approval" : ""}
                           style={{ ...fieldStyle, textAlign: "right", color: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? "#DC2626" : "var(--text)", fontWeight: Number(l.discountPct) > (l.maxDiscountPct ?? config.maxUserDiscountPct) ? 700 : 400 }} />
-                        <span style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, fontFamily: "'Outfit',sans-serif" }}>{l._empty ? "—" : inr(l.lineTotal)}</span>
+                        <span style={{ textAlign: "right", fontSize: 12.5, fontWeight: 600, fontFamily: "'Outfit',sans-serif" }}>
+                          {l._empty ? "—" : l.isVariable
+                            ? <span title="Billed on actual consumption: not part of the quote total" style={{ fontSize: 11, fontWeight: 600, color: "#4338CA" }}>{l.lineTotal > 0 ? `min ${inr(l.lineTotal)}` : "on actual use"}</span>
+                            : inr(l.lineTotal)}
+                        </span>
                         <button className="icon-btn" onClick={() => removeLine(i)} title="Remove"><Trash2 size={13} /></button>
                       </div>
                       {!l._empty && (
                         <div style={{ fontSize: 10.5, color: "var(--text3)", marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <span>{l.module}</span>·<span>{l.pricingModel}</span>·<span>{bucketBadge(l.pricingModel)}</span>·
+                          <span>{l.module}</span>·<span>{l.pricingModel}</span>·<span style={{ fontWeight: 700, color: l.isVariable ? "#4338CA" : undefined }}>{billingClassLabel(l.billingClass)}</span>·
                           <span>{l.missingRate ? <span style={{ color: "#DC2626", fontWeight: 700 }}>Enter rate in master</span> : `unit ${inr2(l.unitPriceResolved)}/${l.unit}`}</span>
                           {l.minMonthFloor ? <span>· floor {inr(l.minMonthFloor)}/mo</span> : null}
+                          {l.isVariable ? <span style={{ color: "#4338CA" }}>· Qty = expected per month (internal): est. {inr(l.effectiveMonths > 0 ? l.lineEstimate / l.effectiveMonths : 0)}/mo, not in the total</span> : null}
+                          {l.rateFrozen ? <span style={{ color: "#B45309", fontWeight: 600 }}>· agreed rate kept{Math.abs((l.liveRate || 0) - l.unitPriceResolved) > 0.005 ? ` (price list now ${inr2(l.liveRate)})` : ""}</span> : null}
                           {l.minQty ? <span style={{ color: (Number(l.qty) || 0) < l.minQty ? "#DC2626" : undefined, fontWeight: (Number(l.qty) || 0) < l.minQty ? 700 : 400 }}>· minimum {l.minQty} {String(l.unit || "unit").toLowerCase()}s{(Number(l.qty) || 0) < l.minQty ? ` — billed for ${l.minQty}` : ""}</span> : null}
                           {l.maxDiscountPct === 0 ? <span>· list price; discount needs approval</span> : null}
                           {l.rateCardLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.rateCardLabel}{l.tierLabel ? ` · tier ${l.tierLabel}` : ""}</span> : l.tierLabel ? <span style={{ color: "#1E40AF", fontWeight: 600 }}>· {l.tierLabel}</span> : null}
@@ -676,8 +726,10 @@ export default function HansQuoteBuilder({
             <div>
               <div style={{ background: "var(--s1)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
                 <div style={lbl}>Summary {summary.intraState ? "· intra-state (CGST+SGST)" : "· inter-state (IGST)"}</div>
+                <div style={{ fontSize: 11.5, marginBottom: 4 }}><span style={{ background: "#EEF2FF", color: "#4338CA", fontWeight: 700, padding: "2px 8px", borderRadius: 10 }}>{summary.commercialModel?.label || "Not classified"}</span></div>
                 {sumRow("One-time subtotal", inr(summary.oneTimeSubtotal))}
-                {sumRow("Recurring subtotal", inr(summary.recurringSubtotal))}
+                {sumRow("Fixed recurring subtotal", inr(summary.recurringSubtotal))}
+                {summary.variableLineCount > 0 && sumRow("Variable, on actual use (estimate, not in total)", `${inr(summary.variableEstimateMonthly)}/mo`, { color: "#4338CA" })}
                 <div className="form-row" style={{ margin: "6px 0", gap: 6 }}>
                   <div className="form-group" style={{ flex: 1, marginBottom: 0 }}><label style={lbl}>Overall disc %</label><input type="number" min={0} max={100} value={overallDiscountPct} onChange={e => setOverallDiscountPct(+e.target.value)} /></div>
                 </div>
@@ -698,7 +750,7 @@ export default function HansQuoteBuilder({
                 {summary.igst > 0 && sumRow(`IGST ${config.gstRatePct}%`, inr(summary.igst))}
                 {sumRow("Grand Total (upfront)", inr(summary.grandTotal), { big: true, divide: true })}
                 {amc.applies && sumRow(`AMC per year (from year ${amc.terms.startYear}, billed separately)`, inr(amc.annual), { color: "var(--text3)" })}
-                {sumRow("TCV", inr(summary.tcv), { bold: true })}
+                {sumRow(summary.variableLineCount > 0 ? "TCV (committed only)" : "TCV", inr(summary.tcv), { bold: true })}
                 {summary.recurringSubtotal > 0 && sumRow("Billing", billingFrequency, { color: "var(--text3)" })}
               </div>
 
@@ -751,7 +803,29 @@ export default function HansQuoteBuilder({
 
               {/* Guardrail banners */}
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                {needsApproval && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={`Approval required — ${approvalReasons.join("; ")}`} />}
+                {frozen && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px" }}>
+                  <Info size={14} /> This quote was {editQuote?.status === "Accepted" ? "accepted" : editQuote?.approvalStatus === "Approved" ? "approved" : "sent"}: its lines keep the agreed rates, whatever the price list says now.
+                  <button type="button" className="btn btn-xs btn-sec" onClick={() => { if (window.confirm("Re-price every line from the current price list? The agreed rates are replaced, and the change is recorded on the quote.")) setFrozen(false); }}>Re-price from the price list</button>
+                </div>}
+                {repriced && <Banner color="#1E40AF" bg="#EFF6FF" icon={<Info size={14} />} text="Re-priced from the current price list. This is recorded on the quote when you save." />}
+                {needsApproval && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={`Approval required${approvalLevel ? ` (${approvalLevel.label}${approvalLevel.discountPct ? `, discount ${approvalLevel.discountPct}%` : ""})` : ""} — ${approvalReasons.join("; ")}`} />}
+                {hasOneTime && (
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>One-time charges: payment milestones</div>
+                    {milestones.map((m, i) => (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 58px 70px 24px", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                        <input value={m.name} placeholder="Milestone" onChange={e => setMilestones(ms => ms.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} style={{ ...fieldStyle, fontSize: 12 }} />
+                        <input type="number" min={0} max={100} value={m.pct} onChange={e => setMilestones(ms => ms.map((x, j) => j === i ? { ...x, pct: +e.target.value } : x))} style={{ ...fieldStyle, textAlign: "right", fontSize: 12 }} title="% of the one-time charges" />
+                        <span style={{ textAlign: "right", color: "var(--text3)" }}>{inr(summary.oneTimeSubtotal * (1 - overallDiscountPct / 100) * (Number(m.pct) || 0) / 100)}</span>
+                        <button className="icon-btn" title="Remove" onClick={() => setMilestones(ms => ms.filter((_, j) => j !== i))}><Trash2 size={12} /></button>
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <button type="button" className="btn btn-xs btn-sec" onClick={() => setMilestones(ms => [...ms, { name: "", pct: Math.max(0, 100 - milestoneSum) }])}><Plus size={11} /> Add milestone</button>
+                      <span style={{ color: milestoneSum === 100 ? "var(--text3)" : "#B91C1C", fontWeight: milestoneSum === 100 ? 400 : 700 }}>Total {milestoneSum}%{milestoneSum === 100 ? "" : " (must be 100%)"}</span>
+                    </div>
+                  </div>
+                )}
                 {!ccsRule.ok && <Banner color="#B91C1C" bg="#FEF2F2" icon={<AlertTriangle size={14} />} text={ccsRule.error} />}
                 {ccsRule.ok && usesBothCcs && <Banner color="#B45309" bg="#FFFBEB" icon={<Info size={14} />} text="Quote uses both CC03 and CC04 — confirm CC03 is priced above CC04." />}
                 {whRule.warning && <Banner color="#B45309" bg="#FFFBEB" icon={<AlertTriangle size={14} />} text={whRule.warning} />}

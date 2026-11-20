@@ -35,7 +35,7 @@ const AMS_SECTIONS = {
     ["Support", "Helpdesk from 9:30 am to 6:30 pm, Monday to Saturday, except public holidays."],
   ],
   payment: (p) => [
-    p.hasOneTime && ["One-time charges", "Payable with the order."],
+    p.hasOneTime && ["One-time charges", p.milestoneText || "Payable with the order."],
     ["Usage charges", "Billed on the 1st day of each month, on the actual volume filed in the previous month. Payment is due as per the Master MSA, or else within 7 days of the invoice date."],
     ["Taxes and levies", "GST and government levies are charged extra. Other than TDS, no other deductions are allowed. Customs receipted charges, bank challans, penalties and levies are on the customer's account."],
     ["How to pay", `Account-payee cheque, RTGS or NEFT in favour of ${p.company}, payable at New Delhi.`],
@@ -76,7 +76,7 @@ export const STANDARD_SECTIONS = {
     ["Support", "Helpdesk from 9:30 am to 6:30 pm, Monday to Saturday, except public holidays. Priority support with a named representative is available as an option."],
   ],
   payment: (p) => [
-    ["One-time charges", p.paymentTerms || "50% with the purchase order; set-up starts on receipt. 50% on go-live and user acceptance sign-off."],
+    p.hasOneTime !== false && ["One-time charges", p.milestoneText || p.paymentTerms || "50% with the purchase order; set-up starts on receipt. 50% on go-live and user acceptance sign-off."],
     p.hasSubscription && ["Subscription", `Billed ${String(p.billing || "quarterly").toLowerCase()} in advance, starting from go-live.`],
     ["How to pay", `Account-payee cheque, RTGS or NEFT in favour of ${p.company}, payable at New Delhi. Fees once received are not refundable.`],
   ].filter(Boolean),

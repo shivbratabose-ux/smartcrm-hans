@@ -25,6 +25,7 @@ const RATE_SOURCES = ["Flat", "Band", "iCAFFE", "Slab"];
 import { validateCcsRule } from "../lib/quotation/pricingEngine";
 import { normalizeSlabs, slabLabel, slabProblems, usagePrice, hasUsageRules, escalatedRates } from "../lib/quotation/slabs";
 import { isOneTimeModel } from "../lib/quotation/pricingEngine";
+import { billingClassOf, productCommercialModel, approvalLevels, DEFAULT_APPROVAL_LEVELS } from "../lib/quotation/commercial";
 import { groupRates, groupOf, productsToAdd, SERVICES_GROUP, SERVICES_LABEL } from "../lib/quotation/productGroups";
 import { COMPANY_DEFAULTS } from "../lib/quotation/company";
 import { OFFICE_CODES_DEFAULT, fyCompact } from "../lib/quotation/docNumbers";
@@ -62,6 +63,7 @@ const CATALOGUE_OVERLAY_FIELDS = [
   // usage pricing (lib/quotation/slabs.js): slab type / period, prepaid pack,
   // monthly minimum, pooled volume, yearly escalation
   "slabMode", "slabPeriod", "packQty", "packPrice", "monthlyMinimum", "pool", "escalationPct",
+  "billingClass", // subscription | transaction (lib/quotation/commercial.js); one-time follows the pricing model
   // Structural fields are now admin-editable too, so they overlay the seed.
   "name", "module", "pricingModel", "unit", "rateSource",
 ];
@@ -533,6 +535,31 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
           <PeoplePicker label="Quote approvers" orgUsers={orgUsers} value={cur.quoteConfig.approverIds || []}
             onChange={(ids) => setConfig("approverIds", ids)}
             hint="Who approves a quote whose discount or value is above the limit. They get a bell alert and a task. Nobody approves their own quote unless they are the only approver. Leave empty and every Admin / MD / Director / VP approves (the old rule)." />
+          <div style={{ gridColumn: "1 / -1", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>Approval levels</div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>
+              A rep can give up to <b>{cur.quoteConfig.maxUserDiscountPct}%</b> alone (the Max discount % above). Beyond that, the quote goes to the first level whose ceiling covers its largest discount (line and overall discount combined).
+              Low-margin quotes and products that allow no discount go to the last level. A higher level can always approve for a lower one.
+            </div>
+            {approvalLevels(cur.quoteConfig).map((lv, i, arr) => {
+              const setLevels = (next) => setConfig("approvalLevels", next);
+              const patch = (k, v) => setLevels(arr.map((x, j) => j === i ? { ...x, [k]: v } : x));
+              return (
+                <div key={lv.key} style={{ borderTop: i ? "1px dashed var(--border)" : "none", paddingTop: i ? 8 : 0, marginTop: i ? 8 : 0 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                    <div className="form-group" style={{ marginBottom: 6 }}><label>Level {i + 1} name</label><input value={lv.label} onChange={e => patch("label", e.target.value)} style={{ width: 180 }} /></div>
+                    <div className="form-group" style={{ marginBottom: 6 }}><label>Approves discounts up to %</label><input type="number" min={0} max={100} value={lv.maxDiscountPct} onChange={e => patch("maxDiscountPct", Number(e.target.value) || 0)} style={{ width: 110 }} /></div>
+                    {arr.length > 1 && <button type="button" className="btn btn-xs btn-sec" style={{ marginBottom: 8 }} onClick={() => setLevels(arr.filter((_, j) => j !== i))}><Trash2 size={11} /> Remove</button>}
+                  </div>
+                  <PeoplePicker label={`${lv.label}: who approves`} orgUsers={orgUsers} value={lv.userIds || []} onChange={(ids) => patch("userIds", ids)}
+                    hint={i === arr.length - 1 ? "Leave empty and Admin, MD and Director approve at this level." : "Leave empty and the quote approvers above approve at this level."} />
+                </div>);
+            })}
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <button type="button" className="btn btn-xs btn-sec" onClick={() => { const arr = approvalLevels(cur.quoteConfig); setConfig("approvalLevels", [...arr, { key: `level_${Date.now().toString(36)}`, label: "New level", maxDiscountPct: 100, userIds: [] }]); }}><Plus size={11} /> Add level</button>
+              <button type="button" className="btn btn-xs btn-sec" onClick={() => setConfig("approvalLevels", DEFAULT_APPROVAL_LEVELS)}><RotateCcw size={11} /> Standard levels (Sales Head 20%, Management above)</button>
+            </div>
+          </div>
           <PeoplePicker label="Accounts team (raises bills)" orgUsers={orgUsers} value={cur.quoteConfig.accountsUserIds || []}
             onChange={(ids) => setConfig("accountsUserIds", ids)}
             hint="Told when Sales marks a quote FINAL, and can raise the bill from it. Leave empty and everyone with the Finance role is Accounts." />
@@ -574,14 +601,15 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1080 }}>
             <thead>
               <tr style={{ background: "var(--s2)", textAlign: "left" }}>
-                {["Product", "Code", "Name", "Model", "Unit", "Rate source", "List price (₹)", "Cost (₹)", "Floor/mo (₹)", "Min qty", "Max disc %", "AMC %", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
+                {["Product", "Code", "Name", "Model", "Billed as", "Unit", "Rate source", "List price (₹)", "Cost (₹)", "Floor/mo (₹)", "Min qty", "Max disc %", "AMC %", "Status", "Active"].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)" }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {groupRates(cur.catalogue, catalog).filter(g => g.rows.length && (!prodFilter || g.id === prodFilter)).map(g => [
                 <tr key={`g-${g.id || "none"}`}>
-                  <td colSpan={14} style={{ ...cell, background: g.id ? "#F1F5F9" : "#FEF2F2", fontWeight: 800, fontSize: 12, color: g.id ? "var(--text)" : "#B91C1C" }}>
+                  <td colSpan={15} style={{ ...cell, background: g.id ? "#F1F5F9" : "#FEF2F2", fontWeight: 800, fontSize: 12, color: g.id ? "var(--text)" : "#B91C1C" }}>
                     {g.name} <span style={{ fontWeight: 500, color: "var(--text3)" }}>· {g.rows.length} price row{g.rows.length > 1 ? "s" : ""}</span>
+                    {g.id && g.id !== SERVICES_GROUP && <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, background: "#EEF2FF", color: "#4338CA", padding: "2px 8px", borderRadius: 10 }}>{productCommercialModel(g.rows).label}</span>}
                   </td>
                 </tr>,
                 ...g.rows.map(p => {
@@ -604,6 +632,15 @@ export default function QuotationMasters({ masters, setMasters, catalog = [], or
                       <select style={{ ...numInput, textAlign: "left", cursor: "pointer" }} value={p.pricingModel || ""} onChange={e => setCatRow(p.code, "pricingModel", e.target.value)}>
                         {PRICING_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
+                    </td>
+                    <td style={cell}>
+                      {isOneTimeModel(p.pricingModel)
+                        ? <span style={{ fontSize: 11.5, color: "var(--text3)" }}>One-time</span>
+                        : <select title="Fixed recurring: a committed charge each period. Variable: billed on actual consumption; the quote agrees a rate only." style={{ ...numInput, textAlign: "left", cursor: "pointer", minWidth: 96, color: billingClassOf(p) === "transaction" ? "#4338CA" : undefined, fontWeight: billingClassOf(p) === "transaction" ? 700 : 400 }}
+                            value={billingClassOf(p)} onChange={e => setCatRow(p.code, "billingClass", e.target.value)}>
+                            <option value="subscription">Fixed recurring</option>
+                            <option value="transaction">Variable (actual use)</option>
+                          </select>}
                     </td>
                     <td style={cell}>
                       <select style={{ ...numInput, textAlign: "left", cursor: "pointer" }} value={p.unit || ""} onChange={e => setCatRow(p.code, "unit", e.target.value)}>

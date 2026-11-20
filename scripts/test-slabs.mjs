@@ -34,7 +34,7 @@ check("resolveUnitPrice uses the slab", [100, 300, 600, 900].map((q) => resolveU
 check("missing slab rate flagged", resolveUnitPrice({ ...ocean, slabs: [{ from: 0, rate: null }] }, { qty: 10 }).missingRate, true);
 check("no slabs → missing rate", resolveUnitPrice({ ...ocean, slabs: [] }, { qty: 10 }).missingRate, true);
 const line = computeLine({ pricingModel: "Per-transaction", unitPriceResolved: resolveUnitPrice(ocean, { qty: 300 }).unitPrice, qty: 300, months: 12, discountPct: 0 });
-check("300 HBL/month × 12 months at ₹700", line.lineTotal, 300 * 700 * 12);
+check("300 HBL/month × 12 months at ₹700: an estimate, nothing committed", [line.lineEstimate, line.lineTotal], [300 * 700 * 12, 0]);
 
 console.log("\nQuotation");
 const catalog = [{ id: "AMSOcean", name: "AMS - Ocean Consol", modules: [] }, { id: "AMSAir", name: "AMS - Air Consol", modules: [] }];
@@ -53,7 +53,7 @@ check("titled by the product, not the registration line", [quoteDocModel(q, opts
 check("prints every slab with its rate", ["Up to 200 HBL per month ₹800", "201–500 HBL per month Per HBL ₹700".replace(" Per HBL", ""), "700 and above HBL per month"].map((s) => t.replace(/ Per HBL /g, " ").includes(s)), [true, true, true]);
 check("slab rates in order", [...t.matchAll(/HBL per month Per HBL (₹[\d,]+)/g)].map((m) => m[1]), ["₹800", "₹700", "₹500", "₹400"]);
 check("explains the slab rule", t.includes("the whole month is billed at its slab's rate"), true);
-check("AMS filing is the usage charge, not an add-on", [t.includes("Usage charges (billed monthly on the actual volume)"), t.includes("Add-on services"), t.includes("per HBL: rate")], [true, false, true]);
+check("AMS filing is the usage charge, not an add-on", [t.includes("Variable charges, billed on actual consumption"), t.includes("Add-on services"), t.includes("per HBL: rate")], [true, false, true]);
 check("registration in one-time charges", t.includes("Advanced Manifest System — One-time Registration One time ₹5,000"), true);
 const disc = { ...q, items: [q.items[0], { ...q.items[1], discountPct: 10 }] };
 check("line discount shown net when discount is hidden", [...text(quoteDocumentHtml(disc, opts)).matchAll(/HBL per month Per HBL (₹[\d,]+)/g)].map((m) => m[1]), ["₹720", "₹630", "₹450", "₹360"]);

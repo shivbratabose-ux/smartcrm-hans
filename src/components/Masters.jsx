@@ -6,7 +6,8 @@ import { Modal, Confirm, HelpTooltip, PageTip } from './shared';
 import { saveSettings } from '../lib/db';
 import LeadFieldsEditor from './LeadFieldsEditor';
 import QuotationMasters, { resolveQuotationMasters } from './QuotationMasters';
-import { countsByProduct } from '../lib/quotation/productGroups';
+import { countsByProduct, groupRates } from '../lib/quotation/productGroups';
+import { productCommercialModel } from '../lib/quotation/commercial';
 import { notify } from '../utils/toast';
 import { OFF_DAY_TYPES } from '../utils/teamSummary';
 
@@ -740,6 +741,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
       {tab==="products" && (<>
         <ProductCatalogPage catalog={catalog} setCatalog={setCatalog} orgUsers={orgUsers} currentUser={currentUser}
           priceCounts={countsByProduct(resolveQuotationMasters(masters, catalog).catalogue, catalog)}
+          commercialModels={Object.fromEntries(groupRates(resolveQuotationMasters(masters, catalog).catalogue, catalog).filter(g => g.id && g.rows.length).map(g => [g.id, productCommercialModel(g.rows).label]))}
           onShowPrices={(id)=>{setPriceFocus(id);setTimeout(()=>document.getElementById("product-prices")?.scrollIntoView({behavior:"smooth",block:"start"}),50);}}/>
         {/* One product master: the prices sit under the products they belong to. */}
         <div id="product-prices" style={{marginTop:22}}>
@@ -769,7 +771,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
 // ═══════════════════════════════════════════════════════════════════
 const MOD_TYPE_CLS={Core:"mod-core","Add-on":"mod-addon",Integration:"mod-integration",Analytics:"mod-analytics",Mobile:"mod-mobile"};
 
-function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,priceCounts={},onShowPrices}) {
+function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,priceCounts={},commercialModels={},onShowPrices}) {
   // Admin/MD/Director can re-assign a product's Line Manager directly from
   // this page (inline dropdown on each card) without opening the edit modal.
   // Everyone else sees a read-only label. Same allow-list as other admin
@@ -933,6 +935,7 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,pri
                 </div>
                 <div className="prod-catalog-stats">
                   <span style={{fontSize:12,color:"var(--text3)"}}>{p.modules.length} modules</span>
+                  {commercialModels[p.id] && <span title="Commercial model, from this product's price rows" style={{fontSize:10.5,fontWeight:700,background:"#EEF2FF",color:"#4338CA",padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap"}}>{commercialModels[p.id]}</span>}
                   {onShowPrices && (()=>{const pc=priceCounts[p.id]||{rows:0,priced:0};return (
                     <button type="button" className="btn btn-xs btn-sec" onClick={e=>{e.stopPropagation();onShowPrices(p.id);}} title="Show this product's prices"
                       style={{color:pc.rows&&pc.priced<pc.rows?"#B45309":pc.rows?"#15803D":"#DC2626"}}>
