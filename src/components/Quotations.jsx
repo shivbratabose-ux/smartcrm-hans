@@ -371,7 +371,7 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
                 const mrp=Number(m.mrp)||0;
                 const s=curSym(m.currency||"INR");
                 return <option key={m.id} value={`${p.id}||${m.id}`}>
-                  {m.type} · {m.name} {mrp>0?`— ${s}${mrp.toLocaleString()} / ${m.unit||"License"}`:"(no MRP)"}
+                  {m.type} · {m.name} {mrp>0?`— ${s}${mrp.toLocaleString("en-IN")} / ${m.unit||"License"}`:"(no MRP)"}
                 </option>;
               })}
             </optgroup>
@@ -420,15 +420,15 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
         <div style={{display:"grid",gridTemplateColumns:isManager?"1fr 1fr 1fr 2.6fr 100px":"1fr 1fr 2.6fr 100px",gap:8,alignItems:"end"}}>
           <div className="form-group"><label>Unit Price ({sym.trim()||sym})</label><input type="number" min={0} step={1} value={composerLive.unitPrice||0} onChange={e=>setC("unitPrice",+e.target.value)} style={{background:(Number(composer.mrp)||0)>0&&(Number(composer.discountValue)||0)>0?"#ECFDF5":"#fff",fontWeight:600}} title="Auto = MRP − discount. Edit to override."/></div>
           {isManager && <div className="form-group"><label style={{color:"#92400E"}}>Cost ({sym.trim()||sym})</label><input type="number" min={0} step={1} value={composer.unitCost||0} onChange={e=>setC("unitCost",+e.target.value)} style={{background:"#FFFBEB"}}/></div>}
-          <div className="form-group"><label>Amount ({sym.trim()||sym})</label><input disabled value={(composerLive.amount||0).toLocaleString()} style={{background:"var(--s2)",fontWeight:700}}/></div>
+          <div className="form-group"><label>Amount ({sym.trim()||sym})</label><input disabled value={(composerLive.amount||0).toLocaleString("en-IN")} style={{background:"var(--s2)",fontWeight:700}}/></div>
           {/* Computed GST chips for this line */}
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",fontSize:11,paddingBottom:6}}>
             {(composerLive.igstRate>0||composerLive.cgstRate>0||composerLive.sgstRate>0)?(
               <>
-                {composerLive.igstRate>0 && <span style={{background:"#EDE9FE",color:"#5B21B6",border:"1px solid #DDD6FE",padding:"3px 8px",borderRadius:10,fontWeight:600}}>IGST {composerLive.igstRate}% = {sym}{composerLive.igstAmount.toLocaleString()}</span>}
-                {composerLive.cgstRate>0 && <span style={{background:"#DBEAFE",color:"#1E40AF",border:"1px solid #BFDBFE",padding:"3px 8px",borderRadius:10,fontWeight:600}}>CGST {composerLive.cgstRate}% = {sym}{composerLive.cgstAmount.toLocaleString()}</span>}
-                {composerLive.sgstRate>0 && <span style={{background:"#D1FAE5",color:"#065F46",border:"1px solid #A7F3D0",padding:"3px 8px",borderRadius:10,fontWeight:600}}>SGST {composerLive.sgstRate}% = {sym}{composerLive.sgstAmount.toLocaleString()}</span>}
-                <span style={{fontWeight:700,color:"var(--brand)"}}>Total: {sym}{(composerLive.totalWithTax||0).toLocaleString()}</span>
+                {composerLive.igstRate>0 && <span style={{background:"#EDE9FE",color:"#5B21B6",border:"1px solid #DDD6FE",padding:"3px 8px",borderRadius:10,fontWeight:600}}>IGST {composerLive.igstRate}% = {sym}{composerLive.igstAmount.toLocaleString("en-IN")}</span>}
+                {composerLive.cgstRate>0 && <span style={{background:"#DBEAFE",color:"#1E40AF",border:"1px solid #BFDBFE",padding:"3px 8px",borderRadius:10,fontWeight:600}}>CGST {composerLive.cgstRate}% = {sym}{composerLive.cgstAmount.toLocaleString("en-IN")}</span>}
+                {composerLive.sgstRate>0 && <span style={{background:"#D1FAE5",color:"#065F46",border:"1px solid #A7F3D0",padding:"3px 8px",borderRadius:10,fontWeight:600}}>SGST {composerLive.sgstRate}% = {sym}{composerLive.sgstAmount.toLocaleString("en-IN")}</span>}
+                <span style={{fontWeight:700,color:"var(--brand)"}}>Total: {sym}{(composerLive.totalWithTax||0).toLocaleString("en-IN")}</span>
               </>
             ):(
               <span style={{color:"var(--text3)",fontStyle:"italic"}}>{!form.placeOfSupply?"Set Place of Supply (Details tab) for per-line GST":"Tax mode is No Tax / Custom"}</span>
@@ -575,20 +575,20 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
                     <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:3}}>
                       {item.licenseType && <span title="License Type" style={{fontSize:9.5,fontWeight:600,color:"#3730A3",background:"#EEF2FF",border:"1px solid #C7D2FE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>{item.licenseType}</span>}
                       {item.billingFrequency && <span title="Billing Frequency" style={{fontSize:9.5,fontWeight:600,color:"#1D4ED8",background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>{item.billingFrequency}</span>}
-                      {(Number(item.setupFee)||0)>0 && <span title="One-time setup fee" style={{fontSize:9.5,fontWeight:600,color:"#5B21B6",background:"#EDE9FE",border:"1px solid #DDD6FE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>Setup {s}{Number(item.setupFee).toLocaleString()}</span>}
+                      {(Number(item.setupFee)||0)>0 && <span title="One-time setup fee" style={{fontSize:9.5,fontWeight:600,color:"#5B21B6",background:"#EDE9FE",border:"1px solid #DDD6FE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>Setup {s}{Number(item.setupFee).toLocaleString("en-IN")}</span>}
                       {item.griApplicable==="Yes" && Number(item.griPercentage)>0 && <span title="Annual GRI" style={{fontSize:9.5,fontWeight:600,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>GRI {item.griPercentage}%</span>}
                       {item.hsnSac && <span title="HSN/SAC" style={{fontSize:9.5,fontWeight:600,color:"#0F766E",background:"#F0FDFA",border:"1px solid #99F6E4",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>HSN {item.hsnSac}</span>}
                     </div>
                   )}
                 </span>
                 <span style={{textAlign:"right"}}>{item.qty}</span>
-                <span style={{textAlign:"right"}}>{(Number(item.mrp)||0)>0?`${s}${(Number(item.mrp)||0).toLocaleString()}`:"—"}</span>
-                <span style={{textAlign:"right",color:dv>0?"#B91C1C":"var(--text3)"}}>{dv>0?(dt==="pct"?`${dv}%`:`${s}${dv.toLocaleString()}`):"—"}</span>
-                <span style={{textAlign:"right",fontWeight:600}}>{s}{(Number(item.unitPrice)||0).toLocaleString()}</span>
-                {isManager && <span style={{textAlign:"right",color:"#92400E"}}>{(Number(item.unitCost)||0)>0?`${s}${(Number(item.unitCost)||0).toLocaleString()}`:"—"}</span>}
-                <span style={{textAlign:"right",fontWeight:600}}>{s}{(Number(item.amount)||0).toLocaleString()}</span>
-                <span style={{textAlign:"right",color:gst>0?"var(--text2)":"var(--text3)"}} title={gst>0?`IGST ${item.igstAmount||0} · CGST ${item.cgstAmount||0} · SGST ${item.sgstAmount||0}`:""}>{gst>0?`${s}${gst.toLocaleString()}`:"—"}</span>
-                <span style={{textAlign:"right",fontWeight:700,color:"var(--brand)"}}>{s}{(Number(item.totalWithTax)||Number(item.amount)||0).toLocaleString()}</span>
+                <span style={{textAlign:"right"}}>{(Number(item.mrp)||0)>0?`${s}${(Number(item.mrp)||0).toLocaleString("en-IN")}`:"—"}</span>
+                <span style={{textAlign:"right",color:dv>0?"#B91C1C":"var(--text3)"}}>{dv>0?(dt==="pct"?`${dv}%`:`${s}${dv.toLocaleString("en-IN")}`):"—"}</span>
+                <span style={{textAlign:"right",fontWeight:600}}>{s}{(Number(item.unitPrice)||0).toLocaleString("en-IN")}</span>
+                {isManager && <span style={{textAlign:"right",color:"#92400E"}}>{(Number(item.unitCost)||0)>0?`${s}${(Number(item.unitCost)||0).toLocaleString("en-IN")}`:"—"}</span>}
+                <span style={{textAlign:"right",fontWeight:600}}>{s}{(Number(item.amount)||0).toLocaleString("en-IN")}</span>
+                <span style={{textAlign:"right",color:gst>0?"var(--text2)":"var(--text3)"}} title={gst>0?`IGST ${item.igstAmount||0} · CGST ${item.cgstAmount||0} · SGST ${item.sgstAmount||0}`:""}>{gst>0?`${s}${gst.toLocaleString("en-IN")}`:"—"}</span>
+                <span style={{textAlign:"right",fontWeight:700,color:"var(--brand)"}}>{s}{(Number(item.totalWithTax)||Number(item.amount)||0).toLocaleString("en-IN")}</span>
                 <span style={{textAlign:"right"}}>
                   <button type="button" className="icon-btn" onClick={(e)=>{e.stopPropagation();removeItem(i);if(editingIdx===i) clearComposer();}} title="Remove line"><Trash2 size={13}/></button>
                 </span>
@@ -603,31 +603,31 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:12,fontSize:12}}>
           <div>
             <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",letterSpacing:"0.4px",marginBottom:3}}>CARD RATE TOTAL</div>
-            <div style={{fontWeight:600}}>₹{cardRateTotal.toLocaleString()}</div>
+            <div style={{fontWeight:600}}>₹{cardRateTotal.toLocaleString("en-IN")}</div>
           </div>
           <div>
             <div style={{fontSize:10,fontWeight:700,color:"#B91C1C",letterSpacing:"0.4px",marginBottom:3}}>DISCOUNT</div>
-            <div style={{fontWeight:600,color:"#B91C1C"}}>− ₹{(discountTotalPerLine + (Number(form.discount)||0)).toLocaleString()}</div>
+            <div style={{fontWeight:600,color:"#B91C1C"}}>− ₹{(discountTotalPerLine + (Number(form.discount)||0)).toLocaleString("en-IN")}</div>
           </div>
           <div>
             <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",letterSpacing:"0.4px",marginBottom:3}}>TAXABLE</div>
-            <div style={{fontWeight:600}}>₹{taxableTotal.toLocaleString()}</div>
+            <div style={{fontWeight:600}}>₹{taxableTotal.toLocaleString("en-IN")}</div>
           </div>
           <div>
             <div style={{fontSize:10,fontWeight:700,color:"#5B21B6",letterSpacing:"0.4px",marginBottom:3}}>IGST</div>
-            <div style={{fontWeight:600,color:igstTotal>0?"#5B21B6":"var(--text3)"}}>{igstTotal>0?`₹${igstTotal.toLocaleString()}`:"—"}</div>
+            <div style={{fontWeight:600,color:igstTotal>0?"#5B21B6":"var(--text3)"}}>{igstTotal>0?`₹${igstTotal.toLocaleString("en-IN")}`:"—"}</div>
           </div>
           <div>
             <div style={{fontSize:10,fontWeight:700,color:"#1E40AF",letterSpacing:"0.4px",marginBottom:3}}>CGST</div>
-            <div style={{fontWeight:600,color:cgstTotal>0?"#1E40AF":"var(--text3)"}}>{cgstTotal>0?`₹${cgstTotal.toLocaleString()}`:"—"}</div>
+            <div style={{fontWeight:600,color:cgstTotal>0?"#1E40AF":"var(--text3)"}}>{cgstTotal>0?`₹${cgstTotal.toLocaleString("en-IN")}`:"—"}</div>
           </div>
           <div>
             <div style={{fontSize:10,fontWeight:700,color:"#065F46",letterSpacing:"0.4px",marginBottom:3}}>SGST</div>
-            <div style={{fontWeight:600,color:sgstTotal>0?"#065F46":"var(--text3)"}}>{sgstTotal>0?`₹${sgstTotal.toLocaleString()}`:"—"}</div>
+            <div style={{fontWeight:600,color:sgstTotal>0?"#065F46":"var(--text3)"}}>{sgstTotal>0?`₹${sgstTotal.toLocaleString("en-IN")}`:"—"}</div>
           </div>
           <div style={{borderLeft:"2px solid var(--brand)",paddingLeft:12}}>
             <div style={{fontSize:10,fontWeight:700,color:"var(--brand)",letterSpacing:"0.4px",marginBottom:3}}>GRAND TOTAL</div>
-            <div style={{fontSize:18,fontWeight:800,color:"var(--brand)",lineHeight:1}}>₹{grandTotal.toLocaleString()}</div>
+            <div style={{fontSize:18,fontWeight:800,color:"var(--brand)",lineHeight:1}}>₹{grandTotal.toLocaleString("en-IN")}</div>
           </div>
         </div>
         {/* Quote-level discount adjuster (kept for backward-compat with old quotes
@@ -641,7 +641,7 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
             if(totalCost===0) return null;
             const margin=taxableTotal-totalCost;
             const marginPct=taxableTotal>0?+((margin/taxableTotal)*100).toFixed(1):0;
-            return <span style={{marginLeft:"auto",fontSize:11,color:marginPct<20?"#B91C1C":marginPct<40?"#92400E":"#047857",fontWeight:600}}>Cost: ₹{totalCost.toLocaleString()} · Margin: ₹{margin.toLocaleString()} ({marginPct}%) <span style={{fontWeight:500,opacity:0.7}}>· internal only</span></span>;
+            return <span style={{marginLeft:"auto",fontSize:11,color:marginPct<20?"#B91C1C":marginPct<40?"#92400E":"#047857",fontWeight:600}}>Cost: ₹{totalCost.toLocaleString("en-IN")} · Margin: ₹{margin.toLocaleString("en-IN")} ({marginPct}%) <span style={{fontWeight:500,opacity:0.7}}>· internal only</span></span>;
           })()}
         </div>
       </div>
@@ -650,6 +650,9 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
 }
 
 function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,collections=[],setCollections,projects=[],setProjects,setActivities,setUpdates,isFinance=false,commLogs,setCommLogs,currentUser,orgUsers,catalog,masters=null,canDelete,isManager=false,onRequestEditAccess,openPanel="",onPanelClose,onPanelOpenQuote,focusQuoteId="",onFocusDone}) {
+  // The seller's GST home state: the one setting the pricing engine and Billing use
+  // (Masters → Quotation Rules → home state). Same state → CGST + SGST; else IGST.
+  const homeState=(resolveQuotationMasters(masters,catalog).quoteConfig||{}).homeState||SELLER_HOME_STATE;
   const canEditQuote = (q) => canEditRecord({ownerId:q?.owner,currentUser,orgUsers,recordType:"quote",recordId:q?.id,commLogs:commLogs||[]});
   const requestAccessQuote = (q) => onRequestEditAccess && onRequestEditAccess("quote", q.id, q.title||q.id||"Quote", q.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
@@ -951,7 +954,7 @@ function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads
     const rate=TAX_RATES[taxType]||0;
     if(rate===0||!placeOfSupply) return {igst:0,cgst:0,sgst:0};
     if(placeOfSupply==="Outside India") return {igst:0,cgst:0,sgst:0};
-    if(placeOfSupply===SELLER_HOME_STATE) return {igst:0,cgst:rate/2,sgst:rate/2};
+    if(placeOfSupply===homeState) return {igst:0,cgst:rate/2,sgst:rate/2};
     return {igst:rate,cgst:0,sgst:0};
   };
 
@@ -1647,20 +1650,20 @@ Reason for approving (kept on the quote):`,"");
       const dv   = Number(it.discountValue)||0;
       const dt   = it.discountType||"pct";
       const gst  = (Number(it.igstAmount)||0)+(Number(it.cgstAmount)||0)+(Number(it.sgstAmount)||0);
-      const discStr = dv>0?(dt==="pct"?`${dv}%`:`${lsym}${dv.toLocaleString()}`):"—";
+      const discStr = dv>0?(dt==="pct"?`${dv}%`:`${lsym}${dv.toLocaleString("en-IN")}`):"—";
       return `<tr style="background:${idx%2===0?"#fff":"#F8FAFC"}">
         <td style="text-align:center;color:#94a3b8;font-size:9pt">${idx+1}</td>
         ${anyCharge?`<td style="font-family:monospace;font-size:9pt;color:#475569">${it.chargeName||""}</td>`:""}
         <td>${it.description||""}${it.licenseType?`<br/><span style="font-size:8pt;color:#6D28D9;background:#EEF2FF;padding:1px 5px;border-radius:4px">${it.licenseType}</span>`:""}${it.billingFrequency?`<span style="font-size:8pt;color:#1D4ED8;background:#EFF6FF;padding:1px 5px;border-radius:4px;margin-left:3px">${it.billingFrequency}</span>`:""}</td>
         <td style="text-align:center">${it.unit||""}</td>
         <td style="text-align:right">${it.qty||0}</td>
-        ${anyMrp?`<td style="text-align:right;color:#64748b">${mrp>0?`${lsym}${mrp.toLocaleString()}`:"—"}</td>`:""}
+        ${anyMrp?`<td style="text-align:right;color:#64748b">${mrp>0?`${lsym}${mrp.toLocaleString("en-IN")}`:"—"}</td>`:""}
         ${anyDiscount?`<td style="text-align:right;color:#DC2626">${discStr}</td>`:""}
-        <td style="text-align:right;font-weight:600">${lsym}${(Number(it.unitPrice)||0).toLocaleString()}</td>
-        ${showCost?`<td style="text-align:right;background:#FEF3C7;color:#92400E">${lsym}${(Number(it.unitCost)||0).toLocaleString()}</td>`:""}
-        <td style="text-align:right;font-weight:600">${lsym}${(Number(it.amount)||0).toLocaleString()}</td>
-        ${anyGst?`<td style="text-align:right;font-size:9pt" title="IGST ${it.igstRate||0}% · CGST ${it.cgstRate||0}% · SGST ${it.sgstRate||0}%">${gst>0?`${lsym}${gst.toLocaleString()}`:"—"}</td>`:""}
-        <td style="text-align:right;font-weight:700;color:${accent}">${lsym}${(Number(it.totalWithTax)||Number(it.amount)||0).toLocaleString()}</td>
+        <td style="text-align:right;font-weight:600">${lsym}${(Number(it.unitPrice)||0).toLocaleString("en-IN")}</td>
+        ${showCost?`<td style="text-align:right;background:#FEF3C7;color:#92400E">${lsym}${(Number(it.unitCost)||0).toLocaleString("en-IN")}</td>`:""}
+        <td style="text-align:right;font-weight:600">${lsym}${(Number(it.amount)||0).toLocaleString("en-IN")}</td>
+        ${anyGst?`<td style="text-align:right;font-size:9pt" title="IGST ${it.igstRate||0}% · CGST ${it.cgstRate||0}% · SGST ${it.sgstRate||0}%">${gst>0?`${lsym}${gst.toLocaleString("en-IN")}`:"—"}</td>`:""}
+        <td style="text-align:right;font-weight:700;color:${accent}">${lsym}${(Number(it.totalWithTax)||Number(it.amount)||0).toLocaleString("en-IN")}</td>
       </tr>`;
     }).join("");
 
@@ -1757,10 +1760,10 @@ Reason for approving (kept on the quote):`,"");
 
     // ── GST totals display ──
     const gstDisplay = !isProforma ? (hasSplit
-      ? [igstTotal>0?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>IGST:</span><strong>${sym}${igstTotal.toLocaleString()}</strong></div>`:"",
-         cgstTotal>0?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>CGST:</span><strong>${sym}${cgstTotal.toLocaleString()}</strong></div>`:"",
-         sgstTotal>0?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>SGST:</span><strong>${sym}${sgstTotal.toLocaleString()}</strong></div>`:""].join("")
-      : `<div style="display:flex;justify-content:space-between;padding:3px 0"><span>Tax (${q.taxType||""}):</span><strong>${sym}${(q.taxAmount||0).toLocaleString()}</strong></div>`) : "";
+      ? [igstTotal>0?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>IGST:</span><strong>${sym}${igstTotal.toLocaleString("en-IN")}</strong></div>`:"",
+         cgstTotal>0?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>CGST:</span><strong>${sym}${cgstTotal.toLocaleString("en-IN")}</strong></div>`:"",
+         sgstTotal>0?`<div style="display:flex;justify-content:space-between;padding:3px 0"><span>SGST:</span><strong>${sym}${sgstTotal.toLocaleString("en-IN")}</strong></div>`:""].join("")
+      : `<div style="display:flex;justify-content:space-between;padding:3px 0"><span>Tax (${q.taxType||""}):</span><strong>${sym}${(q.taxAmount||0).toLocaleString("en-IN")}</strong></div>`) : "";
 
     const html = `<!DOCTYPE html>
 <html lang="en"><head>
@@ -1869,7 +1872,7 @@ Reason for approving (kept on the quote):`,"");
     <div class="subject-line">
       Subject: ${isProforma?"Proforma Invoice":isGovt?"Quotation (Government Format)":"Software Quotation"} — ${tmpl.productName.replace(/®.*$/,"®")} ${tmpl.subtitle}
     </div>
-    ${q.placeOfSupply?`<div class="ref-line">Place of Supply: <strong>${q.placeOfSupply}</strong>${q.placeOfSupply===SELLER_HOME_STATE?" (intra-state · CGST+SGST)":q.placeOfSupply==="Outside India"?" (zero-rated / export)":" (inter-state · IGST)"}</div>`:""}
+    ${q.placeOfSupply?`<div class="ref-line">Place of Supply: <strong>${q.placeOfSupply}</strong>${q.placeOfSupply===homeState?" (intra-state · CGST+SGST)":q.placeOfSupply==="Outside India"?" (zero-rated / export)":" (inter-state · IGST)"}</div>`:""}
     ${con?`<div class="ref-line">Attn: <strong>${con.name}</strong>${con.designation?` — ${con.designation}`:""} · ${con.email||""} ${con.phone?`· ${con.phone}`:""}</div>`:""}
     ${(()=>{const ccCons=(q.ccContactIds||[]).map(id=>contacts.find(c=>c.id===id)).filter(Boolean);return ccCons.length>0?`<div class="ref-line" style="color:#475569">CC: ${ccCons.map(c=>`<strong>${c.name}</strong>${c.email?` &lt;${c.email}&gt;`:""}`).join(" · ")}</div>`:"";})()}
 
@@ -1879,7 +1882,7 @@ Reason for approving (kept on the quote):`,"");
     </p>
     <p style="text-align:justify;font-size:10pt;line-height:1.6;margin:0 0 14px">${tmpl.opening}</p>
 
-    ${isInternal?`<div class="internal-banner">⚠ Internal Copy — DO NOT SHARE · Total Cost: ${sym}${totalCost.toLocaleString()} · Margin: ${sym}${margin.toLocaleString()} (${marginPct}%) · Owner: ${userName(q.owner)||q.owner}</div>`:""}
+    ${isInternal?`<div class="internal-banner">⚠ Internal Copy — DO NOT SHARE · Total Cost: ${sym}${totalCost.toLocaleString("en-IN")} · Margin: ${sym}${margin.toLocaleString("en-IN")} (${marginPct}%) · Owner: ${userName(q.owner)||q.owner}</div>`:""}
 
     <!-- ═══ SECTION 1: PRODUCT OVERVIEW ═══ -->
     <h2>1. Product Overview — ${tmpl.productName}</h2>
@@ -1903,11 +1906,11 @@ Reason for approving (kept on the quote):`,"");
     <!-- Totals box -->
     <div class="totals-box">
       <div class="totals-box-inner">
-        <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Subtotal (Taxable):</span><strong>${sym}${(q.subtotal||0).toLocaleString()}</strong></div>
-        ${(q.discount||0)>0?`<div style="display:flex;justify-content:space-between;padding:3px 0;color:#DC2626"><span>Discount:</span><strong>− ${sym}${(q.discount||0).toLocaleString()}</strong></div>`:""}
+        <div style="display:flex;justify-content:space-between;padding:3px 0"><span>Subtotal (Taxable):</span><strong>${sym}${(q.subtotal||0).toLocaleString("en-IN")}</strong></div>
+        ${(q.discount||0)>0?`<div style="display:flex;justify-content:space-between;padding:3px 0;color:#DC2626"><span>Discount:</span><strong>− ${sym}${(q.discount||0).toLocaleString("en-IN")}</strong></div>`:""}
         ${gstDisplay}
       </div>
-      <div class="totals-grand"><span>Grand Total${cur!=="INR"?` (${cur})`:""}:</span><span>${sym}${(q.total||0).toLocaleString()}</span></div>
+      <div class="totals-grand"><span>Grand Total${cur!=="INR"?` (${cur})`:""}:</span><span>${sym}${(q.total||0).toLocaleString("en-IN")}</span></div>
     </div>
 
     <!-- ── Notes table ── -->
@@ -2480,7 +2483,7 @@ Reason for approving (kept on the quote):`,"");
           {/* ── Top band: meta (left 60%) + Products (right 40%) ── */}
           <div style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:20,marginBottom:16}}>
             <div className="dp-grid">
-              {[["Quote ID",detail._quoteId],["Account",detail._accName],["Sector",detail._sector],["Status",detail.status],["Probability",`${detail._prob}%`],["Version",`v${detail.version}`],["Created",fmt.date(detail.createdDate)],["Sent",detail.sentDate?fmt.date(detail.sentDate):"—"],["Expiry",detail.expiryDate?fmt.date(detail.expiryDate):"—"],["Validity",detail.validity],["Owner",userName(detail.owner)||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
+              {[["Quote ID",detail._quoteId],["Account",detail._accName],["Sector",detail._sector],["Status",detail.status],["Probability",`${detail._prob}%`],["Version",`v${detail.version||1}`],["Created",fmt.date(detail.createdDate)],["Sent",detail.sentDate?fmt.date(detail.sentDate):"—"],["Expiry",detail.expiryDate?fmt.date(detail.expiryDate):"—"],["Validity",detail.validity],["Owner",userName(detail.owner)||"—"]].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
             </div>
             <div>
               <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px",marginBottom:8}}>PRODUCTS & MODULES</div>
@@ -2503,8 +2506,8 @@ Reason for approving (kept on the quote):`,"");
                 <div style={{fontSize:11,color:"var(--text3)"}}>
                   Place of Supply: <strong style={{color:"var(--text2)"}}>{detail.placeOfSupply}</strong>
                   {" · "}
-                  <span style={{color:detail.placeOfSupply===SELLER_HOME_STATE?"#1E40AF":detail.placeOfSupply==="Outside India"?"#065F46":"#5B21B6"}}>
-                    {detail.placeOfSupply===SELLER_HOME_STATE?"intra-state · CGST+SGST":detail.placeOfSupply==="Outside India"?"zero-rated":"inter-state · IGST"}
+                  <span style={{color:detail.placeOfSupply===homeState?"#1E40AF":detail.placeOfSupply==="Outside India"?"#065F46":"#5B21B6"}}>
+                    {detail.placeOfSupply===homeState?"intra-state · CGST+SGST":detail.placeOfSupply==="Outside India"?"zero-rated":"inter-state · IGST"}
                   </span>
                 </div>
               )}
@@ -2548,7 +2551,7 @@ Reason for approving (kept on the quote):`,"");
                 const dv=Number(item.discountValue)||0;
                 const dt=item.discountType||"pct";
                 const gst=(Number(item.igstAmount)||0)+(Number(item.cgstAmount)||0)+(Number(item.sgstAmount)||0);
-                const gstTip=gst>0?`IGST ${item.igstRate||0}% ${s}${(Number(item.igstAmount)||0).toLocaleString()} · CGST ${item.cgstRate||0}% ${s}${(Number(item.cgstAmount)||0).toLocaleString()} · SGST ${item.sgstRate||0}% ${s}${(Number(item.sgstAmount)||0).toLocaleString()}`:"";
+                const gstTip=gst>0?`IGST ${item.igstRate||0}% ${s}${(Number(item.igstAmount)||0).toLocaleString("en-IN")} · CGST ${item.cgstRate||0}% ${s}${(Number(item.cgstAmount)||0).toLocaleString("en-IN")} · SGST ${item.sgstRate||0}% ${s}${(Number(item.sgstAmount)||0).toLocaleString("en-IN")}`:"";
                 return (
                   <tr key={i}>
                     <td style={{fontFamily:"monospace",fontSize:11,color:"var(--text2)"}}>{item.chargeName||"—"}</td>
@@ -2561,19 +2564,19 @@ Reason for approving (kept on the quote):`,"");
                         <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:4}}>
                           {item.licenseType && <span style={{fontSize:9.5,fontWeight:600,color:"#3730A3",background:"#EEF2FF",border:"1px solid #C7D2FE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>{item.licenseType}</span>}
                           {item.billingFrequency && <span style={{fontSize:9.5,fontWeight:600,color:"#1D4ED8",background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>{item.billingFrequency}</span>}
-                          {(Number(item.setupFee)||0)>0 && <span style={{fontSize:9.5,fontWeight:600,color:"#5B21B6",background:"#EDE9FE",border:"1px solid #DDD6FE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>Setup {s}{Number(item.setupFee).toLocaleString()}</span>}
+                          {(Number(item.setupFee)||0)>0 && <span style={{fontSize:9.5,fontWeight:600,color:"#5B21B6",background:"#EDE9FE",border:"1px solid #DDD6FE",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>Setup {s}{Number(item.setupFee).toLocaleString("en-IN")}</span>}
                           {item.griApplicable==="Yes" && Number(item.griPercentage)>0 && <span style={{fontSize:9.5,fontWeight:600,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>GRI {item.griPercentage}%</span>}
                           {item.hsnSac && <span style={{fontSize:9.5,fontWeight:600,color:"#0F766E",background:"#F0FDFA",border:"1px solid #99F6E4",padding:"1px 5px",borderRadius:8,whiteSpace:"nowrap"}}>HSN {item.hsnSac}</span>}
                         </div>
                       )}
                     </td>
                     <td style={{textAlign:"right"}}>{item.qty}</td>
-                    <td style={{textAlign:"right"}}>{(Number(item.mrp)||0)>0?`${s}${(Number(item.mrp)||0).toLocaleString()}`:"—"}</td>
-                    <td style={{textAlign:"right",color:dv>0?"#B91C1C":"var(--text3)"}}>{dv>0?(dt==="pct"?`${dv}%`:`${s}${dv.toLocaleString()}`):"—"}</td>
-                    <td style={{textAlign:"right"}}>{s}{(Number(item.unitPrice)||0).toLocaleString()}</td>
-                    <td style={{textAlign:"right",fontWeight:600}}>{s}{(Number(item.amount)||0).toLocaleString()}</td>
-                    <td style={{textAlign:"right",color:gst>0?"var(--text2)":"var(--text3)"}} title={gstTip}>{gst>0?`${s}${gst.toLocaleString()}`:"—"}</td>
-                    <td style={{textAlign:"right",fontWeight:700,color:"var(--brand)"}}>{s}{(Number(item.totalWithTax)||Number(item.amount)||0).toLocaleString()}</td>
+                    <td style={{textAlign:"right"}}>{(Number(item.mrp)||0)>0?`${s}${(Number(item.mrp)||0).toLocaleString("en-IN")}`:"—"}</td>
+                    <td style={{textAlign:"right",color:dv>0?"#B91C1C":"var(--text3)"}}>{dv>0?(dt==="pct"?`${dv}%`:`${s}${dv.toLocaleString("en-IN")}`):"—"}</td>
+                    <td style={{textAlign:"right"}}>{s}{(Number(item.unitPrice)||0).toLocaleString("en-IN")}</td>
+                    <td style={{textAlign:"right",fontWeight:600}}>{s}{(Number(item.amount)||0).toLocaleString("en-IN")}</td>
+                    <td style={{textAlign:"right",color:gst>0?"var(--text2)":"var(--text3)"}} title={gstTip}>{gst>0?`${s}${gst.toLocaleString("en-IN")}`:"—"}</td>
+                    <td style={{textAlign:"right",fontWeight:700,color:"var(--brand)"}}>{s}{(Number(item.totalWithTax)||Number(item.amount)||0).toLocaleString("en-IN")}</td>
                   </tr>
                 );
               })}</tbody>
@@ -2594,9 +2597,9 @@ Reason for approving (kept on the quote):`,"");
               const cgst=detail.cgstTotal!=null?detail.cgstTotal:eg?eg.cgst:sumLines(detail,"cgstAmount");
               const sgst=detail.sgstTotal!=null?detail.sgstTotal:eg?eg.sgst:sumLines(detail,"sgstAmount");
               if(igst>0||cgst>0||sgst>0) return (<>
-                {igst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>IGST</span><span>₹{igst.toLocaleString()}</span></div>}
-                {cgst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>CGST</span><span>₹{cgst.toLocaleString()}</span></div>}
-                {sgst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>SGST</span><span>₹{sgst.toLocaleString()}</span></div>}
+                {igst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>IGST</span><span>₹{igst.toLocaleString("en-IN")}</span></div>}
+                {cgst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>CGST</span><span>₹{cgst.toLocaleString("en-IN")}</span></div>}
+                {sgst>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",fontSize:12,color:"var(--text2)"}}><span>SGST</span><span>₹{sgst.toLocaleString("en-IN")}</span></div>}
               </>);
               return <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid var(--s3)",fontSize:12,color:"var(--text2)"}}>
                 <span>Tax ({detail.taxType||"GST"})</span><span>{fmtL(detail.taxAmount)}</span>
@@ -3136,7 +3139,7 @@ Reason for approving (kept on the quote):`,"");
                 <div className="form-row">
                   <div className="form-group">
                     <label>Place of Supply{/india|domestic|sez/i.test(form.taxTreatment||"")?" *":""}
-                      <HelpTooltip text={`Drives the GST split per line. Same as seller home (${SELLER_HOME_STATE}) → CGST + SGST. Different state → IGST. Outside India → zero-rated. Leave blank to fall back to lump-sum tax (legacy quotes).`}/>
+                      <HelpTooltip text={`Drives the GST split per line. Same as seller home (${homeState}) → CGST + SGST. Different state → IGST. Outside India → zero-rated. Leave blank to fall back to lump-sum tax (legacy quotes).`}/>
                     </label>
                     <select id="vf-placeOfSupply" value={form.placeOfSupply||""} onChange={e=>{
                       const pos=e.target.value;
@@ -3146,7 +3149,7 @@ Reason for approving (kept on the quote):`,"");
                       });
                     }}>
                       <option value="">— Not set (lump-sum tax) —</option>
-                      {PLACES_OF_SUPPLY.map(s=><option key={s} value={s}>{s===SELLER_HOME_STATE?`${s} (intra-state · CGST+SGST)`:s==="Outside India"?`${s} (zero-rated)`:`${s} (inter-state · IGST)`}</option>)}
+                      {PLACES_OF_SUPPLY.map(s=><option key={s} value={s}>{s===homeState?`${s} (intra-state · CGST+SGST)`:s==="Outside India"?`${s} (zero-rated)`:`${s} (inter-state · IGST)`}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
