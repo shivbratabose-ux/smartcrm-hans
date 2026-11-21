@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Plus, Trash2, RotateCcw, Link2, FileText, Copy, Download, AlertTriangle } from "lucide-react";
 import {
-  resolveTermSets, isBuiltinSet, BUILTIN_TERM_SETS, DEFAULT_TC, TERMS_PLACEHOLDERS, eulaLinkOf, fillTerms, tcLines,
+  resolveTermSets, isBuiltinSet, BUILTIN_TERM_SETS, DEFAULT_TC, TERMS_PLACEHOLDERS, eulaLinkOf, fillTerms, tcLines, BILLING_STRUCTURES,
   upsertTermSet, assignProducts, makeDefault, unknownPlaceholders, SMART_CRM_SITE,
 } from "../lib/quotation/termSets";
 
@@ -155,6 +155,22 @@ export default function QuoteTermsMaster({ masters, setMasters, catalog = [] }) 
             {set.eulaMode === "text" && !textModeNoBody && <div style={{ fontSize: 11.5, color: "var(--text3)", marginTop: 4 }}>The page at this link shows the text saved here, so a change reaches every quote that links to it.</div>}
           </div>
 
+          {/* One link per billing structure (decision 21 Nov 2026): the company supplies
+              the documents; a quote links to the one for how it is billed. */}
+          <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>Link by billing structure <span style={{ fontWeight: 400, color: "var(--text3)" }}>(optional)</span></div>
+            <div style={{ fontSize: 11.5, color: "var(--text3)", marginBottom: 8 }}>A quote for these products links to the document for how it is billed. Left blank, it links to the EULA above.</div>
+            {BILLING_STRUCTURES.map((b) => {
+              const v = set.byBilling?.[b.id] || "";
+              return (
+                <div key={b.id} className="form-group" style={{ marginBottom: 8 }}>
+                  <label>{b.label}</label>
+                  <input value={v} placeholder={link ? `Blank: ${link}` : "https://…"} onChange={(e) => write({ byBilling: { ...(set.byBilling || {}), [b.id]: e.target.value.trim() } })} />
+                  {v && !/^https:\/\//i.test(v) &&<div style={{ fontSize: 11.5, color: "#B91C1C", marginTop: 4 }}>Use a full https:// link.</div>}
+                </div>
+              );
+            })}
+          </div>
           <div className="form-group">
             <label>Governing terms (printed as the first condition, followed by the link)</label>
             <textarea rows={3} value={set.governing} onChange={(e) => write({ governing: e.target.value })} />
