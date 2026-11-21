@@ -13,6 +13,7 @@
 import { monthlyCharge, agreedUnitPrice } from "../quotation/agreements.js";
 import { slabIndex, slabLabel } from "../quotation/slabs.js";
 import { computeGst } from "../quotation/pricingEngine.js";
+import { isTradeBilled, revenueShareOf, shareMonth, shareMode, DEFAULT_PAYMENT_DAYS } from "./revenueShare.js";
 
 const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const r2 = (v) => Math.round(n(v) * 100) / 100;
@@ -52,6 +53,8 @@ export function billingSettings(agreement) {
     usageFrequency: FREQUENCY_MONTHS[b.usageFrequency] ? b.usageFrequency : "Monthly",
     separateUsageInvoice: !!b.separateUsageInvoice,
     prorate: b.prorate !== false,
+    // Revenue share slabs (trade-billed lines): "" = as agreed, or "graduated" / "volume".
+    revenueShareMode: b.revenueShareMode === "graduated" || b.revenueShareMode === "volume" ? b.revenueShareMode : "",
   };
 }
 
@@ -225,7 +228,8 @@ function subscriptionBlock(line, period, agreement, cut) {
 function usageBlock(line, period, agreement, cut) {
   const term = lineTerm(line, cut);
   if (!term.from) return null;
-  const k = freqMonths(billingSettings(agreement).usageFrequency);
+  // Trade-billed lines are settled on a monthly revenue share statement.
+  const k = isTradeBilled(line) ? 1 : freqMonths(billingSettings(agreement).usageFrequency);
   const start = periodOf(term.from);
   const idx = monthsBetween(start, period);
   if (idx < 0) return null;
@@ -287,7 +291,8 @@ export function dueLines(quote, period, usageTotals = {}, { quotes = [], invoice
         description: `${line.name}: ${rangeLabel(months[0], months[months.length - 1])}${detail.some((d) => d.fraction < 1) ? " (part month prorated)" : ""}`,
         amount, calc: { basis: "Fixed recurring, in advance", monthly: r2(base), months: detail },
       });
-    } else if (line.billingClass === "transaction") {
+    } else if (line.billingClass === "transaction" && !isTradeBilled(line)) {
+      // (Lines billed to the trade are not invoiced to the customer: see revenueShareStatements.)
       const months = (usageBlock(line, period, agreement, cut) || []).filter((m) => !billed.has(billedKey(quote.id, line.code, m)));
       if (!months.length) continue;
       const detail = months.map((m) => {
@@ -295,20 +300,67 @@ export function dueLines(quote, period, usageTotals = {}, { quotes = [], invoice
         const has = k in usageTotals;
         if (!has) needs.push({ quoteId: quote.id, lineCode: line.code, period: m });
         const qty = has ? n(usageTotals[k]) : 0;
-        const c = monthlyCharge(line, qty);
         const factor = escalationFactor(line, m);
+        const c = monthlyCharge(line, qty, { factor });
         const slab = line.pricing?.rateSource === "Slab" ? slabLabel(line.pricing.slabs, slabIndex(qty * (line.pricing.slabPeriod === "year" ? 12 : 1), line.pricing.slabs), line.unit) : "";
-        return { period: m, qty, usage: r2(c.usage * factor), minimum: c.minimum, minimumApplied: !!c.minimumApplied, slab, factor: r2(factor * 10000) / 10000, amount: r2(Math.max(c.usage * factor, c.minimum)), missing: !has };
+        return { period: m, qty, usage: c.usage, minimum: c.minimum, minimumApplied: !!c.minimumApplied, slab, factor: r2(factor * 10000) / 10000, amount: c.amount, missing: !has,
+          ...(c.differential ? { differential: c.differential } : {}) };
       });
       const qty = detail.reduce((t, d) => t + d.qty, 0), amount = r2(detail.reduce((t, d) => t + d.amount, 0));
       usage.push({
         code: line.code, name: line.name, billingClass: "transaction", unit: line.unit, qty, rate: qty > 0 ? r2(amount / qty) : agreedUnitPrice(line, 0),
         description: `${line.name}: actual usage ${rangeLabel(months[0], months[months.length - 1])}${detail.some((d) => d.minimumApplied) ? " (minimum billing applied)" : ""}`,
-        amount, calc: { basis: "Actual consumption, in arrears", months: detail },
+        amount, calc: { basis: line.pricing?.minimumMode === "differential" ? "Fixed fee + share of the difference to actual consumption, in arrears" : "Actual consumption, in arrears", months: detail },
       });
     }
   }
   return { fixed, usage, needs };
+}
+
+/**
+ * Revenue share statements for one agreement and month (WiseCCS Model 1, TRS):
+ * one per revenue-share group of its trade-billed lines. Not invoices: Hans
+ * bills the trade directly; the customer (the operator) invoices its share.
+ * Returns [{ id, statementNo, …, lines, bands, count, gross, hans, operator, issues }].
+ */
+export function revenueShareStatements(quote, period, usageTotals = {}, { quotes = [] } = {}) {
+  const agreement = quote.agreement;
+  const cut = supersededFrom(quote, quotes);
+  const s = billingSettings(agreement);
+  const groups = new Map();
+  for (const line of agreement?.lines || []) {
+    if (line.billingClass !== "transaction" || !isTradeBilled(line)) continue;
+    if (!(activeFraction(lineTerm(line, cut), period, false) > 0)) continue;
+    const rs = revenueShareOf(line);
+    const key = rs ? (String(rs.group || "").trim() || "revenue-share") : `no-share:${line.code}`;
+    if (!groups.has(key)) groups.set(key, { rs, lines: [] });
+    groups.get(key).lines.push(line);
+  }
+  const out = [];
+  let seq = 0;
+  for (const [key, g] of groups) {
+    seq++;
+    const issues = [];
+    const rows = g.lines.map((line) => {
+      const k = billedKey(quote.id, line.code, period);
+      const has = k in usageTotals;
+      if (!has) issues.push({ level: "blocking", type: "missing", quoteId: quote.id, lineCode: line.code, period, message: `No approved count for ${line.code} in ${periodLabel(period)}.` });
+      const factor = escalationFactor(line, period);
+      return { code: line.code, name: line.name, unit: line.unit, qty: has ? n(usageTotals[k]) : 0, rate: r2(n(line.netRate) * factor), missing: !has };
+    });
+    if (!g.rs) issues.push({ level: "warning", type: "no-share", quoteId: quote.id, period, message: "No revenue-share slabs on these lines: everything collected stays with Hans Infomatic." });
+    const month = g.rs ? shareMonth(rows, g.rs, s.revenueShareMode) : shareMonth(rows, { slabs: [{ from: 0, hansPct: 100 }] });
+    out.push({
+      id: `rs_${quote.id}_${period}_${seq}`, statementNo: `RS/${agreement.agreementNo}/${String(period).replace("-", "")}${groups.size > 1 ? `-${seq}` : ""}`,
+      quoteId: quote.id, agreementNo: agreement.agreementNo, accountId: agreement.accountId || quote.accountId || "",
+      customer: agreement.customer || "", operatorName: agreement.customer || "Operator", group: key.startsWith("no-share:") ? "" : key,
+      period, periodLabel: periodLabel(period), currency: agreement.currency || "INR",
+      mode: g.rs ? shareMode(g.rs, s.revenueShareMode) : "volume", modeOverridden: !!s.revenueShareMode,
+      paymentDays: n(g.rs?.paymentDays) || DEFAULT_PAYMENT_DAYS,
+      ...month, issues,
+    });
+  }
+  return out;
 }
 
 /** Payment milestones of an agreement's one-time charges: [{ index, name, pct, amount, invoiced }]. */
@@ -417,9 +469,12 @@ export function billingRun({ quotes = [], period, usageRecords = [], invoices = 
     for (const line of agreement.lines) if (line.billingClass === "transaction") (usageBlock(line, period, agreement, supersededFrom(quote, quotes)) || []).forEach((m) => months.add(`${line.code}|${m}`));
     const expected = [...months].map((k) => ({ quoteId: quote.id, lineCode: k.split("|")[0], period: k.split("|")[1] }));
     const rec = reconcileUsage(usageRecords.filter((r) => r.quoteId === quote.id), expected);
+    const trade = new Set(agreement.lines.filter(isTradeBilled).map((l) => l.code));
     const previews = previewInvoices(quote, period, rec.totals, { quotes, invoices, config })
-      .map((p) => ({ ...p, issues: p.cycle === "subscription" ? [] : rec.issues.filter((i) => i.level !== "info" || true) }));
+      // Counts of trade-billed lines belong to the revenue share statement, not to the invoice.
+      .map((p) => ({ ...p, issues: p.cycle === "subscription" ? [] : rec.issues.filter((i) => !trade.has(i.lineCode)) }));
     const done = (invoices || []).filter((i) => i.quoteId === quote.id && i.period === period && i.status === "final");
-    return { quote, agreement, usage: rec, previews, finalInvoices: done, milestones: milestoneItems(quote, invoices) };
+    return { quote, agreement, usage: rec, previews, finalInvoices: done, milestones: milestoneItems(quote, invoices),
+      statements: revenueShareStatements(quote, period, rec.totals, { quotes }) };
   });
 }

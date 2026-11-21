@@ -38,7 +38,7 @@ const cfg = { gstRatePct: 18, homeState: "Delhi" };
 
 console.log("\nPeriods");
 check("month arithmetic", [periodOf("2026-12-17"), addMonths("2026-12", 1), addMonths("2026-12", 14), monthsBetween("2026-12", "2027-03"), daysInPeriod("2027-02"), periodLabel("2027-02")], ["2026-12", "2027-01", "2028-02", 3, 28, "Feb 2027"]);
-check("default settings", billingSettings(mk().agreement), { subscriptionFrequency: "Monthly", usageFrequency: "Monthly", separateUsageInvoice: false, prorate: true });
+check("default settings", billingSettings(mk().agreement), { subscriptionFrequency: "Monthly", usageFrequency: "Monthly", separateUsageInvoice: false, prorate: true, revenueShareMode: "" });
 check("part month", [activeFraction({ from: "2026-12-10", to: "2027-12-09" }, "2026-12"), activeFraction({ from: "2026-12-10", to: "" }, "2027-01"), activeFraction({ from: "2026-12-10", to: "" }, "2026-11"), activeFraction({ from: "2026-12-10", to: "" }, "2026-12", false)].map((v) => Math.round(v * 1000) / 1000), [0.71, 1, 0, 1]);
 
 console.log("\nTEST 4 and 9: billing on actual usage, with a minimum");

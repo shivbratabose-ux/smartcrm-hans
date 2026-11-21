@@ -26,6 +26,7 @@ import { HOSTING_LABEL } from "./handover.js";
 import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS, CONFIDENTIAL_NOTE } from "../../data/quoteContent.js";
 import { resolveTermSets, termSetFor, eulaLinkOf, fillTerms, tcLines } from "./termSets.js";
 import { slabTable, usageRuleText, poolVolumes, escalatedRates, hasUsageRules } from "./slabs.js";
+import { revenueShareOf, revenueShareText, shareMode } from "../billing/revenueShare.js";
 import { billingClassOf } from "./commercial.js";
 import { getQuoteTemplate } from "../../data/quoteTemplates.js";
 
@@ -161,8 +162,13 @@ export function quoteDocModel(quote, opts = {}) {
     // The customer sees prices, never how they were worked out (no months × rate):
     // decision 21 Nov 2026.
     const basis = l.soldAs?.mode === "one_time" ? "One-time licence" : oneTime ? "One time" : usage ? `Per ${u || "use"}` : `Per ${u || "unit"} per month`;
+    // Billed to the trade (WiseCCS TRS) and hybrid fixed fee: from the price row, else as quoted.
+    const rules = row || l.pricing || {};
+    const trade = usage && (rules.billTo || l.billTo || l.pricing?.billTo) === "trade";
     return {
       code: l.productCode, name: l.name || row?.name || l.productCode, oneTime, usage, billingClass: cls, basis, qty, unit,
+      trade, revenueShare: trade ? revenueShareOf(rules) || revenueShareOf(l) : null,
+      fixedFee: usage && (rules.minimumMode || l.pricing?.minimumMode) === "differential",
       // Contractual minimum per month (committed): the usage minimum / pack, or a platform floor.
       minimum: usage ? Math.max(num(l.monthlyMinimum), /^PaaS/.test(String(l.pricingModel || "")) ? num(l.minMonthFloor) : 0) : 0,
       included: usage && num(l.unitPriceResolved) === 0 && row && row.rateSource !== "Slab" && num(row.listPrice) === 0 && row.listPrice != null,
@@ -179,12 +185,13 @@ export function quoteDocModel(quote, opts = {}) {
   });
   const oneTime = lines.filter((l) => l.oneTime);
   const subs = lines.filter((l) => !l.oneTime && !l.usage);
-  const usage = lines.filter((l) => l.usage);
+  const usage = lines.filter((l) => l.usage && !l.trade);
+  const trade = lines.filter((l) => l.trade);
   const sum = (arr, k) => arr.reduce((s, l) => s + l[k], 0);
 
   // The line the quotation is "for": a subscription, else a licence, else a
   // pay-per-use service (e.g. AMS filing), else whatever is there.
-  const main = subs[0] || oneTime.find((l) => /licen/i.test(String((quote.items || []).find((it) => it.productCode === l.code)?.pricingModel || ""))) || usage[0] || oneTime[0] || lines[0] || null;
+  const main = subs[0] || oneTime.find((l) => /licen/i.test(String((quote.items || []).find((it) => it.productCode === l.code)?.pricingModel || ""))) || usage[0] || trade[0] || oneTime[0] || lines[0] || null;
   const mainIsPlan = !!main && (subs.includes(main) || (!usage.includes(main) && /licen/i.test(String((quote.items || []).find((it) => it.productCode === main.code)?.pricingModel || ""))));
   const mainRow = main ? rowOf(main.code) : null;
   const gid = mainRow ? groupOf(mainRow, catalog) : "";
@@ -229,7 +236,7 @@ export function quoteDocModel(quote, opts = {}) {
     about, plan,
     features: main ? featuresOf(mainRow, product, priceRows) : [],
     featureNote: (main && PLAN_CONTENT[main.code]?.featureNote) || "",
-    oneTime, subs, usage, pools: poolVolumes(quote.items || [], rowOf),
+    oneTime, subs, usage, trade, pools: poolVolumes(quote.items || [], rowOf),
     totals: {
       oneTimeShown: sum(oneTime, "amount"), subsShown: sum(subs, "amount"),
       overallOneTime: sum(oneTime, "amount") - netOneTime, overallSubs: sum(subs, "amount") - netSubs,
@@ -329,12 +336,21 @@ export function quoteDocumentHtml(quote, opts = {}) {
   const fixedRows = hasFixed ? [
     secRow("Fixed recurring charges"),
     ...m.subs.map((l) => priceRow(++n, l)),
-    ...minimums.map((l) => `<tr><td>${++n}</td><td>Minimum billing: ${esc(l.name)}</td><td>Per month</td><td></td>${D ? "<td></td>" : ""}<td></td><td class="r">${inr(l.minimum)}</td></tr>`),
+    ...minimums.map((l) => `<tr><td>${++n}</td><td>${l.fixedFee ? "Fixed monthly fee" : "Minimum billing"}: ${esc(l.name)}</td><td>Per month</td><td></td>${D ? "<td></td>" : ""}<td></td><td class="r">${inr(l.minimum)}</td></tr>`),
     m.subs.length + minimums.length > 1 ? totRow("Total fixed recurring charges per month", inr(t.subsShown + t.minimums)) : "",
     D && t.overallSubs > 0.5 ? totRow(`Less: discount ${m.overallPct}%`, "− " + inr(t.overallSubs), "") + totRow("Fixed recurring charges per month after discount", inr(t.netSubs + t.minimums)) : "",
     t.prepaymentDisc > 0.5 ? totRow(`Prepayment discount ${t.prepaymentPct}% when the subscription term is paid in advance`, "− " + inr(t.prepaymentDisc), "") : "",
   ].join("") : "";
   const variableSec = m.usage.length ? secRow("Variable charges, billed on actual consumption") + variableRows.join("") : "";
+  // Billed by Hans to the trade (WiseCCS TRS): the customer pays nothing and receives a revenue share.
+  const shares = [...new Map(m.trade.filter((l) => l.revenueShare).map((l) => [JSON.stringify(l.revenueShare.slabs), l.revenueShare])).values()];
+  const paidByTrade = '<td class="r" colspan="2" style="color:#475569">Paid by the trade</td>';
+  const tradeSec = m.trade.length ? [
+    secRow("Charges billed by Hans Infomatic to the trade (not invoiced to you)"),
+    ...m.trade.map((l) => `<tr><td>${++n}</td><td>${esc(l.name)}</td><td>${esc(l.basis)}</td><td class="r">${l.listRate ? inrRate(l.listRate) : "On request"}</td>${D ? "<td></td>" : ""}${paidByTrade}</tr>`),
+    ...shares.map((rs) => `<tr><td></td><td colspan="${cols}"><b>Revenue share</b> on the month's combined count of the transactions above (${shareMode(rs) === "volume" ? "the month's count sets one share for the whole month" : "each band of the month's count at its own share"}):</td></tr>`
+      + revenueShareText(rs, { operator: m.customer || "you" }).map((t) => `<tr><td></td><td colspan="${cols}" style="padding-left:18px">${esc(t)}</td></tr>`).join("")),
+  ].join("") : "";
   const oneTimeSec = hasOneTimeSec ? [
     secRow("One-time charges"),
     ...m.oneTime.map((l) => priceRow(++n, l)),
@@ -347,13 +363,14 @@ export function quoteDocumentHtml(quote, opts = {}) {
 
   const prices = `
     <table class="pr"><thead><tr><th style="width:26px"></th><th>Description</th><th>Basis</th><th class="r">Rate (₹)</th>${D ? '<th class="r">Discount</th>' : ""}<th class="r">Users / qty</th><th class="r">Amount (₹)</th></tr></thead><tbody>
-      ${fixedRows}${variableSec}${oneTimeSec}${amcSec}
+      ${fixedRows}${variableSec}${tradeSec}${oneTimeSec}${amcSec}
       <tr class="sec"><td></td><td colspan="${cols}">GST at ${m.gstPct}% (charged in addition, as applicable)</td></tr>
       ${hasFixed ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on fixed recurring charges, per month</td><td class="r">${inr(t.gstSubs)}</td></tr>` : ""}
       ${m.usage.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on variable charges</td><td class="r" style="color:#475569">On each invoice</td></tr>` : ""}
       ${m.oneTime.length ? `<tr><td>${++n}</td><td colspan="${cols - 1}">GST on one-time charges</td><td class="r">${inr(t.gstOneTime)}</td></tr>` : ""}
     </tbody></table>
-    ${m.usage.length ? `<div class="note" style="font-style:normal">Variable charges are invoiced on the actual ${m.usage.length > 1 ? "volumes" : "volume"} used in each billing period at the rates above. No volume is committed${minimums.length ? " beyond the minimum billing shown" : ""}.</div>` : ""}`;
+    ${m.usage.length ? `<div class="note" style="font-style:normal">Variable charges are invoiced on the actual ${m.usage.length > 1 ? "volumes" : "volume"} used in each billing period at the rates above. No volume is committed${minimums.length ? (minimums.every((l) => l.fixedFee) ? "; each month the share of the difference to the fixed fee shown is added or deducted" : " beyond the minimum billing shown") : ""}.</div>` : ""}
+    ${m.trade.length ? `<div class="note" style="font-style:normal">Charges billed to the trade are collected by Hans Infomatic from each user's pre-deposit account. At the end of each month Hans Infomatic sends you a revenue share statement of the transactions processed; you invoice your share, which is paid within ${shares.length ? Math.max(...shares.map((rs) => Number(rs.paymentDays) || 15)) : 15} days of receipt of your invoice.</div>` : ""}`;
 
   const who = m.preparedBy;
   const contactLine = [who.phone, who.email].filter(Boolean).join(" · ");

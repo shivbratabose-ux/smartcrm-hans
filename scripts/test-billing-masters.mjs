@@ -21,23 +21,25 @@ check("units in all 10 dimensions", new Set(BILLING_UNITS.map((u) => u.dimension
 check("no rates or percentages in the seed", [TAX_TYPES.every((t) => t.ratePct == null), JSON.stringify(BILLING_MASTERS_SEED).match(/"(rate|price|listPrice|ratePct|amount)":\s*[0-9]/), BILLING_MASTERS_SEED.fxRates.length], [true, null, 0]);
 check("ids unique in every list", ["models", "units", "rateStructures", "feeTypes", "payerTypes", "taxes", "legalEntities", "profiles"].every((k) => new Set(BILLING_MASTERS_SEED[k].map((x) => x.id)).size === BILLING_MASTERS_SEED[k].length), true);
 check("rate structures the engine does not calculate yet are flagged", RATE_STRUCTURES.filter((r) => !r.engine).map((r) => r.id), ["cap", "wallet", "bundle", "peak", "cargo_type"]);
-check("23 profiles: 17 products with AMS as three (19), plus 4 services", BILLING_PROFILES.length, 23);
+check("22 profiles: 16 products with AMS as three (18), plus 4 services (ACMES is WiseCCS)", BILLING_PROFILES.length, 22);
 check("every seeded profile is valid against the masters and the catalogue", BILLING_PROFILES.map((p) => [p.id, profileProblems(p, m, catalog)]).filter(([, e]) => e.length), []);
-check("statuses as specified", BILLING_PROFILES.filter((p) => p.status === "CONFIRMED").map((p) => p.id), ["wisecargo", "wiseccs", "acmes", "wisehandling", "icaffe"]);
+check("statuses as specified", BILLING_PROFILES.filter((p) => p.status === "CONFIRMED").map((p) => p.id), ["wisecargo", "wiseccs", "wisehandling", "icaffe"]);
 check("three AMS profiles", BILLING_PROFILES.filter((p) => /^AMS/.test(p.productId)).map((p) => p.productId), ["AMSOcean", "AMSAir", "AMSIGM"]);
 check("HR Expert is the existing HRMS, billed per user", [BILLING_PROFILES.find((p) => p.id === "hr_expert").productId, BILLING_PROFILES.find((p) => p.id === "hr_expert").primaryUnitIds[0]], ["WiseHRMS", "named_user"]);
-check("ACMES has no entity until Carico System is added (warning, not an error)", [BILLING_PROFILES.find((p) => p.id === "acmes").legalEntityId, profileWarnings(BILLING_PROFILES.find((p) => p.id === "acmes"))[0].slice(0, 15)], ["", "No legal entity"]);
+check("ACMES is WiseCCS: no separate profile; WiseCCS offers TRS, hybrid and SaaS without infrastructure", [BILLING_PROFILES.some((p) => p.id === "acmes" || p.productId === "ACMES"), BILLING_PROFILES.find((p) => p.id === "wiseccs").allowedModelIds], [false, ["revenue_share", "hybrid", "saas_no_infra", "per_txn"]]);
+check("a profile without a legal entity is a warning, not an error", profileWarnings({ ...BILLING_PROFILES.find((p) => p.id === "wiseccs"), legalEntityId: "" })[0].slice(0, 15), "No legal entity");
 check("WiseHandling SaaS / PaaS require a setup fee; COTS does not", [requiredFeesFor(BILLING_PROFILES.find((p) => p.id === "wisehandling"), "paas"), requiredFeesFor(BILLING_PROFILES.find((p) => p.id === "wisehandling"), "cots_amc")], [["setup"], []]);
 check("the default model is always among the allowed ones", BILLING_PROFILES.every((p) => p.allowedModelIds.includes(p.defaultModelId)), true);
 check("WiseCCS carries the revenue-share statement and separate collection account flags", BILLING_PROFILES.find((p) => p.id === "wiseccs").flags, { revenueShareStatement: true, separateCollectionAccount: true });
 
 // ── Catalogue additions ──────────────────────────────────────────────
-const added = ["ACMES", "AAIICMS", "EAWBSolutions", "SCMTRDesk", "GateMgmt"];
+const added = ["AAIICMS", "EAWBSolutions", "SCMTRDesk", "GateMgmt"];
+check("ACMES is not a separate product (it is WiseCCS)", catalog.some((c) => c.id === "ACMES"), false);
 check("the new products are in the catalogue seed", added.every((id) => catalog.some((c) => c.id === id)), true);
 const oldCatalog = catalog.filter((c) => !added.includes(c.id));
-check("only the unlinked ACMES row moves, to the ACMES product", HANS_CATALOGUE.filter((r) => groupOf(r, catalog) !== groupOf(r, oldCatalog)).map((r) => [r.code, groupOf(r, oldCatalog), groupOf(r, catalog)]), [["P05", "", "ACMES"]]);
-const live = mergeCatalogSeed([...oldCatalog, { id: "ACMES", name: "ACMES", modules: [] }]);
-check("a live catalogue gains the missing products once, without duplicating ACMES", [live.filter((c) => c.id === "ACMES").length, added.every((id) => live.some((c) => c.id === id))], [1, true]);
+check("no price row changes product with the additions; ACMES (P05) sits under WiseCCS", [HANS_CATALOGUE.filter((r) => groupOf(r, catalog) !== groupOf(r, oldCatalog)).map((r) => r.code), groupOf(HANS_CATALOGUE.find((r) => r.code === "P05"), catalog)], [[], "WiseCCS"]);
+const live = mergeCatalogSeed([...oldCatalog, { id: "AAIICMS", name: "AAI ICMS", modules: [] }]);
+check("a live catalogue gains the missing products once, without duplicating one it has", [live.filter((c) => c.id === "AAIICMS").length, added.every((id) => live.some((c) => c.id === id))], [1, true]);
 
 // ── Saved masters win; nothing is lost ───────────────────────────────
 const saved = { billing: { models: [{ id: "per_txn", name: "Pay per transaction (renamed)", classes: ["transaction"] }, { id: "custom_x", name: "Custom" }], rounding: "up" } };
@@ -45,7 +47,7 @@ const r = resolveBillingMasters(saved);
 check("an admin's rename wins; new items kept; seed items still present", [r.models[0].name, r.models.some((x) => x.id === "custom_x"), r.models.length], ["Pay per transaction (renamed)", true, 19]);
 check("rounding saved", r.rounding, "up");
 const next = withBilling(saved, "taxes", [{ ...TAX_TYPES[0], ratePct: "18" }]);
-check("saving one list keeps the others (and the admin's rename)", [next.billing.taxes[0].ratePct, next.billing.models[0].name, next.billing.profiles.length], ["18", "Pay per transaction (renamed)", 23]);
+check("saving one list keeps the others (and the admin's rename)", [next.billing.taxes[0].ratePct, next.billing.models[0].name, next.billing.profiles.length], ["18", "Pay per transaction (renamed)", 22]);
 check("retired items drop out of pick lists", active([{ id: "a" }, { id: "b", retired: true }]).map((x) => x.id), ["a"]);
 check("new ids are unique", newId("Per txn", [{ id: "per_txn" }]), "per_txn_2");
 

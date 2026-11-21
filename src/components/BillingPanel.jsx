@@ -5,7 +5,8 @@
 //   Invoices     final invoices and credit notes
 // All figures come from lib/billing/engine.js; data from lib/billing/store.js.
 import { useState, useEffect, useMemo } from "react";
-import { X, AlertTriangle, Check, Plus, Upload, FileText, RotateCcw } from "lucide-react";
+import { X, AlertTriangle, Check, Plus, Upload, FileText, RotateCcw, Download } from "lucide-react";
+import { statementCsv, SHARE_MODES } from "../lib/billing/revenueShare";
 import {
   billingRun, expectedUsage, reconcileUsage, correctUsage, parseUsageRows, matchUsageRows, finaliseProblems, finalise, milestoneInvoice,
   creditNote, netOfCredits, collectionFromInvoice, billingSettings, periodOf, periodLabel, addMonths, isPeriod, FREQUENCY_MONTHS,
@@ -47,7 +48,7 @@ function InvoiceView({ inv }) {
                 {(l.calc?.months || []).map((m) => (
                   <div key={m.period}>
                     {periodLabel(m.period)}: {l.billingClass === "transaction"
-                      ? <>{Number(m.qty).toLocaleString("en-IN")} {l.unit}{m.slab ? ` · slab ${m.slab}` : ""} → {inr(m.usage)}{m.minimumApplied ? ` · minimum ${inr(m.minimum)} applies` : ""}{m.factor !== 1 ? ` · escalation ×${m.factor}` : ""} = <b>{inr(m.amount)}</b>{m.missing ? <span style={{ color: "#B91C1C" }}> · usage missing</span> : null}</>
+                      ? <>{Number(m.qty).toLocaleString("en-IN")} {l.unit}{m.slab ? ` · slab ${m.slab}` : ""} → {inr(m.usage)}{m.minimumApplied ? ` · minimum ${inr(m.minimum)} applies` : ""}{m.factor !== 1 ? ` · escalation ×${m.factor}` : ""}{m.differential ? ` · fixed fee ${inr(m.differential.fixed)} ${m.differential.adjustment >= 0 ? "+" : "−"} ${m.differential.sharePct}% of the difference ${inr(Math.abs(m.differential.adjustment))}` : ""} = <b>{inr(m.amount)}</b>{m.missing ? <span style={{ color: "#B91C1C" }}> · usage missing</span> : null}</>
                       : <>{inr(l.calc.monthly)} a month{m.fraction < 1 ? ` × ${(m.fraction * 100).toFixed(1)}% of the month` : ""}{m.factor !== 1 ? ` × ${m.factor} escalation` : ""} = <b>{inr(m.amount)}</b></>}
                   </div>
                 ))}
@@ -65,6 +66,71 @@ function InvoiceView({ inv }) {
         <tr><td style={{ ...td, fontWeight: 800 }} colSpan={4} align="right">Total payable</td><td style={{ ...td, textAlign: "right", fontWeight: 800 }}>{inr(inv.total)}</td></tr>
       </tbody>
     </table>
+  );
+}
+
+/** Download a revenue share statement as CSV (opens in Excel). */
+function downloadStatement(st) {
+  const blob = new Blob(["﻿" + statementCsv(st)], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${st.statementNo.replace(/[\\/]/g, "-")}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/**
+ * A monthly revenue share statement (trade-billed lines, WiseCCS TRS): not an
+ * invoice. Hans has billed the trade; the customer invoices its share.
+ */
+export function StatementView({ st }) {
+  const blocked = st.issues.some((i) => i.level === "blocking");
+  const pct = (v) => `${+Number(v).toFixed(2)}%`;
+  return (
+    <div style={{ border: "1px solid #99F6E4", borderRadius: 8, padding: "8px 10px", marginBottom: 10, background: "#F0FDFA" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+        <div style={{ fontSize: 12.5 }}><FileText size={12} style={{ verticalAlign: -2 }} /> <b style={{ fontFamily: "monospace" }}>{st.statementNo}</b> <span style={{ color: "var(--text3)" }}>· revenue share statement · {SHARE_MODES[st.mode]}{st.modeOverridden ? " (set on this agreement)" : ""}</span></div>
+        <button className="btn btn-sm btn-sec" disabled={blocked} title={blocked ? "Approve the month's counts first" : "Download for Excel"} onClick={() => downloadStatement(st)}><Download size={12} /> Statement (Excel)</button>
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--text3)", marginBottom: 6 }}>Billed by Hans Infomatic to the trade; nothing is invoiced to {st.customer || "the customer"}. {st.customer || "The customer"} invoices its share below, payable within {st.paymentDays} days of receipt of its invoice.</div>
+      <Issues issues={st.issues} />
+      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 6 }}>
+        <thead><tr>{["Transaction", "Count", "Rate", "Gross"].map((h) => <th key={h} style={{ ...th, textAlign: h === "Transaction" ? "left" : "right" }}>{h}</th>)}</tr></thead>
+        <tbody>
+          {st.lines.map((l) => (
+            <tr key={l.code}>
+              <td style={td}>{l.name} <span style={{ fontFamily: "monospace", color: "var(--text3)", fontSize: 11 }}>{l.code}</span>{l.missing ? <span style={{ color: "#B91C1C" }}> · count missing</span> : null}</td>
+              <td style={{ ...td, textAlign: "right" }}>{Number(l.qty).toLocaleString("en-IN")}</td>
+              <td style={{ ...td, textAlign: "right" }}>₹{Number(l.rate).toLocaleString("en-IN")}</td>
+              <td style={{ ...td, textAlign: "right" }}>{inr(l.gross)}</td>
+            </tr>
+          ))}
+          <tr><td style={{ ...td, fontWeight: 700 }}>Total</td><td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{Number(st.count).toLocaleString("en-IN")}</td><td style={td}></td><td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{inr(st.gross)}</td></tr>
+        </tbody>
+      </table>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead><tr>{["Slab (combined count)", "Count", "Gross", "Hans %", "Hans", st.customer || "Customer"].map((h) => <th key={h} style={{ ...th, textAlign: h.startsWith("Slab") ? "left" : "right" }}>{h}</th>)}</tr></thead>
+        <tbody>
+          {st.bands.map((b) => (
+            <tr key={b.label}>
+              <td style={td}>{b.label}</td>
+              <td style={{ ...td, textAlign: "right" }}>{Number(b.count).toLocaleString("en-IN")}</td>
+              <td style={{ ...td, textAlign: "right" }}>{inr(b.gross)}</td>
+              <td style={{ ...td, textAlign: "right" }}>{pct(b.hansPct)}</td>
+              <td style={{ ...td, textAlign: "right" }}>{inr(b.hans)}</td>
+              <td style={{ ...td, textAlign: "right" }}>{inr(b.operator)}</td>
+            </tr>
+          ))}
+          <tr>
+            <td style={{ ...td, fontWeight: 800 }}>Total{st.count ? ` (Hans ${pct(st.hansPct)} overall)` : ""}</td>
+            <td style={{ ...td, textAlign: "right", fontWeight: 800 }}>{Number(st.count).toLocaleString("en-IN")}</td>
+            <td style={{ ...td, textAlign: "right", fontWeight: 800 }}>{inr(st.gross)}</td><td style={td}></td>
+            <td style={{ ...td, textAlign: "right", fontWeight: 800 }}>{inr(st.hans)}</td>
+            <td style={{ ...td, textAlign: "right", fontWeight: 800, color: "#0F766E" }}>{inr(st.operator)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -176,7 +242,7 @@ export default function BillingPanel({ quotes = [], setQuotes, accounts = [], se
               <div style={{ border: "1px dashed var(--border)", borderRadius: 10, padding: "28px 20px", textAlign: "center", color: "var(--text3)", fontSize: 12.5 }}>
                 Nothing to bill for {isPeriod(period) ? periodLabel(period) : "this month"}. Agreements appear here once a customer has accepted a quotation and its term covers the month.
               </div>
-            ) : run.map(({ quote, agreement: a, previews, finalInvoices, milestones, usage }) => {
+            ) : run.map(({ quote, agreement: a, previews, finalInvoices, milestones, statements = [] }) => {
               const s = billingSettings(a);
               return (
                 <div key={quote.id} style={{ border: "1px solid var(--border)", borderRadius: 10, marginBottom: 14, overflow: "hidden" }}>
@@ -188,6 +254,7 @@ export default function BillingPanel({ quotes = [], setQuotes, accounts = [], se
                       <label>Usage <select style={inp} value={s.usageFrequency} onChange={(e) => setBilling(quote, { usageFrequency: e.target.value })}>{Object.keys(FREQUENCY_MONTHS).map((f) => <option key={f}>{f}</option>)}</select></label>
                       <label style={{ display: "flex", gap: 4, alignItems: "center" }}><input type="checkbox" checked={s.separateUsageInvoice} onChange={(e) => setBilling(quote, { separateUsageInvoice: e.target.checked })} />Separate usage invoice</label>
                       <label style={{ display: "flex", gap: 4, alignItems: "center" }}><input type="checkbox" checked={s.prorate} onChange={(e) => setBilling(quote, { prorate: e.target.checked })} />Prorate part months</label>
+                      {statements.length > 0 && <label title="How the revenue-share slabs apply to the month's combined count">Revenue share <select style={inp} value={s.revenueShareMode} onChange={(e) => setBilling(quote, { revenueShareMode: e.target.value })}><option value="">As agreed</option><option value="graduated">Graduated</option><option value="volume">Whole month</option></select></label>}
                     </div>
                   </div>
                   <div style={{ padding: "8px 12px" }}>
@@ -196,7 +263,8 @@ export default function BillingPanel({ quotes = [], setQuotes, accounts = [], se
                         <Check size={12} style={{ verticalAlign: -2 }} /> {f.invoiceNo}: {inr(f.total)} {f.type === "credit" ? "credit note" : "final"}, {userName(f.finalisedBy)} {f.finalisedAt ? new Date(f.finalisedAt).toLocaleDateString("en-IN") : ""}
                       </div>
                     ))}
-                    {previews.length === 0 && finalInvoices.length === 0 && <div style={{ fontSize: 12.5, color: "var(--text3)" }}>Nothing falls due in {periodLabel(period)} (billed in another month of its cycle).</div>}
+                    {statements.map((st) => <StatementView key={st.id} st={st} />)}
+                    {previews.length === 0 && finalInvoices.length === 0 && statements.length === 0 && <div style={{ fontSize: 12.5, color: "var(--text3)" }}>Nothing falls due in {periodLabel(period)} (billed in another month of its cycle).</div>}
                     {previews.map((p) => {
                       const problems = finaliseProblems(p, data.invoices);
                       return (
@@ -205,7 +273,7 @@ export default function BillingPanel({ quotes = [], setQuotes, accounts = [], se
                             <div style={{ fontSize: 12.5 }}><FileText size={12} style={{ verticalAlign: -2 }} /> <b style={{ fontFamily: "monospace" }}>{p.invoiceNo}</b> <span style={{ color: "var(--text3)" }}>· preview · {p.cycle === "usage" ? "usage" : p.cycle === "subscription" ? "subscription" : "subscription and usage"}</span></div>
                             <button className="btn btn-sm btn-primary" disabled={problems.length > 0 || busy === p.id} title={problems.join(" ")} onClick={() => postInvoice(p)}>{busy === p.id ? "Saving…" : `Finalise and post ${inr(p.total)}`}</button>
                           </div>
-                          <Issues issues={p.cycle === "subscription" ? [] : usage.issues} />
+                          <Issues issues={p.issues} />
                           <InvoiceView inv={p} />
                         </div>
                       );

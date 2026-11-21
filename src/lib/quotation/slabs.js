@@ -79,7 +79,20 @@ const n0 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 /** Does this row use any usage-pricing setting beyond a plain rate? */
 export function hasUsageRules(row) {
-  return !!row && (row.rateSource === "Slab" || n0(row.packQty) > 0 || n0(row.monthlyMinimum) > 0 || !!String(row.pool || "").trim() || n0(row.escalationPct) > 0);
+  return !!row && (row.rateSource === "Slab" || n0(row.packQty) > 0 || n0(row.monthlyMinimum) > 0 || !!String(row.pool || "").trim() || n0(row.escalationPct) > 0
+    || row.billTo === "trade" || row.minimumMode === "differential");
+}
+
+/**
+ * Hybrid "fixed core + variable" minimum (minimumMode "differential", WiseCCS
+ * Model 2): payable = fixed fee + share% × (variable − fixed fee). Above the
+ * fixed fee the customer pays the fee plus the share of the overage; below it,
+ * the fee less the share of the saving. The share defaults to 40%.
+ */
+export const differentialShare = (row) => Math.min(100, Math.max(0, row?.differentialSharePct == null || row.differentialSharePct === "" ? 40 : n0(row.differentialSharePct)));
+export function differentialCharge(fixed, variable, sharePct) {
+  const f = Math.max(0, n0(fixed)), v = Math.max(0, n0(variable)), s = Math.min(100, Math.max(0, n0(sharePct))) / 100;
+  return { fixed: f, variable: v, sharePct: s * 100, adjustment: s * (v - f), amount: Math.max(0, f + s * (v - f)) };
 }
 
 /** Graduated cost of a volume: each band at its own rate. */
@@ -166,7 +179,11 @@ export function usageRuleText(row, { unit = "", poolMates = [] } = {}) {
     if (row.slabPeriod === "year") out.push("The slab is set on the yearly volume (monthly volume × 12).");
   }
   if (n0(row.packQty) > 0) out.push(`Prepaid pack: ${n0(row.packQty).toLocaleString("en-IN")} ${u} a month for ₹${Math.round(n0(row.packPrice)).toLocaleString("en-IN")}; beyond that, the rate per ${u}.`);
-  if (n0(row.monthlyMinimum) > 0) out.push(`Minimum billing: ₹${Math.round(n0(row.monthlyMinimum)).toLocaleString("en-IN")} a month.`);
+  if (n0(row.monthlyMinimum) > 0 && row.minimumMode === "differential") {
+    const share = differentialShare(row);
+    out.push(`Fixed monthly fee ₹${Math.round(n0(row.monthlyMinimum)).toLocaleString("en-IN")}. Each month the variable charge (${u} count × rate) is compared with the fixed fee and ${share}% of the difference is added (when higher) or deducted (when lower): payable = fixed fee + ${share}% × (variable − fixed fee).`);
+  } else if (n0(row.monthlyMinimum) > 0) out.push(`Minimum billing: ₹${Math.round(n0(row.monthlyMinimum)).toLocaleString("en-IN")} a month.`);
+  if (row.billTo === "trade") out.push(`Billed by Hans Infomatic to the trade (each user, from its pre-deposit account), not to the customer; the customer's revenue share is paid on a monthly statement.`);
   if (poolMates.length) out.push(`Volume counted together with: ${poolMates.join(", ")}.`);
   if (n0(row.escalationPct) > 0) out.push(`Rates increase by ${n0(row.escalationPct)}% each year from year 2.`);
   return out;

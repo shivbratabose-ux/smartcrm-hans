@@ -329,7 +329,10 @@ export default function HansQuoteBuilder({
     const oneTime = !!soldOT || isOneTimeModel(p.pricingModel);
     // A variable line is billed monthly on actual use: no term. Only a line with
     // a contractual minimum keeps one (the months the minimum is committed for).
-    const variableOpen = billingClass === "transaction" && !(monthlyMinimum > 0) && !(Number(p.minMonthFloor) > 0);
+    // A row with a contract term (e.g. WiseCCS TRS, 84 months) keeps its months too.
+    const variableOpen = billingClass === "transaction" && !(monthlyMinimum > 0) && !(Number(p.minMonthFloor) > 0) && !(Number(p.termMonths) > 0);
+    // Hybrid fixed fee + share of the difference, or billed to the trade (as agreed, else the price row).
+    const rules = (agreed?.line?.pricing) || p;
     const lineMonths = oneTime ? 1 : variableOpen ? 0 : l.months;
     // Rate-card lines: surface the card + the tier the qty resolves to, so the
     // rep sees where the unit price came from.
@@ -355,7 +358,9 @@ export default function HansQuoteBuilder({
       monthlyMinimum, escalationPct: Number(p.escalationPct) || 0,
       rateFrozen, liveRate: live.unitPrice, configIssues: rowConfigIssues(p),
       agreedNo: agreed ? agreed.agreement.agreementNo : "", pricing: agreed ? (agreed.line.pricing || null) : pricingSnapshot(p),
-      ...computeLine({ pricingModel: pricingModelSold, billingClass: classSold, unitPriceResolved: unitPriceSold, qty: l.qty, months: lineMonths, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty, monthlyMinimum, escalationPct: p.escalationPct }),
+      ...(rules.billTo === "trade" ? { billTo: "trade" } : {}),
+      ...computeLine({ pricingModel: pricingModelSold, billingClass: classSold, unitPriceResolved: unitPriceSold, qty: l.qty, months: lineMonths, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty, monthlyMinimum, escalationPct: p.escalationPct,
+        minimumMode: rules.minimumMode, differentialSharePct: rules.differentialSharePct, billTo: rules.billTo }),
     };
   }); }, [frozen, useAgreed, agreedLines, catalog, lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country, saleMode, terms, billingFrequency]);
 
@@ -450,7 +455,7 @@ export default function HansQuoteBuilder({
       billingClass: l.billingClass, monthlyMinimum: +(Number(l.isVariable ? l.committedPerPeriod : l.monthlyMinimum) || 0).toFixed(2),
       escalationPct: Number(l.escalationPct) || 0,
       // The slab / pack / minimum settings as quoted, so the agreement keeps them.
-      ...(l.pricing ? { pricing: l.pricing } : {}), ...(l.agreedNo ? { agreedNo: l.agreedNo } : {}),
+      ...(l.pricing ? { pricing: l.pricing } : {}), ...(l.agreedNo ? { agreedNo: l.agreedNo } : {}), ...(l.billTo ? { billTo: l.billTo } : {}),
       // How it was sold: the rate before conversion, a one-time licence's terms, a frequency discount.
       baseRate: +(Number(l.baseRate) || 0).toFixed(2), ...(l.soldAs ? { soldAs: l.soldAs } : {}), ...(l.freqDiscountPct ? { freqDiscountPct: l.freqDiscountPct } : {}),
       // Variable lines: lineTotal is the committed minimum only; lineEstimate is internal.
@@ -556,6 +561,7 @@ export default function HansQuoteBuilder({
       unitPriceResolved: round2(l.unitPriceResolved), discountPct: Number(l.discountPct) || 0,
       billingClass: l.billingClass, monthlyMinimum: round2(l.isVariable ? l.committedPerPeriod : l.monthlyMinimum), lineEstimate: round2(l.lineEstimate),
       baseRate: round2(l.baseRate), ...(l.soldAs ? { soldAs: l.soldAs } : {}), ...(l.freqDiscountPct ? { freqDiscountPct: l.freqDiscountPct } : {}),
+      ...(l.pricing ? { pricing: l.pricing } : {}), ...(l.billTo ? { billTo: l.billTo } : {}),
       lineTotal: round2(l.lineTotal),
     }));
     return {
@@ -924,6 +930,7 @@ export default function HansQuoteBuilder({
                 {summary.variableLineCount > 0 && (summary.variableEstimateMonthly > 0
                   ? sumRow("Variable, on actual use (estimate, not in total)", `${inr(summary.variableEstimateMonthly)}/mo`, { color: "#4338CA" })
                   : sumRow(`Variable (${summary.variableLineCount} service${summary.variableLineCount > 1 ? "s" : ""})`, "billed on actual use", { color: "#4338CA" }))}
+                {summary.tradeLineCount > 0 && sumRow("Billed to the trade, revenue shared (estimate, not in total)", summary.tradeGrossMonthly > 0 ? `${inr(summary.tradeGrossMonthly)}/mo` : "on actual transactions", { color: "#0F766E" })}
                 <div className="form-row" style={{ margin: "6px 0", gap: 6 }}>
                   <div className="form-group" style={{ flex: 1, marginBottom: 0 }}><label style={lbl}>Overall disc %</label><input type="number" min={0} max={100} value={overallDiscountPct} onChange={e => setOverallDiscountPct(pct0to100(e.target.value))} /></div>
                 </div>

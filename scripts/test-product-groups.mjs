@@ -42,7 +42,7 @@ check("counts per product", countsByProduct([{ name: "iCAFFE", listPrice: 100, r
 console.log("\nThe shipped price list against the shipped product catalogue");
 const shipped = groupRates(HANS_CATALOGUE, INIT_PRODUCT_CATALOG);
 const notLinked = shipped.find((g) => g.id === "").rows.map((r) => r.code);
-// ACMES (P05) has had its own catalogue product since the billing module (Nov 2026).
+// ACMES (P05) is WiseCCS (21 Nov 2026): the inactive row is linked to WiseCCS.
 check("the only unlinked rows are the 4 price-list-only products", notLinked, ["P09", "P12", "P13", "P15"]);
 check("15 shared services", shipped.find((g) => g.id === SERVICES_GROUP).rows.length, 15);
 check("every row lands somewhere", shipped.reduce((n, g) => n + g.rows.length, 0), HANS_CATALOGUE.length);

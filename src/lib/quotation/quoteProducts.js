@@ -56,7 +56,8 @@ export function productsFromLines(lines = [], rowOf = () => null, catalog = []) 
 /** A new quote line for a price row: at its minimum users; a usage line has no quantity (billed on actual use). */
 export function lineForRow(row) {
   const usage = billingClassOf(row || {}) === "transaction";
-  return { productCode: row.code, qty: usage ? 0 : Math.max(1, Number(row.minQty) || 0), months: 12, discountPct: 0 };
+  // A row with its own contract term (e.g. WiseCCS: 84 or 60 months) starts at that term.
+  return { productCode: row.code, qty: usage ? 0 : Math.max(1, Number(row.minQty) || 0), months: Number(row.termMonths) > 0 ? Number(row.termMonths) : 12, discountPct: 0 };
 }
 
 /** The item's name without its product's name in front ("Orbis One Enterprise" → "Enterprise"). */
