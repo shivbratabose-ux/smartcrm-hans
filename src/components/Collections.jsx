@@ -134,7 +134,7 @@ function Collections({ collections, setCollections, accounts, contracts, current
         <div>
           <div className="pg-title">Collections</div>
           <div className="pg-sub">
-            ₹{totalBilled.toFixed(1)}L billed · ₹{totalCollected.toFixed(1)}L collected · ₹{totalPending.toFixed(1)}L pending
+            {fmt.lakh(totalBilled)} billed · {fmt.lakh(totalCollected)} collected · {fmt.lakh(totalPending)} pending
             {overdueCount > 0 && <span style={{color:"var(--red)",fontWeight:700}}> · {overdueCount} overdue</span>}
           </div>
         </div>
@@ -146,9 +146,9 @@ function Collections({ collections, setCollections, accounts, contracts, current
 
       {/* KPI Cards */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
-        <div className="kpi"><div className="kpi-label">Total Billed</div><div className="kpi-val">₹{totalBilled.toFixed(1)}L</div></div>
-        <div className="kpi"><div className="kpi-label">Collected</div><div className="kpi-val" style={{color:"var(--green)"}}>₹{totalCollected.toFixed(1)}L</div><div className="kpi-sub">{totalBilled>0?((totalCollected/totalBilled)*100).toFixed(0):0}% collection rate</div></div>
-        <div className="kpi"><div className="kpi-label">Pending</div><div className="kpi-val" style={{color:"var(--amber)"}}>₹{totalPending.toFixed(1)}L</div></div>
+        <div className="kpi"><div className="kpi-label">Total Billed</div><div className="kpi-val">{fmt.lakh(totalBilled)}</div></div>
+        <div className="kpi"><div className="kpi-label">Collected</div><div className="kpi-val" style={{color:"var(--green)"}}>{fmt.lakh(totalCollected)}</div><div className="kpi-sub">{totalBilled>0?((totalCollected/totalBilled)*100).toFixed(0):0}% collection rate</div></div>
+        <div className="kpi"><div className="kpi-label">Pending</div><div className="kpi-val" style={{color:"var(--amber)"}}>{fmt.lakh(totalPending)}</div></div>
         <div className="kpi"><div className="kpi-label">Overdue Invoices</div><div className="kpi-val" style={{color:overdueCount>0?"var(--red)":"var(--text2)"}}>{overdueCount}</div></div>
       </div>
 
@@ -161,7 +161,7 @@ function Collections({ collections, setCollections, accounts, contracts, current
               <div key={bucket} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:6,background:ageingColor(bucket)+"12",border:`1px solid ${ageingColor(bucket)}30`}}>
                 <div style={{width:8,height:8,borderRadius:"50%",background:ageingColor(bucket)}}/>
                 <span style={{fontSize:12,fontWeight:600,color:ageingColor(bucket)}}>{bucket} days</span>
-                <span style={{fontSize:12,color:"var(--text2)"}}>₹{amount.toFixed(1)}L</span>
+                <span style={{fontSize:12,color:"var(--text2)"}}>{fmt.lakh(amount)}</span>
               </div>
             ))}
           </div>
@@ -202,22 +202,22 @@ function Collections({ collections, setCollections, accounts, contracts, current
             { key: "billPeriodFrom", label: "Bill Period From", defaultWidth: 130, render: c => txt(fmt.short(c.billPeriodFrom)) },
             { key: "billPeriodTo", label: "Bill Period To", defaultWidth: 130, render: c => txt(fmt.short(c.billPeriodTo)) },
             { key: "billedAmount", label: "Billed", defaultWidth: 100, render: c => (
-              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{`₹${c.billedAmount || 0}L`}</span>
+              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{fmt.lakh(c.billedAmount || 0)}</span>
             )},
             { key: "collectedAmount", label: "Collected", defaultWidth: 100, render: c => (
-              <span style={{fontFamily:"'Outfit',sans-serif",color:"var(--green)"}}>{`₹${c.collectedAmount || 0}L`}</span>
+              <span style={{fontFamily:"'Outfit',sans-serif",color:"var(--green)"}}>{fmt.lakh(c.collectedAmount || 0)}</span>
             )},
             { key: "pendingAmount", label: "Pending", defaultWidth: 100, render: c => (
-              <span style={{fontFamily:"'Outfit',sans-serif",color:c.pendingAmount>0?"var(--red)":"var(--text3)"}}>{`₹${c.pendingAmount || 0}L`}</span>
+              <span style={{fontFamily:"'Outfit',sans-serif",color:c.pendingAmount>0?"var(--red)":"var(--text3)"}}>{fmt.lakh(c.pendingAmount || 0)}</span>
             )},
             { key: "gstAmount", label: "GST", defaultWidth: 90, render: c => (
-              <span style={{fontFamily:"'Outfit',sans-serif"}}>{c.gstAmount ? `₹${c.gstAmount}L` : "-"}</span>
+              <span style={{fontFamily:"'Outfit',sans-serif"}}>{c.gstAmount ? fmt.lakh(c.gstAmount) : "-"}</span>
             )},
             { key: "tdsAmount", label: "TDS", defaultWidth: 90, render: c => (
-              <span style={{fontFamily:"'Outfit',sans-serif"}}>{c.tdsAmount ? `₹${c.tdsAmount}L` : "-"}</span>
+              <span style={{fontFamily:"'Outfit',sans-serif"}}>{c.tdsAmount ? fmt.lakh(c.tdsAmount) : "-"}</span>
             )},
             { key: "netPayable", label: "Net Payable", defaultWidth: 110, render: c => (
-              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{c.netPayable ? `₹${c.netPayable}L` : "-"}</span>
+              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{c.netPayable ? fmt.lakh(c.netPayable) : "-"}</span>
             )},
             { key: "currency", label: "Currency", defaultWidth: 90, render: c => txt(c.currency || "INR") },
             { key: "_ageing", label: "Ageing", defaultWidth: 110, sortable: true, render: c => {
@@ -294,9 +294,9 @@ function Collections({ collections, setCollections, accounts, contracts, current
                     <td style={{fontSize:12.5}}>{c._accName}</td>
                     <td style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(c.invoiceDate)}</td>
                     <td style={{fontSize:12,color:c.pendingAmount>0&&c._ageing!=="Current"?"var(--red)":"var(--text3)",fontWeight:c.pendingAmount>0&&c._ageing!=="Current"?700:400}}>{fmt.short(c.dueDate)}</td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{c.billedAmount}L</td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",color:"var(--green)"}}>₹{c.collectedAmount}L</td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",color:c.pendingAmount>0?"var(--red)":"var(--text3)"}}>₹{c.pendingAmount}L</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{fmt.lakh(c.billedAmount)}</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",color:"var(--green)"}}>{fmt.lakh(c.collectedAmount)}</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",color:c.pendingAmount>0?"var(--red)":"var(--text3)"}}>{fmt.lakh(c.pendingAmount)}</td>
                     <td>
                       {c.pendingAmount > 0 ? (
                         <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:5,background:ac+"18",color:ac}}>

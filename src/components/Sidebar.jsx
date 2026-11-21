@@ -2,11 +2,11 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, Building2, Users, TrendingUp, Activity,
   BarChart3, Ticket, Layers, SlidersHorizontal, ChevronLeft, LogOut,
-  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge, Sparkles, UserCheck, Inbox, HeartHandshake, X
+  UserPlus, Phone, FileText, DollarSign, Target, Calendar, ClipboardList, Mail, Upload, Bell, HelpCircle, Trash2, Briefcase, Gauge, Sparkles, UserCheck, Inbox, HeartHandshake, X, FileSignature
 } from "lucide-react";
 import useIsMobile from '../hooks/useIsMobile';
 import { TEAM_MAP, PERMISSIONS, INIT_USERS } from '../data/constants';
-import { canManageUsers, canSeeLeadAssignment } from '../utils/helpers';
+import { canManageUsers, canSeeLeadAssignment, initialsOf } from '../utils/helpers';
 
 const canAccess = (userId, module, orgUsers, customPermissions) => {
   const u = (orgUsers||[]).find(x=>x.id===userId) || INIT_USERS.find(x=>x.id===userId);
@@ -20,7 +20,7 @@ const canAccess = (userId, module, orgUsers, customPermissions) => {
   return perm[module] && perm[module]!==false;
 };
 
-function Sidebar({page,setPage,collapsed:collapsedPref,setCollapsed,tickets,leads,collections,currentUser,onLogout,orgUsers,customPermissions,myUnreadCount,canRestore,leaveApprovals=0,mobileOpen=false,onMobileClose}) {
+function Sidebar({page,setPage,canBill=false,collapsed:collapsedPref,setCollapsed,tickets,leads,collections,currentUser,onLogout,orgUsers,customPermissions,myUnreadCount,canRestore,leaveApprovals=0,mobileOpen=false,onMobileClose}) {
   // On a phone the sidebar is a slide-out drawer: always full-width labels,
   // and the collapse arrow becomes a close button.
   const isMobile = useIsMobile();
@@ -52,6 +52,8 @@ function Sidebar({page,setPage,collapsed:collapsedPref,setCollapsed,tickets,lead
       {id:"contracts",  label:"Contracts",   icon:<FileText size={17}/>},
       {id:"projects",   label:"Projects",    icon:<Briefcase size={17}/>},
       {id:"collections",label:"Collections", icon:<DollarSign size={17}/>,badge:overdueCollections},
+      // Monthly invoices from agreements and actual usage (Accounts, Finance, managers).
+      ...(canBill?[{id:"billing",label:"Billing",icon:<FileSignature size={17}/>}]:[]),
       {id:"tickets",    label:"Tickets",     icon:<Ticket size={17}/>,badge:openTix},
     ]},
     {section:"Analytics",items:[
@@ -148,7 +150,7 @@ function Sidebar({page,setPage,collapsed:collapsedPref,setCollapsed,tickets,lead
         ))}
       </nav>
       <div className="sb-foot">
-        <div className="u-av" style={{width:32,height:32,borderRadius:8,fontSize:11,background:"rgba(255,255,255,0.15)",flexShrink:0}}>{user?.initials||"?"}</div>
+        <div className="u-av" style={{width:32,height:32,borderRadius:8,fontSize:11,background:"rgba(255,255,255,0.15)",color:"#fff",flexShrink:0}}>{initialsOf(user)}</div>
         <div className="sb-foot-text">
           <div className="sb-foot-name">{user?.name||"User"}</div>
           <div className="sb-foot-role">{user?.role} · Hans Infomatic</div>

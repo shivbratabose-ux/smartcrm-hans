@@ -137,9 +137,9 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
           {/* KPI Row */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginTop:16}}>
             {[
-              { label: "ARR", value: totalARR ? `₹${totalARR}L` : "—", sub: "Annual recurring", color: "#1B6B5A" },
-              { label: "PIPELINE", value: `₹${pipelineValue}L`, sub: `${openDeals} open deals`, color: "#3B82F6" },
-              { label: "WON", value: `₹${wonValue}L`, sub: `${wonDeals.length} deals closed`, color: "#22C55E" },
+              { label: "ARR", value: totalARR ? fmt.lakh(totalARR) : "—", sub: "Annual recurring", color: "#1B6B5A" },
+              { label: "PIPELINE", value: fmt.lakh(pipelineValue), sub: `${openDeals} open deals`, color: "#3B82F6" },
+              { label: "WON", value: fmt.lakh(wonValue), sub: `${wonDeals.length} deals closed`, color: "#22C55E" },
               { label: "CONTACTS", value: accContacts.length, sub: `${accContacts.filter(c=>c.primary).length} primary`, color: "#8B5CF6" },
               { label: "OPEN TICKETS", value: openTickets, sub: openTickets > 0 ? "Action needed" : "All clear", color: openTickets > 0 ? "#DC2626" : "#0D9488" },
               { label: "CONTRACTS", value: activeContracts, sub: `${accContracts.length} total`, color: "#D97706" },
@@ -259,10 +259,10 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                       fallbackProducts={currentProducts}
                     />
                   </div>
-                  {infoRow("ARR (Annual Recurring Revenue)", totalARR ? `₹${totalARR} L` : "—")}
-                  {infoRow("Potential Value", a.potential ? `₹${a.potential} L` : "—")}
-                  {infoRow("Won Deal Value", wonValue ? `₹${wonValue} L` : "—")}
-                  {pendingCollections > 0 && infoRow("Pending Collections", <span style={{color:"#DC2626",fontWeight:700}}>₹{pendingCollections.toFixed(1)} L</span>)}
+                  {infoRow("ARR (Annual Recurring Revenue)", totalARR ? fmt.lakh(totalARR) : "—")}
+                  {infoRow("Potential Value", a.potential ? fmt.lakh(a.potential) : "—")}
+                  {infoRow("Won Deal Value", wonValue ? fmt.lakh(wonValue) : "—")}
+                  {pendingCollections > 0 && infoRow("Pending Collections", <span style={{color:"#DC2626",fontWeight:700}}>{fmt.lakh(pendingCollections)}</span>)}
                 </div>
 
                 {/* Cross-sell Opportunities */}
@@ -432,7 +432,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                     <td style={{fontWeight:600,fontSize:12.5}}>{o.title}</td>
                     <td><ProductSelectionDisplay value={o.productSelection} catalog={catalog} fallbackProducts={o.products||[]} compact/></td>
                     <td><StatusBadge status={o.stage}/></td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{o.value}L</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{fmt.lakh(o.value)}</td>
                     <td style={{fontSize:12}}>{o.probability}%</td>
                     <td style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(o.closeDate)}</td>
                     <td><UserPill uid={o.owner}/></td>
@@ -506,7 +506,7 @@ function AccountProfile({a, onClose, onEdit, opps, activities, contacts, tickets
                       <td style={{fontSize:12,fontWeight:600}}>{c.title || c.contractId || c.id}</td>
                       <td><ProdTag pid={c.product}/></td>
                       <td><StatusBadge status={c.status}/></td>
-                      <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{c.value || 0}L</td>
+                      <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{fmt.lakh(c.value || 0)}</td>
                       <td style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(c.startDate)}</td>
                       <td style={{fontSize:12,color: isExpiring ? "#DC2626" : "var(--text3)",fontWeight: isExpiring ? 700 : 400}}>{fmt.short(c.endDate)}</td>
                       <td style={{fontSize:12,color:"var(--text3)"}}>{fmt.short(c.renewalDate)}</td>
@@ -1065,30 +1065,30 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
       </div>
 
       {/* ── KPI CARDS ── */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:16}}>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
+      <div className="sum-strip">
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>TOTAL ACCOUNTS</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>{accounts.length}</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{accounts.length}</div>
           <div style={{fontSize:11,opacity:0.7}}>{activeCount} active · {prospectCount} prospects</div>
         </div>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>TOTAL ARR</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>₹{totalARR}L</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{fmt.lakh(totalARR)}</div>
           <div style={{fontSize:11,opacity:0.7}}>Active accounts</div>
         </div>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>PIPELINE POTENTIAL</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>₹{totalPotential}L</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{fmt.lakh(totalPotential)}</div>
           <div style={{fontSize:11,opacity:0.7}}>Across all accounts</div>
         </div>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>AVG PRODUCTS</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>{avgProducts}</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{avgProducts}</div>
           <div style={{fontSize:11,opacity:0.7}}>Per account</div>
         </div>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"14px 18px",color:"white"}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>COUNTRIES</div>
-          <div style={{fontSize:26,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>{new Set(accounts.map(a => a.country)).size}</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{new Set(accounts.map(a => a.country)).size}</div>
           <div style={{fontSize:11,opacity:0.7}}>Geographic reach</div>
         </div>
       </div>
@@ -1276,7 +1276,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
                   <div style={{fontSize:11,fontWeight:600,color:"var(--text1)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</div>
                   <div style={{fontSize:10,color:"var(--text3)"}}>{a.type} · {a.country}</div>
                 </div>
-                <span style={{fontSize:12,fontWeight:800,fontFamily:"'Outfit',sans-serif",color:"var(--brand)"}}>₹{a.arrRevenue}L</span>
+                <span style={{fontSize:12,fontWeight:800,fontFamily:"'Outfit',sans-serif",color:"var(--brand)"}}>{fmt.lakh(a.arrRevenue)}</span>
               </div>
             ))}
           </div>
@@ -1470,7 +1470,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
           <div style={{fontSize:11.5,color:"var(--text3)",marginTop:4}}>
             {approveModal.status === "Active" ? "The account stays " : "On approval the status becomes "}<strong>Active</strong>
             {!approveModal.arrRevenue && wonValueFor(approveModal.id) > 0
-              ? <> and ARR is set to <strong>₹{wonValueFor(approveModal.id)}L</strong> from the won deal.</>
+              ? <> and ARR is set to <strong>{fmt.lakh(wonValueFor(approveModal.id))}</strong> from the won deal.</>
               : <>.</>}
           </div>
         </Modal>

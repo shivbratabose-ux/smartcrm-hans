@@ -79,7 +79,7 @@ const buildTimelineData = (contracts) => {
   });
 };
 
-function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete, onGenerateRenewal, onGenerateRenewalOpp, commLogs=[], onRequestEditAccess }) {
+function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUsers, catalog, canDelete, onGenerateRenewal, onGenerateRenewalOpp, commLogs=[], onRequestEditAccess, onOpenAgreements }) {
   const canEditCtr = (c) => canEditRecord({ownerId:c?.owner,currentUser,orgUsers,recordType:"contract",recordId:c?.id,commLogs,catalog,recordProductIds:c?.product?[c.product]:(c?.productSelection||[]).map(s=>s.productId)});
   const requestAccessCtr = (c) => onRequestEditAccess && onRequestEditAccess("contract", c.id, c.title||c.contractNo||"Contract", c.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
@@ -203,7 +203,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
         <div>
           <div className="pg-title">Contracts</div>
           <div className="pg-sub">
-            {activeCount} active (₹{totalValue}L) · {pendingCount} pending
+            {activeCount} active ({fmt.lakh(totalValue)}) · {pendingCount} pending
             {expiringCount > 0 && <span style={{color:"var(--amber)",fontWeight:700}}> · {expiringCount} expiring soon</span>}
           </div>
         </div>
@@ -227,6 +227,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
           {/* Action buttons */}
           <div className="pg-actions" style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-sec" onClick={() => exportCSV(filtered, CSV_COLS, "contracts")}><Download size={14}/>Export</button>
+            {onOpenAgreements && <button className="btn btn-sec" onClick={onOpenAgreements} title="The agreed rates of every accepted quotation, and the billing plans"><ShieldCheck size={14}/>Agreements</button>}
             <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>New Contract</button>
           </div>
         </div>
@@ -427,7 +428,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
             }},
             { key: "approvalStage", label: "Approval Stage", defaultWidth: 140, render: c => txt(c.approvalStage) },
             { key: "value", label: "Value", defaultWidth: 110, render: c => (
-              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{`₹${c.value || 0}L`}</span>
+              <span style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{fmt.lakh(c.value || 0)}</span>
             )},
             { key: "product", label: "Product", defaultWidth: 130, render: c => <ProdTag pid={c.product}/> },
             { key: "noOfUsers", label: "Users", defaultWidth: 80, render: c => txt(c.noOfUsers) },
@@ -521,7 +522,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
                         {expiring && <AlertTriangle size={11}/>}
                       </span>
                     </td>
-                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>₹{c.value}L</td>
+                    <td style={{fontFamily:"'Outfit',sans-serif",fontWeight:700}}>{fmt.lakh(c.value)}</td>
                     <td><UserPill uid={c.owner}/></td>
                     <td>
                       <div style={{display:"flex",gap:4}}>
@@ -561,7 +562,7 @@ function Contracts({ contracts, setContracts, accounts, opps, currentUser, orgUs
               ["Contract ID", detail._contractId],
               ["Account", detail._accName],
               ["Status", detail.status],
-              ["Value", `₹${detail.value}L`],
+              ["Value", fmt.lakh(detail.value)],
               ["Bill Term", detail.billTerm],
               ["Bill Type", detail.billType],
               ["Start Date", fmt.date(detail.startDate)],

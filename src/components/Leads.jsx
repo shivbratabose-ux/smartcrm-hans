@@ -780,7 +780,7 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
       if (field === "product") display = PROD_MAP[rawVal]?.name || rawVal;
       else if (field === "stage") display = LEAD_STAGE_MAP[rawVal]?.name || rawVal;
       else if (field === "assignedTo") display = _teamMap[rawVal]?.name || rawVal;
-      else if (field === "estimatedValue") display = rawVal > 0 ? `₹${rawVal} L` : "— (auto from score)";
+      else if (field === "estimatedValue") display = rawVal > 0 ? fmt.lakh(rawVal) : "— (auto from score)";
       return (
         <div onClick={() => startFieldEdit(field)} title="Click to edit"
           style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--border)",cursor:"pointer",borderRadius:4,transition:"background 0.1s"}}
@@ -969,9 +969,9 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
 
             {/* KPI Metrics */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
-              {kpiCard(<TrendingUp size={15}/>, "Deal Value", `\u20B9${dealValue} L`, lead.estimatedValue > 0 ? "Manually set" : `Score-based (${lead.score})`)}
+              {kpiCard(<TrendingUp size={15}/>, "Deal Value", fmt.lakh(dealValue), lead.estimatedValue > 0 ? "Manually set" : `Score-based (${lead.score})`)}
               {kpiCard(<Star size={15}/>, "Win Probability", `${winProb}%`, stageInfo?.name || lead.stage, "#3B82F6")}
-              {kpiCard(<Briefcase size={15}/>, "Pipeline Value", `\u20B9${pipelineValue} L`, "Weighted value", "#8B5CF6")}
+              {kpiCard(<Briefcase size={15}/>, "Pipeline Value", fmt.lakh(pipelineValue), "Weighted value", "#8B5CF6")}
               {kpiCard(<Calendar size={15}/>, "Next Call", lead.nextCall ? fmt.short(lead.nextCall) : "\u2014", "Scheduled follow-up", "#F59E0B")}
             </div>
 
@@ -2234,6 +2234,11 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
   const [assignedByMeOnly, setAssignedByMeOnly] = useState(false); // true → only leads I assigned/routed (handoff tracking)
   const [callLogModal, setCallLogModal] = useState(null); // prefill object when open
   const [showFormInlineContact, setShowFormInlineContact] = useState(null); // null=hidden, false=show existing dropdown, true=show new form
+  // Quick add: a new lead asks only for what is needed to work it (company,
+  // contact, phone / email, products, source, owner, next call). The
+  // qualification sections open on request; editing a lead shows them all.
+  const [leadFormFull, setLeadFormFull] = useState(false);
+  const showAllLead = modal?.mode !== "add" || leadFormFull;
   const [viewMode, setViewMode] = useState("table"); // "table" | "grid" (Excel-like editable)
   // Phones get cards regardless of viewMode — neither the 1400px table nor
   // the editable sheet is usable at 375px.
@@ -2336,6 +2341,7 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
   // `prefill` (optional) seeds the form, e.g. from a scanned visiting card.
   // Ignored when openAdd is used directly as a click handler (event object).
   const openAdd = async (prefill) => {
+    setLeadFormFull(false);
     const seed = prefill && !prefill.nativeEvent && typeof prefill === "object"
       ? Object.fromEntries(Object.entries(prefill).filter(([k, v]) => k in BLANK_LEAD && v !== "" && v != null))
       : {};
@@ -2738,7 +2744,7 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
       </div>
 
       {/* ──── KPI CARDS ──── */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:10}}>
+      <div className="sum-strip">
         <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>ACTIVE LEADS</div>
           <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{activeLeads}</div>
@@ -2751,8 +2757,8 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
         </div>
         <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>PIPELINE VALUE</div>
-          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>₹{totalValue.toFixed(1)}L</div>
-          <div style={{fontSize:11,opacity:0.7}} title="Total Est. Value across all leads (matches the Est. Value column). Active = pipeline stages; Converted = leads now tracked as opportunities. Falls back to score×0.5 when a lead has no Est. Value entered.">Active ₹{pipelineValue.toFixed(1)}L · Converted ₹{convertedValue.toFixed(1)}L</div>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{fmt.lakh(totalValue)}</div>
+          <div style={{fontSize:11,opacity:0.7}} title="Total Est. Value across all leads (matches the Est. Value column). Active = pipeline stages; Converted = leads now tracked as opportunities. Falls back to score×0.5 when a lead has no Est. Value entered.">Active {fmt.lakh(pipelineValue)} · Converted {fmt.lakh(convertedValue)}</div>
         </div>
         <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",opacity:0.8}}>CONVERSION</div>
@@ -3158,11 +3164,11 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
           </div>
 
           {/* Company Hierarchy */}
-          <div className="form-row">
+          {showAllLead && <div className="form-row">
             <div className="form-group"><label>Branch</label><input value={form.branch||""} onChange={e => setForm(f => ({...f, branch:e.target.value}))} placeholder="e.g. Mumbai HQ, Delhi NCR"/></div>
             <div className="form-group"><label>Location</label><input value={form.location||""} onChange={e => setForm(f => ({...f, location:e.target.value}))} placeholder="City / Address"/></div>
             <div className="form-group"><label>Department</label><input value={form.department||""} onChange={e => setForm(f => ({...f, department:e.target.value}))} placeholder="e.g. Operations, IT, Finance"/></div>
-          </div>
+          </div>}
 
           {/* Primary Contact Email/Phone */}
           <div className="form-row">
@@ -3171,7 +3177,7 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
           </div>
 
           {/* ── CONTACTS SECTION ── */}
-          {(() => {
+          {showAllLead && (() => {
             const linkedIds = form.contactIds || [];
             const linkedContacts = (allContacts || []).filter(c => linkedIds.includes(c.id));
             const companyContacts = form.accountId
@@ -3278,12 +3284,13 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
               </div>
             );
           })()}
-          <div className="form-row">
+          {showAllLead && <div className="form-row">
             <div className="form-group"><label>Designation</label><input value={form.designation||""} onChange={e => setForm(f => ({...f, designation:title(e.target.value)}))} placeholder="e.g. VP Operations, Owner/MD" style={{textTransform:"capitalize"}}/></div>
             <div className="form-group"><label>No. of Users</label><input type="number" min="0" value={form.noOfUsers||0} onChange={e => setForm(f => ({...f, noOfUsers:+e.target.value}))}/></div>
-          </div>
+          </div>}
 
           {/* ── B. BUSINESS PROFILE ── */}
+          {showAllLead && <>
           <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:16,paddingTop:12,borderTop:"1px solid var(--border)"}}>B. Business Profile</div>
           <div className="form-row">
             <div className="form-group"><label>Business Type</label><select value={form.businessType||""} onChange={e => setForm(f => ({...f, businessType:e.target.value}))}><option value="">Select…</option>{BUSINESS_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
@@ -3293,6 +3300,7 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
             <div className="form-group"><label>Branches</label><input type="number" min="0" value={form.branches||0} onChange={e => setForm(f => ({...f, branches:+e.target.value}))}/></div>
             <div className="form-group"></div>
           </div>
+          </>}
           <div className="form-group" data-field="productSelection">
             <label>Products & Modules <span style={{color:"#DC2626"}}>*</span></label>
             <ProductModulePicker
@@ -3320,6 +3328,12 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
             onChange={(next) => setForm(f => ({ ...f, productFields: next }))}
             dict={masters?.leadProductFields}
           />
+          {!showAllLead && (
+            <button type="button" className="btn btn-sec btn-sm" style={{ margin: "4px 0 6px" }} onClick={() => setLeadFormFull(true)}>
+              <Plus size={13}/> Add qualification details <span style={{ color: "var(--text3)", fontWeight: 400 }}>(contacts, business profile, technology, pain points, budget, stage)</span>
+            </button>
+          )}
+          {showAllLead && <>
           <div className="form-row">
             <div className="form-group"><label>Industry / Vertical</label><select value={form.vertical} onChange={e => setForm(f => ({...f, vertical:e.target.value}))}><option value="">Select…</option>{VERTICALS.map(v => <option key={v}>{v}</option>)}</select></div>
             <div className="form-group"><label>Region</label><select value={form.region} onChange={e => setForm(f => ({...f, region:e.target.value}))}>{REGIONS.map(r => <option key={r}>{r}</option>)}</select></div>
@@ -3375,13 +3389,15 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
             <div className="form-group"><label>Evaluating Others?</label><select value={form.evaluatingOthers||""} onChange={e => setForm(f => ({...f, evaluatingOthers:e.target.value}))}><option value="">Select</option>{EVALUATION_STATUS.map(e => <option key={e}>{e}</option>)}</select></div>
           </div>
 
+          </>}
+
           {/* ── F. NEXT STEPS & QUALIFICATION ── */}
-          <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:16,paddingTop:12,borderTop:"1px solid var(--border)"}}>F. Next Steps & Qualification</div>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--brand)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:16,paddingTop:12,borderTop:"1px solid var(--border)"}}>{showAllLead ? "F. Next Steps & Qualification" : "Next steps"}</div>
           <div className="form-row">
             <div className="form-group"><label>Source <span style={{color:"#EF4444"}}>*</span></label><select value={form.source} onChange={e => { setForm(f => ({...f, source:e.target.value})); setFormErrors(e => ({...e, source:undefined})); }} style={formErrors.source ? {borderColor:"#DC2626"} : {}} data-field="source"><option value="">Select Source</option>{LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}</select><FormError error={formErrors.source}/></div>
             <div className="form-group"><label>Next Step</label><select value={form.nextStep||""} onChange={e => setForm(f => ({...f, nextStep:e.target.value}))}><option value="">Select</option>{NEXT_STEPS.map(s => <option key={s}>{s}</option>)}</select></div>
           </div>
-          <div className="form-row">
+          {showAllLead && <div className="form-row">
             <div className="form-group"><label>Link to Account <span style={{fontWeight:400,color:"var(--text3)"}}>(optional)</span></label>
               <TypeaheadSelect
                 value={form.accountId||""}
@@ -3398,7 +3414,7 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
                 : <div style={{fontSize:11, color:"var(--text3)", marginTop:2}}>Only for an existing customer. Not needed to convert.</div>}
             </div>
             <div className="form-group"><label>Lead Stage</label><select value={form.stage} onChange={e => setForm(f => ({...f, stage:e.target.value}))}>{LEAD_STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-          </div>
+          </div>}
           <div className="form-row">
             <div className="form-group"><label>Assigned To</label>
               <TypeaheadSelect

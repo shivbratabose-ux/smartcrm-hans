@@ -42,13 +42,13 @@ const QUOTE_TOUR_STEPS = [
   {
     target: "new-quote-btn",
     title: "1. Start a new quote",
-    body: "Click New Quote (Pricing Engine) — the recommended path. It pulls the account, contact and products straight from the deal and applies the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment discounts and guardrails) automatically.",
+    body: "Click New quote — the recommended path. It pulls the account, contact and products straight from the deal and applies the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment discounts and guardrails) automatically.",
     placement: "bottom",
   },
   {
     target: "custom-quote-btn",
     title: "Or build a custom quote",
-    body: "Use Custom Quote only for ad-hoc proposals where you type your own line items and prices with no catalogue engine. Most quotes should use the Pricing Engine instead.",
+    body: "Under More: use Custom quote only for ad-hoc proposals where you type your own line items and prices with no catalogue engine. Most quotes should use the Pricing Engine instead.",
     placement: "bottom",
   },
   {
@@ -208,29 +208,29 @@ const CSV_COLS = [
 
 /* ── KPI Card ── */
 const KpiCard = ({icon,label,value,sub}) => (
-  <div style={{background:"#1B6B5A",borderRadius:12,padding:"20px 24px",flex:1,minWidth:200,color:"#fff"}}>
-    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-      <div style={{background:"rgba(255,255,255,0.15)",borderRadius:8,padding:6,display:"flex",alignItems:"center",justifyContent:"center"}}>{icon}</div>
-      <span style={{fontSize:11,fontWeight:700,letterSpacing:"1px",opacity:0.85}}>{label}</span>
+  <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"#fff"}}>
+    <div style={{display:"flex",alignItems:"center",gap:6}}>
+      <span style={{display:"flex",opacity:0.8}}>{icon}</span>
+      <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",opacity:0.85}}>{label}</span>
     </div>
-    <div style={{fontSize:28,fontWeight:800,fontFamily:"'Outfit',sans-serif",lineHeight:1.1}}>{value}</div>
-    <div style={{fontSize:12,marginTop:6,opacity:0.75}}>{sub}</div>
+    <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",lineHeight:1.15,marginTop:2}}>{value}</div>
+    <div style={{fontSize:11,opacity:0.75,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div>
   </div>
 );
 
 /* ── Status Summary Tile ── */
 const StatusTile = ({label,count,value,color,dot,onClick,active}) => (
   <div onClick={onClick} style={{
-    flex:1,minWidth:100,borderRadius:10,padding:"12px 14px",cursor:"pointer",
+    flex:1,minWidth:100,borderRadius:10,padding:"8px 12px",cursor:"pointer",
     background:active?"#fff":dot+"18",
     border:`1.5px solid ${active?color:dot+"44"}`,
     transition:"all 0.15s",position:"relative",
   }}>
-    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
       <span style={{width:8,height:8,borderRadius:"50%",background:dot,display:"inline-block",flexShrink:0}}/>
       <span style={{fontSize:10,fontWeight:700,color:active?color:"#64748B",letterSpacing:"0.5px",textTransform:"uppercase",whiteSpace:"nowrap"}}>{label}</span>
     </div>
-    <div style={{fontSize:22,fontWeight:800,color:active?color:"#1e293b",fontFamily:"'Outfit',sans-serif",lineHeight:1}}>{count}</div>
+    <div style={{fontSize:19,fontWeight:800,color:active?color:"#1e293b",fontFamily:"'Outfit',sans-serif",lineHeight:1}}>{count}</div>
     <div style={{fontSize:11,color:active?color+"cc":"#94A3B8",marginTop:3,fontWeight:500}}>{value||"—"}</div>
   </div>
 );
@@ -251,7 +251,7 @@ const approvalReason = (q) => {
   const pct = computeDiscountPct(q);
   const reasons = [];
   if (pct > QUOTE_APPROVAL_THRESHOLDS.discountPct) reasons.push(`discount ${pct}% > ${QUOTE_APPROVAL_THRESHOLDS.discountPct}%`);
-  if ((Number(q.total)||0) > QUOTE_APPROVAL_THRESHOLDS.totalValue) reasons.push(`total ₹${q.total} > ₹${QUOTE_APPROVAL_THRESHOLDS.totalValue}L`);
+  if ((Number(q.total)||0) > QUOTE_APPROVAL_THRESHOLDS.totalValue) reasons.push(`total ${fmt.lakh(q.total)} > ${fmt.lakh(QUOTE_APPROVAL_THRESHOLDS.totalValue)}`);
   return reasons.join(" + ");
 };
 
@@ -648,7 +648,7 @@ function ItemsComposerTab({form,setForm,isManager,catalog,addItemFromCatalog,upd
   );
 }
 
-function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,collections=[],setCollections,projects=[],setProjects,setActivities,setUpdates,isFinance=false,commLogs,setCommLogs,currentUser,orgUsers,catalog,masters=null,canDelete,isManager=false,onRequestEditAccess}) {
+function Quotations({aiConfig=null,quotes,setQuotes,accounts,contacts,opps,leads=[],contracts=[],setContracts,collections=[],setCollections,projects=[],setProjects,setActivities,setUpdates,isFinance=false,commLogs,setCommLogs,currentUser,orgUsers,catalog,masters=null,canDelete,isManager=false,onRequestEditAccess,openPanel="",onPanelClose,onPanelOpenQuote,focusQuoteId="",onFocusDone}) {
   const canEditQuote = (q) => canEditRecord({ownerId:q?.owner,currentUser,orgUsers,recordType:"quote",recordId:q?.id,commLogs:commLogs||[]});
   const requestAccessQuote = (q) => onRequestEditAccess && onRequestEditAccess("quote", q.id, q.title||q.id||"Quote", q.owner);
   const team = orgUsers?.length ? orgUsers.filter(u=>u.status!=='Inactive') : TEAM;
@@ -1280,7 +1280,7 @@ Reason for approving (kept on the quote):`,"");
     const othersOf=(q)=>approversFor(q).filter(a=>a!==currentUser);
     const others=[...new Set(due.flatMap(othersOf))];
     due.forEach(q=>othersOf(q).forEach(a=>tellUser(a,`Approve quote ${q.quoteNo||q.id}`,
-      `${userName(currentUser)} needs ${q?.hans?.approvalLevel?.label?`${q.hans.approvalLevel.label} `:""}approval for "${q.title||""}" — ${approvalReason(q)||"discount above the allowed limit"}. Total ₹${q.total||0}L. Open Quotations to approve or reject.`,
+      `${userName(currentUser)} needs ${q?.hans?.approvalLevel?.label?`${q.hans.approvalLevel.label} `:""}approval for "${q.title||""}" — ${approvalReason(q)||"discount above the allowed limit"}. Total ${fmt.lakh(q.total||0)}. Open Quotations to approve or reject.`,
       {accountId:q.accountId,oppId:q.oppId})));
     const ids=new Set(due.map(q=>q.id));
     setQuotes(p=>p.map(r=>ids.has(r.id)?{...r,changeLog:[...(r.changeLog||[]),{id:uid(),at,by:currentUser,field:"approvalNotice",from:"",to:"sent",note:others.length?`Approval requested from ${others.map(userName).join(", ")}`:"No other approver is set in Masters → Quotation"}]}:r));
@@ -1307,11 +1307,11 @@ Reason for approving (kept on the quote):`,"");
   const [plans,setPlans]=useState([]);
   const [entityChecks,setEntityChecks]=useState([]);
   useEffect(()=>{
-    if(!showAgreements&&!showBilling&&!showReports) return;
+    if(!showAgreements&&!showBilling&&!showReports&&!openPanel) return;
     let live=true;
     Promise.all([loadPlans(),loadEntityChecks()]).then(([p,c])=>{ if(!live) return; setPlans(p.plans||[]); setEntityChecks(c.checks||[]); });
     return ()=>{live=false;};
-  },[showAgreements,showBilling,showReports]);
+  },[showAgreements,showBilling,showReports,openPanel]);
   const billingQuotes=useMemo(()=>withPlans(quotes,plans),[quotes,plans]);
   const billingMasters=useMemo(()=>resolveBillingMasters(masters),[masters]);
   const planCtx=useMemo(()=>({priceRows:resolveQuotationMasters(masters,catalog).catalogue,catalog:catalog||[],profiles:billingMasters.profiles,checks:entityChecks,company:companyOf(quoteConfig)}),[masters,catalog,billingMasters,entityChecks,quoteConfig]);
@@ -1349,7 +1349,7 @@ Reason for approving (kept on the quote):`,"");
     patchQuote(q,{isFinal:true,handover:{...handoverOf(q),finalAt:new Date().toISOString(),finalBy:currentUser}},hEntry("Accepted","FINAL","Marked FINAL — Accounts notified"));
     const team=accountsTeam.filter(a=>a!==currentUser);
     team.forEach(a=>tellUser(a,`FINAL quote ${q.quoteNo||q.id}: raise the bill`,
-      `${userName(currentUser)} marked "${q.title||""}" FINAL. Bill to ${q.legalName||"—"} · GSTIN ${q.gstin||"—"} · total ₹${q.total||0}L. Open Quotations → this quote → Raise bill. All values come from the quote.`,refsOf(q)));
+      `${userName(currentUser)} marked "${q.title||""}" FINAL. Bill to ${q.legalName||"—"} · GSTIN ${q.gstin||"—"} · total ${fmt.lakh(q.total||0)}. Open Quotations → this quote → Raise bill. All values come from the quote.`,refsOf(q)));
     setToast({msg:team.length?`${q.quoteNo||"Quote"} is FINAL — ${team.map(userName).join(", ")} notified to raise the bill.`:`${q.quoteNo||"Quote"} is FINAL. No Accounts team is set in Masters → Quotation and nobody has the Finance role — tell Accounts directly.`});
     // Accounts pack by e-mail (after the save reaches the cloud).
     setTimeout(async()=>{
@@ -1368,9 +1368,9 @@ Reason for approving (kept on the quote):`,"");
     const bill=billFromQuote(q,{today,by:currentUser,productId,sac:companyOf(quoteConfig).sac});
     setCollections(p=>[...p,bill]);
     // billToken = the customer's confirm link (#/bill-confirm/<token>).
-    patchQuote(q,{handover:{...h,billId:bill.id,billNo:bill.invoiceNo,billAt:new Date().toISOString(),billBy:currentUser,billToken:h.billToken||generateAcceptToken()}},hEntry("FINAL","Billed",`Bill ${bill.invoiceNo} raised from the quote (₹${bill.netPayable}L incl. GST)`));
-    tellUser(q.owner,`Bill ${bill.invoiceNo} raised for ${q.quoteNo||q.id}`,`Accounts raised the bill (₹${bill.netPayable}L incl. GST). The customer confirms the bill, ULA and Agreement online from the link Accounts sends.`,refsOf(q));
-    setToast({msg:`Bill ${bill.invoiceNo} created in Collections — taxable ₹${bill.billedAmount}L + GST ₹${bill.gstAmount}L. Next: "Send to customer".`});
+    patchQuote(q,{handover:{...h,billId:bill.id,billNo:bill.invoiceNo,billAt:new Date().toISOString(),billBy:currentUser,billToken:h.billToken||generateAcceptToken()}},hEntry("FINAL","Billed",`Bill ${bill.invoiceNo} raised from the quote (${fmt.lakh(bill.netPayable)} incl. GST)`));
+    tellUser(q.owner,`Bill ${bill.invoiceNo} raised for ${q.quoteNo||q.id}`,`Accounts raised the bill (${fmt.lakh(bill.netPayable)} incl. GST). The customer confirms the bill, ULA and Agreement online from the link Accounts sends.`,refsOf(q));
+    setToast({msg:`Bill ${bill.invoiceNo} created in Collections — taxable ${fmt.lakh(bill.billedAmount)} + GST ${fmt.lakh(bill.gstAmount)}. Next: "Send to customer".`});
   };
   const sendBill=async(q)=>{
     const h=handoverOf(q);
@@ -2133,10 +2133,73 @@ Reason for approving (kept on the quote):`,"");
     return {winRate,won:won.length,lost:lost.length,sentLike:sentLike.length,avgDiscountPct,avgDays,ownerRows,productRows};
   },[quotes]);
 
+  // A quote opened from Billing / Agreements (their own pages): show its detail here.
+  useEffect(()=>{
+    if(!focusQuoteId) return;
+    const q=enriched.find(e=>e.id===focusQuoteId);
+    if(q){ setDetail(q); if(onFocusDone) onFocusDone(); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[focusQuoteId,enriched]);
+
+  // Opened from the menu (Post-sales → Billing) or from Contracts (Agreements):
+  // just that panel; closing it goes back to where the user came from.
+  if(openPanel){
+    return (
+      <>
+        {openPanel==="billing" && canBill && <BillingPanel quotes={billingQuotes} setQuotes={setQuotes} accounts={accounts} setCollections={setCollections} config={quoteConfig} currentUser={currentUser} orgUsers={orgUsers||[]} today={today} onClose={onPanelClose} onOpenQuote={onPanelOpenQuote}/>}
+        {openPanel==="billing" && !canBill && <div className="empty-state" style={{padding:40,textAlign:"center",color:"var(--text3)"}}>Billing is open to Accounts, Finance and managers.</div>}
+        {openPanel==="agreements" && <AgreementsPanel quotes={billingQuotes} originalQuotes={quotes} accounts={accounts} today={today} onClose={onPanelClose} onOpenQuote={(q)=>onPanelOpenQuote&&onPanelOpenQuote(q?.id||q)}
+          plans={plans} setPlans={setPlans} bm={billingMasters} planCtx={planCtx} currentUser={currentUser} orgUsers={orgUsers||[]} config={quoteConfig}
+          billingDesk={canBill} downline={[...getScopedUserIds(currentUser,orgUsers||[])]}/>}
+      </>
+    );
+  }
+
   return (
     <div>
-      {/* ── Status Summary Row ── */}
-      <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"nowrap",overflowX:"auto",paddingBottom:2}}>
+      {/* ── Page Header: actions first, so "New quote" is in view ── */}
+      <div className="pg-head">
+        <div>
+          <div className="pg-title">Quotations</div>
+          <div className="pg-sub">Proposals for your customers, built from the price list.</div>
+        </div>
+        <div className="pg-actions">
+          <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"quotations")}><Download size={14}/>Export</button>
+          <button className="btn btn-sec" onClick={()=>setShowReports(true)} title="Quotations, revenue, usage and agreement reports"><BarChart3 size={14}/>Reports</button>
+          {isAiFeatureOn(aiConfig,"quoteAssistant")&&<button className="btn btn-sec" onClick={()=>setShowAssistant(true)} title="Describe the requirement in a chat — the assistant fills the pricing builder for you"><Sparkles size={14}/>Quote Assistant</button>}
+          <details className="more-menu" style={{position:"relative"}}>
+            <summary data-tour="custom-quote-btn" className="btn btn-sec" style={{listStyle:"none",cursor:"pointer"}} title="How to create a quote, and the custom (manual) quote">More<ChevronDown size={13}/></summary>
+            <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",zIndex:60,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:8,boxShadow:"var(--sh-md)",minWidth:250,padding:4}}>
+              <button className="btn btn-sec" style={{width:"100%",justifyContent:"flex-start",border:"none"}} onClick={(e)=>{e.currentTarget.closest("details").open=false;setShowTour(true);}}><HelpCircle size={14}/>How to create a quote</button>
+              <button className="btn btn-sec" style={{width:"100%",justifyContent:"flex-start",border:"none"}} onClick={(e)=>{e.currentTarget.closest("details").open=false;openAdd();}} title="Manual / ad-hoc quote — type your own line items and pricing (no catalogue engine)"><Plus size={14}/>Custom quote (manual pricing)</button>
+            </div>
+          </details>
+          <button data-tour="new-quote-btn" className="btn btn-primary" onClick={()=>{setHansEdit(null);setHansDraft(null);setHansBuilder(true);}} title="Build a quote from the price list (pricing engine, approvals and guardrails)"><FileText size={14}/>New quote</button>
+        </div>
+      </div>
+
+      {/* ── Summary: the figures, then the status filter ── */}
+      <div className="sum-strip">
+        <KpiCard
+          icon={<TrendingUp size={13} color="#fff"/>}
+          label="PIPELINE VALUE"
+          value={fmt.lakh(totalQuoteValue)}
+          sub={`${draftCount} draft · ${sentCount} sent · ${acceptedCount} accepted`}
+        />
+        <KpiCard
+          icon={<BarChart3 size={13} color="#fff"/>}
+          label="CONVERSION RATE"
+          value={`${conversionRate}%`}
+          sub={sentAndReviewedCount>0?`${acceptedCount} of ${sentAndReviewedCount} sent quotes`:"No quotes sent yet"}
+        />
+        <KpiCard
+          icon={<Activity size={13} color="#fff"/>}
+          label="ACTIVE QUOTES"
+          value={String(activeQuotes)}
+          sub={negotiationCount>0?`${negotiationCount} under negotiation`:"All quotes up to date"}
+        />
+      </div>
+      <div className="sum-strip">
         {[
           {s:"Draft",       dot:"#94A3B8"},
           {s:"Sent",        dot:"#3B82F6"},
@@ -2159,45 +2222,6 @@ Reason for approving (kept on the quote):`,"");
         })}
       </div>
 
-      {/* ── KPI Metric Cards ── */}
-      <div style={{display:"flex",gap:16,marginBottom:24,flexWrap:"wrap"}}>
-        <KpiCard
-          icon={<TrendingUp size={18} color="#fff"/>}
-          label="PIPELINE VALUE"
-          value={`\u20B9 ${totalQuoteValue.toFixed(1)} L`}
-          sub={`${draftCount} draft \u00B7 ${sentCount} sent \u00B7 ${acceptedCount} accepted`}
-        />
-        <KpiCard
-          icon={<BarChart3 size={18} color="#fff"/>}
-          label="CONVERSION RATE"
-          value={`${conversionRate}%`}
-          sub={sentAndReviewedCount>0?`${acceptedCount} of ${sentAndReviewedCount} sent quotes`:"No quotes sent yet"}
-        />
-        <KpiCard
-          icon={<Activity size={18} color="#fff"/>}
-          label="ACTIVE QUOTES"
-          value={String(activeQuotes)}
-          sub={negotiationCount>0?`${negotiationCount} under negotiation`:"All quotes up to date"}
-        />
-      </div>
-
-      {/* ── Page Header ── */}
-      <div className="pg-head">
-        <div>
-          <div className="pg-title">Quotations Management</div>
-          <div className="pg-sub">Manage and track high-value enterprise proposals across sectors.</div>
-        </div>
-        <div className="pg-actions">
-          <button className="btn btn-sec" onClick={()=>setShowTour(true)} title="How to create a quote — guided walkthrough"><HelpCircle size={14}/>How to</button>
-          <button className="btn btn-sec" onClick={()=>exportCSV(filtered,CSV_COLS,"quotations")}><Download size={14}/>Export</button>
-          <button data-tour="custom-quote-btn" className="btn btn-sec" onClick={openAdd} title="Manual / ad-hoc quote — type your own line items and pricing (no catalogue engine)"><Plus size={14}/>Custom Quote</button>
-          {isAiFeatureOn(aiConfig,"quoteAssistant")&&<button className="btn btn-sec" onClick={()=>setShowAssistant(true)} title="Describe the requirement in a chat — the assistant fills the pricing builder for you"><Sparkles size={14}/>Quote Assistant</button>}
-          <button className="btn btn-sec" onClick={()=>setShowReports(true)} title="Quotations, revenue, usage and agreement reports"><BarChart3 size={14}/>Reports</button>
-          {canBill && <button className="btn btn-sec" onClick={()=>setShowBilling(true)} title="Monthly invoices from agreements and actual usage"><FileSignature size={14}/>Billing</button>}
-          <button className="btn btn-sec" onClick={()=>setShowAgreements(true)} title="The agreed rates of every accepted quotation"><ShieldCheck size={14}/>Agreements{agreementCount?` (${agreementCount})`:""}</button>
-          <button data-tour="new-quote-btn" className="btn btn-primary" onClick={()=>{setHansEdit(null);setHansDraft(null);setHansBuilder(true);}} title="Recommended — CRM-driven builder with the Hans pricing engine (iCAFFE matrix, bands, ALR, prepayment, guardrails)"><FileText size={14}/>New Quote (Pricing Engine)</button>
-        </div>
-      </div>
 
       {showReports && <CommercialReports quotes={billingQuotes}accounts={accounts} orgUsers={orgUsers||[]} priceRows={resolveQuotationMasters(masters,catalog).catalogue} catalog={catalog||[]} today={today} onClose={()=>setShowReports(false)}/>}
       {showBilling && <BillingPanel quotes={billingQuotes} setQuotes={setQuotes} accounts={accounts} setCollections={setCollections} config={quoteConfig} currentUser={currentUser} orgUsers={orgUsers||[]} today={today} onClose={()=>setShowBilling(false)} onOpenQuote={(id)=>{const q=enriched.find(e=>e.id===id); if(q){setShowBilling(false); setDetail(q);}}}/>}
@@ -2927,7 +2951,7 @@ Reason for approving (kept on the quote):`,"");
                     {acc&&<><div><strong>GSTIN:</strong> {acc.gstin||"—"}</div><div><strong>PAN:</strong> {acc.pan||"—"}</div></>}
                     {acc&&<><div><strong>Payment Terms:</strong> {acc.paymentTerms||"—"} ({acc.creditDays||0}d)</div><div><strong>Currency:</strong> {acc.currency||"INR"}</div></>}
                     {con&&<><div><strong>Contact:</strong> {con.name}{con.designation?` — ${con.designation}`:""}</div><div><strong>Email / Phone:</strong> {con.email||"—"} · {con.phone||"—"}</div></>}
-                    {opp&&<><div><strong>Linked Opp:</strong> {opp.title} ({opp.stage})</div><div><strong>Deal Value:</strong> ₹{opp.value}L · {opp.probability}% prob</div></>}
+                    {opp&&<><div><strong>Linked Opp:</strong> {opp.title} ({opp.stage})</div><div><strong>Deal Value:</strong> {fmt.lakh(opp.value)} · {opp.probability}% prob</div></>}
                   </div>
                   {opp&&Array.isArray(opp.products)&&opp.products.length>0&&(
                     <div style={{marginTop:8}}><strong>Opp Products:</strong> {opp.products.map(p=>PROD_MAP[p]?.name||p).join(", ")}</div>

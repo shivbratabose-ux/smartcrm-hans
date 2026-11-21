@@ -8,6 +8,8 @@ import {
   Sparkles, Briefcase, Gauge, Gavel
 } from "lucide-react";
 
+import { resetPageTips } from "./shared";
+
 // Team playbook PDFs served from public/guides/ (open in a new tab / download).
 const PLAYBOOK_URL = "/guides/SmartCRM_Sales_Playbook_Leads_Opportunities_Calls.pdf";
 
@@ -582,16 +584,16 @@ const HELP_DATA = [
     id:"quotations", label:"Quotations", icon:<ClipboardList size={15}/>, color:"#7C3AED",
     articles:[
       {
-        id:"quotations-pricing-engine", title:"New Quote (Pricing Engine)", tags:["pricing engine","hans","quote","icaffe","band","alr","prepayment","tcv","gst","guardrail","matrix","wiseccs","wisehandling","catalogue"],
+        id:"quotations-pricing-engine", title:"New quote (pricing engine)", tags:["pricing engine","hans","quote","icaffe","band","alr","prepayment","tcv","gst","guardrail","matrix","wiseccs","wisehandling","catalogue"],
         content:[
-          {type:"para", text:"There are two ways to start a quote. Use the green New Quote (Pricing Engine) button for standard product quoting — it pulls products from the catalogue and prices them with the Hans pricing engine (the validated Excel model). Use Custom Quote only for ad-hoc/manual pricing the engine doesn't cover."},
+          {type:"para", text:"There are two ways to start a quote. Use the green New quote button for standard product quoting — it pulls products from the catalogue and prices them with the Hans pricing engine (the validated Excel model). Use Custom Quote only for ad-hoc/manual pricing the engine doesn't cover."},
           {type:"table", rows:[
-            ["New Quote (Pricing Engine)", "Recommended. Opportunity-driven; auto-resolves party and unit prices; handles one-time vs recurring, GST split, Licence + ALR, prepayment and TCV; enforces guardrails."],
-            ["Custom Quote", "Manual line items — you type description, MRP, qty and discount yourself. No catalogue/engine pricing."],
+            ["New quote", "Recommended. Opportunity-driven; auto-resolves party and unit prices; handles one-time vs recurring, GST split, Licence + ALR, prepayment and TCV; enforces guardrails."],
+            ["More → Custom quote", "Manual line items — you type description, MRP, qty and discount yourself. No catalogue/engine pricing."],
           ]},
           {type:"heading", text:"Building a quote"},
           {type:"steps", items:[
-            "Click New Quote (Pricing Engine).",
+            "Click New quote.",
             "Pick the Opportunity — the customer/lead name, address, state and GSTIN auto-fill (editable).",
             "(Optional) Apply a plan preset: SaaS Advance (12 months + 10% prepayment) or OTP + ARR (42 months, ~45% upfront discount).",
             "Add line items — pick a product; module, charge type and unit auto-fill and the unit price resolves automatically.",
@@ -1079,6 +1081,7 @@ function Help({ currentPage }) {
   const [search,      setSearch]      = useState("");
   const [selectedCat, setSelectedCat] = useState(defaultCat);
   const [selectedArt, setSelectedArt] = useState(null);
+  const [tipsBack, setTipsBack] = useState(false);
 
   // Flatten all articles for search
   const allArticles = useMemo(() =>
@@ -1131,6 +1134,7 @@ function Help({ currentPage }) {
         <div style={{ display:"flex", gap:6, alignItems:"center" }}>
           <BookOpen size={15} style={{ color:"var(--text3)" }}/>
           <span style={{ fontSize:12, color:"var(--text3)" }}>{allArticles.length} articles</span>
+          <button className="btn btn-sec btn-sm" style={{ marginLeft:8 }} title="The tip banners at the top of each page come back for your next few visits" onClick={() => { resetPageTips(); setTipsBack(true); }}>{tipsBack ? "Page tips are back" : "Show page tips again"}</button>
         </div>
       </div>
 

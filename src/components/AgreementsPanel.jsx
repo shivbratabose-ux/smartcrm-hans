@@ -1,5 +1,5 @@
 // Customer commercial agreements: the frozen terms of every accepted quote
-// (lib/quotation/agreements.js). Opened from Quotations → Agreements.
+// (lib/quotation/agreements.js). Opened from Contracts → Agreements.
 import { useState, useMemo } from "react";
 import { X, FileText } from "lucide-react";
 import { listAgreements, fixedMonthly, agreedUnitPrice } from "../lib/quotation/agreements";

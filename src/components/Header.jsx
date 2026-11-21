@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Search, Bell, BarChart3, User, Settings, LogOut, Key, ChevronDown, HelpCircle, UploadCloud, RefreshCw, Menu, X } from "lucide-react";
 import useIsMobile from '../hooks/useIsMobile';
 import { TEAM_MAP, ROLE_MAP, INIT_USERS } from '../data/constants';
+import { initialsOf } from '../utils/helpers';
 
 export const PAGE_LABELS={
   dashboard:"Dashboard",leads:"Leads",accounts:"Accounts",contacts:"Contacts",
@@ -184,14 +185,14 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
             aria-label={`Account menu for ${user?.name||"user"}`} aria-expanded={showMenu} aria-haspopup="menu"
             onKeyDown={e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); setShowMenu(p=>!p);} }}
             style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",padding:"4px 8px",borderRadius:10,background:showMenu?"var(--brand-bg)":"transparent",transition:"background 0.15s"}}>
-            <div className="avatar" title={user?.name}>{user?.initials||"?"}</div>
+            <div className="avatar" title={user?.name}>{initialsOf(user)}</div>
             <ChevronDown size={12} style={{color:"var(--text3)",transform:showMenu?"rotate(180deg)":"none",transition:"transform 0.2s"}}/>
           </div>
           {showMenu&&(
             <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",width:260,background:"white",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.12),0 2px 8px rgba(0,0,0,0.08)",border:"1px solid var(--border)",zIndex:999,overflow:"hidden",animation:"fadeIn 0.15s ease"}}>
               <div style={{padding:"16px 16px 12px",borderBottom:"1px solid var(--border)"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div className="u-av" style={{width:40,height:40,borderRadius:10,fontSize:14,background:"var(--brand)",color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>{user?.initials||"?"}</div>
+                  <div className="u-av" style={{width:40,height:40,borderRadius:10,fontSize:14,background:"var(--brand)",color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>{initialsOf(user)}</div>
                   <div>
                     <div style={{fontWeight:700,fontSize:14,color:"var(--text1)"}}>{user?.name||"User"}</div>
                     <div style={{fontSize:11,color:"var(--text3)"}}>{user?.email||""}</div>
