@@ -15,7 +15,7 @@
 // "won" means.
 // ═══════════════════════════════════════════════════════════════════
 import { useState, useMemo, useCallback } from "react";
-import { Gauge, TrendingUp, PhoneMissed, Building2, Snowflake, Trophy } from "lucide-react";
+import { Gauge, TrendingUp, PhoneMissed, Building2, Snowflake, Trophy, CalendarCheck, PhoneCall, History } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { PROD_MAP } from '../data/constants';
 import { fmt, today, isOverdue, getScopedUserIds } from '../utils/helpers';
@@ -23,6 +23,7 @@ import { periodOf, fiscalRanges, fiscalWindows, wonStageNames, lostStageNames } 
 import { buildSalesGraph, allocationFor } from '../utils/salesOrg';
 import { isCallPerson, isDemoCall } from '../utils/teamSummary';
 import { UserPill, StatusBadge, Empty, PageTip } from './shared';
+import { myDay } from '../lib/myDay';
 
 // Attention thresholds — days without activity before a deal counts as
 // stalled / an account as neglected. Mirrors Pipeline.jsx's health bands.
@@ -31,7 +32,40 @@ const NEGLECTED_DAYS = 90;
 
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
 
-function MyPerformance({ targets = [], opps = [], activities = [], accounts = [], leads = [], callReports = [], orgUsers = [], currentUser, masters }) {
+// One list card on the home page: header with a count and a "View all"
+// link, then up to `limit` rows (kind · title · when).
+function DayCard({ icon, title, count, tone = "var(--brand)", items, emptyTitle, emptySub, onOpen, showDate = true, dateTone, limit = 7 }) {
+  const shown = items.slice(0, limit);
+  return (
+    <div className="card" style={{padding:0,display:"flex",flexDirection:"column"}}>
+      <div style={{padding:"10px 14px",borderBottom:"1px solid var(--border)",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:8}}>
+        {icon} {title}
+        {count > 0 && <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:8,color:"#fff",background:tone}}>{count}</span>}
+        {onOpen && <button className="btn btn-xs btn-sec" style={{marginLeft:"auto",fontSize:10.5}} onClick={onOpen}>View all</button>}
+      </div>
+      {shown.length === 0 ? <Empty icon={icon} title={emptyTitle} sub={emptySub}/> : (
+        <table className="tbl">
+          <tbody>
+            {shown.map(it => (
+              <tr key={it.key}>
+                <td style={{fontSize:11,color:"var(--text3)",whiteSpace:"nowrap",width:1}}>{it.kind}</td>
+                <td style={{fontSize:12,fontWeight:600}}>{it.title}</td>
+                <td style={{fontSize:11.5,whiteSpace:"nowrap",textAlign:"right",color:dateTone || "var(--text2)"}}>
+                  {showDate ? (it.date === today ? "Today" : fmt.short(it.date)) : ""}{it.time ? `${showDate ? " · " : ""}${it.time}` : ""}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {items.length > shown.length && (
+        <div style={{padding:"6px 14px",fontSize:11,color:"var(--text3)",borderTop:"1px solid var(--border)"}}>+{items.length - shown.length} more</div>
+      )}
+    </div>
+  );
+}
+
+function MyPerformance({ setPage, targets = [], opps = [], activities = [], accounts = [], leads = [], callReports = [], orgUsers = [], currentUser, masters }) {
   // ── Viewing as ──
   // Managers pick anyone in their visibility scope; everyone else is locked
   // to themselves. Uses the scope (not the reporting branch) deliberately:
@@ -175,17 +209,13 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
     .slice(0, 6),
     [myOpen, lastTouch]);
 
-  // Past-due follow-ups: my planned activities past their date, plus my
-  // leads whose next-call date has slipped.
-  const pastDue = useMemo(() => {
-    const acts = (activities || [])
-      .filter(a => a.owner === me && a.status === "Planned" && isOverdue(a.date))
-      .map(a => ({ kind: a.type || "Task", title: a.title || "(untitled)", date: a.date, ref: a }));
-    const lead = (leads || [])
-      .filter(l => l.assignedTo === me && !l.isDeleted && l.stage !== "Converted" && isOverdue(l.nextCall))
-      .map(l => ({ kind: "Lead call", title: l.company || l.contact || l.leadId, date: l.nextCall, ref: l }));
-    return [...acts, ...lead].sort((a, b) => (a.date || "").localeCompare(b.date || "")).slice(0, 6);
-  }, [activities, leads, me]);
+  // My day: due today, overdue, calls booked this week, and what got done
+  // in the last 7 days (src/lib/myDay.js — one rule, tested in node).
+  const accName = useCallback((id) => (accounts || []).find(a => a.id === id)?.name || "", [accounts]);
+  const day = useMemo(() => myDay({
+    activities, callReports, leads, opps, me, today, isWon: (o) => wonNames.has(o?.stage), accountName: accName,
+  }), [activities, callReports, leads, opps, me, wonNames, accName]);
+  const pastDue = day.overdue;
 
   const neglected = useMemo(() =>
     (accounts || [])
@@ -261,6 +291,35 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
         )}
       </div>
 
+      {/* ── Today at a glance: present (due / overdue / booked) and past 7 days ── */}
+      <div className="sum-strip">
+        {[
+          { label: "Due today", val: day.dueToday.length, sub: day.dueToday.length ? "activities & calls" : "nothing due", bg: "#1B6B5A" },
+          { label: "Overdue", val: day.overdue.length, sub: day.overdue.length ? "past their date" : "all caught up", bg: day.overdue.length ? "#B91C1C" : "#475569" },
+          { label: "Calls this week", val: day.scheduledCalls.length, sub: "today + next 6 days", bg: "#1D4ED8" },
+          { label: "Calls made · 7 days", val: day.last7.calls, sub: day.last7.demos ? `incl. ${day.last7.demos} demo${day.last7.demos === 1 ? "" : "s"}` : "logged calls", bg: "#0F766E" },
+          { label: "Won · 7 days", val: day.last7.dealsWon ? fmt.inr(day.last7.wonValue) : "0", sub: `${day.last7.dealsWon} deal${day.last7.dealsWon === 1 ? "" : "s"}`, bg: "#7C3AED" },
+        ].map(k => (
+          <div key={k.label} style={{background:k.bg,borderRadius:10,padding:"9px 14px",color:"white"}}>
+            <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",opacity:0.85}}>{k.label}</div>
+            <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>{k.val}</div>
+            <div style={{fontSize:11,opacity:0.8}}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,marginBottom:16}}>
+        <DayCard icon={<CalendarCheck size={15} style={{color:"var(--brand)"}}/>} title="Due today" count={day.dueToday.length}
+          items={day.dueToday} showDate={false} emptyTitle="Nothing due today" emptySub="Planned activities and calls for today show here."
+          onOpen={setPage ? () => setPage("activities") : undefined}/>
+        <DayCard icon={<PhoneMissed size={15} style={{color:"var(--red)"}}/>} title="Overdue" count={day.overdue.length} tone="var(--red)"
+          items={day.overdue} dateTone="var(--red)" emptyTitle="All caught up" emptySub="No overdue activities or lead calls."
+          onOpen={setPage ? () => setPage("activities") : undefined}/>
+        <DayCard icon={<PhoneCall size={15} style={{color:"#1D4ED8"}}/>} title="Scheduled calls" count={day.scheduledCalls.length} tone="#1D4ED8"
+          items={day.scheduledCalls} emptyTitle="No calls booked" emptySub="Calls for today and the next 6 days show here."
+          onOpen={setPage ? () => setPage("calendar") : undefined}/>
+      </div>
+
       {/* ── Timeline: fiscal windows the Revenue and Calls cards follow ── */}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
         {windows.map(w => (
@@ -322,7 +381,7 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
         </div>
       </div>
 
-      {/* ── Row 2: pipeline funnel · top open opps · past-due ── */}
+      {/* ── Row 2: pipeline funnel · top open opps · last 7 days ── */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1.4fr 1fr",gap:12,marginBottom:12}}>
         <div className="card" style={{padding:0}}>
           <div style={{padding:"10px 14px",borderBottom:"1px solid var(--border)",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:8}}>
@@ -367,24 +426,26 @@ function MyPerformance({ targets = [], opps = [], activities = [], accounts = []
 
         <div className="card" style={{padding:0}}>
           <div style={{padding:"10px 14px",borderBottom:"1px solid var(--border)",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:8}}>
-            <PhoneMissed size={15} style={{color:"var(--red)"}}/> Past-due follow-ups
-            {pastDue.length > 0 && <span style={{marginLeft:"auto",fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:8,color:"#fff",background:"var(--red)"}}>{pastDue.length}</span>}
+            <History size={15} style={{color:"var(--brand)"}}/> Last 7 days
+            <span style={{fontSize:11,fontWeight:400,color:"var(--text3)"}}>{fmt.short(day.last7.from)} – today</span>
           </div>
-          <div style={{padding: pastDue.length ? 0 : undefined}}>
-            {pastDue.length === 0 ? <Empty icon={<PhoneMissed size={20}/>} title="All caught up" sub="No overdue tasks or lead calls."/> : (
-              <table className="tbl">
-                <tbody>
-                  {pastDue.map((it, i) => (
-                    <tr key={i}>
-                      <td style={{fontSize:11,color:"var(--text3)",whiteSpace:"nowrap"}}>{it.kind}</td>
-                      <td style={{fontSize:12,fontWeight:600}}>{it.title}</td>
-                      <td style={{fontSize:11.5,color:"var(--red)",whiteSpace:"nowrap"}}>{fmt.short(it.date)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+          <table className="tbl">
+            <tbody>
+              {[
+                ["Calls made", day.last7.calls],
+                ["Demos", day.last7.demos],
+                ["Meetings & visits", day.last7.meetings],
+                ["Activities completed", day.last7.activitiesDone],
+                ["Leads added", day.last7.leadsAdded],
+                ["Deals won", day.last7.dealsWon ? `${day.last7.dealsWon} · ${fmt.inr(day.last7.wonValue)}` : 0],
+              ].map(([k, v]) => (
+                <tr key={k}>
+                  <td style={{fontSize:12}}>{k}</td>
+                  <td style={{textAlign:"right",fontFamily:"'Outfit',sans-serif",fontWeight:700,fontSize:13}}>{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 

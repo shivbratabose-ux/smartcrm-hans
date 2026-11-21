@@ -34,6 +34,8 @@ function Sidebar({page,setPage,canBill=false,collapsed:collapsedPref,setCollapse
 
   const NAV=[
     {section:"Overview",items:[
+      // Home: everyone opens the CRM here.
+      {id:"myperf",label:"My Performance",icon:<Activity size={17}/>},
       {id:"dashboard",label:"Dashboard",icon:<LayoutDashboard size={17}/>},
       {id:"updates",  label:"Updates",  icon:<Bell size={17}/>, badge: myUnreadCount||0},
     ]},
@@ -58,7 +60,6 @@ function Sidebar({page,setPage,canBill=false,collapsed:collapsedPref,setCollapse
     ]},
     {section:"Analytics",items:[
       {id:"dashboards",label:"Dashboards",icon:<Gauge size={17}/>},
-      {id:"myperf",label:"My Performance",icon:<Activity size={17}/>},
       ...(canSeeLeadAssignment(userRole)?[{id:"leadassign",label:"Lead Assignment",icon:<UserCheck size={17}/>}]:[]),
       {id:"targets",label:"Targets",icon:<Target size={17}/>},
       {id:"reports",label:"Reports",icon:<BarChart3 size={17}/>},
