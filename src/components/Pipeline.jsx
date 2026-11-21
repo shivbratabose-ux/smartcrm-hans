@@ -36,6 +36,7 @@ import ProductModulePicker, { validateProductSelection, primaryProductId, normal
 import DataGrid from "./DataGrid";
 import { closedDealLock, guardClosedDeal } from "../lib/dealLock";
 import { TenderAiPanel } from "./AiActions";
+import { callSlotProblem } from '../lib/callSlots';
 
 /* ───────── stages context ─────────
    Pipeline stages were hardcoded in constants.js; they're now editable in
@@ -1222,6 +1223,9 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
       leadId: clean.leadId || "",
       nextStepDesc: clean.nextStepDesc,
     };
+    // Max 2 calls per person per hour slot: hand the message back to the form.
+    const slotErr = callSlotProblem("callReport", callReport, { activities, callReports });
+    if (slotErr) return slotErr;
     setCallReports(p => [...p, callReport]);
 
     if (clean.createFollowup) {
@@ -1240,7 +1244,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
       };
       setActivities(p => [...p, followup]);
     }
-  }, [accounts, currentUser, setCallReports, setActivities]);
+  }, [accounts, currentUser, setCallReports, setActivities, activities, callReports]);
   const isManager = curUser && MGR_ROLES.includes(curUser.role);
 
   /* Deal health, computed ONCE per (opps, activities) change.
