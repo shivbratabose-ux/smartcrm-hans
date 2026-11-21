@@ -10,6 +10,7 @@ import BillingMasters from './BillingMasters';
 import { countsByProduct, groupRates, SERVICES_GROUP } from '../lib/quotation/productGroups';
 import { ProductItemsTable } from './ProductItems';
 import { itemsOf } from '../lib/quotation/productItems';
+import { productBilling } from '../lib/quotation/billingTypes';
 import { canEditPricing } from '../lib/quotation/priceHistory';
 import { productCommercialModel } from '../lib/quotation/commercial';
 import { notify } from '../utils/toast';
@@ -900,6 +901,7 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,pri
                     <span style={{fontSize:12,color:"var(--text3)"}}>{its.length} item{its.length===1?"":"s"}</span>
                     {unpriced>0&&<span title="Modules with no price yet" style={{fontSize:10.5,fontWeight:700,color:"#B45309",background:"#FFFBEB",padding:"2px 8px",borderRadius:10}}>{unpriced} not priced</span>}
                   </>;})()}
+                  {(()=>{const pb=productBilling(p,qRows,catalog);return pb.types.length?<span title={pb.set?"Billing types set for this product":"Billing types from its items (not set yet)"} style={{fontSize:10.5,fontWeight:600,color:"#0F766E",background:"#F0FDFA",padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap"}}>{pb.types.map(id=>({subscription:"Subscription",licence:"Licence + AMC",usage:"Pay per use",one_time:"One-time"}[id])).join(" · ")}</span>:null;})()}
                   {commercialModels[p.id] && <span title="Commercial model, from this product's price rows" style={{fontSize:10.5,fontWeight:700,background:"#EEF2FF",color:"#4338CA",padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap"}}>{commercialModels[p.id]}</span>}
                   {(()=>{const pc=priceCounts[p.id]||{rows:0,priced:0};return pc.rows?<span style={{fontSize:10.5,fontWeight:700,color:pc.priced<pc.rows?"#B45309":"#15803D"}}>₹ {pc.priced}/{pc.rows} priced</span>:null;})()}
                   <button className="icon-btn" title="Edit product" onClick={e=>{e.stopPropagation();openEditProd(p);}}><Edit2 size={13}/></button>
@@ -910,6 +912,8 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,pri
               {isOpen&&(
                 <div className="prod-catalog-body">
                   <ProductItemsTable product={p} rows={qRows} catalog={catalog} canEdit={pricingAllowed} config={qm.quoteConfig}
+                    billing={productBilling(p,qRows,catalog)} canEditBilling={pricingAllowed||isAdmin}
+                    onSetBilling={(next)=>setCatalog(c=>c.map(x=>x.id===p.id?{...x,billing:next}:x))}
                     onSaveItem={(out)=>saveItemOut(p,out)} onSetActive={setRowActive}
                     onDeleteModule={(modId,name)=>setConfirm({prodId:p.id,modId,name})}
                     onAdvanced={()=>setAdvanced(a=>({...a,[p.id]:!a[p.id]}))}/>
