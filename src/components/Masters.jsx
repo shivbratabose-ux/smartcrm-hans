@@ -7,7 +7,10 @@ import { saveSettings } from '../lib/db';
 import LeadFieldsEditor from './LeadFieldsEditor';
 import QuotationMasters, { resolveQuotationMasters } from './QuotationMasters';
 import BillingMasters from './BillingMasters';
-import { countsByProduct, groupRates } from '../lib/quotation/productGroups';
+import { countsByProduct, groupRates, SERVICES_GROUP } from '../lib/quotation/productGroups';
+import { ProductItemsTable } from './ProductItems';
+import { itemsOf } from '../lib/quotation/productItems';
+import { canEditPricing } from '../lib/quotation/priceHistory';
 import { productCommercialModel } from '../lib/quotation/commercial';
 import { notify } from '../utils/toast';
 import { OFF_DAY_TYPES } from '../utils/teamSummary';
@@ -741,13 +744,13 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
 
       {tab==="products" && (<>
         <ProductCatalogPage catalog={catalog} setCatalog={setCatalog} orgUsers={orgUsers} currentUser={currentUser}
+          masters={masters} setMasters={setMasters}
           priceCounts={countsByProduct(resolveQuotationMasters(masters, catalog).catalogue, catalog)}
-          commercialModels={Object.fromEntries(groupRates(resolveQuotationMasters(masters, catalog).catalogue, catalog).filter(g => g.id && g.rows.length).map(g => [g.id, productCommercialModel(g.rows).label]))}
-          onShowPrices={(id)=>{setPriceFocus(id);setTimeout(()=>document.getElementById("product-prices")?.scrollIntoView({behavior:"smooth",block:"start"}),50);}}/>
-        {/* One product master: the prices sit under the products they belong to. */}
-        <div id="product-prices" style={{marginTop:22}}>
-          <div style={{fontSize:15,fontWeight:800,marginBottom:2}}>Prices</div>
-          <div style={{fontSize:12,color:"var(--text3)",marginBottom:8}}>Every price row belongs to a product above, or to the shared Services &amp; add-ons. Quotes, the pricing engine and the Quote Assistant use these rows.</div>
+          commercialModels={Object.fromEntries(groupRates(resolveQuotationMasters(masters, catalog).catalogue, catalog).filter(g => g.id && g.rows.length).map(g => [g.id, productCommercialModel(g.rows).label]))}/>
+        {/* Every price row in one grid, for bulk work (CSV, linking unplaced rows): folded away. */}
+        <details id="product-prices" style={{marginTop:22}} open={!!priceFocus} onToggle={e=>{ if(!e.currentTarget.open) setPriceFocus(""); }}>
+          <summary style={{cursor:"pointer",fontSize:13.5,fontWeight:700}}>All price rows in one grid <span style={{fontWeight:500,fontSize:12,color:"var(--text3)"}}>· bulk CSV export / import, linking rows to products</span></summary>
+          <div style={{fontSize:12,color:"var(--text3)",margin:"6px 0 8px"}}>The same rows as the items above. Quotes, the pricing engine and the Quote Assistant use them.</div>
           <QuotationMasters mode="rates" masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers} currentUser={currentUser}
             focusProduct={priceFocus} setFocusProduct={setPriceFocus}
             onAddProducts={(list)=>{
@@ -759,7 +762,7 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
                 return {...m,quotation:{...qm,...(m?.quotation||{}),catalogue:qm.catalogue.map(r=>byCode.has(r.code)?{...r,productId:byCode.get(r.code)}:r)}};
               });
             }}/>
-        </div>
+        </details>
       </>)}
       {tab==="leadfields" && <LeadFieldsEditor masters={masters} setMasters={setMasters} catalog={catalog}/>}
       {tab==="quotation" && <QuotationMasters masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers} currentUser={currentUser} onOpenRates={()=>setTab("products")}/>}
@@ -773,7 +776,19 @@ function Masters({masters,setMasters,catalog,setCatalog,opps=[],orgUsers=[],curr
 // ═══════════════════════════════════════════════════════════════════
 const MOD_TYPE_CLS={Core:"mod-core","Add-on":"mod-addon",Integration:"mod-integration",Analytics:"mod-analytics",Mobile:"mod-mobile"};
 
-function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,priceCounts={},commercialModels={},onShowPrices}) {
+function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,priceCounts={},commercialModels={},masters=null,setMasters}) {
+  // One product master: modules and prices are one list of items per product.
+  const qm = resolveQuotationMasters(masters, catalog);
+  const qRows = qm.catalogue;
+  const pricingAllowed = canEditPricing(qm.quoteConfig, orgUsers.find(u=>u.id===currentUser)||null);
+  const [advanced,setAdvanced]=useState({});
+  const writeRows=(fn)=>setMasters(m=>{const q=resolveQuotationMasters(m,catalog);return {...m,quotation:{...q,...(m?.quotation||{}),catalogue:fn(q.catalogue)}};});
+  const saveItemOut=(product,{row,module})=>{
+    writeRows(list=>list.some(r=>r.code===row.code)?list.map(r=>r.code===row.code?row:r):[...list,row]);
+    if(catalog.some(c=>c.id===product.id)) setCatalog(c=>c.map(p=>p.id!==product.id?p:{...p,modules:(p.modules||[]).some(x=>x.id===module.id)?p.modules.map(x=>x.id===module.id?module:x):[...(p.modules||[]),module]}));
+    notify.success(`${row.name} saved.`);
+  };
+  const setRowActive=(code,on)=>writeRows(list=>list.map(r=>r.code===code?{...r,active:on}:r));
   // Admin/MD/Director can re-assign a product's Line Manager directly from
   // this page (inline dropdown on each card) without opening the edit modal.
   // Everyone else sees a read-only label. Same allow-list as other admin
@@ -784,23 +799,6 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,pri
   const isAdmin = ["admin","md","director","vp_sales_mkt"].includes(_myRole);
   const [expanded,setExpanded]=useState({});
   const [modal,setModal]=useState(null);
-  // BLANK_MOD: full module shape including the new pricing-logic fields.
-  // Keeping a single source of truth for resets / clones so any future field
-  // addition only needs to touch this default and the BLANK_QUOTE_ITEM
-  // snapshot in seed.js — not every place state is initialised.
-  const BLANK_MOD = {
-    name:"", type:"Core", desc:"",
-    mrp:0, unit:"License", currency:"INR",
-    // Pricing-logic master fields (see BLANK_QUOTE_ITEM in seed.js for snapshot semantics).
-    // licenseType captures the COMMERCIAL framing the customer signs up for; it's
-    // distinct from billingFrequency (cadence) and pricingModel (math). Together
-    // they cover SaaS Per-User/Month, Term Licenses, OTD perpetual, and
-    // Perpetual + Annual Maintenance — see the dropdown options for the full set.
-    licenseType:"", billingFrequency:"", pricingModel:"", gstRate:18, hsnSac:"",
-    setupFee:0, griApplicable:"No", griPercentage:0,
-    defaultTermMonths:0, minCommitment:0,
-  };
-  const [form,setForm]=useState(BLANK_MOD);
   const [prodForm,setProdForm]=useState({id:"",name:"",desc:"",color:"#2563EB",bg:"#EFF6FF",lineManagerId:""});
   const [confirm,setConfirm]=useState(null);
 
@@ -827,42 +825,6 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,pri
   ];
 
   const toggle=id=>setExpanded(e=>({...e,[id]:!e[id]}));
-  const openAddMod=prodId=>{setForm({...BLANK_MOD});setModal({mode:"addmod",prodId});};
-  const openEditMod=(prodId,mod)=>{
-    // Spread BLANK_MOD first so any catalog row missing the new pricing
-    // fields (older quotes / pre-migration data) gets sensible defaults
-    // instead of `undefined` reaching the inputs.
-    setForm({...BLANK_MOD, ...mod});
-    setModal({mode:"editmod",prodId,modId:mod.id});
-  };
-  const saveMod=()=>{
-    if(!form.name.trim()) { notify.error("Enter a name before saving."); return; }
-    const payload={
-      name:form.name.trim(),
-      type:form.type,
-      desc:form.desc,
-      mrp:Number(form.mrp)||0,
-      unit:form.unit||"License",
-      currency:form.currency||"INR",
-      // Pricing-logic master fields
-      licenseType:form.licenseType||"",
-      billingFrequency:form.billingFrequency||"",
-      pricingModel:form.pricingModel||"",
-      gstRate:Number(form.gstRate)||0,
-      hsnSac:(form.hsnSac||"").trim(),
-      setupFee:Number(form.setupFee)||0,
-      griApplicable:form.griApplicable||"No",
-      griPercentage:Number(form.griPercentage)||0,
-      defaultTermMonths:Number(form.defaultTermMonths)||0,
-      minCommitment:Number(form.minCommitment)||0,
-    };
-    setCatalog(c=>c.map(p=>{
-      if(p.id!==modal.prodId) return p;
-      if(modal.mode==="addmod") return {...p,modules:[...p.modules,{id:`m_${uid()}`,...payload}]};
-      return {...p,modules:p.modules.map(m=>m.id===modal.modId?{...m,...payload}:m)};
-    }));
-    setModal(null);
-  };
   const delMod=(prodId,modId)=>{
     setCatalog(c=>c.map(p=>p.id!==prodId?p:{...p,modules:p.modules.filter(m=>m.id!==modId)}));
     setConfirm(null);
@@ -893,14 +855,12 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,pri
   return (
     <div>
       <div className="pg-head">
-        <div><div className="pg-title">Products &amp; Pricing</div><div className="pg-sub">The one product master: product lines, their modules and line managers, and the prices quotes use (below).</div></div>
+        <div><div className="pg-title">Products &amp; Pricing</div><div className="pg-sub">The one product master: each product's items (plans, modules, add-ons, services, one-time charges) with their prices and how they can be sold.</div></div>
         <div className="pg-actions"><button className="btn btn-primary" onClick={openAddProd}><Plus size={14}/>Add Product</button></div>
       </div>
       <div className="prod-catalog-grid">
         {catalog.map(p=>{
           const isOpen=expanded[p.id];
-          const modCounts={};
-          p.modules.forEach(m=>{modCounts[m.type]=(modCounts[m.type]||0)+1;});
           return (
             <div key={p.id} className="prod-catalog-card">
               <div className="prod-catalog-head" onClick={()=>toggle(p.id)}>
@@ -936,17 +896,12 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,pri
                   </div>
                 </div>
                 <div className="prod-catalog-stats">
-                  <span style={{fontSize:12,color:"var(--text3)"}}>{p.modules.length} modules</span>
+                  {(()=>{const its=itemsOf(p,qRows,catalog);const unpriced=its.filter(x=>!x.row).length;return <>
+                    <span style={{fontSize:12,color:"var(--text3)"}}>{its.length} item{its.length===1?"":"s"}</span>
+                    {unpriced>0&&<span title="Modules with no price yet" style={{fontSize:10.5,fontWeight:700,color:"#B45309",background:"#FFFBEB",padding:"2px 8px",borderRadius:10}}>{unpriced} not priced</span>}
+                  </>;})()}
                   {commercialModels[p.id] && <span title="Commercial model, from this product's price rows" style={{fontSize:10.5,fontWeight:700,background:"#EEF2FF",color:"#4338CA",padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap"}}>{commercialModels[p.id]}</span>}
-                  {onShowPrices && (()=>{const pc=priceCounts[p.id]||{rows:0,priced:0};return (
-                    <button type="button" className="btn btn-xs btn-sec" onClick={e=>{e.stopPropagation();onShowPrices(p.id);}} title="Show this product's prices"
-                      style={{color:pc.rows&&pc.priced<pc.rows?"#B45309":pc.rows?"#15803D":"#DC2626"}}>
-                      ₹ {pc.rows?`${pc.priced}/${pc.rows} priced`:"no prices"}
-                    </button>);})()}
-                  {Object.entries(modCounts).map(([t,c])=>(
-                    <span key={t} className={`module-type-tag ${MOD_TYPE_CLS[t]||"mod-core"}`}>{c} {t}</span>
-                  ))}
-                  <button className="btn btn-primary btn-xs" onClick={e=>{e.stopPropagation();openAddMod(p.id);}}><Plus size={11}/>Module</button>
+                  {(()=>{const pc=priceCounts[p.id]||{rows:0,priced:0};return pc.rows?<span style={{fontSize:10.5,fontWeight:700,color:pc.priced<pc.rows?"#B45309":"#15803D"}}>₹ {pc.priced}/{pc.rows} priced</span>:null;})()}
                   <button className="icon-btn" title="Edit product" onClick={e=>{e.stopPropagation();openEditProd(p);}}><Edit2 size={13}/></button>
                   <button className="icon-btn" title="Delete product" onClick={e=>{e.stopPropagation();setConfirm({type:"product",prodId:p.id,name:p.name});}}><Trash2 size={13}/></button>
                   <ChevronDown size={16} style={{color:"var(--text3)",transform:isOpen?"rotate(180deg)":"none",transition:"transform 0.2s"}}/>
@@ -954,223 +909,41 @@ function ProductCatalogPage({catalog,setCatalog,orgUsers=[],currentUser=null,pri
               </div>
               {isOpen&&(
                 <div className="prod-catalog-body">
-                  {p.modules.length===0&&<div style={{padding:"16px 18px",color:"var(--text3)",fontSize:13}}>No modules yet. Add the first module or sub-product above.</div>}
-                  {p.modules.map(m=>{
-                    const mrp=Number(m.mrp)||0;
-                    const cur=m.currency||"INR";
-                    const sym=cur==="INR"?"₹":cur==="USD"?"$":cur==="EUR"?"€":cur+" ";
-                    const setup=Number(m.setupFee)||0;
-                    const griOn=m.griApplicable==="Yes" && Number(m.griPercentage)>0;
-                    return (
-                    <div key={m.id} className="module-row">
-                      <span className={`module-type-tag ${MOD_TYPE_CLS[m.type]||"mod-core"}`}>{m.type}</span>
-                      <span className="module-name">{m.name}</span>
-                      <span className="module-desc">{m.desc}</span>
-                      {/* ── Compact pricing-logic badges ── */}
-                      {/* Each badge appears only when the field is actually set, so older modules
-                          without pricing data still render clean (just MRP + edit/delete). */}
-                      <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center",justifyContent:"flex-end",flexShrink:0}}>
-                        {m.licenseType && (
-                          <span title="License Type (commercial model)" style={{fontSize:10.5,fontWeight:600,color:"#3730A3",background:"#EEF2FF",border:"1px solid #C7D2FE",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>{m.licenseType}</span>
-                        )}
-                        {m.billingFrequency && (
-                          <span title="Billing Frequency" style={{fontSize:10.5,fontWeight:600,color:"#1D4ED8",background:"#EFF6FF",border:"1px solid #BFDBFE",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>{m.billingFrequency}</span>
-                        )}
-                        {griOn && (
-                          <span title="Annual GRI (Growth Rate Increase)" style={{fontSize:10.5,fontWeight:600,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>GRI {m.griPercentage}%</span>
-                        )}
-                        {setup>0 && (
-                          <span title="One-time setup fee" style={{fontSize:10.5,fontWeight:600,color:"#5B21B6",background:"#EDE9FE",border:"1px solid #DDD6FE",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>Setup {sym}{setup.toLocaleString()}</span>
-                        )}
-                        {Number(m.gstRate)>0 && (
-                          <span title="GST rate carried to quote line" style={{fontSize:10.5,fontWeight:600,color:"#0F766E",background:"#F0FDFA",border:"1px solid #99F6E4",padding:"2px 7px",borderRadius:10,whiteSpace:"nowrap"}}>GST {m.gstRate}%</span>
-                        )}
-                        <span style={{fontSize:11,fontWeight:600,color:mrp>0?"#047857":"#94A3B8",background:mrp>0?"#ECFDF5":"#F1F5F9",border:`1px solid ${mrp>0?"#A7F3D0":"#E2E8F0"}`,padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap"}} title="List price (MRP)">
-                          {/* MRP label appends cadence for Per-User pricing so SaaS modules
-                              read as "₹X / User / Month" instead of just "₹X / User". For all
-                              other pricing models we keep the plain "₹X / Unit" form. */}
-                          {mrp>0
-                            ? (m.pricingModel==="Per-User" && m.billingFrequency)
-                              ? `${sym}${mrp.toLocaleString()} / ${m.unit||"User"} / ${m.billingFrequency}`
-                              : `${sym}${mrp.toLocaleString()} / ${m.unit||"License"}`
-                            : "No MRP"}
-                        </span>
-                      </div>
-                      <div style={{display:"flex",gap:4,flexShrink:0}}>
-                        <button className="icon-btn" onClick={()=>openEditMod(p.id,m)}><Edit2 size={13}/></button>
-                        <button className="icon-btn" onClick={()=>setConfirm({prodId:p.id,modId:m.id,name:m.name})}><Trash2 size={13}/></button>
-                      </div>
+                  <ProductItemsTable product={p} rows={qRows} catalog={catalog} canEdit={pricingAllowed} config={qm.quoteConfig}
+                    onSaveItem={(out)=>saveItemOut(p,out)} onSetActive={setRowActive}
+                    onDeleteModule={(modId,name)=>setConfirm({prodId:p.id,modId,name})}
+                    onAdvanced={()=>setAdvanced(a=>({...a,[p.id]:!a[p.id]}))}/>
+                  {advanced[p.id]&&(
+                    <div style={{borderTop:"1px solid var(--border)",padding:"10px 0 0"}}>
+                      <div style={{fontSize:12,fontWeight:700,margin:"0 10px 6px"}}>Advanced pricing for {p.name}: slabs, user bands, rate cards, dated, segment and country prices</div>
+                      <QuotationMasters mode="rates" masters={masters} setMasters={setMasters} catalog={catalog} orgUsers={orgUsers} currentUser={currentUser} focusProduct={p.id} setFocusProduct={()=>{}}/>
                     </div>
-                    );
-                  })}
+                  )}
                 </div>
               )}
             </div>
           );
         })}
+        {/* Items that belong to no single product: shared services, and price rows not linked yet. */}
+        {[{id:SERVICES_GROUP,name:"Services & add-ons",desc:"Shared by every product",modules:[],add:true},{id:"",name:"Not linked to a product",desc:"Price rows to place under a product (All price rows → Link)",modules:[],add:false}]
+          .filter(g=>g.add||itemsOf(g,qRows,catalog).length>0).map(g=>{
+          const key=`grp:${g.id}`;const isOpen=expanded[key];const n=itemsOf(g,qRows,catalog).length;
+          return (
+            <div key={key} className="prod-catalog-card">
+              <div className="prod-catalog-head" onClick={()=>toggle(key)}>
+                <div className="prod-catalog-headleft"><div className="prod-icon" style={{background:"#F1F5F9",color:"#475569"}}>{g.id?"SVC":"—"}</div>
+                  <div><div className="prod-catalog-name">{g.name}</div><div className="prod-catalog-desc">{g.desc}</div></div></div>
+                <div className="prod-catalog-stats"><span style={{fontSize:12,color:"var(--text3)"}}>{n} item{n===1?"":"s"}</span>
+                  <ChevronDown size={16} style={{color:"var(--text3)",transform:isOpen?"rotate(180deg)":"none",transition:"transform 0.2s"}}/></div>
+              </div>
+              {isOpen&&<div className="prod-catalog-body">
+                <ProductItemsTable product={g} rows={qRows} catalog={catalog} canEdit={pricingAllowed&&g.add} config={qm.quoteConfig}
+                  onSaveItem={(out)=>saveItemOut(g,out)} onSetActive={setRowActive} onDeleteModule={()=>{}}/>
+              </div>}
+            </div>
+          );
+        })}
       </div>
-      {(modal?.mode==="addmod"||modal?.mode==="editmod")&&(
-        <Modal title={modal.mode==="addmod"?"Add Module / Sub-Product":"Edit Module"} onClose={()=>setModal(null)}
-          size="xl" draggable resizable
-          footer={<><button className="btn btn-sec" onClick={()=>setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={saveMod}><Check size={14}/>Save Module</button></>}>
-          {(()=>{const prod=catalog.find(c=>c.id===modal.prodId)||PROD_MAP[modal.prodId];return prod?(
-            <div style={{background:prod.bg,border:`1.5px solid ${prod.color}22`,borderRadius:8,padding:"8px 12px",marginBottom:16,fontSize:12.5,fontWeight:600,color:prod.color}}>
-              Product: {prod.name}
-            </div>
-          ):null;})()}
-
-          {/* ── BASICS ── */}
-          <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
-            <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>BASICS</summary>
-            <div style={{padding:"10px 12px"}}>
-              <div className="form-row full"><div className="form-group"><label>Module / Feature Name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Ocean Tracking, OCR Engine, Mobile App"/></div></div>
-              <div className="form-row three">
-                <div className="form-group"><label>Type</label>
-                  <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>
-                    {["Core","Add-on","Integration","Analytics","Mobile"].map(t=><option key={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div className="form-group"><label>Unit
-                  <HelpTooltip text="What the MRP is priced per: License, User, Site, Setup (one-time), Year, Month, Transaction."/>
-                </label>
-                  <select value={form.unit} onChange={e=>setForm(f=>({...f,unit:e.target.value}))}>
-                    {["License","User","Site","Setup","Year","Month","Transaction"].map(u=><option key={u}>{u}</option>)}
-                  </select>
-                </div>
-                <div className="form-group"><label>Currency</label>
-                  <select value={form.currency} onChange={e=>setForm(f=>({...f,currency:e.target.value}))}>
-                    {["INR","USD","EUR","GBP","AED","SGD"].map(c=><option key={c}>{c}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="form-group"><label>Description</label><textarea value={form.desc} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} rows={2} placeholder="Brief description of what this module does…"/></div>
-            </div>
-          </details>
-
-          {/* ── PRICING & BILLING ── */}
-          <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
-            <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>PRICING &amp; BILLING</summary>
-            <div style={{padding:"10px 12px"}}>
-              {/* License Type sits at the top because it's the COMMERCIAL framing
-                  the customer signs up for — it informs how the rest of this
-                  section should be filled (e.g. Perpetual+AMC means Setup Fee
-                  carries the license cost and MRP is the recurring AMC). */}
-              <div className="form-row full">
-                <div className="form-group"><label>License Type
-                  <HelpTooltip text="Commercial model the customer signs up for. SaaS — Per User options are cadence-bound (Month / Quarter / Year) and auto-set Pricing Model = Per-User, Unit = User, and Billing Frequency to match. SaaS Subscription = recurring on the chosen Billing Frequency without per-seat math. Term License = fixed-term contract (1Y/3Y) with renewal. Perpetual (OTD) = one-time payment. Perpetual + AMC = one-time license (Setup Fee) + recurring annual maintenance (MRP)."/>
-                </label>
-                  <select value={form.licenseType||""} onChange={e=>{
-                    const lt=e.target.value;
-                    setForm(f=>{
-                      const next={...f, licenseType:lt};
-                      // Auto-derive dependent fields so the commercial framing
-                      // the user picked stays consistent with pricing math &
-                      // billing cadence. User can still override afterwards.
-                      if(lt==="SaaS — Per User / Month")     return {...next, pricingModel:"Per-User", unit:"User", billingFrequency:"Monthly"};
-                      if(lt==="SaaS — Per User / Quarterly") return {...next, pricingModel:"Per-User", unit:"User", billingFrequency:"Quarterly"};
-                      if(lt==="SaaS — Per User / Yearly")    return {...next, pricingModel:"Per-User", unit:"User", billingFrequency:"Annual"};
-                      if(lt==="Perpetual (OTD)")             return {...next, billingFrequency:"One-time"};
-                      if(lt==="Perpetual + AMC")             return {...next, billingFrequency:"Annual"};
-                      return next;
-                    });
-                  }}>
-                    <option value="">— Not set —</option>
-                    <option value="SaaS Subscription">SaaS Subscription</option>
-                    <option value="SaaS — Per User / Month">SaaS — Per User / Month</option>
-                    <option value="SaaS — Per User / Quarterly">SaaS — Per User / Quarterly</option>
-                    <option value="SaaS — Per User / Yearly">SaaS — Per User / Yearly</option>
-                    <option value="Term License">Term License (fixed term + renewal)</option>
-                    <option value="Perpetual (OTD)">Perpetual (OTD) — one-time</option>
-                    <option value="Perpetual + AMC">Perpetual + Annual Maintenance</option>
-                  </select>
-                </div>
-              </div>
-              <div className="form-row three">
-                <div className="form-group"><label>MRP / List Price
-                  <HelpTooltip text="Master rate (no discount). Quotes auto-populate this when the module is added; the rep then applies a discount in % or absolute amount."/>
-                </label>
-                  <input type="number" min={0} step={1} value={form.mrp} onChange={e=>setForm(f=>({...f,mrp:+e.target.value}))} placeholder="0"/>
-                </div>
-                <div className="form-group"><label>Setup Fee
-                  <HelpTooltip text="One-time fee charged on top of the recurring MRP. Use for: onboarding / implementation, OR the upfront license cost when License Type is Perpetual + AMC (then MRP carries the recurring annual maintenance). Carried onto the quote line so the proposal PDF can show it separately."/>
-                </label>
-                  <input type="number" min={0} step={1} value={form.setupFee||0} onChange={e=>setForm(f=>({...f,setupFee:+e.target.value}))} placeholder="0"/>
-                </div>
-                <div className="form-group"><label>Min Commitment / period
-                  <HelpTooltip text="Revenue floor per billing period (Monthly / Quarterly / Annual depending on Frequency). If actual usage falls below this, the customer is still billed the floor. Optional."/>
-                </label>
-                  <input type="number" min={0} step={1} value={form.minCommitment||0} onChange={e=>setForm(f=>({...f,minCommitment:+e.target.value}))} placeholder="0"/>
-                </div>
-              </div>
-              <div className="form-row three">
-                <div className="form-group"><label>Billing Frequency
-                  <HelpTooltip text="How often the customer is billed for this module. Drives the invoice scheduler in Contracts and the recurring badge on the quote line."/>
-                </label>
-                  <select value={form.billingFrequency||""} onChange={e=>setForm(f=>({...f,billingFrequency:e.target.value}))}>
-                    <option value="">— Not set —</option>
-                    {["One-time","Monthly","Quarterly","Half-Yearly","Annual","Per-Transaction","Usage-based"].map(b=><option key={b}>{b}</option>)}
-                  </select>
-                </div>
-                <div className="form-group"><label>Pricing Model
-                  <HelpTooltip text="How the line is priced: Flat (fixed regardless of qty), Per-Unit (MRP × qty — the default), Per-Transaction / Volume / Tiered (rate scales with quantity bands)."/>
-                </label>
-                  <select value={form.pricingModel||""} onChange={e=>setForm(f=>({...f,pricingModel:e.target.value}))}>
-                    <option value="">— Not set —</option>
-                    {["Flat","Per-Unit","Per-User","Per-Transaction","Tiered","Volume","Usage-based"].map(p=><option key={p}>{p}</option>)}
-                  </select>
-                </div>
-                <div className="form-group"><label>Default Contract Term
-                  <HelpTooltip text="Default term in months when this module is added to a contract (e.g. 12 / 24 / 36). The contract owner can override at signing."/>
-                </label>
-                  <select value={String(form.defaultTermMonths||0)} onChange={e=>setForm(f=>({...f,defaultTermMonths:+e.target.value}))}>
-                    <option value="0">— Not set —</option>
-                    <option value="12">12 months</option>
-                    <option value="24">24 months</option>
-                    <option value="36">36 months</option>
-                    <option value="60">60 months</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </details>
-
-          {/* ── TAX & ESCALATION ── */}
-          <details open style={{marginBottom:12,border:"1px solid var(--border)",borderRadius:6}}>
-            <summary style={{cursor:"pointer",padding:"8px 12px",background:"var(--s2)",fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.5px"}}>TAX &amp; ANNUAL ESCALATION</summary>
-            <div style={{padding:"10px 12px"}}>
-              <div className="form-row three">
-                <div className="form-group"><label>GST Rate (%)
-                  <HelpTooltip text="Per-module GST slab. Snapshot to the quote line. Today the quote-level Tax Mode + Place of Supply still drive the actual CGST/SGST/IGST split — this field is carried for compliance reporting and future per-line GST overrides."/>
-                </label>
-                  <select value={String(form.gstRate||0)} onChange={e=>setForm(f=>({...f,gstRate:+e.target.value}))}>
-                    {[0,5,12,18,28].map(r=><option key={r} value={r}>{r===0?"0% (Exempt / Zero-rated)":`${r}%`}</option>)}
-                  </select>
-                </div>
-                <div className="form-group"><label>HSN / SAC Code
-                  <HelpTooltip text="6 or 8-digit HSN (goods) / SAC (services) code printed on the tax invoice and quote PDF. Required for B2B invoicing in India. Optional in masters but recommended."/>
-                </label>
-                  <input value={form.hsnSac||""} onChange={e=>setForm(f=>({...f,hsnSac:e.target.value}))} placeholder="e.g. 998314"/>
-                </div>
-              </div>
-              <div className="form-row three">
-                <div className="form-group"><label>Annual GRI Applicable?
-                  <HelpTooltip text="GRI = Growth Rate Increase, the standard SaaS annual price escalation. When Yes, contracts auto-apply the % below at each renewal anniversary."/>
-                </label>
-                  <select value={form.griApplicable||"No"} onChange={e=>setForm(f=>({...f,griApplicable:e.target.value}))}>
-                    <option>No</option>
-                    <option>Yes</option>
-                  </select>
-                </div>
-                <div className="form-group"><label>GRI %
-                  <HelpTooltip text="Year-on-year price escalation %. Typical SaaS contracts: 3–7%. Only applied when GRI Applicable = Yes."/>
-                </label>
-                  <input type="number" min={0} max={100} step={0.5} value={form.griPercentage||0} onChange={e=>setForm(f=>({...f,griPercentage:+e.target.value}))} disabled={form.griApplicable!=="Yes"} placeholder="0"/>
-                </div>
-              </div>
-            </div>
-          </details>
-        </Modal>
-      )}
       {(modal?.mode==="addprod"||modal?.mode==="editprod")&&(
         <Modal title={modal.mode==="addprod"?"Add Product Line":"Edit Product Line"} onClose={()=>setModal(null)}
           footer={<><button className="btn btn-sec" onClick={()=>setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={saveProd}><Check size={14}/>Save Product</button></>}>

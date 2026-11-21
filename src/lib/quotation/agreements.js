@@ -13,6 +13,7 @@
 // Pure — tested in scripts/test-agreements.mjs.
 import { usagePrice, hasUsageRules } from "./slabs.js";
 import { billingClassOf, commercialModelOf } from "./commercial.js";
+import { amcAgreementLines } from "./saleTerms.js";
 
 const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const r2 = (v) => Math.round(n(v) * 100) / 100;
@@ -82,13 +83,18 @@ export function buildAgreement(quote, opts = {}) {
       monthlyMinimum: r2(l.monthlyMinimum), escalationPct: n(l.escalationPct),
       pricing: l.pricing || pricingSnapshot(row),
       effectiveFrom: start, effectiveTo: months ? termEnd(start, months) : "",
+      ...(l.soldAs ? { soldAs: l.soldAs } : {}),
     };
   });
-  const recurringMonths = lines.reduce((m, l) => Math.max(m, l.months), 0);
+  // A one-time licence's AMC is billed every year: one line per contract year of the AMC schedule.
+  amcAgreementLines(h.amc, start).forEach((l) => lines.push({ ...l, lineNo: lines.length + 1 }));
+  const recurringMonths = lines.filter((l) => !l.isAmc).reduce((m, l) => Math.max(m, l.months), 0);
+  const lastAmc = lines.filter((l) => l.isAmc).map((l) => l.effectiveTo).sort().pop() || "";
+  const termTo = recurringMonths ? termEnd(start, recurringMonths) : "";
   return {
     agreementNo: `${quote.quoteNo || quote.id}${n(quote.version) > 1 ? `-v${quote.version}` : ""}`,
     quoteId: quote.id, accountId: quote.accountId || "", customer: h.party?.name || quote.legalName || "",
-    status: "Active", startDate: start, endDate: recurringMonths ? termEnd(start, recurringMonths) : "",
+    status: "Active", startDate: start, endDate: [termTo, lastAmc].filter(Boolean).sort().pop() || "",
     currency: quote.currency || h.currency || "INR", paymentTerms: quote.paymentTerms || "",
     billingFrequency: quote.billingFrequency || h.billingFrequency || "",
     commercialModel: commercialModelOf(lines.map((l) => l.billingClass)),

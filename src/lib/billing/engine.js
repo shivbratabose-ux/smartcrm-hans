@@ -261,6 +261,21 @@ export function dueLines(quote, period, usageTotals = {}, { quotes = [], invoice
   const fixed = [], usage = [], needs = [];
   for (const line of agreement.lines || []) {
     const term = lineTerm(line, cut);
+    // AMC of a one-time licence (decision 21 Nov 2026): billed monthly, a
+    // twelfth of the contract year's AMC each month, whatever the subscription
+    // frequency; a part month at the anniversary is prorated.
+    if (line.isAmc) {
+      const fraction = activeFraction(term, period, s.prorate);
+      if (!(fraction > 0) || billed.has(billedKey(quote.id, line.code, period))) continue;
+      const monthly = (n(line.amcAmount) || n(line.netRate) * 12) / 12;
+      const amount = r2(monthly * fraction);
+      fixed.push({
+        code: line.code, name: line.name, billingClass: "subscription", unit: "Month", qty: 1, rate: r2(monthly),
+        description: `${line.name}: ${periodLabel(period)}${fraction < 1 ? " (part month prorated)" : ""}`,
+        amount, calc: { basis: "Annual maintenance, billed monthly", monthly: r2(monthly), months: [{ period, fraction: r2(fraction * 10000) / 10000, factor: 1, amount }] },
+      });
+      continue;
+    }
     if (line.billingClass === "subscription") {
       const months = (subscriptionBlock(line, period, agreement, cut) || []).filter((m) => !billed.has(billedKey(quote.id, line.code, m)));
       if (!months.length) continue;

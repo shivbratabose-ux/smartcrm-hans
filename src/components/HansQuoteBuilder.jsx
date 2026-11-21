@@ -29,7 +29,8 @@ import {
   evaluateDiscountGuardrail, evaluateMarginGuardrail, validateCcsRule, validateWiseHandlingModules,
   formatQuoteNumber, cardBandIndex,
 } from "../lib/quotation/pricingEngine";
-import { computeAmc, amcRules, describeEscalation, amcTermText } from "../lib/quotation/amc";
+import { computeAmc, amcRules, describeEscalation, amcTermText, LICENCE_MODEL } from "../lib/quotation/amc";
+import { saleTerms, frequencyOf, oneTimeAllowed, oneTimeTermsFor, oneTimeUnitPrice } from "../lib/quotation/saleTerms";
 import { TC_TEMPLATES, STANDARD_TERMS } from "../data/constants";
 import { printHansQuote } from "../lib/quotation/printQuote";
 import { toLocalISODate } from "../utils/helpers";
@@ -93,6 +94,10 @@ export default function HansQuoteBuilder({
   const [currency, setCurrency] = useState(eh?.currency || "INR");
   const [billingFrequency, setBillingFrequency] = useState(eh?.billingFrequency || editQuote?.billingFrequency || "Monthly");
   const [selectedPlan, setSelectedPlan] = useState(eh?.plan || "");
+  // How the software is sold (Quotation Rules → How software is sold): a
+  // subscription at a billing frequency, or a one-time licence with yearly AMC.
+  const [saleMode, setSaleMode] = useState(eh?.saleMode?.mode || "subscription");
+  const terms = useMemo(() => saleTerms(config), [config]);
   const [segment, setSegment] = useState(eh?.segment || editQuote?.segment || "Commercial");
   // Hans- or client-hosted — asked on every quote (Quote → Accounts flow).
   const [hosting, setHosting] = useState(editQuote?.hosting || "");
@@ -139,7 +144,8 @@ export default function HansQuoteBuilder({
     editQuote && Array.isArray(editQuote.items) && editQuote.items.length
       ? editQuote.items.map(it => ({ productCode: it.productCode || "", qty: it.billingClass === "transaction" ? (Number(it.qty) || 0) : (Number(it.qty) || 1), months: Number(it.months) || (it.billingClass === "transaction" ? 12 : 1), discountPct: Number(it.discountPct) || 0,
           // The rate agreed on this quote (kept when the quote is frozen).
-          frozenRate: Number.isFinite(Number(it.unitPriceResolved)) ? Number(it.unitPriceResolved) : undefined }))
+          // The rate before a frequency discount or a one-time conversion (re-applied on load).
+          frozenRate: Number.isFinite(Number(it.baseRate)) ? Number(it.baseRate) : Number.isFinite(Number(it.unitPriceResolved)) ? Number(it.unitPriceResolved) : undefined }))
       : [{ ...BLANK_LINE }]
   );
   // Product-led building: the products being quoted. The screen shows only
@@ -310,7 +316,16 @@ export default function HansQuoteBuilder({
     const usage = usagePrice(p, l.qty, { poolQty });
     const agreedMin = useAgreed && !(frozen && l.frozenRate != null) ? agreedLines[p.code]?.line : null;
     const monthlyMinimum = agreedMin ? Math.max(Number(agreedMin.monthlyMinimum) || 0, Number(agreedMin.pricing?.packPrice) || 0) : usage.floor / fxForCurrency;
-    const oneTime = isOneTimeModel(p.pricingModel);
+    // Sold as a one-time licence: monthly rate × N months less the one-time
+    // discount, AMC yearly (computeAmc picks up LICENCE_MODEL lines). Sold as a
+    // subscription: the billing frequency's discount comes off the rate.
+    const soldOT = saleMode === "one_time" && terms.oneTime.enabled && oneTimeAllowed(p) ? oneTimeTermsFor(p, terms) : null;
+    const freqPct = !soldOT && billingClass === "subscription" ? (frequencyOf(terms, billingFrequency)?.discountPct || 0) : 0;
+    const baseRate = unitPrice;
+    const unitPriceSold = soldOT ? oneTimeUnitPrice(unitPrice, soldOT) : freqPct ? Math.round(unitPrice * (1 - freqPct / 100) * 100) / 100 : unitPrice;
+    const pricingModelSold = soldOT ? LICENCE_MODEL : p.pricingModel;
+    const classSold = soldOT ? "one_time" : billingClass;
+    const oneTime = !!soldOT || isOneTimeModel(p.pricingModel);
     // A variable line is billed monthly on actual use: no term. Only a line with
     // a contractual minimum keeps one (the months the minimum is committed for).
     const variableOpen = billingClass === "transaction" && !(monthlyMinimum > 0) && !(Number(p.minMonthFloor) > 0);
@@ -325,21 +340,23 @@ export default function HansQuoteBuilder({
     return {
       ...l,
       productCode: p.code, name: p.name, module: p.module, description: p.description,
-      pricingModel: p.pricingModel, unit: p.unit, minMonthFloor: p.minMonthFloor,
+      pricingModel: pricingModelSold, unit: p.unit, minMonthFloor: p.minMonthFloor,
       minQty: p.minQty, maxDiscountPct: p.maxDiscountPct,
-      unitPriceResolved: unitPrice, missingRate,
+      unitPriceResolved: unitPriceSold, missingRate, baseRate,
+      ...(soldOT ? { soldAs: { mode: "one_time", months: soldOT.months, discountPct: soldOT.discountPct, monthlyRate: Math.round(baseRate * 100) / 100 } } : {}),
+      ...(freqPct ? { freqDiscountPct: freqPct } : {}),
       rateCardLabel: card ? card.label : null, tierLabel,
       // Per-unit cost (same scale as the resolved unit price) for the margin
       // guardrail — only present when the product has a cost in masters.
-      costPerUnit: p.costPrice != null ? (Number(p.costPrice) || 0) / fxForCurrency : null,
+      costPerUnit: p.costPrice != null ? (Number(p.costPrice) || 0) / fxForCurrency * (soldOT ? soldOT.months : 1) : null,
       months: lineMonths, variableOpen, productId: groupOf(p, catalog),
       slabRates: p.rateSource === "Slab" && !agreed ? slabTable(p.slabs, p.unit) : (agreed?.line?.pricing?.rateSource === "Slab" ? slabTable(agreed.line.pricing.slabs, p.unit) : null),
       monthlyMinimum, escalationPct: Number(p.escalationPct) || 0,
       rateFrozen, liveRate: live.unitPrice, configIssues: rowConfigIssues(p),
       agreedNo: agreed ? agreed.agreement.agreementNo : "", pricing: agreed ? (agreed.line.pricing || null) : pricingSnapshot(p),
-      ...computeLine({ pricingModel: p.pricingModel, billingClass, unitPriceResolved: unitPrice, qty: l.qty, months: lineMonths, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty, monthlyMinimum, escalationPct: p.escalationPct }),
+      ...computeLine({ pricingModel: pricingModelSold, billingClass: classSold, unitPriceResolved: unitPriceSold, qty: l.qty, months: lineMonths, discountPct: l.discountPct, minMonthFloor: p.minMonthFloor, minQty: p.minQty, monthlyMinimum, escalationPct: p.escalationPct }),
     };
-  }); }, [frozen, useAgreed, agreedLines, catalog, lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country]);
+  }); }, [frozen, useAgreed, agreedLines, catalog, lines, catByCode, bands, editions, bandFrom, rateCards, config, quoteDate, segment, currency, fxForCurrency, party.country, saleMode, terms, billingFrequency]);
 
   const summary = useMemo(() => computeQuote(
     pricedLines.filter(l => !l._empty),
@@ -373,6 +390,9 @@ export default function HansQuoteBuilder({
   const hostingNeeded = picked.length === 0 || needsHostingChoice(picked, config);
   const hostingValue = hostingNeeded ? hosting : "Hans";
   const hasSubscription = picked.some(l => l.billingClass === "subscription");
+  // Lines whose price row is a subscription (whether sold as one or as a one-time licence).
+  const sellableSubs = picked.some(l => billingClassOf(catByCode[l.productCode] || {}) === "subscription");
+  const anyOneTime = picked.some(l => oneTimeAllowed(catByCode[l.productCode]));
   // Software with a subscription: 50% with the order, 50% on go-live. Services
   // billed on use (AMS registration and the like): payable with the order.
   useEffect(() => {
@@ -421,6 +441,8 @@ export default function HansQuoteBuilder({
       escalationPct: Number(l.escalationPct) || 0,
       // The slab / pack / minimum settings as quoted, so the agreement keeps them.
       ...(l.pricing ? { pricing: l.pricing } : {}), ...(l.agreedNo ? { agreedNo: l.agreedNo } : {}),
+      // How it was sold: the rate before conversion, a one-time licence's terms, a frequency discount.
+      baseRate: +(Number(l.baseRate) || 0).toFixed(2), ...(l.soldAs ? { soldAs: l.soldAs } : {}), ...(l.freqDiscountPct ? { freqDiscountPct: l.freqDiscountPct } : {}),
       // Variable lines: lineTotal is the committed minimum only; lineEstimate is internal.
       lineEstimate: +(Number(l.lineEstimate) || 0).toFixed(2),
       lineOneTime: +l.lineOneTime.toFixed(2), lineRecurring: +l.lineRecurring.toFixed(2),
@@ -456,6 +478,7 @@ export default function HansQuoteBuilder({
       tcv: round2(summary.tcv),
       intraState: summary.intraState,
       billingFrequency, // invoicing cadence (Monthly / Quarterly / …)
+      saleMode: { mode: saleMode, frequency: billingFrequency }, // subscription or one-time licence (+ AMC)
       segment, // customer segment driving segment price lists
       plan: selectedPlan, // chosen iCAFFE plan preset (for re-seed on edit)
       terms: QUOTE_TERMS,
@@ -522,6 +545,7 @@ export default function HansQuoteBuilder({
       pricingModel: l.pricingModel, qty: Number(l.qty) || 0, months: l.effectiveMonths,
       unitPriceResolved: round2(l.unitPriceResolved), discountPct: Number(l.discountPct) || 0,
       billingClass: l.billingClass, monthlyMinimum: round2(l.isVariable ? l.committedPerPeriod : l.monthlyMinimum), lineEstimate: round2(l.lineEstimate),
+      baseRate: round2(l.baseRate), ...(l.soldAs ? { soldAs: l.soldAs } : {}), ...(l.freqDiscountPct ? { freqDiscountPct: l.freqDiscountPct } : {}),
       lineTotal: round2(l.lineTotal),
     }));
     return {
@@ -538,7 +562,7 @@ export default function HansQuoteBuilder({
         overallDiscount: round2(summary.overallDiscount), prepaymentDisc: round2(summary.prepaymentDisc),
         taxableBase: round2(summary.taxableBase), cgst: round2(summary.cgst), sgst: round2(summary.sgst),
         igst: round2(summary.igst), grandTotal: round2(summary.grandTotal), alrAnnual: round2(amc.annual), amc,
-        tcv: round2(summary.tcv), billingFrequency, terms: QUOTE_TERMS, billing,
+        tcv: round2(summary.tcv), billingFrequency, saleMode: { mode: saleMode, frequency: billingFrequency }, terms: QUOTE_TERMS, billing,
         termsText: amc.applies ? [termsText.replace(/\n?AMC: [^\n]*/g, "").trimEnd(), amcTermText(amc, config)].join("\n") : termsText,
       },
     };
@@ -794,27 +818,29 @@ export default function HansQuoteBuilder({
               </div>
 
               {/* Plan presets */}
-              {picked.length > 0 && !hasSubscription && (
+              {picked.length > 0 && !hasSubscription && !sellableSubs && (
                 <div style={{ fontSize: 11.5, color: "#4338CA", background: "#EEF2FF", borderRadius: 8, padding: "6px 10px", margin: "6px 0 10px" }}>
                   {picked.every(l => l.isVariable) ? "Billed monthly on actual usage. Enter the agreed rate for each service: the list rate or a lower one." : "One-time and usage charges only: no subscription plan or billing cycle to choose."}
                   {!hostingNeeded ? " Hosted by Hans Infomatic." : ""}
                 </div>
               )}
-              <div style={{ display: hasSubscription || (picked.length > 0 && hostingNeeded) ? "flex" : "none", gap: 8, alignItems: "center", margin: "6px 0 10px", flexWrap: "wrap" }}>
-                {hasSubscription && <>
-                {productIds.includes("iCAFFE") && <>
-                <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>iCAFFE plan:</span>
-                <button className={`btn btn-xs ${selectedPlan === "saasMonthly" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("saasMonthly")}>{selectedPlan === "saasMonthly" && <Check size={11} />}SaaS Monthly (12mo)</button>
-                <button className={`btn btn-xs ${selectedPlan === "saasAdvance" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("saasAdvance")}>{selectedPlan === "saasAdvance" && <Check size={11} />}SaaS Advance (12mo, 10% prepay)</button>
-                <button className={`btn btn-xs ${selectedPlan === "otpArr" ? "btn-primary" : "btn-sec"}`} onClick={() => planPreset("otpArr")}>{selectedPlan === "otpArr" && <Check size={11} />}OTP+ARR (42mo, 45% disc)</button>
+              <div style={{ display: sellableSubs || hasSubscription || (picked.length > 0 && hostingNeeded) ? "flex" : "none", gap: 8, alignItems: "center", margin: "6px 0 10px", flexWrap: "wrap" }}>
+                {sellableSubs && <>
+                <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>Sold as</span>
+                <button type="button" className={`btn btn-xs ${saleMode !== "one_time" ? "btn-primary" : "btn-sec"}`} onClick={() => setSaleMode("subscription")}>{saleMode !== "one_time" && <Check size={11} />}Subscription</button>
+                {terms.oneTime.enabled && anyOneTime && <button type="button" className={`btn btn-xs ${saleMode === "one_time" ? "btn-primary" : "btn-sec"}`}
+                  title={`Licence = monthly rate × ${terms.oneTime.months} months less ${terms.oneTime.discountPct}%; AMC ${amcRules(config).defaultPct}% of the licence a year from contract year ${amcRules(config).startYear}, billed monthly`}
+                  onClick={() => setSaleMode("one_time")}>{saleMode === "one_time" && <Check size={11} />}One-time licence + AMC</button>}
                 </>}
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
+                {hasSubscription && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
                   <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>Billed</span>
                   <select value={billingFrequency} onChange={e => setBillingFrequency(e.target.value)} style={{ fontSize: 11, padding: "3px 6px", borderRadius: 6, border: "1px solid var(--border)" }}>
-                    {BILLING_FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
+                    {terms.frequencies.filter(f => f.enabled || f.id === billingFrequency).map(f => <option key={f.id} value={f.id}>{f.label}{f.discountPct && hasSubscription ? ` (${f.discountPct}% off)` : ""}</option>)}
                   </select>
-                </span>
-                </>}
+                </span>}
+                {saleMode === "one_time" && sellableSubs && <span style={{ fontSize: 11, color: "#9D174D" }}>
+                  Licence = monthly rate × {terms.oneTime.months} months ({+(terms.oneTime.months / 12).toFixed(2)} years) less {terms.oneTime.discountPct}%; AMC {amcRules(config).defaultPct}% a year from year {amcRules(config).startYear}, billed monthly.
+                </span>}
                 {picked.length > 0 && hostingNeeded && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
                   <span style={{ fontSize: 11, color: hosting ? "var(--text3)" : "#B45309", fontWeight: 600 }}>Hosting<Req /></span>
                   <select value={hosting} onChange={e => setHosting(e.target.value)} style={{ fontSize: 11, padding: "3px 6px", borderRadius: 6, border: `1px solid ${hosting ? "var(--border)" : "#F59E0B"}` }}>
