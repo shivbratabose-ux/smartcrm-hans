@@ -22,19 +22,37 @@
 
 // ── Field catalogue per table ───────────────────────────────────────
 // type: text | num | date | user | account | list | bool
-const F = (key, label, type = "text") => ({ key, label, type });
+const F = (key, label, type = "text", summary = "sum") => ({ key, label, type, summary });
+// Calculated field: worked out per record. summary "avg" = groups show the
+// average (days, ages) instead of the sum.
+const C = (key, label, type, calc, summary = "sum") => ({ key, label, type, calc, summary, calculated: true });
+const dayDiff = (a, b) => {
+  const pa = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(a || "")), pb = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(b || ""));
+  if (!pa || !pb) return "";
+  return Math.round((Date.UTC(+pb[1], +pb[2] - 1, +pb[3]) - Date.UTC(+pa[1], +pa[2] - 1, +pa[3])) / 864e5);
+};
+const dealStatus = (o, c) => (c.isWon?.(o) ? "Won" : c.isLost?.(o) ? "Lost" : "Open");
+const TICKET_DONE = new Set(["Resolved", "Closed"]);
+const overdueDays = (x, c) => ((Number(x.pendingAmount) || 0) > 0 && x.dueDate && x.dueDate < c.today ? dayDiff(x.dueDate, c.today) : 0);
+/** Value of a field on a record (stored or calculated). */
+export const valueOf = (f, rec, ctx = {}) => (f.calc ? f.calc(rec, ctx) : rec?.[f.key]);
 
 export const SOURCES = {
   opps: {
     label: "Opportunities", one: "Opportunity", list: "opps", owner: "owner", date: "closeDate",
     fields: [
       F("oppNo", "Opp ID"), F("title", "Title"), F("accountId", "Account", "account"), F("stage", "Stage"),
-      F("value", "Value (₹ L)", "num"), F("probability", "Probability %", "num"), F("owner", "Owner", "user"),
+      F("value", "Value (₹ L)", "num"), F("probability", "Probability %", "num", "avg"), F("owner", "Owner", "user"),
       F("closeDate", "Close date", "date"), F("createdDate", "Created", "date"), F("source", "Source"),
       F("lob", "LOB"), F("forecastCat", "Forecast category"), F("dealSize", "Deal size"), F("country", "Country"),
       F("territory", "Territory"), F("products", "Products", "list"), F("nextStep", "Next step"),
       F("competitors", "Competitors"), F("lossReason", "Loss reason"), F("isTender", "Tender", "bool"),
       F("submissionDate", "Tender submission", "date"),
+      C("status", "Deal status (Open / Won / Lost)", "text", dealStatus),
+      C("weighted", "Weighted value (₹ L)", "num", o => +((Number(o.value) || 0) * (Number(o.probability) || 0) / 100).toFixed(2)),
+      C("ageDays", "Deal age (days)", "num", (o, c) => (o.createdDate ? dayDiff(o.createdDate, c.today) : ""), "avg"),
+      C("cycleDays", "Sales cycle, won (days)", "num", (o, c) => (c.isWon?.(o) && o.createdDate && o.closeDate ? dayDiff(o.createdDate, o.closeDate) : ""), "avg"),
+      C("daysToClose", "Days to close, open (days)", "num", (o, c) => (dealStatus(o, c) === "Open" && o.closeDate ? dayDiff(c.today, o.closeDate) : ""), "avg"),
     ],
   },
   accounts: {
@@ -52,9 +70,11 @@ export const SOURCES = {
       F("leadId", "Lead ID"), F("company", "Company"), F("contact", "Contact"), F("stage", "Stage"),
       F("source", "Source"), F("product", "Product"), F("vertical", "Vertical"), F("region", "Region"),
       F("country", "Country"), F("city", "City"), F("assignedTo", "Assigned to", "user"),
-      F("createdDate", "Created", "date"), F("nextCall", "Next call", "date"), F("score", "Score", "num"),
+      F("createdDate", "Created", "date"), F("nextCall", "Next call", "date"), F("score", "Score", "num", "avg"),
       F("temperature", "Temperature"), F("estimatedValue", "Estimated value", "num"),
       F("accountId", "Account", "account"), F("campaignName", "Campaign"),
+      C("converted", "Converted", "bool", l => l.stage === "Converted" || (Array.isArray(l.convertedOppIds) && l.convertedOppIds.length > 0)),
+      C("ageDays", "Lead age (days)", "num", (l, c) => (l.createdDate ? dayDiff(l.createdDate, c.today) : ""), "avg"),
     ],
   },
   contacts: {
@@ -72,6 +92,7 @@ export const SOURCES = {
       F("title", "Title"), F("type", "Type"), F("status", "Status"), F("date", "Date", "date"), F("time", "Time"),
       F("duration", "Duration (min)", "num"), F("owner", "Owner", "user"), F("accountId", "Account", "account"),
       F("outcome", "Outcome"),
+      C("overdue", "Overdue", "bool", (a, c) => a.status === "Planned" && !!a.date && a.date < c.today),
     ],
   },
   callReports: {
@@ -82,6 +103,7 @@ export const SOURCES = {
       F("marketingPerson", "Logged by", "user"), F("duration", "Duration (min)", "num"),
       F("nextCallDate", "Next call", "date"), F("leadStage", "Lead stage"), F("product", "Product"),
       F("accountId", "Account", "account"),
+      C("isDemo", "Demo", "bool", r => /\bdemo\b/i.test(String(r.callType || ""))),
     ],
   },
   quotes: {
@@ -93,6 +115,8 @@ export const SOURCES = {
       F("owner", "Owner", "user"), F("createdDate", "Created", "date"), F("sentDate", "Sent", "date"),
       F("acceptedDate", "Accepted", "date"), F("expiryDate", "Expiry", "date"), F("isFinal", "Final", "bool"),
       F("product", "Product"),
+      C("daysToAccept", "Days from sent to accepted", "num", q => (q.sentDate && q.acceptedDate ? dayDiff(q.sentDate, q.acceptedDate) : ""), "avg"),
+      C("daysSinceSent", "Days since sent, not accepted", "num", (q, c) => (q.sentDate && !q.acceptedDate ? dayDiff(q.sentDate, c.today) : ""), "avg"),
     ],
   },
   contracts: {
@@ -102,6 +126,7 @@ export const SOURCES = {
       F("product", "Product"), F("value", "Value", "num"), F("startDate", "Start", "date"), F("endDate", "End", "date"),
       F("renewalDate", "Renewal", "date"), F("billingFrequency", "Billing frequency"),
       F("commercialModel", "Commercial model"), F("owner", "Owner", "user"),
+      C("daysToRenewal", "Days to renewal / end", "num", (x, c) => { const d = x.renewalDate || x.endDate; return d ? dayDiff(c.today, d) : ""; }, "avg"),
     ],
   },
   collections: {
@@ -111,6 +136,12 @@ export const SOURCES = {
       F("dueDate", "Due date", "date"), F("billedAmount", "Billed", "num"), F("collectedAmount", "Collected", "num"),
       F("pendingAmount", "Pending", "num"), F("status", "Status"), F("paymentDate", "Paid on", "date"),
       F("product", "Product"), F("owner", "Owner", "user"), F("agingBucket", "Ageing"),
+      C("daysOverdue", "Days overdue", "num", overdueDays, "avg"),
+      C("ageingBand", "Ageing band", "text", (x, c) => {
+        if (!((Number(x.pendingAmount) || 0) > 0)) return "Paid";
+        const d = overdueDays(x, c);
+        return d <= 0 ? "Not yet due" : d <= 30 ? "1–30 days" : d <= 60 ? "31–60 days" : d <= 90 ? "61–90 days" : "90+ days";
+      }),
     ],
   },
   tickets: {
@@ -119,7 +150,9 @@ export const SOURCES = {
       F("ticketNo", "Ticket No"), F("title", "Title"), F("accountId", "Account", "account"), F("product", "Product"),
       F("type", "Type"), F("priority", "Priority"), F("severity", "Severity"), F("status", "Status"),
       F("assigned", "Assigned to", "user"), F("reportedDate", "Reported", "date"),
-      F("resolvedDate", "Resolved", "date"), F("csat", "CSAT", "num"), F("category", "Category"),
+      F("resolvedDate", "Resolved", "date"), F("csat", "CSAT", "num", "avg"), F("category", "Category"),
+      C("resolutionDays", "Resolution time (days)", "num", t => (t.reportedDate && t.resolvedDate ? dayDiff(t.reportedDate, t.resolvedDate) : ""), "avg"),
+      C("openDays", "Open for (days)", "num", (t, c) => (!TICKET_DONE.has(t.status) && t.reportedDate ? dayDiff(t.reportedDate, c.today) : ""), "avg"),
     ],
   },
 };
@@ -241,27 +274,27 @@ export function resolveColumn(source, id) {
   if (parts[0] === "f") {
     const f = src.fields.find(x => x.key === parts[1]);
     if (!f) return null;
-    return { id, label: f.label, type: f.type, get: (rec) => rec[f.key] };
+    return { id, label: f.label, type: f.type, summary: f.summary || "sum", calculated: !!f.calc, get: (rec, data, ctx) => valueOf(f, rec, ctx) };
   }
   const rel = (RELATIONS[source] || {})[parts[1]];
   if (!rel) return null;
   if (parts[0] === "l" && rel.kind === "one") {
     const f = fieldsOfRel(rel).find(x => x.key === parts[2]);
     if (!f) return null;
-    return { id, label: `${rel.label} › ${f.label}`, type: f.type, get: (rec, data) => rel.row(rec, data)?.[f.key] };
+    return { id, label: `${rel.label} › ${f.label}`, type: f.type, summary: f.summary || "sum", get: (rec, data, ctx) => { const p = rel.row(rec, data); return p ? valueOf(f, p, ctx) : undefined; } };
   }
   if (parts[0] === "a" && rel.kind === "many") {
     const fn = parts[2];
-    if (fn === "count") return { id, label: `${rel.label} › Count`, type: "num", get: (rec, data) => rel.rows(rec, data).length };
+    if (fn === "count") return { id, label: `${rel.label} › Count`, type: "num", summary: "sum", get: (rec, data) => rel.rows(rec, data).length };
     const f = fieldsOfRel(rel).find(x => x.key === parts[3]);
     if (!f || !FN_LABEL[fn]) return null;
     const label = `${rel.label} › ${FN_LABEL[fn]} ${f.label}`;
-    const vals = (rec, data) => rel.rows(rec, data).map(r => r[f.key]).filter(v => v !== undefined && v !== null && v !== "");
-    if (fn === "sum") return { id, label, type: "num", get: (r, d) => +vals(r, d).reduce((s, v) => s + (Number(v) || 0), 0).toFixed(2) };
-    if (fn === "avg") return { id, label, type: "num", get: (r, d) => { const v = vals(r, d); return v.length ? +(v.reduce((s, x) => s + (Number(x) || 0), 0) / v.length).toFixed(2) : ""; } };
-    if (fn === "latest") return { id, label, type: "date", get: (r, d) => vals(r, d).map(String).sort().pop() || "" };
-    if (fn === "earliest") return { id, label, type: "date", get: (r, d) => vals(r, d).map(String).sort()[0] || "" };
-    if (fn === "list") return { id, label, type: f.type === "user" ? "userlist" : "list", get: (r, d) => [...new Set(vals(r, d))] };
+    const vals = (rec, data, ctx) => rel.rows(rec, data).map(r => valueOf(f, r, ctx)).filter(v => v !== undefined && v !== null && v !== "");
+    if (fn === "sum") return { id, label, type: "num", summary: "sum", get: (r, d, c) => +vals(r, d, c).reduce((s, v) => s + (Number(v) || 0), 0).toFixed(2) };
+    if (fn === "avg") return { id, label, type: "num", summary: "avg", get: (r, d, c) => { const v = vals(r, d, c); return v.length ? +(v.reduce((s, x) => s + (Number(x) || 0), 0) / v.length).toFixed(2) : ""; } };
+    if (fn === "latest") return { id, label, type: "date", get: (r, d, c) => vals(r, d, c).map(String).sort().pop() || "" };
+    if (fn === "earliest") return { id, label, type: "date", get: (r, d, c) => vals(r, d, c).map(String).sort()[0] || "" };
+    if (fn === "list") return { id, label, type: f.type === "user" ? "userlist" : "list", get: (r, d, c) => [...new Set(vals(r, d, c))] };
   }
   return null;
 }
@@ -293,11 +326,14 @@ export const OPS = [
   { id: "contains", label: "contains" },
   { id: "gt", label: ">" }, { id: "gte", label: "≥" }, { id: "lt", label: "<" }, { id: "lte", label: "≤" },
   { id: "before", label: "before" }, { id: "after", label: "after" },
+  { id: "today", label: "is today" }, { id: "thisMonth", label: "is this month" }, { id: "lastMonth", label: "is last month" },
+  { id: "thisQuarter", label: "is this quarter (FY)" }, { id: "thisFY", label: "is this financial year" },
   { id: "lastDays", label: "in the last N days" }, { id: "nextDays", label: "in the next N days" },
+  { id: "olderThanDays", label: "more than N days ago, or never" },
   { id: "pastDue", label: "is before today" },
   { id: "empty", label: "is empty" }, { id: "notEmpty", label: "is not empty" },
 ];
-export const NO_VALUE_OPS = new Set(["empty", "notEmpty", "pastDue"]);
+export const NO_VALUE_OPS = new Set(["empty", "notEmpty", "pastDue", "today", "thisMonth", "lastMonth", "thisQuarter", "thisFY"]);
 
 function addDays(date, n) {
   const [y, m, d] = String(date).split("-").map(Number);
@@ -326,7 +362,13 @@ export function passes(op, raw, shown, value, today) {
     case "after": return !isEmpty && d > String(value);
     case "lastDays": return !isEmpty && d <= today && d >= addDays(today, -(Number(value) || 0));
     case "nextDays": return !isEmpty && d >= today && d <= addDays(today, Number(value) || 0);
+    case "olderThanDays": return isEmpty || d < addDays(today, -(Number(value) || 0));
     case "pastDue": return !isEmpty && d < today;
+    case "today": return !isEmpty && d === today;
+    case "thisMonth": return !isEmpty && d.slice(0, 7) === today.slice(0, 7);
+    case "lastMonth": { const [y, m] = today.split("-").map(Number); const p = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`; return !isEmpty && d.slice(0, 7) === p; }
+    case "thisQuarter": return !isEmpty && bucketOf(d, "quarter") === bucketOf(today, "quarter");
+    case "thisFY": return !isEmpty && bucketOf(d, "fy") === bucketOf(today, "fy");
     case "empty": return isEmpty;
     case "notEmpty": return !isEmpty;
     default: return true;
@@ -357,7 +399,7 @@ export function runReport(spec, data, ctx = {}) {
   const src = SOURCES[spec?.source];
   if (!src) return { columns: [], rows: [], total: 0, groups: null, error: "Pick a main table." };
   const today = ctx.today || new Date().toISOString().slice(0, 10);
-  const colIds = [...new Set([...(spec.columns || []), ...(spec.filters || []).map(f => f.col), spec.groupBy?.col, spec.sort?.col].filter(Boolean))];
+  const colIds = [...new Set([...(spec.columns || []), ...(spec.filters || []).map(f => f.col), spec.groupBy?.col, spec.groupBy2?.col, spec.sort?.col].filter(Boolean))];
   const cols = colIds.map(id => resolveColumn(spec.source, id)).filter(Boolean);
   const byId = Object.fromEntries(cols.map(c => [c.id, c]));
   const shownCols = (spec.columns || []).map(id => byId[id]).filter(Boolean);
@@ -385,28 +427,61 @@ export function runReport(spec, data, ctx = {}) {
     rows = [...rows].sort((a, b) => { const x = key(a), y = key(b); return x < y ? -dir : x > y ? dir : 0; });
   }
 
-  let groups = null;
+  // ── Grouping: one level (summary) or two (matrix, e.g. Owner × Stage) ──
+  let groups = null, groups2 = null;
   const gc = spec.groupBy?.col && byId[spec.groupBy.col];
   if (gc) {
-    const by = gc.type === "date" ? (spec.groupBy.by || "month") : "value";
     const numCols = shownCols.filter(c => c.type === "num");
-    const map = new Map();
+    const keysOf = (col, by, r) => {
+      if (col.type === "date") return [bucketOf(r.values[col.id], by)];
+      const v = r.values[col.id];
+      if (Array.isArray(v) && v.length) return v.map(x => display(col.type === "userlist" ? "user" : "text", x, ctx));
+      return [r.shown[col.id] || "(blank)"];
+    };
+    const blank = () => ({ count: 0, sums: Object.fromEntries(numCols.map(c => [c.id, 0])), n: {} });
+    const add = (agg, r) => {
+      agg.count += 1;
+      for (const c of numCols) {
+        const v = r.values[c.id];
+        if (v === "" || v == null || Number.isNaN(Number(v))) continue;
+        agg.sums[c.id] += Number(v); agg.n[c.id] = (agg.n[c.id] || 0) + 1;
+      }
+    };
+    const done = (agg) => {
+      agg.avgs = {};
+      for (const c of numCols) { agg.sums[c.id] = +agg.sums[c.id].toFixed(2); agg.avgs[c.id] = agg.n[c.id] ? +(agg.sums[c.id] / agg.n[c.id]).toFixed(2) : 0; }
+      delete agg.n; return agg;
+    };
+    const by1 = gc.type === "date" ? (spec.groupBy.by || "month") : "value";
+    const gc2 = spec.groupBy2?.col && spec.groupBy2.col !== gc.id && byId[spec.groupBy2.col];
+    const by2 = gc2 && gc2.type === "date" ? (spec.groupBy2.by || "month") : "value";
+    const map = new Map(), keys2 = new Map();
     for (const r of rows) {
-      const keys = gc.type === "date" ? [bucketOf(r.values[gc.id], by)]
-        : Array.isArray(r.values[gc.id]) && r.values[gc.id].length ? r.values[gc.id].map(v => display(gc.type === "userlist" ? "user" : "text", v, ctx))
-        : [r.shown[gc.id] || "(blank)"];
-      for (const k of keys) {
-        const g = map.get(k) || { key: k, label: gc.type === "date" ? bucketLabel(k, by) : k, count: 0, sums: Object.fromEntries(numCols.map(c => [c.id, 0])) };
-        g.count += 1;
-        for (const c of numCols) g.sums[c.id] = +(g.sums[c.id] + (Number(r.values[c.id]) || 0)).toFixed(2);
+      for (const k of keysOf(gc, by1, r)) {
+        const g = map.get(k) || { key: k, label: gc.type === "date" ? bucketLabel(k, by1) : k, ...blank(), cells: {} };
+        add(g, r);
+        if (gc2) for (const k2 of keysOf(gc2, by2, r)) {
+          keys2.set(k2, (keys2.get(k2) || 0) + 1);
+          add(g.cells[k2] || (g.cells[k2] = blank()), r);
+        }
         map.set(k, g);
       }
     }
-    groups = [...map.values()];
+    groups = [...map.values()].map(g => { done(g); Object.values(g.cells).forEach(done); return g; });
     groups.sort(gc.type === "date" ? (a, b) => a.key.localeCompare(b.key) : (a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    if (gc2) groups2 = [...keys2.entries()]
+      .sort(gc2.type === "date" ? (a, b) => a[0].localeCompare(b[0]) : (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([key]) => ({ key, label: gc2.type === "date" ? bucketLabel(key, by2) : key }));
   }
 
-  return { columns: shownCols, rows, total: rows.length, groups, error: "" };
+  return { columns: shownCols, rows, total: rows.length, groups, groups2, error: "" };
+}
+
+/** A group's (or matrix cell's) number for a measure: "count", or a numeric column (its sum, or average for day/age columns). */
+export function measure(agg, col) {
+  if (!agg) return 0;
+  if (!col || col === "count") return agg.count;
+  return col.summary === "avg" ? (agg.avgs?.[col.id] ?? 0) : (agg.sums?.[col.id] ?? 0);
 }
 
 /** CSV text for the report rows (every row, not just the page on screen). */
@@ -418,35 +493,162 @@ export function toCSV(result) {
 }
 
 // ── Starter reports ─────────────────────────────────────────────────
+// A library modelled on the standard reports of Zoho CRM, Salesforce,
+// HubSpot and Freshsales, limited to what SmartCRM records. Each one opens
+// in the builder, so users can tweak it and save their own copy.
+const S = (id, category, name, source, columns, o = {}) => ({
+  id: `starter_${id}`, category, name, source, columns,
+  filters: o.filters || [], groupBy: o.groupBy || { col: "" }, groupBy2: o.groupBy2 || { col: "" },
+  sort: o.sort || { col: "", dir: "asc" }, chart: o.chart || "bar", chartValue: o.chartValue || "count",
+});
+const OPEN = { col: "f:status", op: "is", value: "Open" };
+const WON = { col: "f:status", op: "is", value: "Won" };
+const LOST = { col: "f:status", op: "is", value: "Lost" };
+const OPP = ["f:oppNo", "f:title", "f:accountId", "f:stage", "f:value", "f:owner", "f:closeDate"];
+
+export const STARTER_CATEGORIES = ["Deals & pipeline", "Sales performance", "Forecast", "Leads", "Calls & activities", "Accounts & contacts", "Quotations", "Contracts & renewals", "Collections", "Support"];
+
 export const STARTER_REPORTS = [
-  { id: "starter_opp360", name: "Opportunity 360: calls, activities & documents per opp", source: "opps",
-    columns: ["f:oppNo", "f:title", "f:accountId", "f:stage", "f:value", "f:owner", "f:closeDate",
-      "a:calls:count", "a:calls:latest:callDate", "a:activities:count", "a:activities:latest:date",
-      "a:documents:count", "a:quotes:count", "a:quotes:sum:total"],
-    filters: [], groupBy: { col: "" }, sort: { col: "f:value", dir: "desc" }, chart: "bar" },
-  { id: "starter_pipeline", name: "Open pipeline by stage", source: "opps",
-    columns: ["f:oppNo", "f:title", "f:accountId", "f:stage", "f:owner", "f:value", "f:closeDate"],
-    filters: [{ col: "f:stage", op: "none", value: "Won, Lost" }], groupBy: { col: "f:stage" }, sort: { col: "f:value", dir: "desc" }, chart: "bar" },
-  { id: "starter_leads_source", name: "Leads by source", source: "leads",
-    columns: ["f:leadId", "f:company", "f:source", "f:stage", "f:assignedTo", "f:createdDate", "a:calls:count"],
-    filters: [], groupBy: { col: "f:source" }, sort: { col: "f:createdDate", dir: "desc" }, chart: "pie" },
-  { id: "starter_calls_month", name: "Calls per month", source: "callReports",
-    columns: ["f:callDate", "f:company", "f:callType", "f:outcome", "f:marketingPerson", "f:duration"],
-    filters: [], groupBy: { col: "f:callDate", by: "month" }, sort: { col: "f:callDate", dir: "desc" }, chart: "bar" },
-  { id: "starter_calls_person", name: "Calls per person", source: "callReports",
-    columns: ["f:callDate", "f:company", "f:callType", "f:outcome", "f:marketingPerson"],
-    filters: [], groupBy: { col: "f:marketingPerson" }, sort: { col: "f:callDate", dir: "desc" }, chart: "bar" },
-  { id: "starter_overdue_coll", name: "Overdue collections by account", source: "collections",
-    columns: ["f:invoiceNo", "f:accountId", "f:invoiceDate", "f:dueDate", "f:billedAmount", "f:pendingAmount", "f:status"],
-    filters: [{ col: "f:pendingAmount", op: "gt", value: "0" }, { col: "f:dueDate", op: "pastDue", value: "" }],
-    groupBy: { col: "f:accountId" }, sort: { col: "f:pendingAmount", dir: "desc" }, chart: "bar" },
-  { id: "starter_quotes_status", name: "Quotes by status", source: "quotes",
-    columns: ["f:quoteNo", "f:title", "f:accountId", "f:status", "f:total", "f:owner", "f:createdDate"],
-    filters: [], groupBy: { col: "f:status" }, sort: { col: "f:createdDate", dir: "desc" }, chart: "pie" },
-  { id: "starter_account360", name: "Account 360: deals, calls, tickets per account", source: "accounts",
-    columns: ["f:name", "f:owner", "f:status", "a:opps:count", "a:opps:sum:value", "a:calls:count", "a:calls:latest:callDate",
-      "a:activities:latest:date", "a:tickets:count", "a:collections:sum:pendingAmount"],
-    filters: [], groupBy: { col: "" }, sort: { col: "a:opps:sum:value", dir: "desc" }, chart: "bar" },
+  // Deals & pipeline
+  S("opp360", "Deals & pipeline", "Opportunity 360: calls, activities & documents per opp", "opps",
+    [...OPP, "a:calls:count", "a:calls:latest:callDate", "a:activities:count", "a:activities:latest:date", "a:documents:count", "a:quotes:count", "a:quotes:sum:total"],
+    { sort: { col: "f:value", dir: "desc" } }),
+  S("pipeline", "Deals & pipeline", "Open pipeline by stage", "opps", OPP,
+    { filters: [OPEN], groupBy: { col: "f:stage" }, sort: { col: "f:value", dir: "desc" }, chartValue: "f:value" }),
+  S("owner_stage", "Deals & pipeline", "Pipeline by owner × stage (matrix)", "opps", OPP,
+    { filters: [OPEN], groupBy: { col: "f:owner" }, groupBy2: { col: "f:stage" }, chartValue: "f:value" }),
+  S("closing_month", "Deals & pipeline", "Deals closing this month", "opps", [...OPP, "f:probability", "f:nextStep"],
+    { filters: [OPEN, { col: "f:closeDate", op: "thisMonth", value: "" }], sort: { col: "f:closeDate", dir: "asc" } }),
+  S("overdue_close", "Deals & pipeline", "Open deals past their close date", "opps", [...OPP, "f:nextStep"],
+    { filters: [OPEN, { col: "f:closeDate", op: "pastDue", value: "" }], groupBy: { col: "f:owner" }, sort: { col: "f:closeDate", dir: "asc" } }),
+  S("stalled", "Deals & pipeline", "Stalled deals: no activity or call in 30 days", "opps", [...OPP, "a:activities:latest:date", "a:calls:latest:callDate"],
+    { filters: [OPEN, { col: "a:activities:latest:date", op: "olderThanDays", value: "30" }, { col: "a:calls:latest:callDate", op: "olderThanDays", value: "30" }], groupBy: { col: "f:owner" }, sort: { col: "f:value", dir: "desc" } }),
+  S("large", "Deals & pipeline", "Large deals (₹50 L and above)", "opps", [...OPP, "f:probability"],
+    { filters: [OPEN, { col: "f:value", op: "gte", value: "50" }], sort: { col: "f:value", dir: "desc" } }),
+  S("by_product", "Deals & pipeline", "Open pipeline by product", "opps", [...OPP, "f:products"],
+    { filters: [OPEN], groupBy: { col: "f:products" }, chartValue: "f:value" }),
+  S("by_lob", "Deals & pipeline", "Pipeline by LOB and stage (matrix)", "opps", [...OPP, "f:lob"],
+    { filters: [OPEN], groupBy: { col: "f:lob" }, groupBy2: { col: "f:stage" }, chartValue: "f:value" }),
+  S("tenders", "Deals & pipeline", "Tender bids by submission date", "opps", [...OPP, "f:submissionDate"],
+    { filters: [{ col: "f:isTender", op: "is", value: "Yes" }], sort: { col: "f:submissionDate", dir: "asc" } }),
+  // Sales performance
+  S("won_owner", "Sales performance", "Sales by salesperson (won, this FY)", "opps", OPP,
+    { filters: [WON, { col: "f:closeDate", op: "thisFY", value: "" }], groupBy: { col: "f:owner" }, chartValue: "f:value", sort: { col: "f:value", dir: "desc" } }),
+  S("won_month", "Sales performance", "Monthly sales trend (won)", "opps", OPP,
+    { filters: [WON], groupBy: { col: "f:closeDate", by: "month" }, chartValue: "f:value", sort: { col: "f:closeDate", dir: "desc" } }),
+  S("won_source", "Sales performance", "Sales by lead source (won)", "opps", [...OPP, "f:source"],
+    { filters: [WON], groupBy: { col: "f:source" }, chartValue: "f:value", chart: "pie" }),
+  S("lost_reasons", "Sales performance", "Lost deals and reasons", "opps", [...OPP, "f:lossReason", "f:competitors"],
+    { filters: [LOST], groupBy: { col: "f:lossReason" }, chart: "pie", sort: { col: "f:closeDate", dir: "desc" } }),
+  S("win_loss", "Sales performance", "Win / loss by owner (matrix)", "opps", [...OPP, "f:status"],
+    { filters: [{ col: "f:status", op: "any", value: "Won, Lost" }], groupBy: { col: "f:owner" }, groupBy2: { col: "f:status" } }),
+  S("cycle_owner", "Sales performance", "Sales cycle by owner (avg days to win)", "opps", [...OPP, "f:createdDate", "f:cycleDays"],
+    { filters: [WON], groupBy: { col: "f:owner" }, chartValue: "f:cycleDays" }),
+  S("cycle_source", "Sales performance", "Sales cycle by lead source", "opps", [...OPP, "f:source", "f:cycleDays"],
+    { filters: [WON], groupBy: { col: "f:source" }, chartValue: "f:cycleDays" }),
+  S("deal_size", "Sales performance", "Won value and deal count by owner", "opps", [...OPP],
+    { filters: [WON], groupBy: { col: "f:owner" }, chartValue: "f:value" }),
+  // Forecast
+  S("weighted_stage", "Forecast", "Weighted pipeline by stage", "opps", [...OPP, "f:probability", "f:weighted"],
+    { filters: [OPEN], groupBy: { col: "f:stage" }, chartValue: "f:weighted" }),
+  S("forecast_cat", "Forecast", "Forecast by category and month", "opps", [...OPP, "f:forecastCat", "f:weighted"],
+    { filters: [OPEN], groupBy: { col: "f:closeDate", by: "month" }, groupBy2: { col: "f:forecastCat" }, chartValue: "f:value" }),
+  S("by_probability", "Forecast", "Pipeline by probability", "opps", [...OPP, "f:probability", "f:weighted"],
+    { filters: [OPEN], groupBy: { col: "f:probability" }, chartValue: "f:value" }),
+  S("quarter_close", "Forecast", "Open pipeline closing by FY quarter", "opps", [...OPP, "f:weighted"],
+    { filters: [OPEN], groupBy: { col: "f:closeDate", by: "quarter" }, chartValue: "f:value" }),
+  // Leads
+  S("leads_source", "Leads", "Leads by source", "leads", ["f:leadId", "f:company", "f:source", "f:stage", "f:assignedTo", "f:createdDate", "a:calls:count"],
+    { groupBy: { col: "f:source" }, chart: "pie", sort: { col: "f:createdDate", dir: "desc" } }),
+  S("leads_stage", "Leads", "Lead funnel by stage", "leads", ["f:leadId", "f:company", "f:stage", "f:assignedTo", "f:createdDate"],
+    { groupBy: { col: "f:stage" } }),
+  S("leads_owner_stage", "Leads", "Leads by owner × stage (matrix)", "leads", ["f:leadId", "f:company", "f:stage", "f:assignedTo"],
+    { groupBy: { col: "f:assignedTo" }, groupBy2: { col: "f:stage" } }),
+  S("leads_month", "Leads", "New leads this month", "leads", ["f:leadId", "f:company", "f:contact", "f:source", "f:assignedTo", "f:createdDate"],
+    { filters: [{ col: "f:createdDate", op: "thisMonth", value: "" }], sort: { col: "f:createdDate", dir: "desc" } }),
+  S("leads_converted", "Leads", "Converted leads by owner", "leads", ["f:leadId", "f:company", "f:assignedTo", "f:createdDate", "f:converted", "a:opps:count", "a:opps:sum:value"],
+    { filters: [{ col: "f:converted", op: "is", value: "Yes" }], groupBy: { col: "f:assignedTo" } }),
+  S("leads_untouched", "Leads", "Leads never called", "leads", ["f:leadId", "f:company", "f:assignedTo", "f:createdDate", "f:ageDays", "a:calls:count"],
+    { filters: [{ col: "a:calls:count", op: "is", value: "0" }, { col: "f:stage", op: "not", value: "Converted" }], groupBy: { col: "f:assignedTo" }, sort: { col: "f:createdDate", dir: "asc" } }),
+  S("leads_vertical", "Leads", "Leads by vertical", "leads", ["f:leadId", "f:company", "f:vertical", "f:stage", "f:assignedTo"],
+    { groupBy: { col: "f:vertical" }, chart: "pie" }),
+  S("leads_region", "Leads", "Leads by region × stage (matrix)", "leads", ["f:leadId", "f:company", "f:region", "f:country", "f:stage"],
+    { groupBy: { col: "f:region" }, groupBy2: { col: "f:stage" } }),
+  S("leads_followup", "Leads", "Lead follow-ups due this week", "leads", ["f:leadId", "f:company", "f:contact", "f:assignedTo", "f:nextCall", "a:calls:latest:callDate"],
+    { filters: [{ col: "f:nextCall", op: "nextDays", value: "7" }], sort: { col: "f:nextCall", dir: "asc" } }),
+  // Calls & activities
+  S("calls_month", "Calls & activities", "Calls per month", "callReports", ["f:callDate", "f:company", "f:callType", "f:outcome", "f:marketingPerson", "f:duration"],
+    { groupBy: { col: "f:callDate", by: "month" }, sort: { col: "f:callDate", dir: "desc" } }),
+  S("calls_person", "Calls & activities", "Calls per person", "callReports", ["f:callDate", "f:company", "f:callType", "f:outcome", "f:marketingPerson"],
+    { groupBy: { col: "f:marketingPerson" }, sort: { col: "f:callDate", dir: "desc" } }),
+  S("calls_today", "Calls & activities", "Today's calls", "callReports", ["f:callTime", "f:company", "f:leadName", "f:callType", "f:outcome", "f:marketingPerson"],
+    { filters: [{ col: "f:callDate", op: "today", value: "" }], sort: { col: "f:callTime", dir: "asc" } }),
+  S("call_outcomes", "Calls & activities", "Call outcomes by person (matrix)", "callReports", ["f:callDate", "f:company", "f:outcome", "f:marketingPerson"],
+    { groupBy: { col: "f:marketingPerson" }, groupBy2: { col: "f:outcome" } }),
+  S("demos", "Calls & activities", "Demos by month × person (matrix)", "callReports", ["f:callDate", "f:company", "f:callType", "f:marketingPerson", "f:product"],
+    { filters: [{ col: "f:isDemo", op: "is", value: "Yes" }], groupBy: { col: "f:callDate", by: "month" }, groupBy2: { col: "f:marketingPerson" } }),
+  S("acts_type_owner", "Calls & activities", "Activities by owner × type (matrix)", "activities", ["f:date", "f:title", "f:type", "f:status", "f:owner"],
+    { groupBy: { col: "f:owner" }, groupBy2: { col: "f:type" } }),
+  S("acts_overdue", "Calls & activities", "Overdue activities", "activities", ["f:date", "f:title", "f:type", "f:owner", "f:accountId"],
+    { filters: [{ col: "f:overdue", op: "is", value: "Yes" }], groupBy: { col: "f:owner" }, sort: { col: "f:date", dir: "asc" } }),
+  S("acts_done_month", "Calls & activities", "Completed activities this month", "activities", ["f:date", "f:title", "f:type", "f:owner", "f:outcome"],
+    { filters: [{ col: "f:status", op: "is", value: "Completed" }, { col: "f:date", op: "thisMonth", value: "" }], groupBy: { col: "f:owner" } }),
+  // Accounts & contacts
+  S("account360", "Accounts & contacts", "Account 360: deals, calls, tickets per account", "accounts",
+    ["f:name", "f:owner", "f:status", "a:opps:count", "a:opps:sum:value", "a:calls:count", "a:calls:latest:callDate", "a:activities:latest:date", "a:tickets:count", "a:collections:sum:pendingAmount"],
+    { sort: { col: "a:opps:sum:value", dir: "desc" } }),
+  S("key_accounts", "Accounts & contacts", "Key accounts by ARR", "accounts", ["f:name", "f:owner", "f:segment", "f:arrRevenue", "a:contracts:count", "a:opps:count"],
+    { filters: [{ col: "f:arrRevenue", op: "gt", value: "0" }], sort: { col: "f:arrRevenue", dir: "desc" } }),
+  S("accounts_type", "Accounts & contacts", "Accounts by type × status (matrix)", "accounts", ["f:name", "f:type", "f:status", "f:owner"],
+    { groupBy: { col: "f:type" }, groupBy2: { col: "f:status" } }),
+  S("accounts_country", "Accounts & contacts", "Accounts by country", "accounts", ["f:name", "f:country", "f:city", "f:owner"],
+    { groupBy: { col: "f:country" }, chart: "pie" }),
+  S("accounts_owner", "Accounts & contacts", "Accounts by owner", "accounts", ["f:name", "f:owner", "f:status", "a:opps:count"],
+    { groupBy: { col: "f:owner" } }),
+  S("neglected", "Accounts & contacts", "Neglected accounts: no activity in 90 days", "accounts", ["f:name", "f:owner", "f:status", "a:activities:latest:date", "a:calls:latest:callDate"],
+    { filters: [{ col: "a:activities:latest:date", op: "olderThanDays", value: "90" }, { col: "a:calls:latest:callDate", op: "olderThanDays", value: "90" }], groupBy: { col: "f:owner" } }),
+  S("contacts_list", "Accounts & contacts", "Contact mailing list", "contacts", ["f:name", "f:designation", "f:accountId", "f:email", "f:phone", "f:city", "f:country"],
+    { sort: { col: "f:accountId", dir: "asc" } }),
+  S("contacts_account", "Accounts & contacts", "Contacts per account, with last call", "contacts", ["f:name", "f:designation", "f:accountId", "f:decisionLevel", "a:calls:count", "a:calls:latest:callDate"],
+    { groupBy: { col: "f:accountId" } }),
+  // Quotations
+  S("quotes_status", "Quotations", "Quotes by status", "quotes", ["f:quoteNo", "f:title", "f:accountId", "f:status", "f:total", "f:owner", "f:createdDate"],
+    { groupBy: { col: "f:status" }, chart: "pie", sort: { col: "f:createdDate", dir: "desc" } }),
+  S("quotes_approval", "Quotations", "Quotes waiting for approval", "quotes", ["f:quoteNo", "f:title", "f:accountId", "f:total", "f:discount", "f:owner", "f:createdDate"],
+    { filters: [{ col: "f:approvalStatus", op: "contains", value: "pending" }], sort: { col: "f:createdDate", dir: "asc" } }),
+  S("quotes_open", "Quotations", "Sent quotes not yet accepted", "quotes", ["f:quoteNo", "f:title", "f:accountId", "f:total", "f:sentDate", "f:daysSinceSent", "f:owner"],
+    { filters: [{ col: "f:sentDate", op: "notEmpty", value: "" }, { col: "f:acceptedDate", op: "empty", value: "" }], sort: { col: "f:sentDate", dir: "asc" } }),
+  S("quotes_month", "Quotations", "Quote value by month", "quotes", ["f:quoteNo", "f:accountId", "f:status", "f:total", "f:createdDate"],
+    { groupBy: { col: "f:createdDate", by: "month" }, chartValue: "f:total" }),
+  S("quotes_accept", "Quotations", "Time to acceptance by owner", "quotes", ["f:quoteNo", "f:accountId", "f:total", "f:sentDate", "f:acceptedDate", "f:daysToAccept", "f:owner"],
+    { filters: [{ col: "f:acceptedDate", op: "notEmpty", value: "" }], groupBy: { col: "f:owner" }, chartValue: "f:daysToAccept" }),
+  // Contracts & renewals
+  S("renewals_90", "Contracts & renewals", "Renewals due in the next 90 days", "contracts", ["f:contractNo", "f:title", "f:accountId", "f:product", "f:value", "f:renewalDate", "f:endDate", "f:daysToRenewal", "f:owner"],
+    { filters: [{ col: "f:daysToRenewal", op: "lte", value: "90" }, { col: "f:daysToRenewal", op: "gte", value: "0" }], sort: { col: "f:daysToRenewal", dir: "asc" } }),
+  S("contracts_product", "Contracts & renewals", "Contract value by product × model (matrix)", "contracts", ["f:contractNo", "f:accountId", "f:product", "f:commercialModel", "f:value", "f:status"],
+    { groupBy: { col: "f:product" }, groupBy2: { col: "f:commercialModel" }, chartValue: "f:value" }),
+  S("contracts_billing", "Contracts & renewals", "Contracts: billed, collected and pending", "contracts", ["f:contractNo", "f:accountId", "f:value", "a:collections:sum:billedAmount", "a:collections:sum:collectedAmount", "a:collections:sum:pendingAmount"],
+    { sort: { col: "a:collections:sum:pendingAmount", dir: "desc" } }),
+  // Collections
+  S("overdue_coll", "Collections", "Overdue collections by account", "collections", ["f:invoiceNo", "f:accountId", "f:invoiceDate", "f:dueDate", "f:billedAmount", "f:pendingAmount", "f:daysOverdue", "f:status"],
+    { filters: [{ col: "f:pendingAmount", op: "gt", value: "0" }, { col: "f:dueDate", op: "pastDue", value: "" }], groupBy: { col: "f:accountId" }, sort: { col: "f:pendingAmount", dir: "desc" }, chartValue: "f:pendingAmount" }),
+  S("ageing", "Collections", "Receivables ageing (0–30 / 31–60 / 61–90 / 90+)", "collections", ["f:invoiceNo", "f:accountId", "f:dueDate", "f:pendingAmount", "f:daysOverdue", "f:ageingBand"],
+    { filters: [{ col: "f:pendingAmount", op: "gt", value: "0" }], groupBy: { col: "f:ageingBand" }, chartValue: "f:pendingAmount" }),
+  S("collected_month", "Collections", "Collected this month", "collections", ["f:invoiceNo", "f:accountId", "f:paymentDate", "f:collectedAmount", "f:owner"],
+    { filters: [{ col: "f:paymentDate", op: "thisMonth", value: "" }], groupBy: { col: "f:owner" }, chartValue: "f:collectedAmount" }),
+  S("billing_month", "Collections", "Billed vs collected by month", "collections", ["f:invoiceNo", "f:accountId", "f:invoiceDate", "f:billedAmount", "f:collectedAmount", "f:pendingAmount"],
+    { groupBy: { col: "f:invoiceDate", by: "month" }, chartValue: "f:billedAmount" }),
+  // Support
+  S("tickets_status_pri", "Support", "Tickets by status × priority (matrix)", "tickets", ["f:ticketNo", "f:title", "f:accountId", "f:status", "f:priority", "f:assigned"],
+    { groupBy: { col: "f:status" }, groupBy2: { col: "f:priority" } }),
+  S("tickets_open_account", "Support", "Open tickets by account", "tickets", ["f:ticketNo", "f:title", "f:accountId", "f:priority", "f:reportedDate", "f:openDays", "f:assigned"],
+    { filters: [{ col: "f:status", op: "none", value: "Resolved, Closed" }], groupBy: { col: "f:accountId" }, sort: { col: "f:openDays", dir: "desc" } }),
+  S("tickets_resolution", "Support", "Resolution time by product", "tickets", ["f:ticketNo", "f:product", "f:priority", "f:reportedDate", "f:resolvedDate", "f:resolutionDays"],
+    { filters: [{ col: "f:resolvedDate", op: "notEmpty", value: "" }], groupBy: { col: "f:product" }, chartValue: "f:resolutionDays" }),
+  S("tickets_csat", "Support", "CSAT by product", "tickets", ["f:ticketNo", "f:product", "f:accountId", "f:csat"],
+    { filters: [{ col: "f:csat", op: "gt", value: "0" }], groupBy: { col: "f:product" }, chartValue: "f:csat" }),
+  S("tickets_engineer", "Support", "Tickets per engineer by month (matrix)", "tickets", ["f:ticketNo", "f:title", "f:assigned", "f:status", "f:reportedDate"],
+    { groupBy: { col: "f:reportedDate", by: "month" }, groupBy2: { col: "f:assigned" } }),
 ];
 
 export const blankReport = (source = "opps") => ({
