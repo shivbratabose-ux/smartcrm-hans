@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LineChart, Line, AreaChart, Area, RadarChart,
@@ -14,6 +14,8 @@ import { today, fmt, isOverdue, getScopedUserIds, isGlobalRole } from "../utils/
 import { periodOf } from "../utils/fiscal";
 import { callPeople, isCallPerson, isDemoCall } from "../utils/teamSummary";
 import { PageTip } from "./shared";
+import CustomReports from "./CustomReports";
+import { SOURCES as CUSTOM_SOURCES } from "../lib/reportBuilder";
 import {
   TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle, Clock,
   BarChart3, PieChart as PieIcon, Users, Phone, Shield, Zap, DollarSign,
@@ -87,7 +89,7 @@ const Progress = ({value,max,color,height=6}) => (
 );
 
 /* ═══════════════════════════════════════════════════════════════ */
-function Reports({accounts,opps,tickets,activities,leads,callReports,collections,targets,contacts,contracts,quotes,currentUser,orgUsers,masters}) {
+function Reports({accounts,opps,tickets,activities,leads,callReports,collections,targets,contacts,contracts,quotes,files=[],notes=[],currentUser,orgUsers,masters}) {
   // Stage list + color map are now editable in Masters → Pipeline Stages.
   // Fall back to bundled defaults when the masters slot is empty so a fresh
   // install renders sensible charts before anyone customises stages.
@@ -217,6 +219,20 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   const wCalls   = useMemo(()=> byOwner((callReports||[]).filter(r=>inWindow(r.callDate)), callPeople),     [callReports,periodWindow,ownerFilter,teamFilter,teamIds]);
   const wColls   = useMemo(()=> byOwner((collections||[]).filter(c=>inWindow(c.invoiceDate)), "owner"),            [collections,periodWindow,ownerFilter,teamFilter,teamIds]);
   const wTickets = useMemo(()=> byOwner((tickets||[]).filter(t=>inWindow(t.reportedDate||t.created)), "assigned"), [tickets,periodWindow,ownerFilter,teamFilter,teamIds]);
+
+  // ── Custom Reports: the page's period / team / owner filters apply to
+  //    the builder's main table, using that table's own date and owner field.
+  const customData = useMemo(() => ({
+    opps, accounts, leads, contacts, activities, callReports, quotes, contracts, collections, tickets, files, notes,
+  }), [opps, accounts, leads, contacts, activities, callReports, quotes, contracts, collections, tickets, files, notes]);
+  const customKeepFor = useCallback((source) => {
+    const s = CUSTOM_SOURCES[source];
+    if (!s) return () => true;
+    const ownerField = s.owner === "marketingPerson" ? callPeople : s.owner;
+    return (rec) => (!s.date || inWindow(rec[s.date])) && (!ownerField || byOwner([rec], ownerField).length > 0);
+  }, [periodWindow, ownerFilter, teamFilter, teamIds]);
+  const fullName = useCallback((id) => (orgUsers || []).find(u => u.id === id)?.name || TEAM_MAP[id]?.name || id, [orgUsers]);
+  const accountNameOf = useMemo(() => { const m = Object.fromEntries((accounts || []).map(a => [a.id, a.name])); return (id) => m[id] || id; }, [accounts]);
 
   // Back-compat alias: `ownerOpps` is now identical to `filteredOpps` (owner
   // filtering already applied above). Kept so the pipeline charts that
@@ -563,6 +579,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
   // ═══════════════════════════════════════════════════════════════
   const TABS = [
     {id:"executive",label:"Executive Summary",icon:BarChart3},
+    {id:"custom",label:"Custom Reports",icon:Filter},
     {id:"pipeline",label:"Pipeline",icon:Layers},
     {id:"forecast",label:"Forecast",icon:Target},
     {id:"leads",label:"Leads",icon:Flame},
@@ -642,6 +659,10 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
           </button>;
         })}
       </div>
+
+      {tab==="custom"&&(
+        <CustomReports data={customData} today={today} userName={fullName} accountName={accountNameOf} keepFor={customKeepFor} currentUser={currentUser}/>
+      )}
 
       {/* ═══ EXECUTIVE SUMMARY ═══ */}
       {tab==="executive"&&(
