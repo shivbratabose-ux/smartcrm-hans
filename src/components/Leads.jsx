@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import ProjectToggle from "./ProjectToggle";
 import { Plus, Search, Edit2, Trash2, Check, Download, ArrowRightCircle, Users, Mail, Phone, Globe, FileText, Calendar, TrendingUp, MapPin, Building2, User, Star, Briefcase, Clock, Paperclip, AlertTriangle, PhoneCall, Filter, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, UserPlus, ChevronDown, ChevronUp, ShieldCheck, X, Save, Home, Warehouse, Upload, ChevronRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { PRODUCTS, TEAM, TEAM_MAP, PROD_MAP, LEAD_STAGES, LEAD_STAGE_MAP, VERTICALS, LEAD_SOURCES, DEMO_STATUSES, REGIONS, HIERARCHY_LEVELS, LEAD_TEMPERATURES, BUSINESS_TYPES, STAFF_SIZES, CURRENT_SOFTWARE, SW_AGE, PAIN_POINTS, BUDGET_RANGES, DECISION_MAKERS, DECISION_TIMELINES, EVALUATION_STATUS, NEXT_STEPS, CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, STAGE_GATES, OPP_CONTACT_ROLES, LEAD_CONTACT_ROLES, COUNTRIES, STAGES } from '../data/constants';
@@ -460,7 +461,7 @@ function ConvertToOppModal({ lead, onClose, accounts, contacts, onConvert, orgUs
   );
 }
 
-function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts, setLeads, setUpdates, currentUser }) {
+function LeadDetail({ projects = [], onToggleProject, lead, masters, onClose, accounts, contacts, onConvertToOpp, onEdit, onLogCall, orgUsers, activities: allActivities, callReports, setActivities, setCallReports, setContacts, setLeads, setUpdates, currentUser }) {
   const _team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
   const _teamMap = Object.fromEntries(_team.map(u => [u.id, u]));
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -966,6 +967,8 @@ function LeadDetail({ lead, masters, onClose, accounts, contacts, onConvertToOpp
                 </div>
               </div>
             )}
+
+            <ProjectToggle kind="lead" record={lead} value={lead.estimatedValue} projects={projects} onToggle={onToggleProject} />
 
             {/* KPI Metrics */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
@@ -2152,7 +2155,7 @@ function LeadsCardList({ rows, setDetail, openEdit, openCallLog, setConfirm, han
   );
 }
 
-function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess, opps=[], setUpdates }) {
+function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, currentUser, onConvertToOpp, contacts: allContacts, setContacts, orgUsers, activities, setActivities, callReports, setCallReports, masters, catalog, canDelete, commLogs=[], onRequestEditAccess, opps=[], setUpdates, projects=[], onToggleProject }) {
   const canEditLead = (l) => canEditRecord({ownerId:l?.assignedTo,currentUser,orgUsers,recordType:"lead",recordId:l?.id,commLogs,catalog,recordProductIds:l?.product?[l.product]:[]});
   const requestAccessLead = (l) => onRequestEditAccess && onRequestEditAccess("lead", l.id, l.company||l.leadId||"Lead", l.assignedTo);
   // Scope the team list to only users this logged-in user has visibility over.
@@ -3478,7 +3481,7 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
 
       {/* Lead Profile Detail View */}
       {detail && (
-        <LeadDetail
+        <LeadDetail projects={projects} onToggleProject={onToggleProject}
           lead={detail}
           masters={masters}
           onClose={() => setDetail(null)}
