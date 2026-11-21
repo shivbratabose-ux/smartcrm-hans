@@ -27,6 +27,7 @@ import { normalizeSlabs, slabLabel, slabProblems, usagePrice, hasUsageRules, esc
 import { isOneTimeModel } from "../lib/quotation/pricingEngine";
 import { billingClassOf, productCommercialModel, approvalLevels, DEFAULT_APPROVAL_LEVELS, hansHostedProducts } from "../lib/quotation/commercial";
 import { canEditPricing } from "../lib/quotation/priceHistory";
+import { saleTerms, saleTermsProblems } from "../lib/quotation/saleTerms";
 import PriceHistory from "./PriceHistory";
 import { groupRates, groupOf, productsToAdd, SERVICES_GROUP, SERVICES_LABEL } from "../lib/quotation/productGroups";
 import { COMPANY_DEFAULTS } from "../lib/quotation/company";
@@ -66,6 +67,8 @@ const CATALOGUE_OVERLAY_FIELDS = [
   // monthly minimum, pooled volume, yearly escalation
   "slabMode", "slabPeriod", "packQty", "packPrice", "monthlyMinimum", "pool", "escalationPct",
   "billingClass", // subscription | transaction (lib/quotation/commercial.js); one-time follows the pricing model
+  // One product master (lib/quotation/productItems.js) and how it is sold (lib/quotation/saleTerms.js)
+  "moduleId", "itemType", "oneTimeAllowed", "otMonths", "otDiscountPct",
   // Structural fields are now admin-editable too, so they overlay the seed.
   "name", "module", "pricingModel", "unit", "rateSource",
 ];
@@ -477,6 +480,37 @@ export default function QuotationMasters({ masters, setMasters: setMastersProp, 
               <option value="list">Listed licence fee, before any discount</option>
             </select>
           </div>
+          {/* ── How software is sold (subscription frequencies, one-time licence) ── */}
+          {(() => {
+            const raw = cur.quoteConfig.saleTerms || {};
+            const st = saleTerms(cur.quoteConfig);
+            const write = (patch) => setConfig("saleTerms", { frequencies: st.frequencies.map(({ id, enabled, discountPct }) => ({ id, enabled, discountPct })), oneTime: st.oneTime, ...raw, ...patch });
+            const setFreq = (id, p) => write({ frequencies: st.frequencies.map((f) => ({ id: f.id, enabled: f.enabled, discountPct: f.discountPct, ...(f.id === id ? p : {}) })) });
+            const probs = saleTermsProblems({ ...st, ...raw });
+            return (
+              <div style={{ gridColumn: "1 / -1", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>How software is sold</div>
+                <div style={{ fontSize: 11.5, color: "var(--text3)", margin: "2px 0 8px" }}>A subscription item can be quoted as a subscription billed at any allowed frequency, or as a one-time licence plus Annual Maintenance Charges (AMC), billed monthly (the AMC % and its increases are the AMC settings above). An item can refuse a one-time sale or set its own figures.</div>
+                <table className="tbl" style={{ maxWidth: 520 }}>
+                  <thead><tr><th>Subscription billed</th><th>Allowed</th><th style={{ textAlign: "right" }}>Discount %</th></tr></thead>
+                  <tbody>{st.frequencies.map((f) => (
+                    <tr key={f.id}><td>{f.label}</td>
+                      <td><input type="checkbox" checked={f.enabled} onChange={(e) => setFreq(f.id, { enabled: e.target.checked })} /></td>
+                      <td style={{ textAlign: "right" }}><input type="number" min={0} max={100} step="any" value={f.discountPct} style={{ width: 70, textAlign: "right" }} onChange={(e) => setFreq(f.id, { discountPct: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} /></td></tr>
+                  ))}</tbody>
+                </table>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 10, fontSize: 12.5 }}>
+                  <label style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={st.oneTime.enabled} onChange={(e) => write({ oneTime: { ...st.oneTime, enabled: e.target.checked } })} />One-time licence allowed</label>
+                  <span>= monthly rate ×</span>
+                  <input type="number" min={1} max={240} step={1} value={st.oneTime.months} style={{ width: 64, textAlign: "right" }} onChange={(e) => write({ oneTime: { ...st.oneTime, months: Math.max(1, Math.round(Number(e.target.value) || 1)) } })} />
+                  <span>months ({+(st.oneTime.months / 12).toFixed(2)} years), less</span>
+                  <input type="number" min={0} max={100} step="any" value={st.oneTime.discountPct} style={{ width: 64, textAlign: "right" }} onChange={(e) => write({ oneTime: { ...st.oneTime, discountPct: Math.min(100, Math.max(0, Number(e.target.value) || 0)) } })} />
+                  <span>%; then AMC {cur.quoteConfig.amcDefaultPct ?? 20}% of the licence a year from contract year {cur.quoteConfig.amcStartYear ?? 2}, billed monthly.</span>
+                </div>
+                {probs.length > 0 && <div style={{ color: "#B91C1C", fontSize: 12, marginTop: 6 }}>{probs.join(" ")}</div>}
+              </div>
+            );
+          })()}
           {/* ── Quote numbers ── */}
           {(() => {
             const fy = fiscalYearSuffix(new Date());
