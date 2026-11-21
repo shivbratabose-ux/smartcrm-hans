@@ -11,7 +11,7 @@
 //   • A new quote for the same customer starts from the agreed rates.
 //   • The Billing Engine (Phase C) will price actual usage from these lines.
 // Pure — tested in scripts/test-agreements.mjs.
-import { usagePrice, hasUsageRules } from "./slabs.js";
+import { usagePrice, hasUsageRules, differentialShare, differentialCharge } from "./slabs.js";
 import { billingClassOf, commercialModelOf } from "./commercial.js";
 import { amcAgreementLines } from "./saleTerms.js";
 
@@ -26,6 +26,17 @@ export function pricingSnapshot(row) {
   if (row.rateSource === "Slab") { s.slabs = (row.slabs || []).map((x) => ({ from: n(x.from), rate: x.rate == null ? null : n(x.rate) })); s.slabMode = row.slabMode || "volume"; s.slabPeriod = row.slabPeriod || "month"; }
   for (const k of ["packQty", "packPrice", "monthlyMinimum", "escalationPct"]) if (n(row[k]) > 0) s[k] = n(row[k]);
   if (String(row.pool || "").trim()) s.pool = String(row.pool).trim();
+  // Hybrid fixed core + variable (WiseCCS Model 2): the fixed fee is the anchor, not a floor.
+  if (row.minimumMode === "differential") { s.minimumMode = "differential"; s.differentialSharePct = differentialShare(row); }
+  // Billed to the trade with a revenue share to the customer (WiseCCS Model 1, TRS).
+  if (row.billTo === "trade") {
+    s.billTo = "trade";
+    if (row.revenueShare && Array.isArray(row.revenueShare.slabs)) {
+      const rs = row.revenueShare;
+      s.revenueShare = { group: String(rs.group || "").trim(), mode: rs.mode === "volume" ? "volume" : "graduated",
+        slabs: rs.slabs.map((x) => ({ from: n(x.from), hansPct: n(x.hansPct) })), paymentDays: n(rs.paymentDays) || 15 };
+    }
+  }
   return s;
 }
 
@@ -169,10 +180,18 @@ export function monthlyCharge(line, actualQty, opts = {}) {
   if (!line || line.billingClass === "one_time") return { amount: 0, basis: "milestones" };
   if (line.billingClass === "subscription") return { amount: r2(agreedUnitPrice(line, line.qty) * n(line.qty)), basis: "fixed", qty: n(line.qty) };
   const q = Math.max(0, n(actualQty));
-  const usage = line.pricing
+  // opts.factor: the year's escalation, applied to the usage before the minimum.
+  const factor = opts.factor == null ? 1 : n(opts.factor);
+  const usage = (line.pricing
     ? usagePrice({ ...line.pricing, monthlyMinimum: 0 }, q, opts).amount * (1 - n(line.discountPct) / 100)
-    : q * n(line.netRate);
+    : q * n(line.netRate)) * factor;
   const minimum = Math.max(n(line.monthlyMinimum), n(line.pricing?.packPrice));
+  // Hybrid: payable = fixed fee + share × (variable − fixed fee); it can fall below the fee.
+  if (line.pricing?.minimumMode === "differential" && minimum > 0) {
+    const d = differentialCharge(minimum, usage, differentialShare(line.pricing));
+    return { amount: r2(d.amount), usage: r2(usage), minimum, minimumApplied: false, basis: "actual", qty: q,
+      differential: { fixed: r2(d.fixed), variable: r2(d.variable), sharePct: d.sharePct, adjustment: r2(d.adjustment) } };
+  }
   return { amount: r2(Math.max(usage, minimum)), usage: r2(usage), minimum, minimumApplied: minimum > usage, basis: "actual", qty: q };
 }
 

@@ -617,7 +617,8 @@ const HELP_DATA = [
           {type:"heading", text:"Guardrails"},
           {type:"list", items:[
             "Discount above the policy cap (per line or overall) → the quote is saved needing approval (approvalStatus = Pending) and routes through the existing approval flow.",
-            "CC03 (WiseCCS with infrastructure) must be priced higher than CC04 (without) — warned when both are used.",
+            "WiseCCS has three models: TRS (CC05–CC07, billed to the trade; the customer gets a monthly revenue share statement from Billing), hybrid (CC08–CC09, fixed fee plus or minus 40% of the difference to the per-consignment charge) and SaaS without infrastructure (CC10–CC11, per terminal a month). ACMES is quoted as WiseCCS.",
+            "CC03 (WiseCCS with infrastructure) must be priced higher than CC04 (without) — warned when both are used (both are switched off now).",
             "WiseHandling requires at least 3 functional modules — warned otherwise.",
           ]},
           {type:"tip", text:"To edit an engine quote later, open it from the register — it re-opens in this same builder (not the manual editor), so the pricing stays intact."},

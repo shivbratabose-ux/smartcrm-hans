@@ -23,7 +23,7 @@
 //     workbook's reliance on the user typing Months = 1)
 // ═══════════════════════════════════════════════════════════════════
 
-import { usagePrice, escalationMonths } from "./slabs.js";
+import { usagePrice, escalationMonths, differentialCharge, differentialShare } from "./slabs.js";
 import { billingClassOf, commercialModelOf } from "./commercial.js";
 import {
   QUOTE_CONFIG, ONE_TIME_MODELS, FLOOR_MODELS,
@@ -254,7 +254,12 @@ export function computeLine(line) {
   const unitPrice = num(line.unitPriceResolved);
   const discountPct = num(line.discountPct);
 
-  const grossPerPeriod = Math.max(billedQty * unitPrice, floor);
+  // Hybrid (minimumMode "differential"): the fixed fee is the anchor, and the
+  // share of the difference to the variable charge is added or deducted.
+  const differential = line.minimumMode === "differential" && floor > 0;
+  const grossPerPeriod = differential
+    ? differentialCharge(floor, billedQty * unitPrice, differentialShare(line)).amount
+    : Math.max(billedQty * unitPrice, floor);
   // Yearly escalation (usage pricing): year 2 at +x%, year 3 at +x% again…
   const billedMonths = !oneTime && num(line.escalationPct) > 0 ? escalationMonths(effectiveMonths, line.escalationPct) : effectiveMonths;
   const fullTotal = grossPerPeriod * billedMonths * (1 - discountPct / 100);
@@ -264,6 +269,17 @@ export function computeLine(line) {
   // agrees a rate, not volume × rate. Only a contractual minimum is committed.
   // The expected volume gives an internal estimate (lineEstimate), which is
   // never part of the quote total, the contract value or the bill.
+  // Billed to the trade (WiseCCS TRS): the customer pays nothing; the trade's
+  // charges (an internal estimate) are shared with the customer by statement.
+  if (billingClass === "transaction" && line.billTo === "trade") {
+    return {
+      isOneTime: false, billingClass, isVariable: true, tradeBilled: true,
+      effectiveMonths, billedQty, minQtyApplied: billedQty > qty,
+      grossPerPeriod, committedPerPeriod: 0,
+      lineEstimate: fullTotal,
+      lineTotal: 0, lineOneTime: 0, lineRecurring: 0,
+    };
+  }
   if (billingClass === "transaction") {
     const committed = floor * billedMonths;
     return {
@@ -342,7 +358,10 @@ export function computeQuote(lines = [], header = {}, config = QUOTE_CONFIG) {
 
   // Variable (consumption) lines: an internal estimate from the expected
   // volume, after the overall discount, before GST. Not in any total above.
-  const variableLines = computed.filter((l) => l.isVariable);
+  const variableLines = computed.filter((l) => l.isVariable && !l.tradeBilled);
+  // Billed to the trade: what Hans collects from the trade a month (estimate, gross, before the revenue share).
+  const tradeLines = computed.filter((l) => l.tradeBilled);
+  const tradeGrossMonthly = tradeLines.reduce((s, l) => s + num(l.grossPerPeriod) * (1 - num(l.discountPct) / 100), 0);
   const variableEstimate = variableLines.reduce((s, l) => s + l.lineEstimate, 0) * (1 - overallDiscountPct / 100);
   // Per month, from the expected volume. A variable line may have no term
   // (billed monthly until cancelled), so this does not divide by months.
@@ -361,6 +380,7 @@ export function computeQuote(lines = [], header = {}, config = QUOTE_CONFIG) {
     tcv,
     committedTotal: taxableBase,
     variableEstimate, variableEstimateMonthly, variableLineCount: variableLines.length,
+    tradeLineCount: tradeLines.length, tradeGrossMonthly,
     commercialModel,
   };
 }

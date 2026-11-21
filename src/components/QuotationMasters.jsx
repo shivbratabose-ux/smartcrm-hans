@@ -23,7 +23,8 @@ import {
 
 const RATE_SOURCES = ["Flat", "Band", "iCAFFE", "Slab"];
 import { validateCcsRule } from "../lib/quotation/pricingEngine";
-import { normalizeSlabs, slabLabel, slabProblems, usagePrice, hasUsageRules, escalatedRates } from "../lib/quotation/slabs";
+import { normalizeSlabs, slabLabel, slabProblems, usagePrice, hasUsageRules, escalatedRates, differentialCharge, differentialShare } from "../lib/quotation/slabs";
+import { revenueShareProblems } from "../lib/billing/revenueShare";
 import { isOneTimeModel } from "../lib/quotation/pricingEngine";
 import { billingClassOf, productCommercialModel, approvalLevels, DEFAULT_APPROVAL_LEVELS, hansHostedProducts } from "../lib/quotation/commercial";
 import { canEditPricing } from "../lib/quotation/priceHistory";
@@ -67,6 +68,9 @@ const CATALOGUE_OVERLAY_FIELDS = [
   // monthly minimum, pooled volume, yearly escalation
   "slabMode", "slabPeriod", "packQty", "packPrice", "monthlyMinimum", "pool", "escalationPct",
   "billingClass", // subscription | transaction (lib/quotation/commercial.js); one-time follows the pricing model
+  // WiseCCS models: contract term, hybrid fixed fee + share of the difference,
+  // billed to the trade with a revenue share (lib/billing/revenueShare.js)
+  "termMonths", "minimumMode", "differentialSharePct", "billTo", "revenueShare",
   // One product master (lib/quotation/productItems.js) and how it is sold (lib/quotation/saleTerms.js)
   "moduleId", "itemType", "oneTimeAllowed", "otMonths", "otDiscountPct",
   // Structural fields are now admin-editable too, so they overlay the seed.
@@ -1113,7 +1117,7 @@ export default function QuotationMasters({ masters, setMasters: setMastersProp, 
         const pools = [...new Set(cur.catalogue.map(r => String(r.pool || "").trim()).filter(Boolean))];
         const poolRows = p.pool ? cur.catalogue.filter(r => r.code !== p.code && String(r.pool || "").trim() === String(p.pool).trim()) : [];
         const prev = usagePrice({ ...p, slabs: sl }, usageQty);
-        const monthly = Math.max(prev.amount, prev.floor);
+        const monthly = p.minimumMode === "differential" && prev.floor > 0 ? differentialCharge(prev.floor, prev.amount, differentialShare(p)).amount : Math.max(prev.amount, prev.floor);
         const field = (label, key, hint, extra = {}) => (
           <div className="form-group" style={{ marginBottom: 8 }}>
             <label style={{ fontSize: 11 }}>{label}</label>
@@ -1172,13 +1176,65 @@ export default function QuotationMasters({ masters, setMasters: setMastersProp, 
                 </div>
                 {poolRows.length > 0 && <div style={{ fontSize: 11.5, color: "var(--text3)", marginTop: -2 }}>Same pool: {poolRows.map(r => `${r.code} ${r.name}`).join(", ")}. On a quote their monthly volumes add up to pick the slab.</div>}
 
+                {/* Minimum: a floor, or a hybrid fixed fee with a share of the difference (WiseCCS Model 2) */}
+                {Number(p.monthlyMinimum) > 0 && (
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, margin: "2px 0 8px" }}>
+                    <b>The minimum is</b>
+                    <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={p.minimumMode !== "differential"} onChange={() => setCatRow(p.code, "minimumMode", null)} />a floor: never billed below it</label>
+                    <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={p.minimumMode === "differential"} onChange={() => setCatRow(p.code, "minimumMode", "differential")} />a fixed fee, plus or minus</label>
+                    {p.minimumMode === "differential" && <span><input style={{ ...numInput, width: 60 }} type="number" min={0} max={100} value={p.differentialSharePct ?? 40} onChange={e => setCatRow(p.code, "differentialSharePct", numOrNull(e.target.value))} />% of the difference to the variable charge</span>}
+                  </div>)}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  {field("Contract term, months (default on a quote)", "termMonths", "12")}
+                </div>
+
+                {/* Billed to the trade, with a revenue share to the customer (WiseCCS Model 1, TRS) */}
+                <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", marginTop: 4 }}>
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", fontSize: 12.5 }}>
+                    <b>Billed to</b>
+                    <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={p.billTo !== "trade"} onChange={() => setCatRow(p.code, "billTo", null)} />the customer (invoiced)</label>
+                    <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={p.billTo === "trade"} onChange={() => { setCatRow(p.code, "billTo", "trade"); if (!p.revenueShare) setCatRow(p.code, "revenueShare", { group: p.productId || p.code, mode: "graduated", paymentDays: 15, slabs: [{ from: 0, hansPct: 100 }] }); }} />the trade, revenue shared with the customer</label>
+                  </div>
+                  {p.billTo === "trade" && (() => {
+                    const rs = p.revenueShare || { slabs: [{ from: 0, hansPct: 100 }] };
+                    const setRs = (patch) => setCatRow(p.code, "revenueShare", { ...rs, ...patch });
+                    const rows = rs.slabs || [];
+                    const mates = cur.catalogue.filter(r => r.code !== p.code && r.billTo === "trade" && String(r.revenueShare?.group || "") === String(rs.group || "")).map(r => r.code);
+                    return (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, marginBottom: 6 }}>
+                          <label>Counted with <input style={{ ...numInput, width: 150, textAlign: "left" }} value={rs.group || ""} onChange={e => setRs({ group: e.target.value })} /></label>
+                          <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={rs.mode !== "volume"} onChange={() => setRs({ mode: "graduated" })} />Graduated: each band at its own share</label>
+                          <label style={{ display: "flex", gap: 5, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={rs.mode === "volume"} onChange={() => setRs({ mode: "volume" })} />Whole month: the count sets one share</label>
+                          <label>Pay the customer within <input style={{ ...numInput, width: 54 }} type="number" min={0} value={rs.paymentDays ?? 15} onChange={e => setRs({ paymentDays: numOrNull(e.target.value) })} /> days of its invoice</label>
+                        </div>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead><tr>{["From (count a month)", "Hans Infomatic %", "Customer %", ""].map(h => <th key={h} style={{ ...cell, fontSize: 10.5, textTransform: "uppercase", color: "var(--text3)", textAlign: "left" }}>{h}</th>)}</tr></thead>
+                          <tbody>
+                            {rows.map((x, i) => (
+                              <tr key={i}>
+                                <td style={cell}><input style={numInput} type="number" min={0} disabled={i === 0} value={i === 0 ? 0 : (x.from ?? "")} onChange={e => setRs({ slabs: rows.map((y, j) => j === i ? { ...y, from: numOrNull(e.target.value) } : y) })} /></td>
+                                <td style={cell}><input style={numInput} type="number" min={0} max={100} value={x.hansPct ?? ""} onChange={e => setRs({ slabs: rows.map((y, j) => j === i ? { ...y, hansPct: numOrNull(e.target.value) } : y) })} /></td>
+                                <td style={{ ...cell, fontSize: 12, color: "var(--text2)" }}>{x.hansPct == null ? "—" : `${Math.round((100 - Number(x.hansPct)) * 100) / 100}%`}</td>
+                                <td style={cell}>{i > 0 && <button className="icon-btn" title="Remove slab" onClick={() => setRs({ slabs: rows.filter((_, j) => j !== i) })}><Trash2 size={13} /></button>}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <button className="btn btn-sec btn-xs" style={{ marginTop: 8 }} onClick={() => setRs({ slabs: [...rows, { from: (Number(rows[rows.length - 1]?.from) || 0) + 4000, hansPct: null }] })}><Plus size={12} /> Add slab</button>
+                        {revenueShareProblems(rs).length > 0 && <div style={{ fontSize: 12, color: "#B91C1C", marginTop: 6 }}>{revenueShareProblems(rs).join(" ")}</div>}
+                        <div style={{ fontSize: 11.5, color: "var(--text3)", marginTop: 6 }}>Nothing is invoiced to the customer for this item: Hans bills the trade, and each month the Billing screen gives the customer a revenue share statement.{mates.length ? ` Counted together with ${mates.join(", ")}.` : ""} The same slabs must be set on every item counted together.</div>
+                      </div>);
+                  })()}
+                </div>
+
                 <div style={{ marginTop: 12, background: "var(--s2)", borderRadius: 10, padding: "10px 12px", fontSize: 12.5 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <b>Try it:</b> at
                     <input style={{ ...numInput, width: 90 }} type="number" min={0} value={usageQty} onChange={e => setUsageQty(Number(e.target.value) || 0)} />
                     {u} a month{p.pool ? " (this row alone)" : ""} →
                     <b style={{ color: "#1E40AF" }}>{prev.missing ? "rate missing" : `₹${Math.round(monthly).toLocaleString("en-IN")} a month`}</b>
-                    {!prev.missing && usageQty > 0 && <span style={{ color: "var(--text3)" }}>(average ₹{(monthly / usageQty).toFixed(2)} per {u}{prev.floor > prev.amount ? ", minimum applied" : ""})</span>}
+                    {!prev.missing && usageQty > 0 && <span style={{ color: "var(--text3)" }}>(average ₹{(monthly / usageQty).toFixed(2)} per {u}{p.minimumMode === "differential" && prev.floor > 0 ? `, fixed fee ${prev.amount >= prev.floor ? "plus" : "less"} ${differentialShare(p)}% of the difference` : prev.floor > prev.amount ? ", minimum applied" : ""})</span>}
                   </div>
                   {Number(p.escalationPct) > 0 && !prev.missing && <div style={{ marginTop: 4, color: "var(--text3)" }}>Monthly at this volume: {escalatedRates(monthly, p.escalationPct, 3).map((v, y) => `year ${y + 1} ₹${Math.round(v).toLocaleString("en-IN")}`).join(" · ")}</div>}
                 </div>

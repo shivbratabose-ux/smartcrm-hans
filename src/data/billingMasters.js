@@ -111,7 +111,7 @@ export const ROUNDING_MODES = [
 // ── Legal entities ───────────────────────────────────────────────────
 // Hans Infomatic's details (GSTIN, PAN, address, bank) already live in
 // Quotation Rules → Company; this entity points there instead of copying them.
-// Other entities (e.g. Carico System for ACMES) are added by an admin and
+// Other entities (e.g. Carico System for WiseCCS at Delhi) are added by an admin and
 // verified by Finance before they can be billed under.
 export const LEGAL_ENTITIES = [
   { id: "hans", name: "Hans Infomatic Pvt. Ltd.", invoicePrefix: "HI", source: "company" },
@@ -138,15 +138,17 @@ export const BILLING_PROFILES = [
     variables: ["Number of terminals", "Annual tonnage slab", "Cargo type (import, export, transhipment, domestic, courier)", "Customs regimes enabled (ICEGATE/SCMTR, CBP ACE, ICS2, ASYCUDA)", "Handheld devices"],
     modules: ["Import", "Export", "Transhipment", "ULD management", "Detention", "Disposal and auction", "Warehouse control", "Message agents", "Audit agent"],
     oneTimeFeeIds: STD_ONE_TIME, recurringFeeIds: ["subscription"] }),
-  p({ id: "wiseccs", name: "WiseCCS", productId: "WiseCCS", status: "CONFIRMED", defaultModelId: "per_txn", allowedModelIds: ["revenue_share", "hybrid"],
-    primaryBasis: "per AWB", primaryUnitIds: ["awb"], allowedUnitIds: ["mawb", "hawb", "pct_collected"],
-    variables: ["MAWB or HAWB basis", "Transaction type (export, import, domestic)", "Payer (trade user or operator)", "Revenue-share percentage", "Minimum monthly guarantee", "Settlement cycle"],
+  // WiseCCS, three models (AISATS quote, Nov 2025). ACMES, the Delhi community
+  // system, is WiseCCS (decision 21 Nov 2026): no separate profile.
+  //   1 TRS: billed to the trade per AWB / SB / BOE, revenue share to the operator by slab (statement)
+  //   2 Hybrid: fixed monthly fee + per-consignment charge, share of the difference
+  //   3 SaaS without infrastructure: fixed monthly fee per terminal category
+  p({ id: "wiseccs", name: "WiseCCS", productId: "WiseCCS", status: "CONFIRMED", defaultModelId: "revenue_share", allowedModelIds: ["hybrid", "saas_no_infra", "per_txn"],
+    primaryBasis: "per AWB / shipping bill / bill of entry", primaryUnitIds: ["awb", "shipping_bill", "bill_of_entry"], allowedUnitIds: ["terminal", "month", "mawb", "hawb", "pct_collected"],
+    variables: ["Model (TRS, hybrid, SaaS without infrastructure)", "Transaction type (domestic AWB, export SB, import BOE)", "Payer (trade user or operator)", "Revenue-share slabs and how they apply (graduated or whole month)", "Fixed monthly fee and share of the difference (hybrid)", "Terminal categories (SaaS)", "Contract term (84 months TRS, 60 months hybrid / SaaS)", "Hosting (Hans or operator)"],
     modules: ["Agent documentation", "Amendments", "Online payments", "Communication", "Community portal"],
-    flags: { revenueShareStatement: true, separateCollectionAccount: true } }),
-  p({ id: "acmes", name: "ACMES", productId: "ACMES", status: "CONFIRMED", legalEntityId: "", defaultModelId: "revenue_share",
-    primaryBasis: "% of charges collected", primaryUnitIds: ["pct_collected"],
-    variables: ["Share percentage", "Transaction volume", "Hosting cost split", "Contract term"],
-    flags: { revenueShareStatement: true }, notes: "Delhi air cargo community system. Bills under Carico System: add that legal entity and select it here." }),
+    flags: { revenueShareStatement: true, separateCollectionAccount: true },
+    notes: "A contract may bill under another legal entity (e.g. Carico System for the Delhi community system, formerly ACMES): add that entity and select it on the plan." }),
   p({ id: "aai_icms", name: "AAI ICMS", productId: "AAIICMS", defaultModelId: "oem",
     primaryBasis: "per airport per month", primaryUnitIds: ["airport", "month"], allowedUnitIds: ["tonne"],
     variables: ["Number of airports", "Tonnage slab", "Support tier"], notes: "White-label cargo system for an airport authority." }),
