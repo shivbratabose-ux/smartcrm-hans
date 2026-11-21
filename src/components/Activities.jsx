@@ -178,10 +178,10 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
       </div>
 
       {/* Activity KPI Cards */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"16px 20px",color:"white"}}>
+      <div className="sum-strip">
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",opacity:0.8}}>TOTAL CALLS TODAY</div>
-          <div style={{fontSize:28,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>
             {activities.filter(a=>a.date===today).length}
           </div>
           {(() => {
@@ -192,15 +192,15 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
             return <div style={{fontSize:11,opacity:0.7}}>{yCount===0 ? "No data yesterday" : diff===0 ? "Same as yesterday" : `${diff>0?"+":""}${diff} vs yesterday`}</div>;
           })()}
         </div>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"16px 20px",color:"white"}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",opacity:0.8}}>CONNECTED RATE</div>
-          <div style={{fontSize:28,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>
             {activities.length > 0 ? Math.round(activities.filter(a=>a.outcome==="Positive").length/activities.length*100) : 0}%
           </div>
         </div>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"16px 20px",color:"white"}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",opacity:0.8}}>AVG. DURATION</div>
-          <div style={{fontSize:28,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>
             {(() => {
               // Coerce to Number — durations can arrive as strings (DB/bulk
               // import), and `0 + "30" + "15"` string-concatenates into an
@@ -211,9 +211,9 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
           </div>
           <div style={{fontSize:11,opacity:0.7}}>Minutes per interaction</div>
         </div>
-        <div style={{background:"#1B6B5A",borderRadius:12,padding:"16px 20px",color:"white"}}>
+        <div style={{background:"#1B6B5A",borderRadius:10,padding:"9px 14px",color:"white"}}>
           <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",opacity:0.8}}>PENDING FOLLOW-UPS</div>
-          <div style={{fontSize:28,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:4}}>
+          <div style={{fontSize:20,fontWeight:800,fontFamily:"'Outfit',sans-serif",marginTop:2}}>
             {activities.filter(a=>a.status==="Planned").length}
           </div>
           <div style={{fontSize:11,opacity:0.7}}>

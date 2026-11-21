@@ -230,10 +230,10 @@ export default function QuoteAcceptLanding({ quoteId, quotes, setQuotes, account
 
         {/* Totals */}
         <div style={{marginLeft:"auto", maxWidth:300, fontSize:13, color:"var(--text2)", marginBottom:20}}>
-          <div style={{display:"flex", justifyContent:"space-between", padding:"3px 0"}}><span>Subtotal:</span><strong>₹{quote.subtotal}L</strong></div>
-          {quote.discount > 0 && <div style={{display:"flex", justifyContent:"space-between", padding:"3px 0", color:"#F59E0B"}}><span>Discount:</span><strong>-₹{quote.discount}L</strong></div>}
-          <div style={{display:"flex", justifyContent:"space-between", padding:"3px 0"}}><span>Tax ({quote.taxType}):</span><strong>₹{quote.taxAmount}L</strong></div>
-          <div style={{display:"flex", justifyContent:"space-between", padding:"10px 0 0", borderTop:"2px solid #1B6B5A", marginTop:6, fontSize:16, fontWeight:700, color:"#1B6B5A"}}><span>Grand Total:</span><span>₹{quote.total}L</span></div>
+          <div style={{display:"flex", justifyContent:"space-between", padding:"3px 0"}}><span>Subtotal:</span><strong>{fmt.lakh(quote.subtotal)}</strong></div>
+          {quote.discount > 0 && <div style={{display:"flex", justifyContent:"space-between", padding:"3px 0", color:"#F59E0B"}}><span>Discount:</span><strong>-{fmt.lakh(quote.discount)}</strong></div>}
+          <div style={{display:"flex", justifyContent:"space-between", padding:"3px 0"}}><span>Tax ({quote.taxType}):</span><strong>{fmt.lakh(quote.taxAmount)}</strong></div>
+          <div style={{display:"flex", justifyContent:"space-between", padding:"10px 0 0", borderTop:"2px solid #1B6B5A", marginTop:6, fontSize:16, fontWeight:700, color:"#1B6B5A"}}><span>Grand Total:</span><span>{fmt.lakh(quote.total)}</span></div>
         </div>
 
         {/* Terms preview */}

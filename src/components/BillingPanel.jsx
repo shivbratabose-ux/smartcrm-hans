@@ -1,5 +1,5 @@
 // Billing: monthly invoices from customer agreements and actual usage.
-// Opened from Quotations → Billing (Accounts, Finance and managers).
+// Opened from the menu: Post-sales → Billing (Accounts, Finance and managers).
 //   Invoice run  what is due for the month, per agreement, with the working
 //   Usage        enter / paste / approve / correct actual consumption
 //   Invoices     final invoices and credit notes

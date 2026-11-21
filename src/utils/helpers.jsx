@@ -7,8 +7,10 @@ import { isSupabaseConfigured } from "../lib/supabase";
 // ═══════════════════════════════════════════════════════════════════
 export const fmt = {
   date: d => { if(!d) return "—"; const dt = new Date(d); return dt.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); },
-  // INR with Indian-style thousands grouping; safe for null/NaN
-  inr:  n => `₹${Number(n||0).toLocaleString("en-IN")} L`,
+  // Amounts held in ₹ lakh, one format everywhere: ₹10L, ₹10.5L, ₹0.42L,
+  // ₹1,234.56L (Indian grouping, up to 2 decimals, no trailing zeros). Safe for null/NaN.
+  lakh: n => { const x = Number.isFinite(Number(n)) ? Number(n) : 0; return `${x < 0 ? "−" : ""}₹${Math.abs(x).toLocaleString("en-IN", { maximumFractionDigits: 2 })}L`; },
+  inr:  n => fmt.lakh(n),
   pct:  n => `${n}%`,
   short:d => { if(!d) return "—"; const dt = new Date(d); return dt.toLocaleDateString("en-IN",{day:"2-digit",month:"short"}); },
   time: t => { if(!t) return ""; const [h,m]=t.split(":"); const hr=parseInt(h); return `${hr>12?hr-12:hr||12}:${m} ${hr>=12?"PM":"AM"}`; },
@@ -872,3 +874,6 @@ export const canWrite = (userId, module, orgUsers, customPermissions) => {
   if(roleOverride!==undefined) return roleOverride==="rw";
   return PERMISSIONS[role]?.[module]==="rw";
 };
+
+/** Initials for an avatar when a user has none saved: "QA Admin" → "QA", "Lokesh M" → "LM". */
+export const initialsOf = (user) => String(user?.initials || "").trim() || String(user?.name || "").trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";

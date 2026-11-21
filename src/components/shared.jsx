@@ -353,12 +353,29 @@ export function HelpTooltip({ text, width = 240 }) {
 // PAGE TIP — dismissible contextual tip banner shown once per page
 // Usage: <PageTip id="leads-tip-1" icon={...} title="..." text="..." />
 // ═══════════════════════════════════════════════════════════════════
+// A tip shows on a user's first few visits to a page (TIP_VISITS), then steps
+// aside by itself; × hides it at once and "Hide all tips" hides every page's.
 const TIPS_KEY = "smartcrm_dismissed_tips";
-const getDismissed = () => { try { return JSON.parse(localStorage.getItem(TIPS_KEY) || "[]"); } catch { return []; } };
+const TIP_VIEWS_KEY = "smartcrm_tip_views";
+const TIPS_OFF_KEY = "smartcrm_tips_off";
+const TIP_VISITS = 3;
+const readJson = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || "null") ?? d; } catch { return d; } };
+const writeJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } };
+const getDismissed = () => readJson(TIPS_KEY, []);
 const dismissTip   = id => {
   const d = getDismissed();
-  if (!d.includes(id)) { localStorage.setItem(TIPS_KEY, JSON.stringify([...d, id])); }
+  if (!d.includes(id)) writeJson(TIPS_KEY, [...d, id]);
 };
+/** Should this page's tip show on this visit? Counts the visit. */
+const tipVisible = (id) => {
+  if (readJson(TIPS_OFF_KEY, false) || getDismissed().includes(id)) return false;
+  const views = readJson(TIP_VIEWS_KEY, {});
+  const n = (Number(views[id]) || 0) + 1;
+  writeJson(TIP_VIEWS_KEY, { ...views, [id]: n });
+  return n <= TIP_VISITS;
+};
+/** Bring every page tip back (Help → "Show page tips again"). */
+export const resetPageTips = () => { try { [TIPS_KEY, TIP_VIEWS_KEY, TIPS_OFF_KEY].forEach((k) => localStorage.removeItem(k)); } catch { /* storage unavailable */ } };
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPEAHEAD SELECT — drop-in replacement for static <select> dropdowns
@@ -542,7 +559,7 @@ export function TypeaheadSelect({
 }
 
 export function PageTip({ id, title, text, link, linkLabel, onLink }) {
-  const [visible, setVisible] = useState(() => !getDismissed().includes(id));
+  const [visible, setVisible] = useState(() => tipVisible(id));
   if (!visible) return null;
   return (
     <div className="page-tip">
@@ -556,6 +573,7 @@ export function PageTip({ id, title, text, link, linkLabel, onLink }) {
           </button>
         )}
       </div>
+      <button className="page-tip-link" style={{ marginLeft: "auto", whiteSpace: "nowrap" }} onClick={() => { writeJson(TIPS_OFF_KEY, true); setVisible(false); }} title="Hide the tips on every page (Help → Show page tips again brings them back)">Hide all tips</button>
       <button className="page-tip-close" onClick={() => { dismissTip(id); setVisible(false); }} aria-label="Dismiss tip">
         <X size={13} />
       </button>

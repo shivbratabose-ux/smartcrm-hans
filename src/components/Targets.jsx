@@ -658,7 +658,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
       (t.product || "All") === (form.product || "All") &&
       (t.vertical || "") === (form.vertical || ""));
     if (dupe) {
-      errs.period = `${userName(form.userId)} already has a ${(!form.product || form.product === "All") ? "company-wide" : (PROD_MAP[form.product]?.name || form.product)} target for ${form.period} (₹${dupe.targetValue}L). Edit that one instead — a second target double-counts the same won deals.`;
+      errs.period = `${userName(form.userId)} already has a ${(!form.product || form.product === "All") ? "company-wide" : (PROD_MAP[form.product]?.name || form.product)} target for ${form.period} (${fmt.lakh(dupe.targetValue)}). Edit that one instead — a second target double-counts the same won deals.`;
     }
     // Rule 8: team-member allocations must never exceed the manager's
     // assigned team target. Checked against ALL live targets (not the
@@ -942,7 +942,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                 margin={{top:0, right:64, left:8, bottom:0}}>
                 <CartesianGrid horizontal={false} stroke="var(--border)"/>
                 <XAxis type="number" tick={{fontSize:11, fill:"var(--text3)"}} tickLine={false} axisLine={false}
-                  tickFormatter={v => `₹${v}L`}/>
+                  tickFormatter={v => fmt.lakh(v)}/>
                 <YAxis type="category" dataKey="name" width={92} tick={{fontSize:11.5, fill:"var(--text2)"}}
                   tickLine={false} axisLine={false}/>
                 <Tooltip cursor={{fill:"var(--s2)"}} content={({active, payload}) => {
@@ -998,7 +998,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                 margin={{top:0, right:96, left:8, bottom:0}}>
                 <CartesianGrid horizontal={false} stroke="var(--border)"/>
                 <XAxis type="number" tick={{fontSize:11, fill:"var(--text3)"}} tickLine={false} axisLine={false}
-                  tickFormatter={v => `₹${v}L`}/>
+                  tickFormatter={v => fmt.lakh(v)}/>
                 <YAxis type="category" dataKey="source" width={116} tick={{fontSize:11.5, fill:"var(--text2)"}}
                   tickLine={false} axisLine={false}/>
                 <Tooltip cursor={{fill:"var(--s2)"}} content={({active, payload}) => {
@@ -1237,7 +1237,7 @@ function Targets({ targets, setTargets, opps = [], callReports = [], leads = [],
                     <FormError error={formErrors.targetValue}/>
                   </div>
                   <div className="form-group"><label>Achieved (auto)</label>
-                    <div style={ro}>₹{a.achievedValue}L</div>
+                    <div style={ro}>{fmt.lakh(a.achievedValue)}</div>
                     <div style={note}>{a.achievedDeals} won deal{a.achievedDeals===1?"":"s"} in {form.period||"period"}</div>
                   </div>
                 </div>

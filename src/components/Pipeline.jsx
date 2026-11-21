@@ -161,14 +161,14 @@ function SortIcon({ col, sortKey, sortDir }) {
 function KpiCard({ label, value, sub, icon: Icon, color }) {
   return (
     <div style={{
-      background: "#1B6B5A", borderRadius: 12, padding: "16px 20px", minWidth: 150, flex: 1,
-      color: "white", display: "flex", flexDirection: "column", gap: 4,
+      background: "#1B6B5A", borderRadius: 10, padding: "9px 14px",
+      color: "white", display: "flex", flexDirection: "column", gap: 2,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.8, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
         {Icon && <Icon size={16} style={{ opacity: 0.6 }} />}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800, fontFamily: "'Outfit',sans-serif" }}>{value}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Outfit',sans-serif", lineHeight: 1.15 }}>{value}</div>
       {sub && <div style={{ fontSize: 11, opacity: 0.7 }}>{sub}</div>}
     </div>
   );
@@ -659,7 +659,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], s
       subtitle: detail.source ? `Source: ${detail.source}` : "",
       desc: [
         detail.products?.length ? `Products: ${detail.products.map(p => PROD_MAP[p]?.name || p).join(", ")}` : null,
-        detail.value ? `Value: ₹${detail.value}L` : null,
+        detail.value ? `Value: ${fmt.lakh(detail.value)}` : null,
         detail.leadId ? "Converted from a lead" : null,
       ].filter(Boolean).join(" · "),
       by: detail.owner || "",
@@ -1577,17 +1577,17 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
       {/* KPI CARDS \u2014 swap to sales-closure metrics when filtering Won,
           because the open-pipeline cards are all zeros in that view. */}
       {wonStats ? (
-        <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <div className="sum-strip">
           <KpiCard label="Sales Won" value={wonStats.count} icon={Check} sub="deals closed Won" />
           <KpiCard label="New Customers" value={wonStats.newBiz} icon={Target} sub="first sale to the account" />
           <KpiCard label="Cross-sell Sales" value={wonStats.cross} icon={TrendingUp} sub="repeat / upsell wins" />
-          <KpiCard label="Revenue Closed" value={`\u20B9${wonStats.revenue.toFixed(1)}L`} icon={Check} sub="sum of won deal values" />
+          <KpiCard label="Revenue Closed" value={fmt.lakh(wonStats.revenue)} icon={Check} sub="sum of won deal values" />
           <KpiCard label="Avg Days to Close" value={wonStats.avgDays ?? "\u2014"} icon={Clock} sub="created \u2192 close date" />
         </div>
       ) : (
-      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-        <KpiCard label="Total Pipeline" value={`\u20B9${totalPipe.toFixed(1)}L`} icon={Target} sub={`${openDeals.length} open deals`} />
-        <KpiCard label="Weighted Pipeline" value={`\u20B9${weighted.toFixed(1)}L`} icon={TrendingUp} />
+      <div className="sum-strip">
+        <KpiCard label="Total Pipeline" value={fmt.lakh(totalPipe)} icon={Target} sub={`${openDeals.length} open deals`} />
+        <KpiCard label="Weighted Pipeline" value={fmt.lakh(weighted)} icon={TrendingUp} />
         <KpiCard label="Win Rate" value={`${winRate}%`} icon={Check} sub={`${wonCount}W / ${lostCount}L`} />
         <KpiCard label="At Risk" value={atRiskCount} icon={AlertTriangle} sub="7-14 days idle" />
         <KpiCard label="Stalled" value={stalledCount} icon={Clock} sub=">14 days idle" />
@@ -1729,7 +1729,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
                           {o.products.slice(0, 2).map(p => <ProdTag key={p} pid={p} />)}
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                          <span style={{ fontSize: 14, fontWeight: 800, fontFamily: "'Outfit',sans-serif", color: "var(--text1)" }}>₹{o.value}L</span>
+                          <span style={{ fontSize: 14, fontWeight: 800, fontFamily: "'Outfit',sans-serif", color: "var(--text1)" }}>{fmt.lakh(o.value)}</span>
                           <span style={{ fontSize: 11, color: "var(--text3)" }}>{o.probability}%</span>
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -1802,14 +1802,14 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
           { key: "account", label: "Account", defaultWidth: 200, render: o => txt(accounts.find(a => a.id === o.accountId)?.name) },
           { key: "stage", label: "Stage", defaultWidth: 140, render: o => <StatusBadge status={o.stage} /> },
           { key: "value", label: "Value", defaultWidth: 100, render: o => (
-            <span style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700 }}>{`₹${o.value || 0}L`}</span>
+            <span style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700 }}>{fmt.lakh(o.value || 0)}</span>
           )},
           { key: "probability", label: "Prob%", defaultWidth: 80, render: o => (
             <span style={{ fontSize: 12, color: "var(--text3)" }}>{o.probability}%</span>
           )},
           { key: "weightedValue", label: "Weighted ₹L", defaultWidth: 110, sortable: false, render: o => (
             <span style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700, color: "var(--brand)" }}>
-              {`₹${(((o.value||0) * (o.probability||0)) / 100).toFixed(1)}L`}
+              {fmt.lakh((((o.value||0) * (o.probability||0)) / 100))}
             </span>
           )},
           { key: "closeDate", label: "Close Date", defaultWidth: 120, render: o => (
@@ -1868,7 +1868,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
           { key: "tenderPortal", label: "Portal", defaultWidth: 140, render: o => txt(o.tenderPortal) },
           { key: "submissionDate", label: "Bid Submission", defaultWidth: 130, render: o => o.submissionDate
             ? <span style={{fontSize:12,color: o.submissionDate < today ? "#DC2626" : isOverdue(o.submissionDate) ? "#DC2626" : "var(--text2)"}}>{fmt.short(o.submissionDate)}</span> : txt("") },
-          { key: "emdAmount", label: "EMD (₹L)", defaultWidth: 90, render: o => txt(o.emdAmount ? `₹${o.emdAmount}L` : "") },
+          { key: "emdAmount", label: "EMD (₹L)", defaultWidth: 90, render: o => txt(o.emdAmount ? fmt.lakh(o.emdAmount) : "") },
         ];
         const PIPELINE_DEFAULT_CONFIG = [
           { key: "title", visible: true, width: 240 },
@@ -1976,7 +1976,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
                     </td>
                     <td style={{ fontSize: 12 }}>{acc?.name || "\u2014"}</td>
                     <td><StatusBadge status={o.stage} /></td>
-                    <td style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700 }}>₹{o.value}L</td>
+                    <td style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700 }}>{fmt.lakh(o.value)}</td>
                     <td style={{ fontSize: 12, color: "var(--text3)" }}>{o.probability}%</td>
                     <td style={{ fontSize: 12, color: isOverdue(o.closeDate) ? "#DC2626" : "var(--text3)" }}>{fmt.short(o.closeDate)}</td>
                     <td><UserPill uid={o.owner} /></td>
@@ -2075,7 +2075,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
                   }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: STAGE_COL[s], marginBottom: 6 }}>{s}</div>
                     <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Outfit',sans-serif" }}>{stageOpps.length}</div>
-                    <div style={{ fontSize: 11, color: "var(--text3)" }}>₹{totalVal.toFixed(1)}L • {avgProb}% avg prob</div>
+                    <div style={{ fontSize: 11, color: "var(--text3)" }}>{fmt.lakh(totalVal)} • {avgProb}% avg prob</div>
                   </div>
                 );
               })}

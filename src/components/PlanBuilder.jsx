@@ -1,5 +1,5 @@
 // Billing plan: versions, amendment builder and approval (Billing module,
-// Phase 2). Shown inside Quotations → Agreements for one agreement.
+// Phase 2). Shown inside Contracts → Agreements for one agreement.
 import { useMemo, useState } from "react";
 import { Plus, X, Check, AlertTriangle, FileText, RotateCcw } from "lucide-react";
 import { Modal } from "./shared";

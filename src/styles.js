@@ -376,10 +376,14 @@ export const CSS = `
   .empty-sub { font-size:13px; color:var(--text3); }
 
   /* ── KPI CARDS (Dashboard) ── */
-  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin-bottom:20px; }
-  .kpi { background:var(--surface); border:1px solid var(--border); border-radius:var(--rl); padding:16px 18px; box-shadow:var(--sh-xs); }
-  .kpi-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.07em; color:var(--text3); margin-bottom:8px; }
-  .kpi-val { font-family:'Outfit',sans-serif; font-size:26px; font-weight:700; color:var(--text); line-height:1; }
+  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:14px; }
+  .kpi { background:var(--surface); border:1px solid var(--border); border-radius:var(--rl); padding:10px 14px; box-shadow:var(--sh-xs); }
+  .kpi-label { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.07em; color:var(--text3); margin-bottom:5px; }
+  .kpi-val { font-family:'Outfit',sans-serif; font-size:21px; font-weight:700; color:var(--text); line-height:1; }
+  /* Summary strip: a module's figures as one slim row above its list; scrolls
+     sideways on a narrow screen instead of stacking, so the list stays in view. */
+  .sum-strip { display:flex; flex-wrap:nowrap; gap:8px; overflow-x:auto; margin-bottom:12px; padding-bottom:2px; scrollbar-width:thin; }
+  .sum-strip > * { flex:1 0 140px; min-width:140px; }
   .kpi-sub { font-size:12px; color:var(--text3); margin-top:5px; }
   .kpi-delta { font-size:12px; font-weight:600; margin-top:5px; }
   .kpi-delta.up { color:var(--green); }
@@ -822,9 +826,15 @@ export const CSS = `
   /* Help header button green dot */
   .help-btn { position:relative; }
 
+  /* The Quick Log "+" steps aside while any form or panel is open, so it never
+     covers a Save button (shared modals, role="dialog", and the full-screen
+     panels that are positioned inline; its own speed-dial backdrop excluded). */
+  body:has(.overlay, [role="dialog"], div[style*="position: fixed"][style*="inset: 0"]:not(.qlog-fab *)) :is(.qlog-fab, .help-fab) { display:none !important; }
+
   /* Floating help FAB */
+  /* Bottom-right, above the Quick Log "+" (it used to sit bottom-left, over the sidebar menu). */
   .help-fab {
-    position:fixed; bottom:88px; left:22px; z-index:500;
+    position:fixed; bottom:96px; right:30px; z-index:500;
     width:42px; height:42px; border-radius:50%;
     background:var(--surface); border:2px solid var(--border);
     box-shadow:var(--sh-md); cursor:pointer; display:flex; align-items:center;
@@ -835,7 +845,7 @@ export const CSS = `
     box-shadow:0 6px 20px rgba(27,107,90,0.35); transform:scale(1.08);
   }
   .help-fab-tooltip {
-    position:absolute; left:52px; top:50%; transform:translateY(-50%);
+    position:absolute; right:52px; top:50%; transform:translateY(-50%);
     background:#1B2A35; color:white; font-size:12px; font-weight:600;
     padding:5px 11px; border-radius:7px; white-space:nowrap; pointer-events:none;
     opacity:0; transition:opacity 0.15s; box-shadow:var(--sh);
@@ -950,8 +960,9 @@ export const CSS = `
 
     /* Grids collapse */
     .kpi-grid { grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; }
-    .kpi { padding:12px; }
-    .kpi-val { font-size:21px; }
+    .kpi { padding:10px 12px; }
+    .kpi-val { font-size:19px; }
+    .sum-strip > * { flex-basis:128px; min-width:128px; }
     .dash-2col, .dash-3col { grid-template-columns:1fr; }
     .form-row, .form-row.three { grid-template-columns:1fr; gap:10px; margin-bottom:10px; }
 

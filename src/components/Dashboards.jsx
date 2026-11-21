@@ -184,15 +184,15 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
       {tab === "management" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ fontSize: 12, color: "var(--text2)", background: "var(--s2,#F8FAFB)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6, alignSelf: "flex-start" }}>
-            <span style={{ fontWeight: 600 }}>Scope:</span> strategic book — large opportunities (≥ ₹{LARGE_DEAL_LAKHS} L) plus all tenders. Smaller deals live in the Pipeline module.
+            <span style={{ fontWeight: 600 }}>Scope:</span> strategic book — large opportunities (≥ {fmt.lakh(LARGE_DEAL_LAKHS)}) plus all tenders. Smaller deals live in the Pipeline module.
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <KPI label="Total Pipeline" value={`₹${mgmt.totalPipe.toFixed(1)}L`} sub={`${mgmt.openCount} open deals`} onClick={() => setPage("pipeline")} />
-            <KPI label="Revenue Forecast" value={`₹${mgmt.weighted.toFixed(1)}L`} sub="Weighted pipeline" onClick={() => setPage("pipeline")} />
-            <KPI label="Tender Value" value={`₹${mgmt.tenderValue.toFixed(1)}L`} sub={`${tenders.filter(isOpen).length} active tenders`} onClick={() => setTab("tender")} />
+            <KPI label="Total Pipeline" value={fmt.lakh(mgmt.totalPipe)} sub={`${mgmt.openCount} open deals`} onClick={() => setPage("pipeline")} />
+            <KPI label="Revenue Forecast" value={fmt.lakh(mgmt.weighted)} sub="Weighted pipeline" onClick={() => setPage("pipeline")} />
+            <KPI label="Tender Value" value={fmt.lakh(mgmt.tenderValue)} sub={`${tenders.filter(isOpen).length} active tenders`} onClick={() => setTab("tender")} />
             <KPI label="Win Rate" value={`${mgmt.winRate}%`} sub="All deals" onClick={() => setPage("reports")} />
             <KPI label="Bid Success" value={`${mgmt.bidSuccess}%`} sub="Tenders won/decided" onClick={() => setTab("tender")} />
-            <KPI label="Renewal/Expansion" value={`₹${mgmt.renewalPipe.toFixed(1)}L`} sub="In pipeline" onClick={() => setTab("renewal")} />
+            <KPI label="Renewal/Expansion" value={fmt.lakh(mgmt.renewalPipe)} sub="In pipeline" onClick={() => setTab("renewal")} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <Card title="Active Tenders by Stage" action={<button className="btn btn-sec btn-xs" onClick={() => setTab("tender")}>Open Tender board</button>}>
@@ -218,7 +218,7 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <KPI label="Active Bids" value={tenderData.activeCount} sub="Open tenders" onClick={() => setPage("pipeline")} />
-            <KPI label="Tender Value" value={`₹${tenderData.value.toFixed(1)}L`} sub="Active bid value" onClick={() => setPage("pipeline")} />
+            <KPI label="Tender Value" value={fmt.lakh(tenderData.value)} sub="Active bid value" onClick={() => setPage("pipeline")} />
             <KPI label="Bid-Approved" value={tenderData.submitted} sub="Cleared bid approval" onClick={() => setPage("pipeline")} />
             <KPI label="Upcoming Deadlines" value={tenderData.upcoming.length} sub="Submissions ahead" accent={tenderData.upcoming.length ? "#FDE68A" : "white"} onClick={() => setPage("pipeline")} />
           </div>
@@ -272,20 +272,20 @@ function Dashboards({ accounts = [], opps = [], projects = [], contracts = [], t
       {tab === "renewal" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <KPI label="Renewals Due (90d)" value={renewalData.due.length} sub={`₹${renewalData.dueValue.toFixed(1)}L`} accent={renewalData.due.length ? "#FDE68A" : "white"} onClick={() => setPage("contracts")} />
+            <KPI label="Renewals Due (90d)" value={renewalData.due.length} sub={fmt.lakh(renewalData.dueValue)} accent={renewalData.due.length ? "#FDE68A" : "white"} onClick={() => setPage("contracts")} />
             <KPI label="Auto-Renew On" value={renewalData.autoOn} sub="Contracts" onClick={() => setPage("contracts")} />
-            <KPI label="Expansion Opps" value={renewalData.expansion.length} sub={`₹${renewalData.expansionValue.toFixed(1)}L pipeline`} onClick={() => setPage("pipeline")} />
+            <KPI label="Expansion Opps" value={renewalData.expansion.length} sub={`${fmt.lakh(renewalData.expansionValue)} pipeline`} onClick={() => setPage("pipeline")} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <Card title="Upcoming Renewals (next 90 days)" action={<button className="btn btn-sec btn-xs" onClick={() => setPage("contracts")}>Contracts</button>}>
               {renewalData.due.length === 0 ? <Empty msg="No renewals due in 90 days."/> : renewalData.due.slice(0, 7).map(c => {
                 const d = daysFromToday(c.endDate);
-                return <ListRow key={c.id} left={c.title || c.contractNo} sub={`${accName(c.accountId)} · ₹${c.value || 0}L`} right={`${d}d`} rightColor={d <= 30 ? "#DC2626" : "var(--text2)"}/>;
+                return <ListRow key={c.id} left={c.title || c.contractNo} sub={`${accName(c.accountId)} · ${fmt.lakh(c.value || 0)}`} right={`${d}d`} rightColor={d <= 30 ? "#DC2626" : "var(--text2)"}/>;
               })}
             </Card>
             <Card title="Expansion / Upsell Opportunities" action={<button className="btn btn-sec btn-xs" onClick={() => setPage("pipeline")}>Pipeline</button>}>
               {renewalData.expansion.length === 0 ? <Empty msg="No expansion opportunities yet."/> : renewalData.expansion.slice(0, 7).map(o => (
-                <ListRow key={o.id} left={o.title} sub={`${accName(o.accountId)} · ${o.stage}`} right={`₹${o.value || 0}L`} rightColor="var(--brand)"/>
+                <ListRow key={o.id} left={o.title} sub={`${accName(o.accountId)} · ${o.stage}`} right={fmt.lakh(o.value || 0)} rightColor="var(--brand)"/>
               ))}
             </Card>
           </div>
