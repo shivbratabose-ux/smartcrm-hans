@@ -9,6 +9,7 @@ import { uid, today, toLocalISODate, parseLocalDate, sanitizeObj, validateActivi
 import { StatusBadge, UserPill, Modal, Confirm, Empty, FormError, FilesList, PageTip, TypeaheadSelect, EditLockActions } from './shared';
 import Pagination, { usePagination } from './Pagination';
 import DataGrid from './DataGrid';
+import { callSlotProblem } from '../lib/callSlots';
 
 // Header sort glyph — same visual contract Pipeline's grid uses.
 function SortIcon({ col, sortKey, sortDir }) {
@@ -18,7 +19,7 @@ function SortIcon({ col, sortKey, sortDir }) {
 
 const BLANK_ACT={title:"",type:"Call",status:"Planned",date:"",time:"",duration:30,accountId:"",contactId:"",oppId:"",owner:"u1",notes:"",outcome:"",files:[]};
 
-function Activities({activities,setActivities,accounts,contacts,opps,currentUser,files,onAddFile,orgUsers,canDelete,commLogs=[],onRequestEditAccess}) {
+function Activities({activities,setActivities,callReports=[],accounts,contacts,opps,currentUser,files,onAddFile,orgUsers,canDelete,commLogs=[],onRequestEditAccess}) {
   const canEditAct=(a)=>canEditRecord({ownerId:a?.owner,currentUser,orgUsers,recordType:"activity",recordId:a?.id,commLogs});
   const requestAccess=(a)=>onRequestEditAccess&&onRequestEditAccess("activity",a.id,a.title||"Activity",a.owner);
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== 'Inactive') : TEAM;
@@ -67,6 +68,10 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
     const errs = validateActivity(form);
     if(hasErrors(errs)){ setFormErrors(errs); return; }
     const clean = sanitizeObj(form);
+    // Max 2 calls per person per hour slot (new or moved calls only).
+    const slotErr = callSlotProblem("activity", clean, { activities, callReports },
+      { userName: clean.owner && clean.owner !== currentUser ? (orgUsers||[]).find(u=>u.id===clean.owner)?.name || "" : "" });
+    if(slotErr){ setFormErrors({time:slotErr}); setMTab("details"); return; }
     if(modal.mode==="add") setActivities(p=>[...p,{...clean}]);
     else setActivities(p=>p.map(a=>a.id===clean.id?{...clean}:a));
     setModal(null);setFormErrors({});
@@ -382,7 +387,7 @@ function Activities({activities,setActivities,accounts,contacts,opps,currentUser
               </div>
               <div className="form-row three">
                 <div className="form-group"><label>Date *</label><input type="date" value={form.date} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setFormErrors(e=>({...e,date:undefined}));}} style={formErrors.date?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.date}/></div>
-                <div className="form-group"><label>Time</label><input type="time" value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))}/></div>
+                <div className="form-group"><label>Time</label><input type="time" value={form.time} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setFormErrors(e=>({...e,time:undefined}));}} style={formErrors.time?{borderColor:"#DC2626"}:{}}/><FormError error={formErrors.time}/></div>
                 <div className="form-group"><label>Duration (min)</label><input type="number" value={form.duration} onChange={e=>setForm(f=>({...f,duration:+e.target.value}))} min={0} step={15}/></div>
               </div>
               {form.status==="Completed"&&(

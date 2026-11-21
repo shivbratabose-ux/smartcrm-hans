@@ -1428,7 +1428,10 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
   const submit = () => {
     const errs = validate();
     if (hasErrors(errs)) { setErrors(errs); return; }
-    onSave(form);
+    // onSave may return a message (e.g. the 2-calls-per-slot limit):
+    // show it on the time field and keep the form open.
+    const problem = onSave(form);
+    if (typeof problem === "string" && problem) { setErrors({ callTime: problem }); return; }
     onClose();
   };
 
@@ -1458,7 +1461,9 @@ export function LogCallModal({ onClose, onSave, accounts, contacts, opps, orgUse
           <FormError error={errors.callDate} />
         </div>
         <div className="form-group"><label>Time</label>
-          <input type="time" value={form.callTime} onChange={e => set("callTime", e.target.value)} />
+          <input type="time" value={form.callTime} onChange={e => set("callTime", e.target.value)}
+            style={errors.callTime ? { borderColor: "#DC2626" } : {}} />
+          <FormError error={errors.callTime} />
         </div>
         <div className="form-group"><label>Duration (min)</label>
           <input type="number" min={0} step={5} value={form.duration}

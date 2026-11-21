@@ -17,6 +17,7 @@ import DataGrid from './DataGrid';
 import { batchUpsert } from '../lib/db';
 import { notify } from '../utils/toast';
 import useIsMobile from '../hooks/useIsMobile';
+import { callSlotProblem } from '../lib/callSlots';
 
 /* ── Date range helpers ── */
 const RANGE_PRESETS = [
@@ -2557,6 +2558,9 @@ function Leads({ leadPrefill, onLeadPrefillUsed, leads, setLeads, accounts, curr
       product: lead.product,
       createdBy: currentUser || "",
     };
+    // Max 2 calls per person per hour slot: hand the message back to the form.
+    const slotErr = callSlotProblem("callReport", callReport, { activities, callReports });
+    if (slotErr) return slotErr;
     setCallReports(p => [...p, callReport]);
 
     // Create activity record
