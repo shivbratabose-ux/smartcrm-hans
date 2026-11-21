@@ -1816,7 +1816,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
             </span>
           )},
           { key: "closeDate", label: "Close Date", defaultWidth: 120, render: o => (
-            <span style={{ fontSize: 12, color: isOverdue(o.closeDate) ? "#DC2626" : "var(--text3)" }}>{fmt.short(o.closeDate)}</span>
+            <span style={{ fontSize: 12, color: !closingNames.includes(o.stage) && isOverdue(o.closeDate) ? "#DC2626" : "var(--text3)" }}>{fmt.short(o.closeDate)}</span>
           )},
           { key: "decisionDate", label: "Decision Date", defaultWidth: 120, render: o => txt(fmt.short(o.decisionDate)) },
           { key: "createdDate", label: "Created", defaultWidth: 110, render: o => txt(fmt.short(o.createdDate)) },
@@ -1870,7 +1870,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
           { key: "tenderAuthority", label: "Authority", defaultWidth: 180, render: o => txt(o.tenderAuthority) },
           { key: "tenderPortal", label: "Portal", defaultWidth: 140, render: o => txt(o.tenderPortal) },
           { key: "submissionDate", label: "Bid Submission", defaultWidth: 130, render: o => o.submissionDate
-            ? <span style={{fontSize:12,color: o.submissionDate < today ? "#DC2626" : isOverdue(o.submissionDate) ? "#DC2626" : "var(--text2)"}}>{fmt.short(o.submissionDate)}</span> : txt("") },
+            ? <span style={{fontSize:12,color: !closingNames.includes(o.stage) && (o.submissionDate < today || isOverdue(o.submissionDate)) ? "#DC2626" : "var(--text2)"}}>{fmt.short(o.submissionDate)}</span> : txt("") },
           { key: "emdAmount", label: "EMD (₹L)", defaultWidth: 90, render: o => txt(o.emdAmount ? fmt.lakh(o.emdAmount) : "") },
         ];
         const PIPELINE_DEFAULT_CONFIG = [
@@ -1981,7 +1981,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
                     <td><StatusBadge status={o.stage} /></td>
                     <td style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 700 }}>{fmt.lakh(o.value)}</td>
                     <td style={{ fontSize: 12, color: "var(--text3)" }}>{o.probability}%</td>
-                    <td style={{ fontSize: 12, color: isOverdue(o.closeDate) ? "#DC2626" : "var(--text3)" }}>{fmt.short(o.closeDate)}</td>
+                    <td style={{ fontSize: 12, color: !closingNames.includes(o.stage) && isOverdue(o.closeDate) ? "#DC2626" : "var(--text3)" }}>{fmt.short(o.closeDate)}</td>
                     <td><UserPill uid={o.owner} /></td>
                     <td><HealthBadge health={health} /></td>
                     <td style={{ fontSize: 11, color: "var(--text3)" }}>{lastAct ? fmt.short(lastAct.date) : "\u2014"}</td>
