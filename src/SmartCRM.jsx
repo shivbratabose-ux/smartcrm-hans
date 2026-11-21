@@ -336,19 +336,22 @@ export default function SmartCRM() {
   const [currentUser,setCurrentUser] = useState(() => loadSession());
 
   // ── Hash-based routing ──
+  // Everyone lands on My Performance: their numbers, what's due today,
+  // what's overdue and their scheduled calls. The Dashboard is #/dashboard.
+  const HOME_PAGE = "myperf";
   const getPageFromHash = () => {
     const hash = window.location.hash.replace(/^#\/?/, "");
-    return hash || "dashboard";
+    return hash || HOME_PAGE;
   };
   const [page,_setPage] = useState(getPageFromHash);
   // Billing and Agreements open as panels over their own page; closing one
   // goes back to the page the user came from. A quote opened from them shows
   // on Quotations (focusQuoteId).
-  const lastPageRef = useRef("dashboard");
+  const lastPageRef = useRef(HOME_PAGE);
   const [focusQuoteId, setFocusQuoteId] = useState("");
   const setPage = useCallback((p) => {
     _setPage(p);
-    window.location.hash = p === "dashboard" ? "/" : `/${p}`;
+    window.location.hash = p === HOME_PAGE ? "/" : `/${p}`;
   }, []);
   useEffect(() => {
     const onHash = () => _setPage(getPageFromHash());
@@ -495,8 +498,8 @@ export default function SmartCRM() {
   const _canSeeLeadAssign = useMemo(() => canSeeLeadAssignment((orgUsers || []).find(u => u.id === currentUser)?.role), [currentUser, orgUsers]);
   // Bounce a non-privileged user off restricted pages if reached via a direct
   // URL (the nav items are already hidden for them).
-  useEffect(() => { if (page === "team" && orgUsers.length && !_canManageUsers) setPage("dashboard"); }, [page, _canManageUsers, orgUsers.length]);
-  useEffect(() => { if (page === "leadassign" && orgUsers.length && !_canSeeLeadAssign) setPage("dashboard"); }, [page, _canSeeLeadAssign, orgUsers.length]);
+  useEffect(() => { if (page === "team" && orgUsers.length && !_canManageUsers) setPage(HOME_PAGE); }, [page, _canManageUsers, orgUsers.length]);
+  useEffect(() => { if (page === "leadassign" && orgUsers.length && !_canSeeLeadAssign) setPage(HOME_PAGE); }, [page, _canSeeLeadAssign, orgUsers.length]);
   // ── Midnight rollover ──
   // `today` in utils/helpers is computed once at module load. CRM tabs stay
   // open for days, so without this the app kept yesterday's date until a hard
@@ -1662,7 +1665,7 @@ export default function SmartCRM() {
 
   const addNote = note => setNotes(p=>[...p,note]);
   const addFile = file => setFiles(p=>[...p,file]);
-  const logout  = () => { if(isSupabaseConfigured) supabaseSignOut(); clearSession(); setCurrentUser(null); setPage("dashboard"); };
+  const logout  = () => { if(isSupabaseConfigured) supabaseSignOut(); clearSession(); setCurrentUser(null); setPage(HOME_PAGE); };
 
   // Cascade delete: remove all linked records when an account is deleted.
   // Accepts a meta arg `{ category, reason }` from the front-end
@@ -2839,13 +2842,13 @@ export default function SmartCRM() {
             {page==="contracts"  && <Contracts onOpenAgreements={()=>setPage("agreements")} contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote} onGenerateRenewalOpp={generateRenewalOpportunity} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="collections"&& <Collections collections={visibleCollections} setCollections={setCollections} accounts={visibleAccounts} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="projects"   && <Projects projects={visibleProjects} leads={visibleLeads} setProjects={setProjects} onDelivered={onProjectDelivered} accounts={visibleAccounts} opps={visibleOpps} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
-            {(page==="quotations"||page==="billing"||page==="agreements") && <Quotations openPanel={page==="quotations"?"":page} onPanelClose={()=>setPage(lastPageRef.current||"dashboard")} onPanelOpenQuote={(id)=>{setFocusQuoteId(id||"");setPage("quotations");}} focusQuoteId={page==="quotations"?focusQuoteId:""} onFocusDone={()=>setFocusQuoteId("")} quotes={visibleQuotes} setQuotes={setQuotes} aiConfig={aiConfig} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} collections={collections} setCollections={setCollections} projects={projects} setProjects={setProjects} setActivities={setActivities} setUpdates={setUpdates} isFinance={_financeRole} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} masters={masters} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}
+            {(page==="quotations"||page==="billing"||page==="agreements") && <Quotations openPanel={page==="quotations"?"":page} onPanelClose={()=>setPage(lastPageRef.current||HOME_PAGE)} onPanelOpenQuote={(id)=>{setFocusQuoteId(id||"");setPage("quotations");}} focusQuoteId={page==="quotations"?focusQuoteId:""} onFocusDone={()=>setFocusQuoteId("")} quotes={visibleQuotes} setQuotes={setQuotes} aiConfig={aiConfig} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} collections={collections} setCollections={setCollections} projects={projects} setProjects={setProjects} setActivities={setActivities} setUpdates={setUpdates} isFinance={_financeRole} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} masters={masters} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}
             {page.startsWith("quote-accept/") && <QuoteAcceptLanding quoteId={page.replace(/^quote-accept\//,"")} quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} contracts={contracts} setContracts={setContracts} setActivities={setActivities} currentUser={currentUser} onBack={()=>setPage("quotations")}/>}
             {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} holidays={masters.holidays} adminWorkTypes={masters.adminWorkTypes} onRequestEditAccess={requestEditAccess}/>}
             {page==="communications"&& <CommLog commLogs={visibleCommLogs} setCommLogs={setCommLogs} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} canDelete={canDelete} orgUsers={orgUsers} catalog={catalog} onRespondEditAccess={respondEditAccess} aiConfig={aiConfig} setActivities={setActivities}/>}
             {page==="targets"    && <Targets targets={visibleTargets} setTargets={setTargets} opps={visibleOpps} callReports={visibleCallReports} leads={visibleLeads} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete} masters={masters} canWrite={_canWriteTargets}/>}
             {page==="reports"    && <Reports accounts={visibleAccounts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} contacts={visibleContacts} contracts={visibleContracts} quotes={visibleQuotes} currentUser={currentUser} orgUsers={orgUsers} masters={masters}/>}
-            {page==="myperf"     && <MyPerformance targets={visibleTargets} opps={visibleOpps} activities={visibleActivities} accounts={visibleAccounts} leads={visibleLeads} callReports={visibleCallReports} orgUsers={orgUsers} currentUser={currentUser} masters={masters}/>}
+            {page==="myperf"     && <MyPerformance setPage={setPage} targets={visibleTargets} opps={visibleOpps} activities={visibleActivities} accounts={visibleAccounts} leads={visibleLeads} callReports={visibleCallReports} orgUsers={orgUsers} currentUser={currentUser} masters={masters}/>}
             {page==="dashboards" && <Dashboards accounts={visibleAccounts} opps={visibleOpps} projects={visibleProjects} contracts={visibleContracts} tickets={visibleTickets} quotes={visibleQuotes} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage}/>}
             {page==="leadassign" && _canSeeLeadAssign && <LeadAssignment leads={visibleLeads} setLeads={setLeads} opps={visibleOpps} orgUsers={orgUsers} currentUser={currentUser} setPage={setPage} commLogs={commLogs} catalog={catalog} setActivities={setActivities} setUpdates={setUpdates}/>}
             {page==="emailagent" && <EmailAgent accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} activities={visibleActivities} orgUsers={orgUsers} currentUser={currentUser}/>}
