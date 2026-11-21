@@ -11,8 +11,13 @@ export const PAGE_LABELS={
   targets:"Target vs Achievement",reports:"Reports",masters:"Masters",
   org:"Organisation",team:"Team & Users",profile:"My Profile",
   quotations:"Quotations",calendar:"Calendar",communications:"Communications",
-  bulkupload:"Bulk Upload",updates:"Internal Updates",help:"Help & User Guide"
+  bulkupload:"Bulk Upload",updates:"Internal Updates",help:"Help & User Guide",
+  projects:"Projects",billing:"Billing",agreements:"Agreements",dashboards:"Dashboards",
+  myperf:"My Performance",leadassign:"Lead Assignment",emailagent:"Email Agent",
+  reengage:"Re-engagement",aisettings:"AI Settings",trash:"Trash"
 };
+// A page with no label above shows its id capitalised, never a lowercase id.
+const pageLabel = (page) => PAGE_LABELS[page] || String(page || "").replace(/^./, (c) => c.toUpperCase());
 
 // Pages that have a specific help article — maps page id → help category id
 const PAGE_HELP_MAP = {
@@ -102,7 +107,7 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
         <button className="icon-btn hdr-menu" onClick={onMenu} aria-label="Open menu"><Menu size={20}/></button>
       )}
       <div className="hdr-bread">
-        <div className="hdr-page">{PAGE_LABELS[page]||page}</div>
+        <div className="hdr-page">{pageLabel(page)}</div>
       </div>
       {isMobile&&!mobileSearch&&(
         <button className="icon-btn" onClick={()=>setMobileSearch(true)} aria-label="Search"><Search size={18}/></button>
@@ -171,8 +176,8 @@ function Header({page,accounts,contacts,opps,tickets,activities,leads,setPage,cu
         )}
         <button className="icon-btn hdr-desktop-only" onClick={()=>setPage("reports")} title="Reports" aria-label="Reports"><BarChart3 size={18}/></button>
         <button className="icon-btn help-btn hdr-desktop-only" onClick={()=>setPage("help")}
-          title={`Help: ${PAGE_LABELS[page]||page}`}
-          aria-label={`Help for ${PAGE_LABELS[page]||page}`}
+          title={`Help: ${pageLabel(page)}`}
+          aria-label={`Help for ${pageLabel(page)}`}
           style={{position:"relative"}}>
           <HelpCircle size={18}/>
           {PAGE_HELP_MAP[page] && (
