@@ -49,7 +49,6 @@ export default function QuoteHandoverPanel({
   const dirty = hosting !== (quote.hosting || "") || ["legalName", "pan", "gstin", "address"].some((f) => nd[f] !== saved[f]);
   const locked = stage.final || !canEdit;
   const blockers = finalBlockers(quote, sendBlocked);
-  const amounts = quoteAmounts(quote);
   const when = (iso) => (iso ? fmt.date(String(iso).slice(0, 10)) : "");
 
   return (
@@ -111,9 +110,10 @@ export default function QuoteHandoverPanel({
       </Step>
 
       <Step done={stage.billed} locked={!stage.final} title="3. Bill raised by Accounts"
-        sub={stage.billed ? `${bill?.invoiceNo || h.billNo || "Bill"} · by ${userName(h.billBy)} on ${when(h.billAt)}${h.billMailedAt ? ` · sent to ${h.billMailedTo || "the customer"} on ${when(h.billMailedAt)}` : " · not sent to the customer yet"}`
+        sub={stage.billed && h.noUpfrontBill ? `No upfront bill: invoiced monthly from Billing · by ${userName(h.billBy)} on ${when(h.billAt)}. Record the customer's confirmation below.`
+          : stage.billed ? `${bill?.invoiceNo || h.billNo || "Bill"} · by ${userName(h.billBy)} on ${when(h.billAt)}${h.billMailedAt ? ` · sent to ${h.billMailedTo || "the customer"} on ${when(h.billMailedAt)}` : " · not sent to the customer yet"}`
           : !hasAccount ? "Link the customer account to this quote first (Finance creates it)."
-          : `From the quote: taxable ₹${amounts.taxable}L + GST ₹${amounts.gst}L = ₹${amounts.total}L. Nothing is retyped.`}>
+          : "Raises the first invoice through Billing: the first payment milestone of the one-time charges, else the first subscription invoice. Billing will not bill it again; nothing is retyped."}>
         {stage.final && !stage.billed && canBill && (
           <button className="btn btn-primary btn-sm" disabled={!hasAccount} onClick={actions.raiseBill}><Receipt size={13} />Raise bill</button>
         )}
@@ -134,8 +134,9 @@ export default function QuoteHandoverPanel({
       </Step>
 
       <Step done={stage.project} locked={!stage.confirmed} title="5. Implementation project"
-        sub={stage.project ? `${project?.projectNo || h.projectNo || "Project"} · ${project?.status || "created"}${project ? ` · ${project.progress || 0}%` : ""}${h.deliveredAt ? ` — delivery complete (${h.deliveredStatus || "Go-Live"}) on ${when(h.deliveredAt)}` : " — the delivery team has been notified"}`
-          : "Created automatically at step 4, with the quote's modules, users and hosting."}>
+        sub={stage.project && h.noProject ? "Implemented from the deal: under ₹50L and not ticked “Run as a project”. The delivery team has been notified."
+          : stage.project ? `${project?.projectNo || h.projectNo || "Project"} · ${project?.status || "created"}${project ? ` · ${project.progress || 0}%` : ""}${h.deliveredAt ? ` — delivery complete (${h.deliveredStatus || "Go-Live"}) on ${when(h.deliveredAt)}` : " — the delivery team has been notified"}`
+          : "At step 4: a project for deals of ₹50L or more, or ticked “Run as a project”; else delivered from the deal."}>
         {stage.project && <Rocket size={16} color="#16A34A" />}
       </Step>
     </div>

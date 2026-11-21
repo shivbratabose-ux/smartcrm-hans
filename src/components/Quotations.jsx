@@ -25,7 +25,8 @@ import { groupOf } from '../lib/quotation/productGroups';
 import { needsAgreement, buildAgreement, listAgreements } from '../lib/quotation/agreements';
 import AgreementsPanel from './AgreementsPanel';
 import { withPlans } from '../lib/billing/plans';
-import { loadPlans, loadEntityChecks } from '../lib/billing/store';
+import { loadPlans, loadEntityChecks, loadBilling, saveInvoice } from '../lib/billing/store';
+import { handoverInvoice, finalise, finaliseProblems, collectionFromInvoice } from '../lib/billing/engine';
 import { resolveBillingMasters } from '../lib/billing/masters';
 import { getScopedUserIds } from '../utils/helpers';
 import BillingPanel from './BillingPanel';
@@ -1363,18 +1364,47 @@ Reason for approving (kept on the quote):`,"");
       else if(res?.error) setToast({msg:`Accounts pack not e-mailed: ${res.error}`});
     },1500);
   };
-  const raiseBill=(q)=>{
+  // Raise bill (handover step 3), decision 21 Nov 2026: the agreement's FIRST
+  // invoice, raised through Billing (lib/billing/engine.js handoverInvoice), so
+  // Billing never bills the same charges again: the first one-time milestone,
+  // else the first subscription invoice. Billed only on usage: nothing upfront.
+  // (It used to be one proforma for the whole quote total, which Billing then
+  // billed again month by month and by milestone.)
+  const raiseBill=async(q)=>{
     const h=handoverOf(q);
-    if(!h.finalAt||h.billId) return;
+    if(!h.finalAt||h.billId||h.noUpfrontBill) return;
     if(!q.accountId){alert("Link the customer account to this quote first.");return;}
     if(!setCollections){alert("Collections is not available here.");return;}
-    const productId=(Array.isArray(q.productSelection)&&q.productSelection[0]?.productId)||q.product||"";
-    const bill=billFromQuote(q,{today,by:currentUser,productId,sac:companyOf(quoteConfig).sac});
-    setCollections(p=>[...p,bill]);
+    const priceRows=resolveQuotationMasters(masters,catalog).catalogue;
+    const base=q.agreement?q:{...q,agreement:buildAgreement(q,{priceRows,today})};
+    const [p,b]=await Promise.all([loadPlans(),loadBilling()]);
+    const invoices=b.invoices||[];
+    const bq=withPlans([base],p.plans||[])[0]||base;
+    const r=handoverInvoice(bq,{invoices,config:quoteConfig,today});
+    const at=new Date().toISOString();
+    if(r.kind==="none"){
+      if(!window.confirm(`${q.quoteNo||"This quote"} has nothing to bill upfront (${r.label.toLowerCase()}).
+
+Its charges are invoiced from Billing. Mark this step done? The customer's confirmation of the ULA and agreement is then recorded with "Customer confirmed".`)) return;
+      patchQuote(q,{handover:{...h,noUpfrontBill:true,billAt:at,billBy:currentUser}},hEntry("FINAL","Billed",`No upfront bill: ${r.label.toLowerCase()}; invoiced from Billing.`));
+      setToast({msg:`${q.quoteNo||"Quote"}: no upfront bill. Its charges are invoiced from Billing.`});
+      return;
+    }
+    const problems=finaliseProblems(r.preview,invoices);
+    if(problems.length){alert("Can't raise the bill:\n• "+problems.join("\n• "));return;}
+    const pv=r.preview;
+    if(!window.confirm(`Raise ${pv.invoiceNo}: ${r.label}, taxable ${fmt.lakh(pv.taxable/1e5)} + GST = ${fmt.lakh(pv.total/1e5)}?
+
+It is finalised in Billing and posted to Collections, so Billing will not bill it again. A correction is a credit note.`)) return;
+    const col=collectionFromInvoice(pv,{today,by:currentUser,creditDays:q.creditDays,contractId:q.contractId||"",legalName:q.legalName||"",gstin:q.gstin||""});
+    const final={...finalise(pv,{by:currentUser,at}),collectionId:col.id};
+    const {error}=await saveInvoice(final);
+    if(error){alert(`The invoice was not saved: ${error}`);return;}
+    setCollections(p=>[...p,col]);
     // billToken = the customer's confirm link (#/bill-confirm/<token>).
-    patchQuote(q,{handover:{...h,billId:bill.id,billNo:bill.invoiceNo,billAt:new Date().toISOString(),billBy:currentUser,billToken:h.billToken||generateAcceptToken()}},hEntry("FINAL","Billed",`Bill ${bill.invoiceNo} raised from the quote (${fmt.lakh(bill.netPayable)} incl. GST)`));
-    tellUser(q.owner,`Bill ${bill.invoiceNo} raised for ${q.quoteNo||q.id}`,`Accounts raised the bill (${fmt.lakh(bill.netPayable)} incl. GST). The customer confirms the bill, ULA and Agreement online from the link Accounts sends.`,refsOf(q));
-    setToast({msg:`Bill ${bill.invoiceNo} created in Collections — taxable ${fmt.lakh(bill.billedAmount)} + GST ${fmt.lakh(bill.gstAmount)}. Next: "Send to customer".`});
+    patchQuote(q,{handover:{...h,billId:col.id,billNo:final.invoiceNo,billInvoiceId:final.id,billAt:at,billBy:currentUser,billToken:h.billToken||generateAcceptToken()}},hEntry("FINAL","Billed",`Bill ${final.invoiceNo} raised through Billing: ${r.label} (${fmt.lakh(final.total/1e5)} incl. GST).`));
+    tellUser(q.owner,`Bill ${final.invoiceNo} raised for ${q.quoteNo||q.id}`,`Accounts raised the first invoice (${r.label}, ${fmt.lakh(final.total/1e5)} incl. GST). The customer confirms the bill, ULA and Agreement online from the link Accounts sends.`,refsOf(q));
+    setToast({msg:`Bill ${final.invoiceNo} raised: ${r.label}, ${fmt.lakh(final.total/1e5)} incl. GST. Posted to Collections. Next: "Send to customer".`});
   };
   const sendBill=async(q)=>{
     const h=handoverOf(q);
@@ -1398,8 +1428,8 @@ Reason for approving (kept on the quote):`,"");
   const openPack=(q)=>printQuote(q,"pack");
   const confirmBill=async(q)=>{
     const h=handoverOf(q);
-    if(!h.billId||h.confirmedAt) return;
-    if(!window.confirm(`Record that the customer confirmed bill ${h.billNo||""}, the ULA and the agreement?\n\nThis is "deemed signed" and starts implementation.`)) return;
+    if((!h.billId&&!h.noUpfrontBill)||h.confirmedAt) return;
+    if(!window.confirm(`Record that the customer confirmed ${h.billNo?`bill ${h.billNo}, `:""}the ULA and the agreement?\n\nThis is "deemed signed" and starts implementation.`)) return;
     const at=new Date().toISOString();
     const productIds=[...new Set([...(Array.isArray(q.productSelection)?q.productSelection.map(x=>x.productId):[]),q.product].filter(Boolean))];
     const leadUser=(catalog||[]).find(c=>productIds.includes(c.id)&&c.lineManagerId)?.lineManagerId||"";
@@ -1417,7 +1447,7 @@ Reason for approving (kept on the quote):`,"");
       prj=projectFromQuote(q,{today,projectNo,leadUserId:leadUser,products:productIds,accountName:acc?.name||""});
       setProjects(p=>[...p,prj]);
     }
-    patchQuote(q,{handover:{...h,confirmedAt:at,confirmedBy:currentUser,...(prj?{projectId:prj.id,projectNo:prj.projectNo,projectAt:at}:{})}},
+    patchQuote(q,{handover:{...h,confirmedAt:at,confirmedBy:currentUser,...(prj?{projectId:prj.id,projectNo:prj.projectNo,projectAt:at}:{noProject:true})}},
       hEntry("Billed","Confirmed",`Customer confirmed — deemed signed.${prj?` Implementation: ${prj.projectNo}${reused?" (existing project for this deal)":" created"}.`:bigEnough?"":` Below ${fmt.lakh(PROJECT_MIN_LAKH)}: implemented from the deal, no project.`}`));
     const scope=(q.items||[]).map(it=>it.name||it.description).filter(Boolean).join(", ");
     const told=[...new Set([leadUser,q.owner,...accountsTeam].filter(Boolean))];
