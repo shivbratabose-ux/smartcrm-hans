@@ -38,6 +38,7 @@ import PublicQuoteAccept from "./components/PublicQuoteAccept";
 import PublicBillConfirm from "./components/PublicBillConfirm";
 import PublicTerms from "./components/PublicTerms";
 import { becameDelivered, handoverOf, accountsIds } from "./lib/quotation/handover";
+import { isProjectSize } from "./lib/projects";
 import Masters from "./components/Masters";
 import AiSettings from "./components/AiSettings";
 import OrgHierarchy from "./components/OrgHierarchy";
@@ -1848,8 +1849,9 @@ export default function SmartCRM() {
     // ── CRM → Project handover (Phase 4) ──
     // Auto-create a delivery Project from the won deal, carrying scope, value,
     // account, owner and products. Idempotent: skip if a project already
-    // exists for this opportunity.
-    setProjects(prev => {
+    // exists for this opportunity. Only deals of ₹50 lakh or more become
+    // projects (lib/projects.js); smaller wins are delivered from the deal.
+    if (isProjectSize(opp.value)) setProjects(prev => {
       if (prev.some(p => p.oppId === opp.id && !p.isDeleted)) return prev;
       const yr = new Date().getFullYear();
       const seq = prev.reduce((m, p) => { const x = p.projectNo?.match(/PRJ-\d{4}-(\d+)/); return x ? Math.max(m, +x[1]) : m; }, 0) + 1;

@@ -29,6 +29,7 @@ import { loadPlans, loadEntityChecks } from '../lib/billing/store';
 import { resolveBillingMasters } from '../lib/billing/masters';
 import { getScopedUserIds } from '../utils/helpers';
 import BillingPanel from './BillingPanel';
+import { isProjectSize, PROJECT_MIN_LAKH } from '../lib/projects';
 import CommercialReports from './CommercialReports';
 import QuoteAssistant from './QuoteAssistant';
 import { isAiFeatureOn } from '../utils/ai';
@@ -1403,7 +1404,10 @@ Reason for approving (kept on the quote):`,"");
     // A won deal may already have its delivery project — reuse it, don't fork.
     let prj=projects.find(p=>!p.isDeleted&&q.oppId&&p.oppId===q.oppId)||null;
     const reused=!!prj;
-    if(!prj&&setProjects){
+    // Only deals of ₹50 lakh or more are run as projects (lib/projects.js).
+    const dealLakh=(opps||[]).find(o=>o.id===q.oppId)?.value??q.total;
+    const bigEnough=isProjectSize(dealLakh);
+    if(!prj&&setProjects&&bigEnough){
       const year=new Date().getFullYear();
       const n=await allocateDocNo(`project:${year}`);
       const projectNo=n?`PRJ-${year}-${String(n).padStart(3,"0")}`:nextProjectNo(projects,year);
@@ -1411,7 +1415,7 @@ Reason for approving (kept on the quote):`,"");
       setProjects(p=>[...p,prj]);
     }
     patchQuote(q,{handover:{...h,confirmedAt:at,confirmedBy:currentUser,...(prj?{projectId:prj.id,projectNo:prj.projectNo,projectAt:at}:{})}},
-      hEntry("Billed","Confirmed",`Customer confirmed — deemed signed.${prj?` Implementation: ${prj.projectNo}${reused?" (existing project for this deal)":" created"}.`:""}`));
+      hEntry("Billed","Confirmed",`Customer confirmed — deemed signed.${prj?` Implementation: ${prj.projectNo}${reused?" (existing project for this deal)":" created"}.`:bigEnough?"":` Below ${fmt.lakh(PROJECT_MIN_LAKH)}: implemented from the deal, no project.`}`));
     const scope=(q.items||[]).map(it=>it.name||it.description).filter(Boolean).join(", ");
     const told=[...new Set([leadUser,q.owner,...accountsTeam].filter(Boolean))];
     told.forEach(u=>tellUser(u,`Start implementation: ${acc?.name||q.legalName||q.title||""}`,

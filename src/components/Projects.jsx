@@ -6,6 +6,7 @@ import { uid, fmt, today, sanitizeObj, hasErrors, softDeleteById } from "../util
 import { Modal, Confirm, Empty, FormError, UserPill, StatusBadge, TypeaheadSelect, PageTip } from "./shared";
 import Pagination, { usePagination } from "./Pagination";
 import useIsMobile from "../hooks/useIsMobile";
+import { PROJECT_MIN_LAKH, projectValue, splitProjects } from "../lib/projects";
 
 const PHASE_COL = {
   "Requirement Gathering":"#3B82F6","Gap Analysis":"#6366F1","Design":"#8B5CF6",
@@ -39,12 +40,17 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
   const [form, setForm] = useState(BLANK_PROJECT);
   const [formErrors, setFormErrors] = useState({});
   const [confirm, setConfirm] = useState(null);
+  const [showSmaller, setShowSmaller] = useState(false);
 
-  const enriched = useMemo(() => projects.filter(p => !p.isDeleted).map(p => ({
-    ...p,
-    _accName: accounts.find(a => a.id === p.accountId)?.name || "—",
-    _health: projectHealth(p),
-  })), [projects, accounts]);
+  // Only deals of ₹50 lakh or more are run as projects (lib/projects.js);
+  // smaller wins are delivered from the deal and stay in Pipeline / Leads.
+  const live = useMemo(() => projects.filter(p => !p.isDeleted), [projects]);
+  const { shown: large, smaller } = useMemo(() => splitProjects(live, opps), [live, opps]);
+  const enriched = useMemo(() => (showSmaller ? live : large).map(p => {
+    // A project created without an account takes its deal's account.
+    const accId = p.accountId || opps.find(o => o.id === p.oppId)?.accountId || "";
+    return { ...p, _accName: accounts.find(a => a.id === accId)?.name || "—", _value: projectValue(p, opps), _health: projectHealth(p) };
+  }), [live, large, showSmaller, accounts, opps]);
 
   const filtered = useMemo(() => enriched.filter(p => {
     if (statusF !== "All" && p.status !== statusF) return false;
@@ -105,19 +111,26 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
 
   return (
     <div>
-      <PageTip id="projects-tip-v1" title="Projects:" text="Delivery projects are auto-created when a deal/tender is Won. Track phase, progress, milestones and go-live here. Update progress as the project moves from Requirements → UAT → Go-Live → Hypercare." />
+      <PageTip id="projects-tip-v1" title="Projects:" text="Delivery projects are auto-created when a deal or tender of ₹50L or more is Won; smaller wins are delivered from the deal. Track phase, progress, milestones and go-live here. Update progress as the project moves from Requirements → UAT → Go-Live → Hypercare." />
       <div className="pg-head">
         <div>
           <div className="pg-title">Projects</div>
-          <div className="pg-sub">{enriched.length} total · {active.length} active{delayed > 0 ? ` · ${delayed} delayed` : ""}</div>
+          <div className="pg-sub">{enriched.length} {showSmaller ? "total" : `project${enriched.length === 1 ? "" : "s"} of ${fmt.lakh(PROJECT_MIN_LAKH)} or more`} · {active.length} active{delayed > 0 ? ` · ${delayed} delayed` : ""}</div>
         </div>
         <div className="pg-actions">
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>New Project</button>
         </div>
       </div>
 
+      {smaller.length > 0 && (
+        <div style={{ fontSize: 12.5, color: "var(--text2)", background: "var(--s2)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 12px", marginBottom: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span>Only deals of <b>{fmt.lakh(PROJECT_MIN_LAKH)} or more</b> are run as projects. {smaller.length} smaller won deal{smaller.length === 1 ? " is" : "s are"} delivered from the deal in Pipeline{showSmaller ? " (shown below for review)" : ""}.</span>
+          <button type="button" className="page-tip-link" style={{ marginLeft: "auto" }} onClick={() => setShowSmaller(v => !v)}>{showSmaller ? "Hide them" : "Show them"}</button>
+        </div>
+      )}
+
       {/* KPIs */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+      <div className="sum-strip">
         <KPI label="Active Projects" value={active.length} sub="In delivery" />
         <KPI label="Avg Progress" value={`${avgProgress}%`} sub="Across active" />
         <KPI label="Delayed" value={delayed} sub="Past go-live target" color={delayed > 0 ? "#FCA5A5" : "white"} />
@@ -132,7 +145,7 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
       </div>
 
       <div className="card" style={{ padding: 0 }}>
-        {filtered.length === 0 ? <Empty icon={<Briefcase size={22}/>} title="No projects yet" sub="Projects are created automatically when a deal is Won, or add one manually."/> : (
+        {filtered.length === 0 ? <Empty icon={<Briefcase size={22}/>} title="No projects yet" sub={`Projects are created automatically when a deal of ${fmt.lakh(PROJECT_MIN_LAKH)} or more is Won, or add one manually.`}/> : (
           isMobile ? (
           /* Phones: one card per project. */
           <div className="m-cards">
@@ -141,7 +154,7 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
                 <div className="m-card-top" role="button" tabIndex={0} onClick={() => openEdit(p)}>
                   <div style={{ minWidth: 0 }}>
                     <div className="m-card-title">{p.name}</div>
-                    <div className="m-card-sub">{[p.projectNo, p._accName].filter(Boolean).join(" · ")}</div>
+                    <div className="m-card-sub">{[p.projectNo, p._accName, fmt.lakh(p._value)].filter(Boolean).join(" · ")}</div>
                   </div>
                   <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, background: (PHASE_COL[p.status] || "#64748B") + "18", color: PHASE_COL[p.status] || "#64748B" }}>{p.status}</span>
                 </div>
@@ -167,7 +180,7 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
           </div>
           ) : (
           <table className="tbl tbl-dense">
-            <thead><tr><th>Project</th><th>Account</th><th>Phase</th><th>Progress</th><th>Health</th><th>Go-Live Target</th><th>Owner</th><th></th></tr></thead>
+            <thead><tr><th>Project</th><th>Account</th><th style={{ textAlign: "right" }}>Value</th><th>Phase</th><th>Progress</th><th>Health</th><th>Go-Live Target</th><th>Owner</th><th></th></tr></thead>
             <tbody>{pg.paged.map(p => (
               <tr key={p.id}>
                 <td>
@@ -175,6 +188,7 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
                   {p.projectNo && <div style={{ fontSize: 10, fontFamily: "'Courier New',monospace", color: "var(--text3)" }}>{p.projectNo}</div>}
                 </td>
                 <td style={{ fontSize: 12 }}>{p._accName}</td>
+                <td style={{ fontSize: 12, textAlign: "right", fontWeight: 700, fontFamily: "'Outfit',sans-serif" }}>{fmt.lakh(p._value)}</td>
                 <td><span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, background: (PHASE_COL[p.status] || "#64748B") + "18", color: PHASE_COL[p.status] || "#64748B" }}>{p.status}</span></td>
                 <td style={{ minWidth: 110 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
