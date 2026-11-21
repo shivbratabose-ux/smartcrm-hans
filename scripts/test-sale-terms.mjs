@@ -63,5 +63,18 @@ check("the quotation shows the licence price, not how it was worked out", [m.one
 const html = (await import("../src/lib/quotation/quoteDocument.js")).quoteDocumentHtml({ ...quote, quoteNo: "X", createdDate: "2026-11-20" }, { priceRows: [plan], catalog: [], autoPrint: false });
 check("nothing on the printed quote reveals the monthly rate or the 42-month calculation", [/4,199|42 months|less 20%|monthlyRate/.test(html), html.includes("One-time licence")], [false, true]);
 
+// ── "Show discount on the customer quote" ────────────────────────────
+const shown = quoteDocModel({ ...quote, quoteNo: "X", createdDate: "2026-11-20", hans: { ...quote.hans, showDiscount: true } }, { priceRows: [plan], catalog: [] }).oneTime[0];
+const hidden = quoteDocModel({ ...quote, quoteNo: "X", createdDate: "2026-11-20", hans: { ...quote.hans, showDiscount: false } }, { priceRows: [plan], catalog: [] }).oneTime[0];
+check("discount shown: licence list price, the one-time discount, the same amount", [shown.rate, shown.discountPct, shown.amount], [176358, 20, 2821728]);
+check("discount not shown: the net price only", [hidden.rate, hidden.amount], [141086.4, 2821728]);
+const yr = { ...quote, items: [{ productCode: "OB04", name: "Orbis One Enterprise", pricingModel: "SaaS Subscription", billingClass: "subscription", unit: "User", qty: 20, months: 12, unitPriceResolved: 3779.1, baseRate: 4199, freqDiscountPct: 10, discountPct: 5, lineTotal: 3779.1 * 20 * 12 * 0.95 }], hans: { ...quote.hans, amc: null, saleMode: { mode: "subscription", frequency: "Annual" } } };
+const yrShown = quoteDocModel({ ...yr, quoteNo: "Y", createdDate: "2026-11-20", hans: { ...yr.hans, showDiscount: true } }, { priceRows: [plan], catalog: [] }).subs[0];
+const yrHidden = quoteDocModel({ ...yr, quoteNo: "Y", createdDate: "2026-11-20", hans: { ...yr.hans, showDiscount: false } }, { priceRows: [plan], catalog: [] }).subs[0];
+check("yearly billing, discount shown: list ₹4,199 and 10% + 5% combined = 14.5%", [yrShown.rate, yrShown.discountPct, Math.round(yrShown.amount)], [4199, 14.5, 71803]);
+const yrHtml = (await import("../src/lib/quotation/quoteDocument.js")).quoteDocumentHtml({ ...yr, quoteNo: "Y", createdDate: "2026-11-20", hans: { ...yr.hans, showDiscount: false } }, { priceRows: [plan], catalog: [], autoPrint: false });
+check("yearly billing, discount not shown: the print has the net rate to the paisa, no list rate", [yrHtml.includes("₹3,590.15"), yrHtml.includes("4,199"), Math.round(yrHidden.amount)], [true, false, 71803]);
+const htmlShown = (await import("../src/lib/quotation/quoteDocument.js")).quoteDocumentHtml({ ...quote, quoteNo: "X", createdDate: "2026-11-20", hans: { ...quote.hans, showDiscount: true } }, { priceRows: [plan], catalog: [], autoPrint: false });
+check("with discounts shown the print still has no months × rate working", [/42 months|4,199/.test(htmlShown), htmlShown.includes("1,76,358"), htmlShown.includes("20%")], [false, true, true]);
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

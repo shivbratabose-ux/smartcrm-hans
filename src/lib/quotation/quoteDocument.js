@@ -33,7 +33,8 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const inr = (n) => "₹" + Math.round(num(n)).toLocaleString("en-IN");
 // A unit rate keeps its paise (₹27.50, ₹2.50); whole rupees print without decimals.
-const inrRate = (n) => { const v = Math.round(num(n) * 100) / 100; return "₹" + v.toLocaleString("en-IN", { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }); };
+// Half a paisa rounds up even when floating point stores it a hair below (3590.145 → 3,590.15).
+const inrRate = (n) => { const v = Math.round(num(n) * 100 + 1e-6) / 100; return "₹" + v.toLocaleString("en-IN", { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }); };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${m[3]}-${MONTHS[+m[2] - 1]}-${m[1]}` : String(iso || ""); };
 const longDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${+m[3]} ${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][+m[2] - 1]} ${m[1]}` : String(iso || ""); };
@@ -151,8 +152,14 @@ export function quoteDocModel(quote, opts = {}) {
     const net = afterLine * (1 - overallPct / 100);                  // after overall discount too
     const unit = String(l.unit || row?.unit || "").trim();
     const u = /^[A-Z/]{2,}$/.test(unit) ? unit : unit.toLowerCase();   // HBL, HAWB stay upper case
-    // The customer sees prices, never how they were worked out (no months × rate,
-    // no one-time or frequency discount): decision 21 Nov 2026.
+    // Policy discounts folded into the price (one-time licence, billing frequency):
+    // shown only when the quote shows discounts, as a list price and a total %.
+    const sold = l.soldAs?.mode === "one_time" ? l.soldAs : null;
+    const policyPct = sold ? num(sold.discountPct) : num(l.freqDiscountPct);
+    const shownList = sold ? Math.round(num(sold.monthlyRate) * num(sold.months) * 100) / 100 : policyPct ? num(l.baseRate) : num(l.unitPriceResolved);
+    const shownDisc = policyPct ? Math.round((1 - (1 - policyPct / 100) * (1 - num(l.discountPct) / 100)) * 10000) / 100 : num(l.discountPct);
+    // The customer sees prices, never how they were worked out (no months × rate):
+    // decision 21 Nov 2026.
     const basis = l.soldAs?.mode === "one_time" ? "One-time licence" : oneTime ? "One time" : usage ? `Per ${u || "use"}` : `Per ${u || "unit"} per month`;
     return {
       code: l.productCode, name: l.name || row?.name || l.productCode, oneTime, usage, billingClass: cls, basis, qty, unit,
@@ -161,9 +168,11 @@ export function quoteDocModel(quote, opts = {}) {
       included: usage && num(l.unitPriceResolved) === 0 && row && row.rateSource !== "Slab" && num(row.listPrice) === 0 && row.listPrice != null,
       slabs: row?.rateSource === "Slab" ? slabTable(row.slabs, `${unit || "units"} per ${row.slabPeriod === "year" ? "year" : "month"}`) : null,
       row,
-      listRate: num(l.unitPriceResolved), discountPct: num(l.discountPct),
+      listRate: num(l.unitPriceResolved), discountPct: shownDisc,
       // What the customer sees: list rate + discount when shown; otherwise the net rate.
-      rate: showDiscount ? num(l.unitPriceResolved) : (qty ? net / qty : net),
+      // A one-time licence's list price is the undiscounted licence; its one-time
+      // discount (and a billing-frequency discount) joins the line discount.
+      rate: showDiscount ? shownList : (qty ? net / qty : net),
       amount: showDiscount ? afterLine : net,
       net,
     };
