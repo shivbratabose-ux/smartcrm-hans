@@ -2,7 +2,7 @@
 // test-report-builder.mjs — Reports → Custom Reports engine
 // (src/lib/reportBuilder.js): mix a main table with linked tables.
 // ═══════════════════════════════════════════════════════════════════
-import { runReport, columnOptions, resolveColumn, toCSV, bucketOf, STARTER_REPORTS, SOURCES, RELATIONS } from "../src/lib/reportBuilder.js";
+import { runReport, columnOptions, resolveColumn, toCSV, bucketOf, measure, STARTER_REPORTS, STARTER_CATEGORIES, SOURCES, RELATIONS } from "../src/lib/reportBuilder.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  ✓", name); } else { fail++; console.log("  ✗", name); } };
@@ -90,6 +90,52 @@ for (const rel of Object.values(RELATIONS).flatMap(Object.values)) if (rel.of &&
 ok("every link points at a real table", bad.length === 0);
 const broken = STARTER_REPORTS.filter(sp => { const res = runReport(sp, data, ctx); return res.error || res.columns.length !== sp.columns.length; });
 ok("every starter report runs with all its columns", broken.length === 0);
+const refs = STARTER_REPORTS.flatMap(sp => [
+  ...(sp.filters || []).map(f => f.col), sp.groupBy?.col, sp.groupBy2?.col, sp.sort?.col, sp.chartValue === "count" ? "" : sp.chartValue,
+].filter(Boolean).filter(id => !resolveColumn(sp.source, id)).map(id => `${sp.id}:${id}`));
+ok("every starter's filters, groupings, sort and chart value resolve", refs.length === 0 || (console.log(refs), false));
+ok("chart values of starters are numeric columns in the report", STARTER_REPORTS.every(sp => sp.chartValue === "count" || (sp.columns.includes(sp.chartValue) && resolveColumn(sp.source, sp.chartValue).type === "num")));
+ok("starter ids are unique", new Set(STARTER_REPORTS.map(s => s.id)).size === STARTER_REPORTS.length);
+ok("every starter has a known category", STARTER_REPORTS.every(s => STARTER_CATEGORIES.includes(s.category)));
+
+// ── Calculated fields (need won / lost from the stage masters) ──
+const cctx = { ...ctx, isWon: o => o.stage === "Won", isLost: o => o.stage === "Lost" };
+const opps2 = { ...data, opps: [
+  { id: "p1", oppNo: "P1", stage: "Won", value: 20, probability: 100, owner: "u1", createdDate: "2026-09-01", closeDate: "2026-10-01" },
+  { id: "p2", oppNo: "P2", stage: "Won", value: 30, probability: 100, owner: "u1", createdDate: "2026-10-01", closeDate: "2026-10-21" },
+  { id: "p3", oppNo: "P3", stage: "Proposal", value: 40, probability: 25, owner: "u2", createdDate: "2026-11-01", closeDate: "2026-11-30" },
+  { id: "p4", oppNo: "P4", stage: "Lost", value: 10, probability: 0, owner: "u2", createdDate: "2026-08-01", closeDate: "2026-09-15" },
+] };
+const calc = runReport({ source: "opps", columns: ["f:oppNo", "f:status", "f:weighted", "f:cycleDays", "f:daysToClose"], sort: { col: "f:oppNo" } }, opps2, cctx);
+const byNo = Object.fromEntries(calc.rows.map(r => [r.rec.oppNo, r.values]));
+ok("deal status Open / Won / Lost", byNo.P1["f:status"] === "Won" && byNo.P3["f:status"] === "Open" && byNo.P4["f:status"] === "Lost");
+ok("weighted value = value × probability", byNo.P3["f:weighted"] === 10);
+ok("sales cycle days for won deals only", byNo.P1["f:cycleDays"] === 30 && byNo.P3["f:cycleDays"] === "");
+ok("days to close for open deals", byNo.P3["f:daysToClose"] === 9);
+const cyc = runReport({ source: "opps", columns: ["f:oppNo", "f:value", "f:cycleDays"], filters: [{ col: "f:status", op: "is", value: "Won" }], groupBy: { col: "f:owner" } }, opps2, cctx);
+const u1 = cyc.groups.find(g => g.label === "Ravi");
+ok("group averages day columns, sums money", measure(u1, resolveColumn("opps", "f:cycleDays")) === 25 && measure(u1, resolveColumn("opps", "f:value")) === 50 && measure(u1, "count") === 2);
+
+// ── Matrix (two-way) grouping ──
+const mx = runReport({ source: "opps", columns: ["f:oppNo", "f:value"], groupBy: { col: "f:owner" }, groupBy2: { col: "f:status" } }, opps2, cctx);
+const ravi = mx.groups.find(g => g.label === "Ravi"), meera = mx.groups.find(g => g.label === "Meera");
+ok("matrix rows × columns", mx.groups2.map(g => g.label).sort().join() === "Lost,Open,Won" && ravi.cells.Won.count === 2 && meera.cells.Open.count === 1 && meera.cells.Lost.count === 1);
+ok("matrix cell sums", ravi.cells.Won.sums["f:value"] === 50 && !ravi.cells.Lost);
+
+// ── Relative date filters (today = 21 Nov 2026) ──
+const dates = { ...data, opps: ["2026-11-21", "2026-11-03", "2026-10-15", "2026-04-02", "2026-03-31"].map((d, i) => ({ id: `d${i}`, oppNo: `D${i}`, closeDate: d })) };
+const n = (op, value = "") => runReport({ source: "opps", columns: ["f:oppNo"], filters: [{ col: "f:closeDate", op, value }] }, dates, ctx).total;
+ok("today / this month / last month", n("today") === 1 && n("thisMonth") === 2 && n("lastMonth") === 1);
+ok("this FY quarter (Oct–Dec) and this FY (from 1 Apr)", n("thisQuarter") === 3 && n("thisFY") === 4);
+ok("more than N days ago, or never", runReport({ source: "opps", columns: ["f:oppNo"], filters: [{ col: "a:calls:latest:callDate", op: "olderThanDays", value: "10" }] }, data, ctx).total === 2);
+
+// ── Collections ageing band ──
+const coll = { ...data, collections: [
+  { id: "k1", pendingAmount: 100, dueDate: "2026-11-30" }, { id: "k2", pendingAmount: 100, dueDate: "2026-11-01" },
+  { id: "k3", pendingAmount: 100, dueDate: "2026-07-01" }, { id: "k4", pendingAmount: 0, dueDate: "2026-01-01" },
+] };
+const ag = runReport({ source: "collections", columns: ["f:ageingBand", "f:daysOverdue"], sort: { col: "f:daysOverdue", dir: "asc" } }, coll, ctx);
+ok("ageing bands", ag.rows.map(r => r.values["f:ageingBand"]).join() === "Not yet due,Paid,1–30 days,90+ days");
 
 console.log(`\nreport builder: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

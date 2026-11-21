@@ -11,7 +11,7 @@ import {
   SLA_HOURS, TICKET_TYPES
 } from "../data/constants";
 import { today, fmt, isOverdue, getScopedUserIds, isGlobalRole } from "../utils/helpers";
-import { periodOf } from "../utils/fiscal";
+import { periodOf, wonStageNames, lostStageNames } from "../utils/fiscal";
 import { callPeople, isCallPerson, isDemoCall } from "../utils/teamSummary";
 import { PageTip } from "./shared";
 import CustomReports from "./CustomReports";
@@ -231,6 +231,10 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
     const ownerField = s.owner === "marketingPerson" ? callPeople : s.owner;
     return (rec) => (!s.date || inWindow(rec[s.date])) && (!ownerField || byOwner([rec], ownerField).length > 0);
   }, [periodWindow, ownerFilter, teamFilter, teamIds]);
+  const _wonSet = useMemo(() => wonStageNames(masters), [masters]);
+  const _lostSet = useMemo(() => lostStageNames(masters), [masters]);
+  const isWonOpp = useCallback((o) => _wonSet.has(o?.stage), [_wonSet]);
+  const isLostOpp = useCallback((o) => _lostSet.has(o?.stage), [_lostSet]);
   const fullName = useCallback((id) => (orgUsers || []).find(u => u.id === id)?.name || TEAM_MAP[id]?.name || id, [orgUsers]);
   const accountNameOf = useMemo(() => { const m = Object.fromEntries((accounts || []).map(a => [a.id, a.name])); return (id) => m[id] || id; }, [accounts]);
 
@@ -661,7 +665,7 @@ function Reports({accounts,opps,tickets,activities,leads,callReports,collections
       </div>
 
       {tab==="custom"&&(
-        <CustomReports data={customData} today={today} userName={fullName} accountName={accountNameOf} keepFor={customKeepFor} currentUser={currentUser}/>
+        <CustomReports data={customData} today={today} userName={fullName} accountName={accountNameOf} keepFor={customKeepFor} currentUser={currentUser} isWon={isWonOpp} isLost={isLostOpp}/>
       )}
 
       {/* ═══ EXECUTIVE SUMMARY ═══ */}

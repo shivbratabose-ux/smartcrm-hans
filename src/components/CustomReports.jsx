@@ -16,7 +16,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Plus, X, ArrowUp, ArrowDown, Download, Save, Copy, Trash2, Table2, SlidersHorizontal, ChevronDown, ChevronUp, Users, RefreshCw } from "lucide-react";
 import {
   SOURCES, columnOptions, resolveColumn, runReport, toCSV, OPS, NO_VALUE_OPS,
-  STARTER_REPORTS, blankReport, display,
+  STARTER_REPORTS, STARTER_CATEGORIES, blankReport, display, measure,
 } from "../lib/reportBuilder";
 import { loadReports, saveReport, deleteReport } from "../lib/reportStore";
 
@@ -26,6 +26,17 @@ const sel = { padding: "6px 10px", borderRadius: 8, border: "1px solid #E2E8F0",
 const chipBtn = { border: "none", background: "transparent", padding: 2, cursor: "pointer", display: "inline-flex", color: "var(--text3)", borderRadius: 8 };
 const lbl = { fontSize: 10.5, fontWeight: 700, color: "var(--text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 };
 
+
+const num = (v) => Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 1 });
+// Days and ages are averaged in summaries; money and counts are summed.
+const measureLabel = (c) => (c.summary === "avg" ? `Average ${c.label}` : `Sum of ${c.label}`);
+function DateBy({ value, onChange }) {
+  return (
+    <select style={sel} value={value || "month"} onChange={e => onChange(e.target.value)}>
+      <option value="month">by month</option><option value="quarter">by quarter (FY)</option><option value="fy">by financial year</option><option value="year">by calendar year</option>
+    </select>
+  );
+}
 
 function ColumnPicker({ source, value, onChange, placeholder = "+ Add column…", exclude = [] }) {
   const groups = useMemo(() => columnOptions(source), [source]);
@@ -41,7 +52,7 @@ function ColumnPicker({ source, value, onChange, placeholder = "+ Add column…"
   );
 }
 
-export default function CustomReports({ data, today, userName, accountName, keepFor, currentUser }) {
+export default function CustomReports({ data, today, userName, accountName, keepFor, currentUser, isWon, isLost }) {
   // ── Saved reports (cloud, or this browser when offline) ──
   const [saved, setSaved] = useState([]);
   const [cloud, setCloud] = useState(false);
@@ -63,7 +74,7 @@ export default function CustomReports({ data, today, userName, accountName, keep
   const [page, setPage] = useState(0);
   const [msg, setMsg] = useState("");
 
-  const ctx = useMemo(() => ({ today, userName, accountName, keep: keepFor(spec.source) }), [today, userName, accountName, keepFor, spec.source]);
+  const ctx = useMemo(() => ({ today, userName, accountName, isWon, isLost, keep: keepFor(spec.source) }), [today, userName, accountName, isWon, isLost, keepFor, spec.source]);
   const result = useMemo(() => runReport(spec, data, ctx), [spec, data, ctx]);
   useEffect(() => { setPage(0); }, [spec]);
 
@@ -132,9 +143,15 @@ export default function CustomReports({ data, today, userName, accountName, keep
 
   const colLabel = (id) => resolveColumn(spec.source, id)?.label || id;
   const groupCol = spec.groupBy?.col ? resolveColumn(spec.source, spec.groupBy.col) : null;
+  const group2Col = groupCol && spec.groupBy2?.col ? resolveColumn(spec.source, spec.groupBy2.col) : null;
+  const matrix = !!(groupCol && group2Col && result.groups2);
   const numCols = result.columns.filter(c => c.type === "num");
   const chartKey = spec.chartValue && numCols.some(c => c.id === spec.chartValue) ? spec.chartValue : "count";
-  const chartData = (result.groups || []).slice(0, 30).map(g => ({ name: g.label, value: chartKey === "count" ? g.count : g.sums[chartKey] }));
+  const chartCol = chartKey === "count" ? null : numCols.find(c => c.id === chartKey);
+  const chartData = (result.groups || []).slice(0, 30).map(g => ({ name: g.label, value: measure(g, chartCol || "count") }));
+  // Matrix: the most common 12 second-level values become columns.
+  const cols2 = (result.groups2 || []).slice(0, 12);
+  const stackData = (result.groups || []).slice(0, 30).map(g => ({ name: g.label, ...Object.fromEntries(cols2.map(k => [k.key, g.cells[k.key] ? measure(g.cells[k.key], chartCol || "count") : 0])) }));
 
   // Distinct values to suggest in a filter box (first 60).
   const suggestions = (colId) => {
@@ -163,7 +180,9 @@ export default function CustomReports({ data, today, userName, accountName, keep
           <option value="__new">+ New blank report</option>
           {mine.length > 0 && <optgroup label="My reports">{mine.map(r => <option key={r.id} value={r.id}>{r.name}{r.shared ? " (shared)" : ""}</option>)}</optgroup>}
           {sharedWithMe.length > 0 && <optgroup label="Shared with team">{sharedWithMe.map(r => <option key={r.id} value={r.id}>{r.name} · by {userName(r.ownerId)}</option>)}</optgroup>}
-          <optgroup label="Starter reports">{STARTER_REPORTS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</optgroup>
+          {STARTER_CATEGORIES.map(cat => (
+            <optgroup key={cat} label={`Starter · ${cat}`}>{STARTER_REPORTS.filter(r => r.category === cat).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</optgroup>
+          ))}
         </select>
         <input value={spec.name || ""} onChange={e => upd({ name: e.target.value })} placeholder="Report name"
           style={{ ...sel, flex: "1 1 220px", minWidth: 160 }} />
@@ -251,22 +270,35 @@ export default function CustomReports({ data, today, userName, accountName, keep
                 <option value="">No grouping</option>
                 {spec.columns.map(id => <option key={id} value={id}>{colLabel(id)}</option>)}
               </select>
-              {groupCol?.type === "date" && (
-                <select style={sel} value={spec.groupBy.by || "month"} onChange={e => upd({ groupBy: { ...spec.groupBy, by: e.target.value } })}>
-                  <option value="month">by month</option><option value="quarter">by quarter (FY)</option><option value="fy">by financial year</option><option value="year">by calendar year</option>
-                </select>
-              )}
+              {groupCol?.type === "date" && <DateBy value={spec.groupBy.by} onChange={by => upd({ groupBy: { ...spec.groupBy, by } })} />}
             </div>
             {groupCol && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 12 }}>Chart</span>
-                <select style={sel} value={spec.chart || "bar"} onChange={e => upd({ chart: e.target.value })}>
-                  <option value="bar">Bar</option><option value="pie">Pie</option><option value="none">No chart</option>
+                <span style={{ fontSize: 12 }}>Then by</span>
+                <select style={sel} value={spec.groupBy2?.col || ""} onChange={e => upd({ groupBy2: { col: e.target.value, by: spec.groupBy2?.by || "month" } })} title="A second grouping turns the summary into a matrix (e.g. Owner × Stage)">
+                  <option value="">Nothing (simple summary)</option>
+                  {spec.columns.filter(id => id !== spec.groupBy.col).map(id => <option key={id} value={id}>{colLabel(id)}</option>)}
                 </select>
+                {group2Col?.type === "date" && <DateBy value={spec.groupBy2.by} onChange={by => upd({ groupBy2: { ...spec.groupBy2, by } })} />}
+              </div>
+            )}
+            {groupCol && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 12 }}>{matrix ? "Show" : "Chart"}</span>
+                {!matrix && (
+                  <select style={sel} value={spec.chart || "bar"} onChange={e => upd({ chart: e.target.value })}>
+                    <option value="bar">Bar</option><option value="pie">Pie</option><option value="none">No chart</option>
+                  </select>
+                )}
                 <select style={sel} value={chartKey} onChange={e => upd({ chartValue: e.target.value })}>
                   <option value="count">Count of rows</option>
-                  {numCols.map(c => <option key={c.id} value={c.id}>Sum of {c.label}</option>)}
+                  {numCols.map(c => <option key={c.id} value={c.id}>{measureLabel(c)}</option>)}
                 </select>
+                {matrix && (
+                  <select style={sel} value={spec.chart === "none" ? "none" : "bar"} onChange={e => upd({ chart: e.target.value })}>
+                    <option value="bar">Stacked bar chart</option><option value="none">No chart</option>
+                  </select>
+                )}
               </div>
             )}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
@@ -291,11 +323,19 @@ export default function CustomReports({ data, today, userName, accountName, keep
               {spec.chart !== "none" && chartData.length > 0 && (
                 <div className="card" style={{ padding: 12 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
-                    {chartKey === "count" ? "Count" : `Sum of ${colLabel(chartKey)}`} by {groupCol?.label}
+                    {chartCol ? measureLabel(chartCol) : "Count"} by {groupCol?.label}{matrix ? ` and ${group2Col?.label}` : ""}
                     {result.groups.length > 30 && <span style={{ fontWeight: 400, fontSize: 11, color: "var(--text3)" }}> · top 30 of {result.groups.length}</span>}
                   </div>
-                  <ResponsiveContainer width="100%" height={260}>
-                    {spec.chart === "pie" ? (
+                  <ResponsiveContainer width="100%" height={matrix ? 300 : 260}>
+                    {matrix ? (
+                      <BarChart data={stackData} margin={{ left: 0, right: 8, bottom: 30 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={stackData.length > 6 ? -30 : 0} textAnchor={stackData.length > 6 ? "end" : "middle"} height={stackData.length > 6 ? 60 : 30} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip formatter={v => Number(v).toLocaleString("en-IN")} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                        {cols2.map((k, i) => <Bar key={k.key} dataKey={k.key} name={k.label} stackId="m" fill={CL[i % CL.length]} isAnimationActive={false} />)}
+                      </BarChart>
+                    ) : spec.chart === "pie" ? (
                       <PieChart>
                         <Pie data={chartData} dataKey="value" nameKey="name" outerRadius={90} isAnimationActive={false}>
                           {chartData.map((_, i) => <Cell key={i} fill={CL[i % CL.length]} />)}
@@ -314,19 +354,45 @@ export default function CustomReports({ data, today, userName, accountName, keep
                   </ResponsiveContainer>
                 </div>
               )}
-              <div className="card" style={{ padding: 0, overflow: "auto", maxHeight: 320 }}>
-                <table className="tbl">
-                  <thead><tr><th>{groupCol?.label}</th><th style={{ textAlign: "right" }}>Count</th>{numCols.map(c => <th key={c.id} style={{ textAlign: "right" }}>Sum of {c.label}</th>)}</tr></thead>
-                  <tbody>
-                    {result.groups.map(g => (
-                      <tr key={g.key}>
-                        <td style={{ fontSize: 12, fontWeight: 600 }}>{g.label}</td>
-                        <td style={{ textAlign: "right", fontSize: 12 }}>{g.count}</td>
-                        {numCols.map(c => <td key={c.id} style={{ textAlign: "right", fontSize: 12 }}>{g.sums[c.id].toLocaleString("en-IN")}</td>)}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="card" style={{ padding: 0, overflow: "auto", maxHeight: matrix ? 420 : 320 }}>
+                {matrix ? (
+                  <table className="tbl">
+                    <thead><tr>
+                      <th style={{ whiteSpace: "nowrap" }}>{groupCol?.label} ↓ · {group2Col?.label} →</th>
+                      {cols2.map(k => <th key={k.key} style={{ textAlign: "right", whiteSpace: "nowrap" }}>{k.label}</th>)}
+                      <th style={{ textAlign: "right" }}>Total</th>
+                    </tr></thead>
+                    <tbody>
+                      {result.groups.map(g => (
+                        <tr key={g.key}>
+                          <td style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{g.label}</td>
+                          {cols2.map(k => <td key={k.key} style={{ textAlign: "right", fontSize: 12, color: g.cells[k.key] ? undefined : "var(--text3)" }}>{g.cells[k.key] ? num(measure(g.cells[k.key], chartCol || "count")) : "—"}</td>)}
+                          <td style={{ textAlign: "right", fontSize: 12, fontWeight: 700 }}>{num(measure(g, chartCol || "count"))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {(!chartCol || chartCol.summary !== "avg") && (
+                      <tfoot><tr>
+                        <td style={{ fontSize: 12, fontWeight: 700, borderTop: "2px solid var(--border)" }}>Total</td>
+                        {cols2.map(k => <td key={k.key} style={{ textAlign: "right", fontSize: 12, fontWeight: 700, borderTop: "2px solid var(--border)" }}>{num(result.groups.reduce((s, g) => s + (g.cells[k.key] ? measure(g.cells[k.key], chartCol || "count") : 0), 0))}</td>)}
+                        <td style={{ textAlign: "right", fontSize: 12, fontWeight: 700, borderTop: "2px solid var(--border)" }}>{num(result.groups.reduce((s, g) => s + measure(g, chartCol || "count"), 0))}</td>
+                      </tr></tfoot>
+                    )}
+                  </table>
+                ) : (
+                  <table className="tbl">
+                    <thead><tr><th>{groupCol?.label}</th><th style={{ textAlign: "right" }}>Count</th>{numCols.map(c => <th key={c.id} style={{ textAlign: "right" }}>{measureLabel(c)}</th>)}</tr></thead>
+                    <tbody>
+                      {result.groups.map(g => (
+                        <tr key={g.key}>
+                          <td style={{ fontSize: 12, fontWeight: 600 }}>{g.label}</td>
+                          <td style={{ textAlign: "right", fontSize: 12 }}>{g.count}</td>
+                          {numCols.map(c => <td key={c.id} style={{ textAlign: "right", fontSize: 12 }}>{num(measure(g, c))}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           )}
