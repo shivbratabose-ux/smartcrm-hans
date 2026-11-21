@@ -31,6 +31,7 @@ import {
 } from "../lib/quotation/pricingEngine";
 import { computeAmc, amcRules, describeEscalation, amcTermText, LICENCE_MODEL } from "../lib/quotation/amc";
 import { saleTerms, frequencyOf, oneTimeAllowed, oneTimeTermsFor, oneTimeUnitPrice } from "../lib/quotation/saleTerms";
+import { rowOffered, licenceOffered, quoteFrequencies } from "../lib/quotation/billingTypes";
 import { TC_TEMPLATES, STANDARD_TERMS } from "../data/constants";
 import { printHansQuote } from "../lib/quotation/printQuote";
 import { toLocalISODate } from "../utils/helpers";
@@ -319,7 +320,7 @@ export default function HansQuoteBuilder({
     // Sold as a one-time licence: monthly rate × N months less the one-time
     // discount, AMC yearly (computeAmc picks up LICENCE_MODEL lines). Sold as a
     // subscription: the billing frequency's discount comes off the rate.
-    const soldOT = saleMode === "one_time" && terms.oneTime.enabled && oneTimeAllowed(p) ? oneTimeTermsFor(p, terms) : null;
+    const soldOT = saleMode === "one_time" && terms.oneTime.enabled && oneTimeAllowed(p) && licenceOffered(p, catalog, catalogue) ? oneTimeTermsFor(p, terms) : null;
     const freqPct = !soldOT && billingClass === "subscription" ? (frequencyOf(terms, billingFrequency)?.discountPct || 0) : 0;
     const baseRate = unitPrice;
     const unitPriceSold = soldOT ? oneTimeUnitPrice(unitPrice, soldOT) : freqPct ? Math.round(unitPrice * (1 - freqPct / 100) * 100) / 100 : unitPrice;
@@ -392,7 +393,16 @@ export default function HansQuoteBuilder({
   const hasSubscription = picked.some(l => l.billingClass === "subscription");
   // Lines whose price row is a subscription (whether sold as one or as a one-time licence).
   const sellableSubs = picked.some(l => billingClassOf(catByCode[l.productCode] || {}) === "subscription");
-  const anyOneTime = picked.some(l => oneTimeAllowed(catByCode[l.productCode]));
+  const anyOneTime = picked.some(l => oneTimeAllowed(catByCode[l.productCode]) && licenceOffered(catByCode[l.productCode], catalog, catalogue));
+  // Billing frequencies every product on the quote allows (Products & Pricing → billing types).
+  const productFreqs = quoteFrequencies(picked.map(l => catByCode[l.productCode]), catalog, catalogue);
+  const freqKey = productFreqs.join(",");
+  useEffect(() => {
+    if (editQuote || !hasSubscription || !productFreqs.length || productFreqs.includes(billingFrequency)) return;
+    const firstAllowed = terms.frequencies.find(f => f.enabled && productFreqs.includes(f.id));
+    if (firstAllowed) setBillingFrequency(firstAllowed.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freqKey, hasSubscription]);
   // Software with a subscription: 50% with the order, 50% on go-live. Services
   // billed on use (AMS registration and the like): payable with the order.
   useEffect(() => {
@@ -685,7 +695,8 @@ export default function HansQuoteBuilder({
   const lineEntries = pricedLines.map((l, i) => ({ l, i })).filter(e => !e.l._empty);
   const productPanels = [
     ...productIds.map(id => productOptions.find(o => o.id === id)).filter(Boolean).map(o => ({
-      id: o.id, name: o.name, model: o.model, rows: o.rows, sections: rowSections(o.rows),
+      // Only items of the product's billing types are offered.
+      id: o.id, name: o.name, model: o.model, rows: o.rows.filter(r => rowOffered(r, catalog, catalogue)), sections: rowSections(o.rows.filter(r => rowOffered(r, catalog, catalogue))),
       lines: lineEntries.filter(e => productIdOfRow(catByCode[e.l.productCode], catalog) === o.id),
     })),
   ];
@@ -835,7 +846,7 @@ export default function HansQuoteBuilder({
                 {hasSubscription && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
                   <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>Billed</span>
                   <select value={billingFrequency} onChange={e => setBillingFrequency(e.target.value)} style={{ fontSize: 11, padding: "3px 6px", borderRadius: 6, border: "1px solid var(--border)" }}>
-                    {terms.frequencies.filter(f => f.enabled || f.id === billingFrequency).map(f => <option key={f.id} value={f.id}>{f.label}{f.discountPct && hasSubscription ? ` (${f.discountPct}% off)` : ""}</option>)}
+                    {terms.frequencies.filter(f => (f.enabled && productFreqs.includes(f.id)) || f.id === billingFrequency).map(f => <option key={f.id} value={f.id}>{f.label}{f.discountPct && hasSubscription ? ` (${f.discountPct}% off)` : ""}</option>)}
                   </select>
                 </span>}
                 {saleMode === "one_time" && sellableSubs && <span style={{ fontSize: 11, color: "#9D174D" }}>
