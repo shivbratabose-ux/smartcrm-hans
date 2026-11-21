@@ -38,7 +38,7 @@ import PublicQuoteAccept from "./components/PublicQuoteAccept";
 import PublicBillConfirm from "./components/PublicBillConfirm";
 import PublicTerms from "./components/PublicTerms";
 import { becameDelivered, handoverOf, accountsIds } from "./lib/quotation/handover";
-import { isProjectSize } from "./lib/projects";
+import { isProjectSize, projectFromOpp, nextProjectNumber, setProjectChoice } from "./lib/projects";
 import Masters from "./components/Masters";
 import AiSettings from "./components/AiSettings";
 import OrgHierarchy from "./components/OrgHierarchy";
@@ -1853,30 +1853,17 @@ export default function SmartCRM() {
     // projects (lib/projects.js); smaller wins are delivered from the deal.
     if (isProjectSize(opp.value)) setProjects(prev => {
       if (prev.some(p => p.oppId === opp.id && !p.isDeleted)) return prev;
-      const yr = new Date().getFullYear();
-      const seq = prev.reduce((m, p) => { const x = p.projectNo?.match(/PRJ-\d{4}-(\d+)/); return x ? Math.max(m, +x[1]) : m; }, 0) + 1;
-      return [...prev, {
-        id: `prj_${uid()}`,
-        projectNo: `PRJ-${yr}-${String(seq).padStart(3, "0")}`,
-        name: opp.title || "New Project",
-        accountId: opp.accountId || "",
-        oppId: opp.id,
-        contractId: "",
-        owner: opp.owner,
-        products: Array.isArray(opp.products) ? [...opp.products] : [],
-        status: "Requirement Gathering",
-        progress: 0,
-        startDate: today,
-        goLiveTarget: opp.decisionDate || opp.closeDate || "",
-        goLiveActual: "",
-        value: opp.value || 0,
-        scope: opp.notes || "",
-        deliverables: "", risks: "", notes: opp.isTender ? `From tender ${opp.tenderNo || ""} (${opp.tenderAuthority || ""}).` : "Auto-created from won deal.",
-        milestones: [], team: [{ userId: opp.owner, role: "Delivery Lead" }],
-        createdDate: today,
-      }];
+      return [...prev, projectFromOpp(opp, { id: `prj_${uid()}`, projectNo: nextProjectNumber(prev, new Date().getFullYear()), today })];
     });
   }, [accounts, leads]);
+
+  // "Run as a project" tick-box on a deal (Pipeline) or lead (Leads): adds it
+  // to the Projects screen, or takes it off again (nothing is deleted).
+  const toggleRecordProject = useCallback((kind, rec, on) => {
+    const productName = kind === "lead" ? (PROD_MAP[rec.product]?.name || rec.product || "") : "";
+    setProjects(prev => setProjectChoice(prev, kind, rec, on, { today, id: `prj_${uid()}`, productName }));
+    notify.success(on ? "Added to the Projects screen." : "Taken off the Projects screen. Nothing is deleted; tick it again to bring it back.");
+  }, []);
 
   // Convert lead to opportunity — accepts conversion data from modal
   const convertLeadToOpp = useCallback((lead, conversionData) => {
@@ -2814,16 +2801,16 @@ export default function SmartCRM() {
               );
             })()}
             {page==="dashboard"  && <Dashboard accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} tickets={visibleTickets} activities={visibleActivities} leads={visibleLeads} callReports={visibleCallReports} collections={visibleCollections} targets={visibleTargets} setPage={setPage} orgUsers={orgUsers} currentUser={currentUser}/>}
-            {page==="leads"      && <Leads leadPrefill={leadPrefill} onLeadPrefillUsed={()=>setLeadPrefill(null)} leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} opps={visibleOpps} setUpdates={setUpdates}/>}
+            {page==="leads"      && <Leads projects={visibleProjects} onToggleProject={toggleRecordProject} leadPrefill={leadPrefill} onLeadPrefillUsed={()=>setLeadPrefill(null)} leads={visibleLeads} setLeads={setLeads} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} currentUser={currentUser} onConvertToOpp={convertLeadToOpp} orgUsers={orgUsers} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} opps={visibleOpps} setUpdates={setUpdates}/>}
             {page==="accounts"   && <Accounts accounts={visibleAccounts} setAccounts={setAccounts} onDeleteAccount={cascadeDeleteAccount} opps={visibleOpps} activities={visibleActivities} setActivities={setActivities} notes={notes} files={files} onAddNote={addNote} onAddFile={addFile} currentUser={currentUser} contacts={visibleContacts} setContacts={setContacts} tickets={visibleTickets} contracts={visibleContracts} collections={visibleCollections} leads={visibleLeads} orgUsers={orgUsers} callReports={visibleCallReports} setCallReports={setCallReports} masters={masters} catalog={catalog} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="contacts"   && <Contacts contacts={visibleContacts} setContacts={setContacts} onDeleteContact={cascadeDeleteContact} accounts={visibleAccounts} opps={visibleOpps} leads={visibleLeads} contracts={visibleContracts} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} canDelete={canDelete} currentUser={currentUser} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
-            {page==="pipeline"   && <Pipeline opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} setLeads={setLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} catalog={catalog} onDealWon={handleDealWon} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} aiConfig={aiConfig}/>}
+            {page==="pipeline"   && <Pipeline projects={visibleProjects} onToggleProject={toggleRecordProject} opps={visibleOpps} setOpps={setOpps} onDeleteOpp={cascadeDeleteOpp} accounts={visibleAccounts} contacts={visibleContacts} setContacts={setContacts} leads={visibleLeads} setLeads={setLeads} notes={notes} onAddNote={addNote} files={files} onAddFile={addFile} currentUser={currentUser} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} orgUsers={orgUsers} masters={masters} catalog={catalog} onDealWon={handleDealWon} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess} aiConfig={aiConfig}/>}
             {page==="activities" && <Activities activities={visibleActivities} setActivities={setActivities} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} files={files} onAddFile={addFile} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="callreports"&& <CallReports callReports={visibleCallReports} setCallReports={setCallReports} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog} aiConfig={aiConfig}/>}
             {page==="tickets"    && <Tickets tickets={visibleTickets} setTickets={setTickets} accounts={visibleAccounts} orgUsers={orgUsers} currentUser={currentUser} canDelete={canDelete} catalog={catalog} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="contracts"  && <Contracts onOpenAgreements={()=>setPage("agreements")} contracts={visibleContracts} setContracts={setContracts} accounts={visibleAccounts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} canDelete={canDelete} onGenerateRenewal={generateRenewalQuote} onGenerateRenewalOpp={generateRenewalOpportunity} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
             {page==="collections"&& <Collections collections={visibleCollections} setCollections={setCollections} accounts={visibleAccounts} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} onRequestEditAccess={requestEditAccess}/>}
-            {page==="projects"   && <Projects projects={visibleProjects} setProjects={setProjects} onDelivered={onProjectDelivered} accounts={visibleAccounts} opps={visibleOpps} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
+            {page==="projects"   && <Projects projects={visibleProjects} leads={visibleLeads} setProjects={setProjects} onDelivered={onProjectDelivered} accounts={visibleAccounts} opps={visibleOpps} contracts={visibleContracts} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} catalog={catalog}/>}
             {(page==="quotations"||page==="billing"||page==="agreements") && <Quotations openPanel={page==="quotations"?"":page} onPanelClose={()=>setPage(lastPageRef.current||"dashboard")} onPanelOpenQuote={(id)=>{setFocusQuoteId(id||"");setPage("quotations");}} focusQuoteId={page==="quotations"?focusQuoteId:""} onFocusDone={()=>setFocusQuoteId("")} quotes={visibleQuotes} setQuotes={setQuotes} aiConfig={aiConfig} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} leads={visibleLeads} contracts={contracts} setContracts={setContracts} collections={collections} setCollections={setCollections} projects={projects} setProjects={setProjects} setActivities={setActivities} setUpdates={setUpdates} isFinance={_financeRole} commLogs={commLogs} setCommLogs={setCommLogs} currentUser={currentUser} orgUsers={orgUsers} catalog={catalog} masters={masters} canDelete={canDelete} isManager={_globalRole} onRequestEditAccess={requestEditAccess}/>}
             {page.startsWith("quote-accept/") && <QuoteAcceptLanding quoteId={page.replace(/^quote-accept\//,"")} quotes={quotes} setQuotes={setQuotes} accounts={accounts} contacts={contacts} contracts={contracts} setContracts={setContracts} setActivities={setActivities} currentUser={currentUser} onBack={()=>setPage("quotations")}/>}
             {page==="calendar"   && <CalendarView events={visibleEvents} setEvents={setEvents} activities={visibleActivities} setActivities={setActivities} callReports={visibleCallReports} setCallReports={setCallReports} leads={visibleLeads} accounts={visibleAccounts} contacts={visibleContacts} opps={visibleOpps} currentUser={currentUser} orgUsers={orgUsers} canDelete={canDelete} commLogs={commLogs} holidays={masters.holidays} adminWorkTypes={masters.adminWorkTypes} onRequestEditAccess={requestEditAccess}/>}

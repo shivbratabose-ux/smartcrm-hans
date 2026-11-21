@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, createContext, useContext } from "react";
+import ProjectToggle from "./ProjectToggle";
 import {
   Plus, ChevronLeft, ChevronRight, Edit2, Trash2, Check, X,
   BarChart3, List, Kanban, Clock, AlertTriangle, TrendingUp,
@@ -456,7 +457,7 @@ function QuickUpdatePopover({ opp, onSave, onClose }) {
 /* ═══════════════════════════════════════════════════════
    DEAL DETAIL (Enhanced)
    ═══════════════════════════════════════════════════════ */
-function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], setLeads, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, orgUsers = [], callReports = [], onLogCall }) {
+function DealDetail({ projects = [], onToggleProject, detail, onClose, onEdit, accounts, contacts, leads = [], setLeads, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, orgUsers = [], callReports = [], onLogCall }) {
   const { STAGE_COL, STAGES, STAGE_PROB } = useContext(StagesContext);
   const [tab, setTab] = useState("overview");
 
@@ -792,6 +793,8 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], s
                 </div>
               )}
 
+              <ProjectToggle kind="opp" record={detail} value={detail.value} projects={projects} onToggle={onToggleProject} />
+
               {/* ─── KPI cards (mirrors Lead Detail) ─── */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
                 {kpiCard(<TrendingUp size={15} />, "Deal Value", fmt.inr(dealValueL), "Open deal value")}
@@ -1065,7 +1068,7 @@ function DealDetail({ detail, onClose, onEdit, accounts, contacts, leads = [], s
 /* ═══════════════════════════════════════════════════════
    PIPELINE (main component)
    ═══════════════════════════════════════════════════════ */
-function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLeads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete, commLogs=[], onRequestEditAccess, aiConfig }) {
+function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLeads, notes, onAddNote, files, onAddFile, currentUser, activities, setActivities, callReports, setCallReports, orgUsers, masters, catalog, onDealWon, canDelete, commLogs=[], onRequestEditAccess, aiConfig, projects = [], onToggleProject }) {
   const canEditOpp = (o) => canEditRecord({ownerId:o?.owner,currentUser,orgUsers,recordType:"opp",recordId:o?.id,commLogs,catalog,recordProductIds:(o?.products&&o.products.length)?o.products:(o?.product?[o.product]:[])});
   const requestAccessOpp = (o) => onRequestEditAccess && onRequestEditAccess("opp", o.id, o.title||o.id||"Opportunity", o.owner);
 
@@ -2086,7 +2089,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
 
       {/* ═════════ DEAL DETAIL ═════════ */}
       {detail && (
-        <DealDetail
+        <DealDetail projects={projects} onToggleProject={onToggleProject}
           detail={opps.find(o => o.id === detail.id) || detail} onClose={() => setDetail(null)}
           onEdit={() => { openEdit(opps.find(o => o.id === detail.id) || detail); setDetail(null); }}
           accounts={accounts} contacts={contacts} leads={leads} setLeads={setLeads} notes={notes} files={files}

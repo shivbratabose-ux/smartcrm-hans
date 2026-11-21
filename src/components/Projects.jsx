@@ -31,7 +31,7 @@ const projectHealth = (p) => {
   return { label: "On Track", color: "#16A34A" };
 };
 
-function Projects({ projects, setProjects, accounts, opps = [], contracts = [], currentUser, orgUsers, canDelete, catalog = [], onDelivered }) {
+function Projects({ projects, setProjects, accounts, opps = [], leads = [], contracts = [], currentUser, orgUsers, canDelete, catalog = [], onDelivered }) {
   const team = orgUsers?.length ? orgUsers.filter(u => u.status !== "Inactive") : TEAM;
   const [statusF, setStatusF] = useState("All");
   const [ownerF, setOwnerF] = useState("All");
@@ -42,15 +42,16 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
   const [confirm, setConfirm] = useState(null);
   const [showSmaller, setShowSmaller] = useState(false);
 
-  // Only deals of ₹50 lakh or more are run as projects (lib/projects.js);
-  // smaller wins are delivered from the deal and stay in Pipeline / Leads.
+  // Deals of ₹50 lakh or more, and anything ticked "Run as a project" in
+  // Pipeline / Leads or added here (lib/projects.js). Other small wins are
+  // delivered from the deal and stay in Pipeline / Leads.
   const live = useMemo(() => projects.filter(p => !p.isDeleted), [projects]);
-  const { shown: large, smaller } = useMemo(() => splitProjects(live, opps), [live, opps]);
+  const { shown: large, smaller } = useMemo(() => splitProjects(live, opps, leads), [live, opps, leads]);
   const enriched = useMemo(() => (showSmaller ? live : large).map(p => {
     // A project created without an account takes its deal's account.
-    const accId = p.accountId || opps.find(o => o.id === p.oppId)?.accountId || "";
-    return { ...p, _accName: accounts.find(a => a.id === accId)?.name || "—", _value: projectValue(p, opps), _health: projectHealth(p) };
-  }), [live, large, showSmaller, accounts, opps]);
+    const accId = p.accountId || opps.find(o => o.id === p.oppId)?.accountId || leads.find(l => l.id === p.leadId)?.accountId || "";
+    return { ...p, _accName: accounts.find(a => a.id === accId)?.name || "—", _value: projectValue(p, opps, leads), _health: projectHealth(p) };
+  }), [live, large, showSmaller, accounts, opps, leads]);
 
   const filtered = useMemo(() => enriched.filter(p => {
     if (statusF !== "All" && p.status !== statusF) return false;
@@ -76,7 +77,7 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
     const n = projects.reduce((m, p) => { const x = p.projectNo?.match(/PRJ-\d{4}-(\d+)/); return x ? Math.max(m, +x[1]) : m; }, 0) + 1;
     return `PRJ-${yr}-${String(n).padStart(3, "0")}`;
   };
-  const openAdd = () => { setForm({ ...BLANK_PROJECT, id: `prj${uid()}`, projectNo: nextProjectNo(), owner: currentUser || "u1", startDate: today, createdDate: today, milestones: [], team: [] }); setFormErrors({}); setModal({ mode: "add" }); };
+  const openAdd = () => { setForm({ ...BLANK_PROJECT, selected: true, id: `prj${uid()}`, projectNo: nextProjectNo(), owner: currentUser || "u1", startDate: today, createdDate: today, milestones: [], team: [] }); setFormErrors({}); setModal({ mode: "add" }); };
   const openEdit = (p) => { setForm({ ...p, milestones: [...(p.milestones || [])], team: [...(p.team || [])] }); setFormErrors({}); setModal({ mode: "edit" }); };
   const save = () => {
     const errs = {};
@@ -115,7 +116,7 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
       <div className="pg-head">
         <div>
           <div className="pg-title">Projects</div>
-          <div className="pg-sub">{enriched.length} {showSmaller ? "total" : `project${enriched.length === 1 ? "" : "s"} of ${fmt.lakh(PROJECT_MIN_LAKH)} or more`} · {active.length} active{delayed > 0 ? ` · ${delayed} delayed` : ""}</div>
+          <div className="pg-sub">{enriched.length} {showSmaller ? "total" : `project${enriched.length === 1 ? "" : "s"}`} · {active.length} active{delayed > 0 ? ` · ${delayed} delayed` : ""}</div>
         </div>
         <div className="pg-actions">
           <button className="btn btn-primary" onClick={openAdd}><Plus size={14}/>New Project</button>
@@ -124,7 +125,7 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
 
       {smaller.length > 0 && (
         <div style={{ fontSize: 12.5, color: "var(--text2)", background: "var(--s2)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 12px", marginBottom: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <span>Only deals of <b>{fmt.lakh(PROJECT_MIN_LAKH)} or more</b> are run as projects. {smaller.length} smaller won deal{smaller.length === 1 ? " is" : "s are"} delivered from the deal in Pipeline{showSmaller ? " (shown below for review)" : ""}.</span>
+          <span>Projects are deals of <b>{fmt.lakh(PROJECT_MIN_LAKH)} or more</b>, plus any deal or lead ticked <b>Run as a project</b> in Pipeline or Leads. {smaller.length} other project record{smaller.length === 1 ? "" : "s"} (under {fmt.lakh(PROJECT_MIN_LAKH)}, not ticked) {smaller.length === 1 ? "is" : "are"} {showSmaller ? "shown below for review" : "hidden; nothing is deleted"}.</span>
           <button type="button" className="page-tip-link" style={{ marginLeft: "auto" }} onClick={() => setShowSmaller(v => !v)}>{showSmaller ? "Hide them" : "Show them"}</button>
         </div>
       )}
@@ -145,7 +146,7 @@ function Projects({ projects, setProjects, accounts, opps = [], contracts = [], 
       </div>
 
       <div className="card" style={{ padding: 0 }}>
-        {filtered.length === 0 ? <Empty icon={<Briefcase size={22}/>} title="No projects yet" sub={`Projects are created automatically when a deal of ${fmt.lakh(PROJECT_MIN_LAKH)} or more is Won, or add one manually.`}/> : (
+        {filtered.length === 0 ? <Empty icon={<Briefcase size={22}/>} title="No projects yet" sub={`Deals of ${fmt.lakh(PROJECT_MIN_LAKH)} or more become projects when Won; tick "Run as a project" on any other deal or lead, or add one here.`}/> : (
           isMobile ? (
           /* Phones: one card per project. */
           <div className="m-cards">
