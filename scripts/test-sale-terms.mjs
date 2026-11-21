@@ -59,7 +59,9 @@ check("AMC is billed monthly: a twelfth of the year, the anniversary month prora
 
 // ── The quotation ────────────────────────────────────────────────────
 const m = quoteDocModel({ ...quote, quoteNo: "X", createdDate: "2026-11-20" }, { priceRows: [plan], catalog: [] });
-check("the quotation explains the licence price", m.oneTime[0].basis, "One-time licence: 42 months of ₹4,199 per user a month, less 20%");
+check("the quotation shows the licence price, not how it was worked out", [m.oneTime[0].basis, /42|4,199|less 20/.test(JSON.stringify(m.oneTime[0].basis))], ["One-time licence", false]);
+const html = (await import("../src/lib/quotation/quoteDocument.js")).quoteDocumentHtml({ ...quote, quoteNo: "X", createdDate: "2026-11-20" }, { priceRows: [plan], catalog: [], autoPrint: false });
+check("nothing on the printed quote reveals the monthly rate or the 42-month calculation", [/4,199|42 months|less 20%|monthlyRate/.test(html), html.includes("One-time licence")], [false, true]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

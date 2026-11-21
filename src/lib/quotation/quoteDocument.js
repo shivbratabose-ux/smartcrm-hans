@@ -151,9 +151,9 @@ export function quoteDocModel(quote, opts = {}) {
     const net = afterLine * (1 - overallPct / 100);                  // after overall discount too
     const unit = String(l.unit || row?.unit || "").trim();
     const u = /^[A-Z/]{2,}$/.test(unit) ? unit : unit.toLowerCase();   // HBL, HAWB stay upper case
-    const sold = l.soldAs?.mode === "one_time" ? l.soldAs : null;
-    const basis = sold ? `One-time licence: ${sold.months} months of ${inrRate(sold.monthlyRate)} per ${u || "unit"} a month${sold.discountPct ? `, less ${sold.discountPct}%` : ""}`
-      : oneTime ? "One time" : usage ? `Per ${u || "use"}` : `Per ${u || "unit"} per month${l.freqDiscountPct ? ` (${l.freqDiscountPct}% off for ${String(h.billingFrequency || "").toLowerCase()} billing)` : ""}`;
+    // The customer sees prices, never how they were worked out (no months × rate,
+    // no one-time or frequency discount): decision 21 Nov 2026.
+    const basis = l.soldAs?.mode === "one_time" ? "One-time licence" : oneTime ? "One time" : usage ? `Per ${u || "use"}` : `Per ${u || "unit"} per month`;
     return {
       code: l.productCode, name: l.name || row?.name || l.productCode, oneTime, usage, billingClass: cls, basis, qty, unit,
       // Contractual minimum per month (committed): the usage minimum / pack, or a platform floor.
