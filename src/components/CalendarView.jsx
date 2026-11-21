@@ -110,7 +110,10 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         _scheduledCall: a.type === "Call" && a.status !== "Completed" && a.status !== "Cancelled",
         _orig:     a,
         date:      a.date,
-        time:      a.time || "09:00",
+        // No time saved → no hour on the grid: it shows in the "No time"
+        // row instead of being drawn at 09:00. Display only; the record
+        // itself is untouched.
+        time:      a.time || "",
         endTime:   a.endTime || "",
         title:     a.title || `${a.type} – ${accounts.find(ac=>ac.id===a.accountId)?.name||""}`,
         type:      a.type,
@@ -139,7 +142,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         _scheduledCall: callReportState(c.outcome, c.callDate, today) !== "made",
         _orig:     c,
         date:      c.callDate,
-        time:      c.callTime || "09:00",
+        time:      c.callTime || "",
         endTime:   "",
         // A demo reads as a demo, and says how many of us were on it.
         title:     `${isDemoCall(c) ? "Demo" : "Call"}: ${c.leadName || c.company || ""}${callPeople(c).length > 1 ? ` (+${callPeople(c).length - 1})` : ""}`,
@@ -473,11 +476,24 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
                 <div style={{fontSize:16,fontWeight:isToday?800:500,color:isToday?"var(--brand)":"var(--text1)"}}>{d.getDate()}</div>
               </div>;
             })}
+            {/* Items saved without a time: their own row, not piled into 09:00. */}
+            <div style={{borderRight:"1px solid var(--border)",borderBottom:"1px solid var(--border)",padding:"4px 6px",fontSize:10,color:"var(--text3)",textAlign:"right",background:"var(--s2)",lineHeight:1.2}}>No time</div>
+            {weekDates.map(d=>{
+              const noTime=itemsOn(d).filter(e=>!e.time);
+              return <div key={dateStr(d)+"nt"} style={{borderRight:"1px solid var(--border)",borderBottom:"1px solid var(--border)",padding:2,minHeight:28,background:"var(--s2)",maxHeight:132,overflowY:"auto"}}>
+                {noTime.map(ev=>{
+                  const col=itemCol(ev);
+                  return <div key={ev.id} onClick={()=>setSelectedEvent(ev)} title={ev.title} style={{background:col+"18",borderLeft:`3px solid ${col}`,borderRadius:4,padding:"2px 4px",marginBottom:2,cursor:"pointer",fontSize:10}}>
+                    <div style={{fontWeight:600,color:col,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ev.title}</div>
+                  </div>;
+                })}
+              </div>;
+            })}
             {HOURS.map(h=>(
               <div key={h} style={{display:"contents"}}>
                 <div style={{borderRight:"1px solid var(--border)",borderBottom:"1px solid var(--border)",padding:"4px 6px",fontSize:10,color:"var(--text3)",textAlign:"right"}}>{h}:00</div>
                 {weekDates.map(d=>{
-                  const dayEvents=itemsOn(d).filter(e=>{const hr=parseInt(e.time?.split(":")[0]||"0");return hr===h;});
+                  const dayEvents=itemsOn(d).filter(e=>{if(!e.time) return false;const hr=parseInt(e.time.split(":")[0]||"0");return hr===h;});
                   return <div key={dateStr(d)+h} style={{borderRight:"1px solid var(--border)",borderBottom:"1px solid var(--border)",padding:2,minHeight:40,cursor:"pointer",position:"relative"}} onClick={()=>openAdd(dateStr(d))}>
                     {dayEvents.map(ev=>{
                       const col=itemCol(ev);
@@ -521,13 +537,13 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
         <div className="card" style={{padding:0}}>
           <table className="tbl">
             <thead><tr><th>Date</th><th>Time</th><th>Event</th><th>Type</th><th>Status</th><th>Source</th><th>Account</th><th>Owner</th><th>Location</th><th></th></tr></thead>
-            <tbody>{[...visibleItems].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(ev=>{
+            <tbody>{[...visibleItems].sort((a,b)=>a.date.localeCompare(b.date)||(a.time||"99").localeCompare(b.time||"99")).map(ev=>{
               const col=itemCol(ev);
               const acc=accounts.find(a=>a.id===ev.accountId);
               const isOverdue=ev.date<today&&ev.status==="Scheduled"&&!ev._leave;
               return <tr key={ev._source+ev.id}>
                 <td style={{fontSize:12,color:isOverdue?"var(--red)":"var(--text2)",fontWeight:isOverdue?700:400}}>{fmt.short(ev.date)}</td>
-                <td style={{fontSize:12}}>{ev.time}{ev.endTime?`–${ev.endTime}`:""}</td>
+                <td style={{fontSize:12,color:ev.time?undefined:"var(--text3)"}}>{ev.time||"No time"}{ev.endTime?`–${ev.endTime}`:""}</td>
                 <td><span className="tbl-link" onClick={()=>setSelectedEvent(ev)} style={{fontWeight:600}}>{ev.title}</span></td>
                 <td><span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:11,fontWeight:600,padding:"2px 7px",borderRadius:5,background:col+"18",color:col}}>{TYPE_ICON[ev.type]}{ev.type}</span></td>
                 <td><span style={{fontSize:11,fontWeight:600,padding:"2px 7px",borderRadius:5,background:(STATUS_COL[ev.status]||"#94A3B8")+"18",color:STATUS_COL[ev.status]||"#94A3B8"}}>{ev.status}</span></td>
@@ -571,7 +587,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             {selectedEvent._source==="event"&&!selectedEvent._leave&&<button className="btn btn-primary btn-sm" onClick={()=>{openEdit(selectedEvent);setSelectedEvent(null);}}><Edit2 size={13}/>Edit</button>}
           </>}>
           <div className="dp-grid">
-            {[["Type",selectedEvent.type],["Status",selectedEvent._leave?LEAVE_STATE_UI[selectedEvent._leaveState]?.label:selectedEvent.status],["Date",fmt.date(selectedEvent.date)],["Time",`${selectedEvent.time}${selectedEvent.endTime?" – "+selectedEvent.endTime:""}`],["Location",selectedEvent.location||"—"],["Account",accounts.find(a=>a.id===selectedEvent.accountId)?.name||"—"],["Owner",(teamMap[selectedEvent.owner]||TEAM_MAP[selectedEvent.owner])?.name||selectedEvent.owner||"—"],
+            {[["Type",selectedEvent.type],["Status",selectedEvent._leave?LEAVE_STATE_UI[selectedEvent._leaveState]?.label:selectedEvent.status],["Date",fmt.date(selectedEvent.date)],["Time",selectedEvent.time?`${selectedEvent.time}${selectedEvent.endTime?" – "+selectedEvent.endTime:""}`:"No time set"],["Location",selectedEvent.location||"—"],["Account",accounts.find(a=>a.id===selectedEvent.accountId)?.name||"—"],["Owner",(teamMap[selectedEvent.owner]||TEAM_MAP[selectedEvent.owner])?.name||selectedEvent.owner||"—"],
               ...((selectedEvent._people||[]).length>1?[["Also on this "+(selectedEvent.type==="Demo"?"demo":"call"),selectedEvent._people.filter(id=>id!==selectedEvent.owner).map(id=>(teamMap[id]||TEAM_MAP[id])?.name||id).join(", ")]]:[])].map(([k,v])=><div key={k} className="dp-row"><span className="dp-key">{k}</span><span className="dp-val">{v}</span></div>)}
           </div>
           {selectedEvent.notes&&<div style={{marginTop:12,background:"var(--s2)",padding:"10px 12px",borderRadius:8,fontSize:13,color:"var(--text2)"}}>{selectedEvent.notes}</div>}
