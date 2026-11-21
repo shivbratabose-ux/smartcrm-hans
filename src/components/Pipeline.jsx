@@ -34,7 +34,9 @@ import { exportCSV } from "../utils/csv";
 import { StatusBadge, ProdTag, UserPill, Modal, Confirm, DeleteConfirm, DeleteWithReasonModal, FormError, NotesThread, FilesList, Empty, LogCallModal, PageTip, TypeaheadSelect, EditLockActions, RecordJourney, lookupUser } from "./shared";
 import ProductModulePicker, { validateProductSelection, primaryProductId, normaliseProductSelection } from "./ProductModulePicker";
 import DataGrid from "./DataGrid";
+import { closedDealLock, guardClosedDeal } from "../lib/dealLock";
 import { TenderAiPanel } from "./AiActions";
+import { callSlotProblem } from '../lib/callSlots';
 
 /* ───────── stages context ─────────
    Pipeline stages were hardcoded in constants.js; they're now editable in
@@ -458,13 +460,19 @@ function QuickUpdatePopover({ opp, onSave, onClose }) {
    DEAL DETAIL (Enhanced)
    ═══════════════════════════════════════════════════════ */
 function DealDetail({ projects = [], onToggleProject, detail, onClose, onEdit, accounts, contacts, leads = [], setLeads, notes, files, onAddNote, onAddFile, currentUser, activities, setActivities, opps, setOpps, orgUsers = [], callReports = [], onLogCall }) {
-  const { STAGE_COL, STAGES, STAGE_PROB } = useContext(StagesContext);
+  const { STAGE_COL, STAGES, STAGE_PROB, closingNames } = useContext(StagesContext);
   const [tab, setTab] = useState("overview");
+  // A closed deal's close date locks a month after it; then only an Admin can
+  // change it or reopen the deal (lib/dealLock.js).
+  const dealLock = closedDealLock(detail, { today, closedStages: closingNames || [], role: (orgUsers || []).find(u => u.id === currentUser)?.role || "" });
 
   // ── Inline field editing ──
   const [editingField, setEditingField] = useState(null);
   const [fieldVal, setFieldVal] = useState("");
-  const startEdit = (f) => { setEditingField(f); setFieldVal(detail[f] ?? ""); };
+  const startEdit = (f) => {
+    if ((f === "closeDate" || f === "stage") && dealLock.locked) { alert(dealLock.reason); return; }
+    setEditingField(f); setFieldVal(detail[f] ?? "");
+  };
   const saveEdit = (f, v) => {
     const val = v !== undefined ? v : fieldVal;
     if (setOpps) setOpps(prev => prev.map(o => o.id === detail.id ? { ...o, [f]: val } : o));
@@ -482,7 +490,7 @@ function DealDetail({ projects = [], onToggleProject, detail, onClose, onEdit, a
     let display;
     if (field === "value") display = fmt.inr(detail.value);
     else if (field === "probability") display = fmt.pct(detail.probability);
-    else if (field === "closeDate") display = fmt.date(detail.closeDate);
+    else if (field === "closeDate") display = fmt.date(detail.closeDate) + (dealLock.locked ? " · locked" : "");
     else if (field === "stage") display = detail.stage;
     else display = detail[field] || "—";
 
@@ -699,6 +707,7 @@ function DealDetail({ projects = [], onToggleProject, detail, onClose, onEdit, a
   // srcLead is computed earlier (drives the Contacts / Addresses tabs too).
   const advanceStage = (to) => {
     if (!setOpps || !to) return;
+    if (dealLock.locked) { alert(dealLock.reason); return; }
     setOpps(prev => prev.map(o => o.id === detail.id ? {
       ...o, stage: to, probability: STAGE_PROB?.[to] ?? o.probability,
       stageHistory: [...(o.stageHistory || []), { from: o.stage, to, date: today, by: o.owner || "" }],
@@ -1127,6 +1136,10 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
   // bundled defaults when masters.stages is missing.
   const stagesCtx = useMemo(() => buildStagesContext(masters?.stages), [masters?.stages]);
   const { STAGES, STAGE_PROB, STAGE_COL, wonName, lostName, closingNames } = stagesCtx;
+  // Closed-deal lock (lib/dealLock.js): a month after a Won / Lost deal's close
+  // date, only an Admin can change that date or reopen the deal.
+  const lockCtx = { today, closedStages: closingNames, role: (orgUsers || []).find(u => u.id === currentUser)?.role || "" };
+  const lockOf = (opp) => closedDealLock(opp, lockCtx);
 
   const _pipelineScopedIds = useMemo(() => getScopedUserIds(currentUser, orgUsers), [currentUser, orgUsers]);
   const team = useMemo(() => {
@@ -1210,6 +1223,9 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
       leadId: clean.leadId || "",
       nextStepDesc: clean.nextStepDesc,
     };
+    // Max 2 calls per person per hour slot: hand the message back to the form.
+    const slotErr = callSlotProblem("callReport", callReport, { activities, callReports });
+    if (slotErr) return slotErr;
     setCallReports(p => [...p, callReport]);
 
     if (clean.createFollowup) {
@@ -1228,7 +1244,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
       };
       setActivities(p => [...p, followup]);
     }
-  }, [accounts, currentUser, setCallReports, setActivities]);
+  }, [accounts, currentUser, setCallReports, setActivities, activities, callReports]);
   const isManager = curUser && MGR_ROLES.includes(curUser.role);
 
   /* Deal health, computed ONCE per (opps, activities) change.
@@ -1292,6 +1308,9 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
     setFormErrors({});
     setModal({ mode: "edit" });
   };
+  // The deal being edited: locked close date / stage when closed over a month ago.
+  const formLock = modal?.mode === "edit" ? lockOf(opps.find(o => o.id === form.id) || form) : { locked: false, reason: "" };
+  const formLocked = formLock.locked;
   const save = () => {
     if (modal?.mode === "edit" && !canEditOpp(form)) { setModal(null); setFormErrors({}); return; }
     // Normalise productSelection BEFORE validating so half-filled lines
@@ -1314,8 +1333,13 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
       setOpps(p => [...p, { ...clean, oppNo: clean.oppNo || nextOppNo(p), probability: STAGE_PROB[clean.stage] || clean.probability }]);
     } else {
       const prev = opps.find(o => o.id === clean.id);
-      setOpps(p => p.map(o => o.id === clean.id ? { ...clean } : o));
-      if (clean.stage === wonName && prev?.stage !== wonName && onDealWon) onDealWon(clean);
+      // A locked closed deal keeps its close date and stage unless an Admin saves it.
+      const { next, blocked } = prev ? guardClosedDeal(prev, clean, lockCtx) : { next: clean, blocked: [] };
+      if (blocked.length) alert(`${lockOf(prev).reason}
+
+Your other changes are saved.`);
+      setOpps(p => p.map(o => o.id === next.id ? { ...next } : o));
+      if (next.stage === wonName && prev?.stage !== wonName && onDealWon) onDealWon(next);
     }
     setModal(null); setDetail(null); setFormErrors({});
   };
@@ -1344,6 +1368,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
 
   const initiateStageMove = (opp, dir) => {
     if (!canEditOpp(opp)) { requestAccessOpp(opp); return; }
+    { const lk = lockOf(opp); if (lk.locked) { alert(lk.reason); return; } }
     const idx = STAGES.indexOf(opp.stage);
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= STAGES.length) return;
@@ -1410,6 +1435,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
     if (!dragId) return;
     const opp = opps.find(o => o.id === dragId);
     if (!opp || opp.stage === targetStage) { setDragId(null); return; }
+    { const lk = lockOf(opp); if (lk.locked) { setDragId(null); alert(lk.reason); return; } }
     const fromIdx = STAGES.indexOf(opp.stage);
     const toIdx = STAGES.indexOf(targetStage);
     setDragId(null);
@@ -2144,7 +2170,7 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
             </div>
             <div className="form-group">
               <label>Stage</label>
-              <select value={form.stage} onChange={e => setForm(f => ({ ...f, stage: e.target.value, probability: STAGE_PROB[e.target.value] || f.probability }))}>
+              <select value={form.stage} disabled={formLocked} title={formLocked ? formLock.reason : undefined} onChange={e => setForm(f => ({ ...f, stage: e.target.value, probability: STAGE_PROB[e.target.value] || f.probability }))}>
                 {STAGES.map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
@@ -2171,9 +2197,10 @@ function Pipeline({ opps, setOpps, onDeleteOpp, accounts, contacts, leads, setLe
             </div>
             <div className="form-group">
               <label>Close Date *</label>
-              <input type="date" value={form.closeDate} onChange={e => { setForm(f => ({ ...f, closeDate: e.target.value })); setFormErrors(p => ({ ...p, closeDate: undefined })); }}
+              <input type="date" value={form.closeDate} disabled={formLocked} title={formLocked ? formLock.reason : undefined} onChange={e => { setForm(f => ({ ...f, closeDate: e.target.value })); setFormErrors(p => ({ ...p, closeDate: undefined })); }}
                 style={formErrors.closeDate ? { borderColor: "#DC2626" } : {}} />
               <FormError error={formErrors.closeDate} />
+              {formLocked && <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>Locked: closed more than a month ago. Only an Admin can change the close date or stage.</div>}
             </div>
           </div>
           <div className="form-row">

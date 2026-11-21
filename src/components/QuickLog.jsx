@@ -6,6 +6,7 @@ import { CALL_TYPES, CALL_OBJECTIVES, CALL_OUTCOMES, ACT_TYPES, ACT_STATUS, TEAM
 import { withDemoCallType } from "../utils/teamSummary";
 import { uid, today, sanitizeObj, hasErrors } from "../utils/helpers";
 import { Modal, FormError, TypeaheadSelect } from "./shared";
+import { callSlotProblem } from "../lib/callSlots";
 
 // ═══════════════════════════════════════════════════════════════════
 // QUICK LOG — Universal floating action button + modal
@@ -161,7 +162,9 @@ function CallForm({ form, setForm, errors, setErrors, accounts, contacts, opps, 
           <FormError error={errors.callDate} />
         </div>
         <div className="form-group"><label>Time</label>
-          <input type="time" value={form.callTime} onChange={e => set("callTime", e.target.value)} />
+          <input type="time" value={form.callTime} onChange={e => set("callTime", e.target.value)}
+            style={errors.callTime ? { borderColor:"#DC2626" } : {}} />
+          <FormError error={errors.callTime} />
         </div>
         <div className="form-group"><label>Duration (min)</label>
           <input type="number" min={0} step={5} value={form.duration}
@@ -405,7 +408,9 @@ function ActivityForm({ form, setForm, errors, setErrors, accounts, contacts, op
           <FormError error={errors.date} />
         </div>
         <div className="form-group"><label>Time</label>
-          <input type="time" value={form.time} onChange={e => set("time", e.target.value)} />
+          <input type="time" value={form.time} onChange={e => set("time", e.target.value)}
+            style={errors.time ? { borderColor:"#DC2626" } : {}} />
+          <FormError error={errors.time} />
         </div>
         <div className="form-group"><label>Duration (min)</label>
           <input type="number" min={0} step={5} value={form.duration}
@@ -678,6 +683,9 @@ export default function QuickLogFAB({
         leadId: clean.leadId,
         nextStepDesc: clean.nextStepDesc,
       };
+      // Max 2 calls per person per hour slot.
+      const slotErr = callSlotProblem("callReport", callReport, { activities, callReports });
+      if (slotErr) { setErrors({ callTime: slotErr }); return; }
       setCallReports(p => [...p, callReport]);
 
       // Create follow-up task as activity if checked
@@ -747,6 +755,10 @@ export default function QuickLogFAB({
         outcome: "",
         files: [],
       };
+      // Max 2 calls per person per hour slot.
+      const slotErr = callSlotProblem("activity", activity, { activities, callReports },
+        { userName: activity.owner !== currentUser ? orgUsers.find(u => u.id === activity.owner)?.name || "" : "" });
+      if (slotErr) { setErrors({ time: slotErr }); return; }
       setActivities(p => [...p, activity]);
     }
     closeModal();

@@ -7,6 +7,7 @@ import TeamSummary from './TeamSummary';
 import { teamColumns, callReportState, callPeople, isDemoCall, LEAVE_TYPES, LEAVE_STATUS, LEAVE_TYPE_LABEL, leaveTitleFor, ADMIN_WORK_TYPE, leaveShare, hoursBetween, adminOverlap, fmtHours, CALL_TARGET, leaveState, isLeaveType, leaveByUser, leaveDatesToCreate, offDayMap,
   canApproveLeave, initialLeaveStatus, lineManagerOf, groupLeaveRequests, pendingLeaveFor, fmtDays } from '../utils/teamSummary';
 import { notify } from '../utils/toast';
+import { callSlotProblem } from '../lib/callSlots';
 import { notifyLeave } from '../utils/leaveNotify';
 import { Lock } from 'lucide-react';
 import { UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect } from './shared';
@@ -49,6 +50,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
   const [selectedEvent,setSelectedEvent]=useState(null);
   const [scheduleModal,setScheduleModal]=useState(false);
   const [scheduleForm,setScheduleForm]=useState({});
+  const [scheduleErr,setScheduleErr]=useState("");
   // Source filter: show calls, activities, events, or everything together.
   const [sourceFilter,setSourceFilter]=useState("all");
   // ── Team layer (admins + managers) ──
@@ -359,6 +361,7 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
       status:"Planned",
       owner:currentUser,
     });
+    setScheduleErr("");
     setScheduleModal(true);
   };
 
@@ -380,6 +383,10 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
       outcome:   "",
       files:     [],
     };
+    // Max 2 calls per person per hour slot.
+    const slotErr=callSlotProblem("activity",newActivity,{activities,callReports},
+      {userName:newActivity.owner!==currentUser?(orgUsers||[]).find(u=>u.id===newActivity.owner)?.name||"":""});
+    if(slotErr){ setScheduleErr(slotErr); return; }
     if(setActivities) setActivities(p=>[...p,newActivity]);
     setScheduleModal(false);
   };
@@ -816,7 +823,8 @@ function CalendarView({events,setEvents,activities=[],setActivities,callReports=
             </div>
             <div className="form-group">
               <label>Time</label>
-              <input type="time" value={scheduleForm.time} onChange={e=>setScheduleForm(f=>({...f,time:e.target.value}))}/>
+              <input type="time" value={scheduleForm.time} onChange={e=>{setScheduleForm(f=>({...f,time:e.target.value}));setScheduleErr("");}} style={scheduleErr?{borderColor:"#DC2626"}:{}}/>
+              {scheduleErr&&<div style={{fontSize:11.5,color:"#DC2626",marginTop:4}}>{scheduleErr}</div>}
             </div>
           </div>
           <div className="form-row">

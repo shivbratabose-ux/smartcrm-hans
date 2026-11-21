@@ -12,6 +12,7 @@ import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
 import { batchUpsert } from '../lib/db';
 import { notify } from '../utils/toast';
+import { callSlotProblem } from '../lib/callSlots';
 
 /* ── helpers ── */
 const daysSince = (d) => d ? Math.max(0, Math.round((new Date(today) - new Date(d)) / 864e5)) : null;
@@ -788,6 +789,9 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
       leadId: clean.leadId || "",
       nextStepDesc: clean.nextStepDesc,
     };
+    // Max 2 calls per person per hour slot: hand the message back to the form.
+    const slotErr = callSlotProblem("callReport", callReport, { activities, callReports });
+    if (slotErr) return slotErr;
     setCallReports(p => [...p, callReport]);
 
     if (clean.createFollowup) {
@@ -806,7 +810,7 @@ function Accounts({accounts, setAccounts, onDeleteAccount, opps, activities, set
       };
       setActivities(p => [...p, followup]);
     }
-  }, [accounts, currentUser, setCallReports, setActivities]);
+  }, [accounts, currentUser, setCallReports, setActivities, activities, callReports]);
 
   const toggleSort = (col) => {
     if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");

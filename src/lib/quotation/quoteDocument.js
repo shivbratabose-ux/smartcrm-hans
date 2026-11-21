@@ -24,7 +24,7 @@ import { companyOf } from "./company.js";
 import { groupOf, SERVICES_GROUP } from "./productGroups.js";
 import { HOSTING_LABEL } from "./handover.js";
 import { PRODUCT_CONTENT, PLAN_CONTENT, STANDARD_SECTIONS, CONFIDENTIAL_NOTE } from "../../data/quoteContent.js";
-import { resolveTermSets, termSetFor, eulaLinkOf, fillTerms, tcLines } from "./termSets.js";
+import { resolveTermSets, termSetFor, eulaLinkOf, fillTerms, tcLines, pickBillingStructure } from "./termSets.js";
 import { slabTable, usageRuleText, poolVolumes, escalatedRates, hasUsageRules } from "./slabs.js";
 import { revenueShareOf, revenueShareText, shareMode } from "../billing/revenueShare.js";
 import { billingClassOf } from "./commercial.js";
@@ -227,6 +227,13 @@ export function quoteDocModel(quote, opts = {}) {
 
   const netOneTime = sum(oneTime, "net"), netSubs = sum(subs, "net");
   const termSet = termSetFor(product?.id || mainRow?.productId || "", opts.termSets || resolveTermSets(null));
+  // The governing-terms link follows the product (its terms set) and how the
+  // quote is billed (the set's link for that billing structure, if given).
+  const itemOf = (code) => (quote.items || []).find((it) => it.productCode === code) || {};
+  const billingStructure = pickBillingStructure({
+    licence: oneTime.some((l) => itemOf(l.code).soldAs?.mode === "one_time" || /licen/i.test(String(itemOf(l.code).pricingModel || ""))),
+    revenueShare: trade.length > 0, hybrid: usage.some((l) => l.fixedFee), subscription: subs.length > 0, usage: usage.length > 0,
+  });
   const fillCtx = { product: brand, company: company.name, customer, validUntil: longDate(validUntil) };
   return {
     company, quote, customer, brand, planName, product, hosted, showDiscount, overallPct, gstPct, mainIsUsage: !!main && usage.includes(main),
@@ -251,8 +258,8 @@ export function quoteDocModel(quote, opts = {}) {
     payment: (pContent.sections?.payment || STANDARD_SECTIONS.payment)(ctx),
     requirements: (pContent.sections?.requirements || STANDARD_SECTIONS.requirements)(ctx),
     terms: tcLines(termSet, fillCtx),
-    termSetId: termSet?.id || "",
-    governing: { label: termSet?.eulaTitle || "terms of use", url: eulaLinkOf(termSet, opts.siteUrl), text: fillTerms(termSet?.governing || "", fillCtx) },
+    termSetId: termSet?.id || "", billingStructure,
+    governing: { label: termSet?.eulaTitle || "terms of use", url: eulaLinkOf(termSet, opts.siteUrl, billingStructure), text: fillTerms(termSet?.governing || "", fillCtx) },
     confidential: CONFIDENTIAL_NOTE({ company: company.name, customer }),
     preparedBy: { name: opts.preparedBy?.name || quote.preparedBy || "", title: opts.preparedBy?.title || "", phone: opts.preparedBy?.phone || "", email: opts.preparedBy?.email || "" },
   };

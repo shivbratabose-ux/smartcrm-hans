@@ -8,6 +8,7 @@ import Pagination, { usePagination } from './Pagination';
 import BulkActions, { useBulkSelect } from './BulkActions';
 import { exportCSV } from '../utils/csv';
 import DataGrid from './DataGrid';
+import { callSlotProblem } from '../lib/callSlots';
 
 const BLANK_CON={name:"",role:"",email:"",phone:"",accountId:"",addressId:"",primary:false,contactId:"",designation:"",department:"",departments:[],products:[],branches:[],countries:[],linkedOpps:[]};
 
@@ -404,6 +405,9 @@ function Contacts({contacts, setContacts, onDeleteContact, accounts, opps=[], le
       nextStepDesc: callForm.nextStepDesc,
       createdBy: currentUser || "",
     };
+    // Max 2 calls per person per hour slot: hand the message back to the form.
+    const slotErr = callSlotProblem("callReport", callReport, { activities, callReports });
+    if (slotErr) return slotErr;
     setCallReports(p => [...p, callReport]);
 
     if (setActivities) {

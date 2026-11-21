@@ -9,6 +9,10 @@
 //   • `tc` is the Terms and conditions section, one condition per line.
 //   • `governing` is the first condition ("Governing terms. …" + the link).
 //   • {{product}} {{company}} {{customer}} {{validUntil}} fill from the quote.
+//   • byBilling: an optional link per billing structure (decision 21 Nov
+//     2026: the company supplies the documents, the CRM only links them), e.g.
+//     { licence: "https://…/licence-terms.pdf" }. A quote links to the one for
+//     its billing structure, else to the set's EULA link.
 // Saved in masters.quotation.termSets (array); the two built-in sets below
 // apply until edited, and can be reset.
 import { STANDARD_SECTIONS } from "../../data/quoteContent.js";
@@ -61,6 +65,29 @@ export const BUILTIN_TERM_SETS = [
 ];
 export const isBuiltinSet = (id) => BUILTIN_TERM_SETS.some((s) => s.id === id);
 
+/** How a quote is billed, for choosing its governing-terms link. */
+export const BILLING_STRUCTURES = [
+  { id: "subscription", label: "Subscription" },
+  { id: "licence", label: "One-time licence + AMC" },
+  { id: "usage", label: "Pay per use" },
+  { id: "revenue_share", label: "Revenue share (billed to the trade)" },
+  { id: "hybrid", label: "Hybrid: fixed fee + usage" },
+];
+
+/**
+ * A quote's billing structure from what it sells. With several, the one that
+ * shapes the contract most wins: a licence, then revenue share, hybrid,
+ * subscription, pay per use. flags: { licence, revenueShare, hybrid, subscription, usage }.
+ */
+export function pickBillingStructure(flags = {}) {
+  if (flags.licence) return "licence";
+  if (flags.revenueShare) return "revenue_share";
+  if (flags.hybrid) return "hybrid";
+  if (flags.subscription) return "subscription";
+  if (flags.usage) return "usage";
+  return "";
+}
+
 const str = (v) => String(v == null ? "" : v);
 const norm = (s) => ({
   ...s,
@@ -70,6 +97,7 @@ const norm = (s) => ({
   eulaTitle: str(s.eulaTitle), eulaMode: s.eulaMode === "text" ? "text" : "link",
   eulaUrl: str(s.eulaUrl).trim(), eulaBody: str(s.eulaBody),
   governing: str(s.governing), tc: str(s.tc),
+  byBilling: Object.fromEntries(BILLING_STRUCTURES.map((b) => [b.id, str(s.byBilling?.[b.id]).trim()]).filter(([, v]) => v)),
 });
 
 /** Built-ins overlaid with what is saved, then the custom sets. Exactly one default. */
@@ -93,9 +121,10 @@ export function termSetFor(productId, sets = resolveTermSets(null)) {
   return sets.find((s) => productId && s.productIds.includes(productId)) || sets.find((s) => s.isDefault) || sets[0];
 }
 
-/** Where the quotation links for the EULA. */
-export function eulaLinkOf(set, site = SMART_CRM_SITE) {
+/** Where the quotation links for the EULA: the billing structure's own link if set, else the set's. */
+export function eulaLinkOf(set, site = SMART_CRM_SITE, billing = "") {
   if (!set) return "";
+  if (billing && set.byBilling?.[billing]) return set.byBilling[billing];
   if (set.eulaMode === "text" && set.eulaBody.trim()) return `${site.replace(/\/+$/, "")}/#/terms/${encodeURIComponent(set.id)}`;
   return set.eulaUrl;
 }

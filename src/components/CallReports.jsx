@@ -5,6 +5,7 @@ import { withDemoCallType, isCallPerson, callPeople } from '../utils/teamSummary
 import { BLANK_CALL_REPORT } from '../data/seed';
 import { fmt, uid, today, sanitizeObj, hasErrors, getScopedUserIds, softDeleteById, upper, title } from '../utils/helpers';
 import { notify } from '../utils/toast';
+import { callSlotProblem } from '../lib/callSlots';
 import useIsMobile from '../hooks/useIsMobile';
 import { ProdTag, UserPill, Modal, Confirm, FormError, Empty, TypeaheadSelect, userName } from './shared';
 import Pagination, { usePagination } from './Pagination';
@@ -47,7 +48,7 @@ const CSV_COLS = [
   { label: "Duration (min)", accessor: r => r.duration },
 ];
 
-function CallReports({ callReports, setCallReports, accounts, contacts, opps, leads = [], currentUser, orgUsers, canDelete, catalog = [], aiConfig }) {
+function CallReports({ callReports, setCallReports, activities = [], accounts, contacts, opps, leads = [], currentUser, orgUsers, canDelete, catalog = [], aiConfig }) {
   // Resolve a display name for a call: stored leadName/company first, then
   // fall back to the linked account / lead / opportunity / contact, so calls
   // logged without an explicit company (e.g. from a lead's quick-log) still
@@ -142,6 +143,10 @@ function CallReports({ callReports, setCallReports, accounts, contacts, opps, le
     const errs = validateCallReport(form);
     if (hasErrors(errs)) { setFormErrors(errs); return; }
     const clean = sanitizeObj(syncLegacy(form));
+    // Max 2 calls per person per hour slot (new or moved calls only).
+    const slotErr = callSlotProblem("callReport", clean, { activities, callReports },
+      { userName: clean.marketingPerson && clean.marketingPerson !== currentUser ? userName(clean.marketingPerson) : "" });
+    if (slotErr) { notify.error(slotErr); return; }
     if (modal.mode === "add") setCallReports(p => [...p, { ...clean }]);
     else setCallReports(p => p.map(r => r.id === clean.id ? { ...clean } : r));
     setModal(null); setFormErrors({});
