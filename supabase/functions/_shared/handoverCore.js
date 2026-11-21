@@ -107,9 +107,9 @@ export function handoverStage(q) {
   return {
     accepted: q.status === "Accepted",
     final: !!q.isFinal && !!h.finalAt,
-    billed: !!h.billId,
+    billed: !!h.billId || !!h.noUpfrontBill,   // nothing to bill upfront: usage is billed monthly from Billing
     confirmed: !!h.confirmedAt,
-    project: !!h.projectId,
+    project: !!h.projectId || !!h.noProject,   // under ₹50 lakh and not ticked: implemented from the deal
   };
 }
 

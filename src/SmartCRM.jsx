@@ -1857,6 +1857,34 @@ export default function SmartCRM() {
     });
   }, [accounts, leads]);
 
+  // Accepting a quote wins its deal (decision 21 Nov 2026). Whether the quote
+  // was accepted here or by the customer online, the linked deal moves to Won
+  // (closed on the acceptance date) and the usual Won steps run: account to
+  // Finance, Won activity, project for ₹50L+. Only the deal's owner triggers
+  // it (an admin or MD when the owner is no longer active), so two people
+  // never win the same deal twice; a deal already Won or Lost is left alone.
+  const autoWonRef = useRef(new Set());
+  useEffect(() => {
+    if (!currentUser) return;
+    const me = (orgUsers || []).find(u => u.id === currentUser);
+    const topRole = !!me && ["admin", "md"].includes(me.role);
+    const stagesList = masters?.stages || [];
+    const wonName = stagesList.find(s => s.kind === "won")?.name || "Won";
+    const lostName = stagesList.find(s => s.kind === "lost")?.name || "Lost";
+    for (const q of quotes || []) {
+      if (!q || q.isDeleted || q.status !== "Accepted" || !q.oppId || autoWonRef.current.has(q.id)) continue;
+      const opp = (opps || []).find(o => o.id === q.oppId && !o.isDeleted);
+      if (!opp || opp.stage === wonName || opp.stage === lostName) continue;
+      const ownerActive = (orgUsers || []).some(u => u.id === opp.owner && u.active !== false);
+      if (!(opp.owner === currentUser || (topRole && !ownerActive))) continue;
+      autoWonRef.current.add(q.id);
+      const won = { ...opp, stage: wonName, probability: 100, closeDate: q.acceptedDate || today };
+      setOpps(p => p.map(o => (o.id === opp.id ? won : o)));
+      handleDealWon(won);
+      notify.success(`Quote ${q.quoteNo || ""} accepted: deal “${opp.title || opp.oppNo || ""}” marked Won.`);
+    }
+  }, [quotes, opps, currentUser, orgUsers, masters, handleDealWon]);
+
   // "Run as a project" tick-box on a deal (Pipeline) or lead (Leads): adds it
   // to the Projects screen, or takes it off again (nothing is deleted).
   const toggleRecordProject = useCallback((kind, rec, on) => {

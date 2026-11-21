@@ -409,6 +409,36 @@ export function previewInvoices(quote, period, usageTotals = {}, opts = {}) {
   return out;
 }
 
+/**
+ * The bill Accounts raises at handover (Quotations → FINAL quote → Raise bill),
+ * decision 21 Nov 2026: the FIRST invoice of the agreement, raised through
+ * Billing so Billing never bills the same charges again:
+ *   • one-time charges → their first payment milestone not yet invoiced
+ *     (e.g. 50% with the purchase order);
+ *   • else fixed subscriptions → the invoice for the agreement's first
+ *     billing period (in advance, at its frequency);
+ *   • else (billed only on usage) → nothing upfront: usage is invoiced monthly
+ *     in arrears from Billing.
+ * Returns { kind: "milestone" | "subscription" | "none", preview, label }.
+ */
+export function handoverInvoice(quote, { invoices = [], config = {}, today = "" } = {}) {
+  const a = quote?.agreement;
+  if (!a) return { kind: "none", preview: null, label: "No agreement yet" };
+  const ms = milestoneItems(quote, invoices);
+  if (ms.length) {
+    const next = ms.find((m) => !m.invoiced);
+    if (!next) return { kind: "none", preview: null, label: "Every one-time milestone is already invoiced" };
+    const period = periodOf(today) || periodOf(a.startDate);
+    return { kind: "milestone", preview: milestoneInvoice(quote, next.index, period, { invoices, config }), label: `${next.pct}% ${next.name}` };
+  }
+  const start = periodOf(a.startDate);
+  if (start) {
+    const { fixed } = dueLines(quote, start, {}, { invoices });
+    if (fixed.length) return { kind: "subscription", preview: assemble(quote, start, "subscription", fixed, { config }), label: `First subscription invoice, ${periodLabel(start)}` };
+  }
+  return { kind: "none", preview: null, label: "Billed monthly on actual usage" };
+}
+
 /** The invoice for one payment milestone. */
 export function milestoneInvoice(quote, index, period, opts = {}) {
   const m = milestoneItems(quote, opts.invoices || []).find((x) => x.index === index);
