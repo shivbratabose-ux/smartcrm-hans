@@ -960,7 +960,7 @@ export default function HansQuoteBuilder({
                 <div style={{ marginTop: 10, border: `1px solid ${amc.breached ? "#FDE68A" : "var(--border)"}`, background: amc.breached ? "#FFFBEB" : "#fff", borderRadius: 8, padding: "8px 10px", fontSize: 11.5 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <b>AMC</b>
-                    <span style={{ color: "var(--text3)" }}>{[...new Set(amc.lines.map(l => l.pct))].join("% / ")}% of licence · from year {amc.terms.startYear} · {describeEscalation(amc.terms)}</span>
+                    <span style={{ color: "var(--text3)" }}>{[...new Set(amc.lines.map(l => (l.fixed != null ? `₹${Number(l.fixed).toLocaleString("en-IN")} per unit` : `${l.pct}% of licence`)))].join(" / ")} · from year {amc.terms.startYear} · {amc.terms.mixed ? "increase set per line" : describeEscalation(amc.terms)}</span>
                     <button type="button" className="btn btn-xs btn-sec" style={{ marginLeft: "auto" }} onClick={() => setShowAmcEdit(s => !s)}>{showAmcEdit ? "Done" : "Change AMC terms"}</button>
                   </div>
                   <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 6 }}>
@@ -974,7 +974,8 @@ export default function HansQuoteBuilder({
                   {showAmcEdit && (() => {
                     const rules = amcRules(config);
                     const set = (k, v) => setAmcOverrides(o => { const n = { ...o }; if (v === "" || v == null) delete n[k]; else n[k] = Number(v); return n; });
-                    const setLine = (code, v) => setAmcOverrides(o => { const lp = { ...(o.linePct || {}) }; if (v === "" || v == null) delete lp[code]; else lp[code] = Number(v); return { ...o, linePct: lp }; });
+                    const setLineKey = (key, code, v) => setAmcOverrides(o => { const lp = { ...(o[key] || {}) }; if (v === "" || v == null) delete lp[code]; else lp[code] = Number(v); const next = { ...o, [key]: lp }; if (!Object.keys(lp).length) delete next[key]; return next; });
+                    const setLine = (code, v) => setLineKey("linePct", code, v);
                     const inp = { width: 54, padding: "3px 5px", border: "1px solid var(--border)", borderRadius: 5, fontSize: 11.5 };
                     return (
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -991,9 +992,15 @@ export default function HansQuoteBuilder({
                           <input type="number" min={1} placeholder={rules.escalationEvery} value={amcOverrides.escalationEvery ?? ""} onChange={e => set("escalationEvery", e.target.value)} style={inp} /> yrs
                         </div>
                         {amc.lines.map(l => (
-                          <label key={l.productCode} style={{ display: "flex", alignItems: "center", gap: 6 }}>{l.name}: AMC
-                            <input type="number" min={0} max={100} placeholder={l.rulePct} value={amcOverrides.linePct?.[l.productCode] ?? ""} onChange={e => setLine(l.productCode, e.target.value)} style={inp} />% per year
-                          </label>
+                          <div key={l.productCode} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{l.name}: AMC
+                            {l.fixedRule != null && amcOverrides.linePct?.[l.productCode] == null ? (
+                              <>₹<input type="number" min={0} step={500} placeholder={l.fixedRule} title="Move the AMC / ALR per unit per year up or down" value={amcOverrides.lineFixed?.[l.productCode] ?? ""} onChange={e => setLineKey("lineFixed", l.productCode, e.target.value)} style={{ ...inp, width: 76 }} /> per unit per year</>
+                            ) : (
+                              <><input type="number" min={0} max={100} placeholder={l.rulePct ?? ""} value={amcOverrides.linePct?.[l.productCode] ?? ""} onChange={e => setLine(l.productCode, e.target.value)} style={inp} />% per year</>
+                            )}
+                            · increase
+                            <input type="number" min={-50} max={100} placeholder={l.ownEscalation ? (l.escalationPct || 0) : (amcOverrides.escalationPct ?? rules.escalationPct)} title={l.ownEscalation ? "This product has its own increase (0 = flat). Change it for this quote only." : "Leave empty to follow the increase above"} value={amcOverrides.lineEscalation?.[l.productCode] ?? ""} onChange={e => setLineKey("lineEscalation", l.productCode, e.target.value)} style={inp} />% per step{l.ownEscalation && !l.escalationPct && amcOverrides.lineEscalation?.[l.productCode] == null ? <span style={{ color: "var(--text3)" }}>(flat)</span> : null}
+                          </div>
                         ))}
                         {Object.keys(amcOverrides).length > 0 && <button type="button" className="btn btn-xs btn-sec" style={{ alignSelf: "flex-start" }} onClick={() => setAmcOverrides({})}>Back to the company rules</button>}
                       </div>

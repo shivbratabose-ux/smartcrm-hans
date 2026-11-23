@@ -61,6 +61,7 @@ const CATALOGUE_OVERLAY_FIELDS = [
   "productId", // which Product Catalogue product the row belongs to (one product master)
   "amcPct",    // AMC % for a one-time licence row (blank = the default in Quotation Rules)
   "amcFixed",  // or a fixed AMC in ₹ per unit per year (e.g. E-Annex ₹10,000 per branch)
+  "amcEscalationPct", // this licence's own yearly AMC increase: blank = company rule, 0 = flat (E-Annex ALR)
   "rateSchedule", "segmentPrices", "currencyPrices", "bandRates",
   "matrixId", "matrixRow", // rate-card attachment (Phase 2e)
   "slabs",     // volume slabs for rateSource "Slab" [{ from, rate }]
@@ -772,6 +773,7 @@ export default function QuotationMasters({ masters, setMasters: setMastersProp, 
                         ? <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
                             <input style={{ ...numInput, width: 56 }} type="number" min={0} max={100} placeholder={`${cur.quoteConfig.amcDefaultPct ?? cur.quoteConfig.alrPctOfLicence ?? 20}%`} title="AMC % of this licence per year. Blank = the default in Quotation Rules" value={p.amcPct ?? ""} onChange={e => setCatRow(p.code, "amcPct", numOrNull(e.target.value))} />
                             <input style={{ ...numInput, width: 78 }} type="number" min={0} placeholder="or ₹/unit" title="Or a fixed AMC in ₹ per unit per year (e.g. ₹10,000 per branch). Used instead of the %." value={p.amcFixed ?? ""} onChange={e => setCatRow(p.code, "amcFixed", numOrNull(e.target.value))} />
+                            <input style={{ ...numInput, width: 64 }} type="number" min={-50} max={100} placeholder="rule" title="Yearly AMC / ALR increase for this licence, in % per step. Blank = the company rule in Quotation Rules; 0 = flat (no increase); a negative number lowers it." value={p.amcEscalationPct ?? ""} onChange={e => setCatRow(p.code, "amcEscalationPct", numOrNull(e.target.value))} />
                           </span>
                         : <span style={{ color: "var(--text3)", fontSize: 11 }}>—</span>}
                     </td>

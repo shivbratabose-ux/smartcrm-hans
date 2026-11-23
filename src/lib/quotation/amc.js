@@ -60,45 +60,72 @@ export function computeAmc(lines = [], { config = {}, catalogue = [], overallDis
   const rowOf = (code) => catalogue.find((p) => p.code === code);
   const rowPct = (code) => { const r = rowOf(code); return r && has(r.amcPct) ? n(r.amcPct) : rules.defaultPct; };
   const rowFixed = (code) => { const r = rowOf(code); return r && has(r.amcFixed) && n(r.amcFixed) > 0 ? n(r.amcFixed) : null; };
+  // A product's own yearly increase (e.g. E-Annex ALR: 0 = flat). Blank = the company rule.
+  const rowEsc = (code) => { const r = rowOf(code); return r && has(r.amcEscalationPct) ? n(r.amcEscalationPct) : null; };
   const overall = Math.min(100, Math.max(0, n(overallDiscountPct)));
   const ov = overrides || {};
   const deviations = [];
+  const rupees = (v) => `₹${Number(v).toLocaleString("en-IN")}`;
+  const lineOv = (k, code) => (ov[k] && has(ov[k][code]) ? n(ov[k][code]) : null);
 
-  const amcLines = lines.filter((l) => l && !l._empty && l.pricingModel === LICENCE_MODEL && n(l.lineTotal) > 0).map((l) => {
-    const rulePct = rowPct(l.productCode);
-    const fixed = rowFixed(l.productCode);
-    const custom = ov.linePct && has(ov.linePct[l.productCode]) ? n(ov.linePct[l.productCode]) : null;
-    // List fee = units × list price before any discount; net = after line + overall discount.
-    const listFee = has(l.grossPerPeriod) ? n(l.grossPerPeriod) : n(l.lineTotal) / Math.max(0.0001, 1 - n(l.discountPct) / 100);
-    const base = rules.base === "list" ? listFee : n(l.lineTotal) * (1 - overall / 100);
-    const units = Math.max(n(l.billedQty) || n(l.qty) || 1, 1);
-    // A product priced with a fixed AMC (₹ per unit per year) keeps it, unless the rep sets a %.
-    if (fixed !== null && custom === null) {
-      const annual = fixed * units;
-      return { productCode: l.productCode, name: l.name || l.productCode, base, pct: base > 0 ? +(annual / base * 100).toFixed(2) : 0, rulePct: null, fixed, annual };
-    }
-    const pct = custom ?? rulePct;
-    if (custom !== null && custom !== (fixed !== null ? null : rulePct)) deviations.push(`AMC on ${l.name || l.productCode}: ${custom}% instead of ${fixed !== null ? `₹${fixed.toLocaleString("en-IN")} per unit` : `${rulePct}%`}`);
-    return { productCode: l.productCode, name: l.name || l.productCode, base, pct, rulePct, fixed: null, annual: base * pct / 100 };
-  });
-
+  // The quote's company-rule terms (start year, fixed years, increase) — a line
+  // whose product sets its own increase uses that increase instead.
   const terms = {
     startYear: has(ov.startYear) ? Math.max(1, Math.round(n(ov.startYear))) : rules.startYear,
     fixedYears: has(ov.fixedYears) ? Math.max(0, Math.round(n(ov.fixedYears))) : rules.fixedYears,
     escalationPct: has(ov.escalationPct) ? Math.max(0, n(ov.escalationPct)) : rules.escalationPct,
     escalationEvery: has(ov.escalationEvery) ? Math.max(1, Math.round(n(ov.escalationEvery))) : rules.escalationEvery,
   };
+
+  const amcLines = lines.filter((l) => l && !l._empty && l.pricingModel === LICENCE_MODEL && n(l.lineTotal) > 0).map((l) => {
+    const code = l.productCode, name = l.name || code;
+    const rulePct = rowPct(code);
+    const fixedRule = rowFixed(code);
+    const custom = lineOv("linePct", code);
+    const customFixed = lineOv("lineFixed", code);
+    // Increase for this line: the rep's line value, else the product's own, else the quote's rule.
+    const ownEsc = rowEsc(code);
+    const escDefault = ownEsc !== null ? ownEsc : terms.escalationPct;
+    const escCustom = lineOv("lineEscalation", code);
+    const escalationPct = escCustom !== null ? Math.max(-50, escCustom) : escDefault;
+    if (escCustom !== null && escCustom !== escDefault) deviations.push(`AMC increase on ${name}: ${escCustom}% instead of ${escDefault ? `${escDefault}%` : "flat"}`);
+    const lineTerms = { fixedYears: terms.fixedYears, escalationPct, escalationEvery: terms.escalationEvery };
+    // List fee = units × list price before any discount; net = after line + overall discount.
+    const listFee = has(l.grossPerPeriod) ? n(l.grossPerPeriod) : n(l.lineTotal) / Math.max(0.0001, 1 - n(l.discountPct) / 100);
+    const base = rules.base === "list" ? listFee : n(l.lineTotal) * (1 - overall / 100);
+    const units = Math.max(n(l.billedQty) || n(l.qty) || 1, 1);
+    const common = { productCode: code, name, base, escalationPct, ownEscalation: ownEsc !== null, terms: lineTerms };
+    // A product priced with a fixed AMC (₹ per unit per year) keeps it, unless the
+    // rep moves the ₹ amount up or down, or switches the line to a %.
+    if (fixedRule !== null && custom === null) {
+      const fixed = customFixed !== null ? Math.max(0, customFixed) : fixedRule;
+      if (customFixed !== null && fixed !== fixedRule) deviations.push(`AMC on ${name}: ${rupees(fixed)} per unit instead of ${rupees(fixedRule)}`);
+      const annual = fixed * units;
+      return { ...common, pct: base > 0 ? +(annual / base * 100).toFixed(2) : 0, rulePct: null, fixed, fixedRule, units, annual };
+    }
+    const pct = custom ?? rulePct;
+    if (custom !== null && custom !== (fixedRule !== null ? null : rulePct)) deviations.push(`AMC on ${name}: ${custom}% instead of ${fixedRule !== null ? `${rupees(fixedRule)} per unit` : `${rulePct}%`}`);
+    return { ...common, pct, rulePct, fixed: null, fixedRule, units, annual: base * pct / 100 };
+  });
+
   if (amcLines.length) {
     if (terms.startYear !== rules.startYear) deviations.push(`AMC starts in year ${terms.startYear} instead of year ${rules.startYear}`);
-    if (terms.fixedYears !== rules.fixedYears || terms.escalationPct !== rules.escalationPct || terms.escalationEvery !== rules.escalationEvery) {
+    // Only matters if some line follows the company increase rule.
+    const ruleLines = amcLines.some((l) => !l.ownEscalation);
+    if (terms.fixedYears !== rules.fixedYears || terms.escalationEvery !== rules.escalationEvery || (ruleLines && terms.escalationPct !== rules.escalationPct)) {
       deviations.push(`AMC increase: ${describeEscalation(terms)} instead of ${describeEscalation(rules)}`);
     }
   }
+  // When every line ends up with the same increase, the quote shows that one.
+  const escs = [...new Set(amcLines.map((l) => l.escalationPct))];
+  if (escs.length === 1) terms.escalationPct = escs[0];
+  terms.mixed = escs.length > 1;
 
   const annual = amcLines.reduce((s, l) => s + l.annual, 0);
   const schedule = amcLines.length ? Array.from({ length: rules.scheduleYears }, (_, i) => {
     const amcYear = i + 1;
-    return { contractYear: terms.startYear + i, amcYear, amount: +(annual * escalationFactor(amcYear, terms)).toFixed(2) };
+    const amount = amcLines.reduce((s, l) => s + l.annual * escalationFactor(amcYear, l.terms), 0);
+    return { contractYear: terms.startYear + i, amcYear, amount: +amount.toFixed(2) };
   }) : [];
 
   return {
@@ -116,15 +143,23 @@ export function computeAmc(lines = [], { config = {}, catalogue = [], overallDis
 
 export function describeEscalation({ fixedYears, escalationPct, escalationEvery }) {
   if (!escalationPct) return "no increase";
-  return `fixed ${fixedYears} yr${fixedYears === 1 ? "" : "s"}, then +${escalationPct}% every ${escalationEvery === 1 ? "year" : `${escalationEvery} yrs`}`;
+  const step = escalationPct > 0 ? `+${escalationPct}%` : `−${Math.abs(escalationPct)}%`;
+  return `fixed ${fixedYears} yr${fixedYears === 1 ? "" : "s"}, then ${step} every ${escalationEvery === 1 ? "year" : `${escalationEvery} yrs`}`;
 }
 
 /** One line for the quote's terms, e.g. "AMC 20% of the licence fee p.a. from year 2; fixed 2 yrs, then +10% every 2 yrs." */
 export function amcTermText(amc, config = {}) {
   if (!amc?.applies) return "";
   const listBase = amcRules(config).base === "list";
-  const parts = [...new Set(amc.lines.map((l) => l.fixed !== null && l.fixed !== undefined ? `₹${Number(l.fixed).toLocaleString("en-IN")} per unit` : `${l.pct}%`))];
   const ofWhat = listBase ? "of the listed licence fee (before any discount)" : "of the licence fee";
+  const from = `from contract year ${amc.terms.startYear} (year 1 under warranty${amc.terms.startYear === 1 ? " — AMC billed from go-live" : ""})`;
+  const rateOf = (l) => (l.fixed !== null && l.fixed !== undefined ? `₹${Number(l.fixed).toLocaleString("en-IN")} per unit` : `${l.pct}%`);
+  if (amc.terms.mixed) {
+    // Lines increase differently (e.g. a flat E-Annex ALR beside a licence on the company rule).
+    const each = amc.lines.map((l) => `${l.name}: ${rateOf(l)}${l.fixed !== null && l.fixed !== undefined ? "" : ` ${ofWhat}`} per year, ${describeEscalation(l.terms)}`);
+    return `AMC: ${each.join("; ")}; ${from}. Billed annually in advance.`;
+  }
+  const parts = [...new Set(amc.lines.map(rateOf))];
   const rate = parts.every((p) => p.endsWith("%")) ? `${parts.join(" / ")} ${ofWhat}` : parts.join(" / ");
-  return `AMC: ${rate} per year, from contract year ${amc.terms.startYear} (year 1 under warranty${amc.terms.startYear === 1 ? " — AMC billed from go-live" : ""}); ${describeEscalation(amc.terms)}. Billed annually in advance.`;
+  return `AMC: ${rate} per year, ${from}; ${describeEscalation(amc.terms)}. Billed annually in advance.`;
 }
