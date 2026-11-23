@@ -60,5 +60,27 @@ const eaPct = computeAmc([eannex], { catalogue: [{ code: "P18", amcFixed: 10000 
 check("rep switches a fixed-AMC product to a % → approval", [eaPct.annual, eaPct.breached], [16500, true]);
 check("list-base wording", amcTermText(computeAmc([licence], { config: { amcBase: "list" } }), { amcBase: "list" }).includes("listed licence fee (before any discount)"), true);
 
+console.log("\nFlat ALR per product, moved up or down on a quote");
+const P18FLAT = [{ code: "P18", amcFixed: 10000, amcEscalationPct: 0 }];
+const flatA = computeAmc([eannex], { catalogue: P18FLAT });
+check("E-Annex ALR flat: ₹20,000 every year for 2 branches", flatA.schedule.map((y) => y.amount), [20000, 20000, 20000, 20000, 20000]);
+check("flat by the product's own rule is not a change", flatA.breached, false);
+check("flat wording", amcTermText(flatA), "AMC: ₹10,000 per unit per year, from contract year 2 (year 1 under warranty); no increase. Billed annually in advance.");
+const up = computeAmc([eannex], { catalogue: P18FLAT, overrides: { lineFixed: { P18: 12000 } } });
+check("rep moves ALR up to ₹12,000 → approval", [up.annual, up.breached, up.deviations], [24000, true, ["AMC on E-Annex Ultra: ₹12,000 per unit instead of ₹10,000"]]);
+const down = computeAmc([eannex], { catalogue: P18FLAT, overrides: { lineFixed: { P18: 8000 } } });
+check("rep moves ALR down to ₹8,000 → approval", [down.annual, down.breached], [16000, true]);
+const esc = computeAmc([eannex], { catalogue: P18FLAT, overrides: { lineEscalation: { P18: 5 } } });
+check("rep adds a 5% increase to the flat ALR → approval", [esc.schedule.map((y) => y.amount), esc.breached], [[20000, 20000, 21000, 21000, 22050], true]);
+const dec = computeAmc([eannex], { catalogue: P18FLAT, overrides: { lineEscalation: { P18: -10 } } });
+check("or a decrease", [dec.schedule.map((y) => y.amount), describeEscalation(dec.terms)], [[20000, 20000, 18000, 18000, 16200], "fixed 2 yrs, then −10% every 2 yrs"]);
+check("same as the product's rule is not a change", computeAmc([eannex], { catalogue: P18FLAT, overrides: { lineFixed: { P18: 10000 }, lineEscalation: { P18: 0 } } }).breached, false);
+const both = computeAmc([eannex, licence], { catalogue: P18FLAT });
+check("flat ALR beside a licence on the company rule: each keeps its own increase",
+  both.schedule.map((y) => y.amount), [220000, 220000, 240000, 240000, 262000]);
+check("mixed wording names each line", [both.terms.mixed, amcTermText(both).startsWith("AMC: E-Annex Ultra: ₹10,000 per unit per year, no increase; Perpetual Licence: 20% of the licence fee per year, fixed 2 yrs, then +10% every 2 yrs")], [true, true]);
+check("company escalation change doesn't touch the flat ALR", computeAmc([eannex], { catalogue: P18FLAT, overrides: { escalationPct: 15 } }).schedule.map((y) => y.amount), [20000, 20000, 20000, 20000, 20000]);
+check("…and isn't a deviation when only the flat line is on the quote", computeAmc([eannex], { catalogue: P18FLAT, overrides: { escalationPct: 15 } }).breached, false);
+
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
